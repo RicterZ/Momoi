@@ -4,7 +4,6 @@ import json
 import sqlite3
 import time
 from importlib.resources import files
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from xml.etree import ElementTree
@@ -12,10 +11,9 @@ from xml.etree import ElementTree
 import pytest
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig, WebhookConfig
+from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
 from momoi.models import (
-    AgentReply,
     IncomingMessage,
     ProviderResponse,
     ToolCall,
@@ -28,7 +26,7 @@ from momoi.runtime.jobs import AutonomousJob
 from momoi.runtime.tool_contracts.current_state import current_state_finish_spec
 from momoi.storage import Store
 from momoi.storage.memory.current_state import SlotInput
-from momoi.storage.memory.current_state_contract import CURRENT_STATE_SOURCE_STAGES
+from momoi.storage.memory.current_state_contract import CURRENT_STATE_TRIGGER_STAGES
 from momoi.storage.memory.current_state_tasks import (
     CURRENT_STATE_BATCH_SIZE,
     CURRENT_STATE_FULL_IDLE_SECONDS,
@@ -36,8 +34,6 @@ from momoi.storage.memory.current_state_tasks import (
 )
 from momoi.storage.core.migrations import MIGRATIONS, _add_current_state_workflow
 from momoi.tools.contracts.memory import MEMORY_TOOL_SPECS
-from momoi.webhooks.catalog import bind_workflow
-from momoi.webhooks.service import WebhookService
 from tests.support import provider_catalog
 
 
@@ -157,7 +153,7 @@ def stage(store, source="source", kind="owner", *, commit=True):
     return system, messages
 
 
-@pytest.mark.parametrize("kind", sorted(CURRENT_STATE_SOURCE_STAGES))
+@pytest.mark.parametrize("kind", sorted(CURRENT_STATE_TRIGGER_STAGES))
 def test_allowed_end_turn_captures_tool_surface_and_waits_for_commit(daemon, kind):
     source = "source"
     daemon.store.begin_turn(source, kind, [])
@@ -282,7 +278,7 @@ def test_allowed_end_turn_captures_tool_surface_and_waits_for_commit(daemon, kin
 
 
 def test_other_stages_never_schedule_state_maintenance(daemon):
-    for kind in sorted(set(TURN_HARNESS_SPECS) - CURRENT_STATE_SOURCE_STAGES):
+    for kind in sorted(set(TURN_HARNESS_SPECS) - CURRENT_STATE_TRIGGER_STAGES):
         with pytest.raises(ValueError, match="source_not_allowed"):
             daemon.store.stage_current_state_task("none", kind, [], [])
         assert task_row(daemon.store) is None
@@ -540,54 +536,6 @@ def test_actual_old_schema_upgrade_preserves_foreign_keys_and_supports_new_stage
         assert store._db.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:
         store.close()
-
-
-@pytest.mark.parametrize("commit_fails", [False, True])
-def test_webhook_service_settles_after_commit_or_failure(daemon, commit_fails):
-    root = Path(__file__).resolve().parents[1] / "config.example/workflows"
-    settled = []
-
-    async def generate(_prompt, turn_id):
-        stage(daemon.store, turn_id, "webhook", commit=False)
-        return AgentReply([])
-
-    def settle(turn_id):
-        settled.append(task_row(daemon.store, turn_id)["state"])
-
-    service = WebhookService(
-        WebhookConfig(
-            enabled=True,
-            token="test",
-            workflows=root,
-            executors=root / "workflow-executors.yaml",
-        ),
-        {"channel_url": "ws://napcat.test/ws", "owner_id": "20000"},
-        daemon.store,
-        generate,
-        lambda: None,
-        turn_settled=settle,
-    )
-    plan = bind_workflow(
-        service.workflows["event-message"],
-        service.executors,
-        {"event_prompt": "current input"},
-        service.channel_variables,
-    )
-    daemon.store.create_webhook_run("event-message", "test", plan)
-    run = daemon.store.claim_webhook_run()
-    if commit_fails:
-        with patch.object(
-            daemon.store,
-            "commit_webhook_reply",
-            side_effect=RuntimeError("commit failed"),
-        ):
-            with pytest.raises(RuntimeError, match="commit failed"):
-                asyncio.run(service._execute(run, asyncio.Event()))
-        assert settled == ["staged"]
-        assert pending_state_source(daemon.store) is None
-    else:
-        asyncio.run(service._execute(run, asyncio.Event()))
-        assert settled == ["pending"]
 
 
 @pytest.mark.parametrize(

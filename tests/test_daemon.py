@@ -1200,29 +1200,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 arguments,
                             )
                         )
-                    elif self.calls == 4:
-                        self.assert_terminal_tools(tools)
-                        calls = [
-                            ToolCall(
-                                "failed-message",
-                                "send_bubbles",
-                                {
-                                    "bubbles": ["创建任务失败：缺少有效的执行时间。"],
-                                },
-                            )
-                        ]
                     else:
-                        self.assert_terminal_tools(tools)
-                        calls = [
-                            ToolCall(
-                                "failed-response",
-                                "end_turn",
-                                {
-                                    "reply_wait": {"wait": False},
-                                    "mood": {"decision": "unchanged"},
-                                },
-                            )
-                        ]
+                        raise AssertionError("protocol circuit should open after 3 failures")
                     return ProviderResponse(
                         [
                             {
@@ -1252,23 +1231,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 await daemon._complete_batch_turn(
                     [event], asyncio.Event(), daemon._turn_id(event.event_id)
                 )
-            self.assertEqual(provider.calls, 5)
+            self.assertEqual(provider.calls, 3)
             self.assertTrue(
-                any(
-                    "缺少有效的执行时间" in row.text
-                    for row in daemon.store.due_outbox()
-                )
-            )
-            self.assertTrue(
-                any(
-                    "Invalid isoformat string"
-                    in str(
-                        getattr(record, "momoi_fields", {}).get(
-                            "result_message", ""
-                        )
-                    )
-                    for record in logs.records
-                )
+                any("repeated protocol/tool errors" in row.text for row in daemon.store.due_outbox())
             )
             tool_starts = [
                 record
