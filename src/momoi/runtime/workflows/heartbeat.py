@@ -18,7 +18,7 @@ from ..context.presentation import (
     heartbeat_topic_lines,
 )
 from ..transcript.building import build_transcript
-from ..transcript.rendering import render_messages
+from ..transcript.rendering import owner_idle_gap_message, render_messages
 from ..turn_support import (
     ExternalToolTurnError,
     context_data_message as _context_data_message,
@@ -192,6 +192,11 @@ class HeartbeatWorkflow:
             timezone=self.store.timezone,
             tool_activity=tool_activity,
         )
+        idle_gap = owner_idle_gap_message(
+            conversation_rows,
+            now=time.time(),
+            timezone=self.store.timezone,
+        )
         recent_heartbeats = ", ".join(dict.fromkeys(
             f"H{message_id}"
             for group in (*transcript.orphaned, *transcript.groups)
@@ -233,6 +238,7 @@ class HeartbeatWorkflow:
         messages: list[dict[str, Any]] = [
             context_message,
             *transcript_messages,
+            *([idle_gap] if idle_gap is not None else []),
             {
                 "role": "user",
                 "content": [

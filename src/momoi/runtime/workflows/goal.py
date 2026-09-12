@@ -12,7 +12,7 @@ from ..agent import TurnExecutionSpec
 from ..context.current_state import pack_current_turn_context
 from ..context.presentation import due_goal_lines, heartbeat_self_state_lines
 from ..transcript.building import build_transcript
-from ..transcript.rendering import render_messages
+from ..transcript.rendering import owner_idle_gap_message, render_messages
 from ..turn_support import (
     ExternalToolTurnError,
     GOAL_PROMPT_PATH,
@@ -164,6 +164,11 @@ class GoalWorkflow:
             timezone=self.store.timezone,
             tool_activity=tool_activity,
         )
+        idle_gap = owner_idle_gap_message(
+            conversation_rows,
+            now=datetime.now(self.store.timezone).timestamp(),
+            timezone=self.store.timezone,
+        )
         recent_goals = ", ".join(dict.fromkeys(
             f"G{message_id}"
             for group in (*transcript.orphaned, *transcript.groups)
@@ -192,6 +197,7 @@ class GoalWorkflow:
         messages: list[dict[str, Any]] = [
             context_message,
             *transcript_messages,
+            *([idle_gap] if idle_gap is not None else []),
             {
                 "role": "user",
                 "content": [

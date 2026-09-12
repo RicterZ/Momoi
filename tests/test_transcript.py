@@ -10,6 +10,7 @@ from momoi.runtime.transcript.building import (
     select_groups,
 )
 from momoi.runtime.transcript.rendering import (
+    owner_idle_gap_message,
     render_proactive_bubble_evidence,
     render_messages as _render_messages,
     turn_labels,
@@ -55,6 +56,28 @@ def test_turn_labels_are_stable_for_each_runtime_turn():
             "turn": label,
         }
         assert "turn=" not in (document.text or "")
+
+
+def test_owner_idle_gap_uses_last_owner_message_across_runtime_records():
+    rows = [
+        owner(1, "去吃饭", turn_id="owner", offset=0),
+        {"id": 2, "turn_id": "webhook", "role": "event", "content": "天气", "created_at": BASE + 3600},
+        {"id": 3, "turn_id": "heartbeat", "role": "heartbeat", "content": "工作记录", "created_at": BASE + 5400},
+    ]
+    message = owner_idle_gap_message(
+        rows, now=BASE + 3600, timezone=TEST_TIMEZONE
+    )
+    assert message is not None
+    assert message["role"] == "user"
+    assert "2026-08-31T20:00:00+08:00" in text(message)
+    assert "1h" in text(message)
+
+
+def test_owner_idle_gap_is_transient_and_below_threshold_is_omitted():
+    rows = [owner(1, "刚说完", offset=0)]
+    assert owner_idle_gap_message(
+        rows, now=BASE + 29 * 60, timezone=TEST_TIMEZONE
+    ) is None
 
 
 def owner(

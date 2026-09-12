@@ -1,4 +1,5 @@
 from datetime import datetime
+import time
 from typing import Any
 
 from ...channel import Channel
@@ -7,7 +8,7 @@ from ..agent import TurnExecutionSpec
 from ..context.current_state import pack_current_turn_context
 from ..context.presentation import heartbeat_self_state_lines
 from ..transcript.building import build_transcript
-from ..transcript.rendering import render_messages
+from ..transcript.rendering import owner_idle_gap_message, render_messages
 from ..turn_support import (
     WEBHOOK_PROMPT_PATH,
     WEBHOOK_SYSTEM_PROMPT,
@@ -38,6 +39,11 @@ class WebhookWorkflow:
             [*transcript.orphaned, *transcript.groups],
             timezone=self.store.timezone,
             tool_activity=tool_activity,
+        )
+        idle_gap = owner_idle_gap_message(
+            conversation_rows,
+            now=time.time(),
+            timezone=self.store.timezone,
         )
         recent_events = ", ".join(dict.fromkeys(
             f"E{message_id}"
@@ -82,6 +88,7 @@ class WebhookWorkflow:
         messages: list[dict[str, Any]] = [
             context_message,
             *transcript_messages,
+            *([idle_gap] if idle_gap is not None else []),
             {
                 "role": "user",
                 "content": [
