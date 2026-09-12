@@ -259,3 +259,49 @@ class ThinkingStoreTests(unittest.TestCase):
             self.assertEqual(listed["items"][0]["stages"], ["owner"])
             self.assertIn(listed["month"], listed["months"])
             store.close()
+
+    def test_dashboard_attaches_legacy_topic_selection_to_its_context_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            store.begin_turn("turn-owner", "owner", [])
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO context_plans
+                       (turn_id, revision, source_event_ids_json, plan_json,
+                        retrieval_json, state, created_at, updated_at)
+                       VALUES (?, 1, '[]', '{}', '{}', 'recalled', ?, ?)""",
+                    ("turn-owner", now - 1, now + 1),
+                )
+            store.record_thinking_call(
+                created_at=now - 0.2,
+                turn_id="turn-owner",
+                call_id="owner-before-cues",
+                stage="owner",
+                reasoning="先判断是否需要召回。",
+            )
+            store.record_thinking_call(
+                created_at=now,
+                turn_id="",
+                call_id="legacy-cues",
+                stage="topic_selection",
+                reasoning="筛选相关主题。",
+            )
+            store.record_thinking_call(
+                created_at=now + 0.2,
+                turn_id="turn-owner",
+                call_id="owner-after-cues",
+                stage="owner",
+                reasoning="继续回复。",
+            )
+
+            listed = store.dashboard_thinking()
+            self.assertEqual(listed["count"], 1)
+            self.assertEqual(listed["items"][0]["turn_id"], "turn-owner")
+            self.assertEqual(listed["items"][0]["call_count"], 3)
+            detail = store.read_thinking("turn-owner")
+            self.assertEqual(
+                [call["stage"] for call in detail["calls"]],
+                ["owner", "topic_selection", "owner"],
+            )
+            store.close()

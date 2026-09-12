@@ -145,7 +145,77 @@ class ObservabilityStore:
         )
 
     def read_thinking(self, turn_id: str, call_id: str = "") -> dict[str, object]:
-        return self._thinking.read(turn_id, call_id)
+        found = self._thinking.read(turn_id, call_id)
+        if turn_id and not call_id and found.get("ok"):
+            calls = list(found.get("calls") or [])
+            calls.extend(self._legacy_topic_selection_calls(turn_id))
+            calls.sort(
+                key=lambda item: (
+                    float(item.get("created_at") or 0),
+                    int(item.get("round") or 0),
+                )
+            )
+            found["calls"] = calls
+            found["count"] = len(calls)
+        return found
+
+    def _attach_legacy_topic_selection_turns(
+        self, calls: list[dict[str, object]]
+    ) -> list[dict[str, object]]:
+        """Attach old selector calls only when one saved context-plan window owns them."""
+
+        candidates = [
+            call for call in calls
+            if not call.get("turn_id") and call.get("stage") == "topic_selection"
+        ]
+        if not candidates:
+            return calls
+        lower = min(float(call.get("created_at") or 0) for call in candidates)
+        upper = max(float(call.get("created_at") or 0) for call in candidates)
+        rows = self._db.execute(
+            """SELECT turn_id, created_at, updated_at FROM context_plans
+               WHERE created_at<=? AND updated_at>=?""",
+            (upper, lower),
+        ).fetchall()
+        windows = [
+            (str(row["turn_id"]), float(row["created_at"]), float(row["updated_at"]))
+            for row in rows
+        ]
+        attached: list[dict[str, object]] = []
+        for call in calls:
+            if call not in candidates:
+                attached.append(call)
+                continue
+            created_at = float(call.get("created_at") or 0)
+            owners = [
+                turn_id for turn_id, start, end in windows
+                if start <= created_at <= end
+            ]
+            attached.append(
+                {**call, "turn_id": owners[0]} if len(owners) == 1 else call
+            )
+        return attached
+
+    def _legacy_topic_selection_calls(self, turn_id: str) -> list[dict[str, object]]:
+        rows = self._db.execute(
+            "SELECT created_at, updated_at FROM context_plans WHERE turn_id=?",
+            (turn_id,),
+        ).fetchall()
+        calls: list[dict[str, object]] = []
+        for row in rows:
+            found = self._thinking.search(
+                after=float(row["created_at"]),
+                before=float(row["updated_at"]) + 0.001,
+                stage="topic_selection",
+                limit=100,
+                cursor=0,
+            )
+            calls.extend(
+                {**call, "turn_id": turn_id}
+                for call in found.get("calls") or []
+                if not call.get("turn_id")
+            )
+        return calls
 
     def dashboard_thinking(
         self,
@@ -171,7 +241,9 @@ class ObservabilityStore:
             limit=5000,
             cursor=0,
         )
-        turns = _group_thinking_turns(found.get("calls") or [])
+        turns = _group_thinking_turns(
+            self._attach_legacy_topic_selection_turns(found.get("calls") or [])
+        )
         start = max(0, cursor)
         size = min(200, max(1, limit))
         page = turns[start : start + size]
