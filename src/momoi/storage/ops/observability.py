@@ -270,6 +270,12 @@ class ObservabilityStore:
                 "excerpt": str(row["title"]), "step_count": len(turn_ids),
             })
         turns = [item for item in turns if str(item.get("turn_id") or "") not in consumed] + plan_items
+        turns.sort(
+            key=lambda item: (
+                -float(item.get("updated_at") or 0),
+                str(item.get("id") or ""),
+            )
+        )
         start = max(0, cursor)
         size = min(200, max(1, limit))
         page = turns[start : start + size]
