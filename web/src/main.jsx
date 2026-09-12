@@ -1989,7 +1989,13 @@ function olderMonths(available, month) {
 
 function thinkingFlowTitle(item) {
   const stages = (item.stages || [item.stage]).filter((stage) => stage !== undefined);
-  const labels = stages.map((stage) => thinkingStageLabel(stage));
+  const auxiliaryStages = new Set(["topic_selection", "episode_cue_admit"]);
+  // CUES is an internal retrieval phase of its enclosing business Turn, not a
+  // second workflow identity. Show it in the timeline, but never promote it
+  // into the record or detail title when a primary stage exists.
+  const visibleStages = stages.filter((stage) => !auxiliaryStages.has(stage));
+  const labels = (visibleStages.length ? visibleStages : stages)
+    .map((stage) => thinkingStageLabel(stage));
   return labels.length ? labels.join(" → ") : "未标记";
 }
 
