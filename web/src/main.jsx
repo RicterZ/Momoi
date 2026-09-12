@@ -2476,106 +2476,6 @@ function RecallDetail({ recall }) {
   );
 }
 
-function RecallInline({ recall }) {
-  const [open, setOpen] = useState(false);
-  if (!recall) return null;
-  const memories = [
-    ...(recall.memories || []).map((item) => ({ ...item, source: "memory" })),
-    ...(recall.reflections || []).map((item) => ({ ...item, source: "reflection" })),
-  ];
-  const episodes = recall.episodes || [];
-  const topics = recall.topics || [];
-  const evidenceCount = memories.length + episodes.length;
-  const units = recall.units || [];
-  return (
-    <div className="recall-inline">
-      <div className="recall-inline-head">
-        <span className="recall-section-label">CUES // 话题筛选 · RECALL</span>
-        <span>{evidenceCount ? `${evidenceCount} 条依据` : "未命中依据"}</span>
-      </div>
-      {!!units.length && (
-        <div className="recall-inline-queries">
-          {units.map((unit) => (
-            <div className="recall-inline-query" key={unit.id}>
-              <span>{unit.mode === "reuse" ? "沿用" : unit.mode === "skip" ? "跳过" : "检索"}</span>
-              <p>{unit.intent || unit.queries?.map((query) => query.semantic).join("；")}</p>
-            </div>
-          ))}
-        </div>
-      )}
-      {!!topics.length && (
-        <div className="recall-inline-topics">
-          <span className="recall-cues-label">CUES · 采用的检索线索</span>
-          {topics.map((topic) => (
-            <div className="recall-inline-topic" key={topic.episode_id}>
-              <span>{topic.episode_id}</span>
-              <div className="recall-cues-list">
-                {(topic.cues || []).map((cue, index) => <span key={index}>{cue}</span>)}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {evidenceCount > 0 && (
-        <>
-          <button
-            className="recall-inline-toggle"
-            type="button"
-            aria-expanded={open}
-            onClick={() => setOpen((value) => !value)}
-          >
-            {open ? "收起召回依据" : "展开召回依据"}
-            <span aria-hidden="true">{open ? "−" : "＋"}</span>
-          </button>
-          {open && (
-            <div className="recall-inline-evidence">
-              {!!memories.length && (
-                <RecallEvidenceGroup
-                  title="记忆与复盘"
-                  items={memories}
-                  tone="memory"
-                  renderItem={(item, index) => (
-                    <li key={`${item.source}:${item.kind}:${item.key || index}`}>
-                      <div className="recall-evidence-meta">
-                        <span>{memoryKindLabel(item.kind)}</span>
-                        {item.local_date ? <time>{item.local_date}</time> : null}
-                      </div>
-                      <p>{item.content || "这条记录没有正文。"}</p>
-                    </li>
-                  )}
-                />
-              )}
-              {!!episodes.length && (
-                <RecallEvidenceGroup
-                  title="相关聊天与 CUES"
-                  items={episodes}
-                  tone="episode"
-                  renderItem={(item) => (
-                    <li key={item.id}>
-                      <a className="recall-evidence-link" href={`#conversations/episode/${encodeURIComponent(item.id)}`}>
-                        {item.title || "未命名聊天记录"} <span aria-hidden="true">↗</span>
-                      </a>
-                      {item.summary ? <p>{item.summary}</p> : null}
-                      {Array.isArray(item.cues) && item.cues.length > 0 ? (
-                        <div className="recall-cues">
-                          <span className="recall-cues-label">CUES · 采用的检索线索</span>
-                          <div className="recall-cues-list">
-                            {item.cues.map((cue, index) => <span key={index}>{cue}</span>)}
-                          </div>
-                        </div>
-                      ) : null}
-                    </li>
-                  )}
-                />
-              )}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 function ThinkingDetail({ item, calls, recall }) {
   const flow = [...calls].sort((left, right) => {
     const time = Number(left.created_at || 0) - Number(right.created_at || 0);
@@ -2601,20 +2501,9 @@ function ThinkingDetail({ item, calls, recall }) {
         ) : null}
       </header>
       <div className="messages">
-        {recall ? (
-          <article className="message message-cues">
-            <div className="message-role momoi">CUES</div>
-            <div className="message-body">
-              <p className="message-content thinking-body">话题筛选与召回依据</p>
-              <RecallInline recall={recall} />
-              <div className="message-meta">
-                <span>CUES · 话题筛选</span>
-              </div>
-            </div>
-          </article>
-        ) : null}
         {flow.map((call) => (
-          <article className="message" key={call.call_id}>
+          <React.Fragment key={call.call_id}>
+          <article className="message">
             <div className="message-role momoi">
               {thinkingStageCode(call.stage)}
             </div>
@@ -2631,6 +2520,8 @@ function ThinkingDetail({ item, calls, recall }) {
               </div>
             </div>
           </article>
+          {call.stage === "topic_selection" ? <RecallDetail recall={recall} /> : null}
+          </React.Fragment>
         ))}
       </div>
     </>
