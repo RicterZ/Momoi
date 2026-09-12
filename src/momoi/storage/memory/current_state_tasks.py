@@ -3,7 +3,7 @@
 import json
 import time
 
-from .current_state_contract import CURRENT_STATE_SOURCE_STAGES
+from .current_state_contract import CURRENT_STATE_TRIGGER_STAGES
 
 # Trigger threshold; a claim includes every eligible pending Turn.
 CURRENT_STATE_BATCH_SIZE = 6
@@ -15,7 +15,7 @@ class CurrentStateTaskStore:
     def stage_current_state_task(
         self, source_turn_id, source_stage, system, tools
     ):
-        if source_stage not in CURRENT_STATE_SOURCE_STAGES:
+        if source_stage not in CURRENT_STATE_TRIGGER_STAGES:
             raise ValueError("current_state_source_not_allowed")
         row = self._db.execute(
             "SELECT workflow_kind,state FROM turns WHERE id=?", (source_turn_id,)

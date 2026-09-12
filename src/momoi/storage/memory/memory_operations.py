@@ -119,6 +119,8 @@ class MemoryOperationStore:
         with self._db:
             if self.pending_memory_operation() != batch_id:
                 return None
+            # `attempts` counts claims and names the attempt's Turn; the retry
+            # bound reads `failures`, so an interruption cannot spend it.
             cursor = self._db.execute(
                 """UPDATE memory_operation_batches SET state='running', attempts=attempts+1,
                    error=NULL, updated_at=? WHERE id=? AND state='pending' AND retry_at<=?""",
@@ -152,24 +154,36 @@ class MemoryOperationStore:
         now = time.time()
         with self._db:
             row = self._db.execute(
-                "SELECT attempts FROM memory_operation_batches WHERE id=? AND state='running'",
+                "SELECT attempts, failures FROM memory_operation_batches "
+                "WHERE id=? AND state='running'",
                 (batch_id,),
             ).fetchone()
             if row is None:
                 return
-            # A deterministic failure (e.g. a malformed request) cannot be
-            # retried into success; stop after a bounded number of attempts.
-            if not interrupted and int(row["attempts"]) >= MEMORY_OPERATION_MAX_ATTEMPTS:
+            # An interruption (restart or cancellation) is not a failure of the
+            # batch: it returns to the queue without consuming the retry budget.
+            # Only a reported error counts, and a deterministic failure (e.g. a
+            # malformed request) cannot be retried into success, so the bound
+            # stops it.
+            failures = int(row["failures"]) + (0 if interrupted else 1)
+            if not interrupted and failures >= MEMORY_OPERATION_MAX_ATTEMPTS:
                 self._db.execute(
                     """UPDATE memory_operation_batches
-                       SET state='failed', error=?, updated_at=? WHERE id=?""",
-                    (error[:500], now, batch_id),
+                       SET state='failed', failures=?, error=?, updated_at=? WHERE id=?""",
+                    (failures, error[:500], now, batch_id),
                 )
             else:
                 self._db.execute(
-                    """UPDATE memory_operation_batches SET state='pending', error=?, retry_at=?, updated_at=?
+                    """UPDATE memory_operation_batches SET state='pending', failures=?,
+                       error=?, retry_at=?, updated_at=?
                        WHERE id=? AND state='running'""",
-                    (error[:500], now if interrupted else now + 300, now, batch_id),
+                    (
+                        failures,
+                        error[:500],
+                        now if interrupted else now + 300,
+                        now,
+                        batch_id,
+                    ),
                 )
             self._db.execute(
                 """UPDATE turns SET state='cancelled',stage='cancelled',failure_reason=?,updated_at=?

@@ -381,6 +381,132 @@ def _add_memory_operation_failed_state(database: sqlite3.Connection) -> None:
         database.execute("PRAGMA foreign_keys=ON")
 
 
+def _add_memory_operation_failures(database: sqlite3.Connection) -> None:
+    """Separate "how often claimed" from "how often it actually failed".
+
+    `attempts` counts every claim, and an interrupted claim (process restart,
+    cancellation) is not a failure. Gating the retry bound on it let repeated
+    interruptions consume the failure budget, so a batch could be killed by its
+    first genuine error, and an interrupted batch was re-claimed without bound.
+    `failures` counts only releases that reported a real error.
+    """
+    if "failures" not in _columns(database, "memory_operation_batches"):
+        database.execute(
+            "ALTER TABLE memory_operation_batches "
+            "ADD COLUMN failures INTEGER NOT NULL DEFAULT 0"
+        )
+
+
+def _unify_memory_kinds(database: sqlite3.Connection) -> None:
+    """Put both memory planes on one kind vocabulary.
+
+    Renames merge into the surviving kind. Kinds the vocabulary drops are
+    tombstoned rather than deleted, matching the episodic retirement: the rows
+    stay as history and are invisible everywhere. `shared` and
+    `shared_experience` go because episodes narrate one-off events.
+    """
+
+    database.execute(
+        """CREATE TABLE IF NOT EXISTS reflection_memory_tombstones (
+            kind TEXT NOT NULL,
+            key TEXT NOT NULL,
+            evidence_quote TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            PRIMARY KEY (kind, key)
+        )"""
+    )
+    now = time.time()
+    for old, new in (
+        ("routine", "profile"),
+        ("owner_profile", "profile"),
+        ("owner_preference", "preference"),
+        ("tool_skill", "practice"),
+    ):
+        # A legacy alias may collide with an already-existing row under the
+        # canonical kind. Preserve the legacy row as hidden history instead of
+        # letting the UNIQUE(kind, key) constraint abort the whole migration.
+        for row in database.execute(
+            """SELECT kind, key, source_event_id, evidence_quote FROM memories
+               WHERE kind=? AND EXISTS (
+                   SELECT 1 FROM memories AS target
+                   WHERE target.kind=? AND target.key=memories.key
+               )""",
+            (old, new),
+        ).fetchall():
+            database.execute(
+                """INSERT INTO memory_tombstones
+                   (kind, key, source_event_id, evidence_quote, created_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(kind, key) DO UPDATE SET
+                     source_event_id=excluded.source_event_id,
+                     evidence_quote=excluded.evidence_quote,
+                     created_at=excluded.created_at""",
+                (row["kind"], row["key"], row["source_event_id"],
+                 row["evidence_quote"], now),
+            )
+        for row in database.execute(
+            """SELECT kind, key, evidence FROM reflection_memories
+               WHERE kind=? AND EXISTS (
+                   SELECT 1 FROM reflection_memories AS target
+                   WHERE target.kind=? AND target.key=reflection_memories.key
+               )""",
+            (old, new),
+        ).fetchall():
+            database.execute(
+                """INSERT INTO reflection_memory_tombstones
+                   (kind, key, evidence_quote, created_at) VALUES (?, ?, ?, ?)
+                   ON CONFLICT(kind, key) DO UPDATE SET
+                     evidence_quote=excluded.evidence_quote,
+                     created_at=excluded.created_at""",
+                (row["kind"], row["key"], str(row["evidence"])[:500], now),
+            )
+        database.execute(
+            """UPDATE memories SET kind=? WHERE kind=?
+               AND NOT EXISTS (
+                   SELECT 1 FROM memories AS target
+                   WHERE target.kind=? AND target.key=memories.key
+               )""",
+            (new, old, new),
+        )
+        database.execute(
+            """UPDATE reflection_memories SET kind=? WHERE kind=?
+               AND NOT EXISTS (
+                   SELECT 1 FROM reflection_memories AS target
+                   WHERE target.kind=? AND target.key=reflection_memories.key
+               )""",
+            (new, old, new),
+        )
+
+    # `shared` facts are episode material now: retire the confirmed ones the way
+    # the episodic retirement did, and tombstone the reflection ones.
+    for kind, key, source_event_id, evidence_quote in database.execute(
+        """SELECT kind, key, source_event_id, evidence_quote FROM memories
+           WHERE superseded_by IS NULL AND kind='shared'"""
+    ).fetchall():
+        database.execute(
+            """INSERT INTO memory_tombstones
+               (kind, key, source_event_id, evidence_quote, created_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(kind, key) DO UPDATE SET
+                 source_event_id=excluded.source_event_id,
+                 evidence_quote=excluded.evidence_quote,
+                 created_at=excluded.created_at""",
+            (kind, key, source_event_id, evidence_quote, now),
+        )
+    for kind, key, evidence in database.execute(
+        """SELECT kind, key, evidence FROM reflection_memories
+           WHERE kind='shared_experience'"""
+    ).fetchall():
+        database.execute(
+            """INSERT INTO reflection_memory_tombstones
+               (kind, key, evidence_quote, created_at) VALUES (?, ?, ?, ?)
+               ON CONFLICT(kind, key) DO UPDATE SET
+                 evidence_quote=excluded.evidence_quote,
+                 created_at=excluded.created_at""",
+            (kind, key, str(evidence)[:500], now),
+        )
+
+
 def _retire_episodic_and_recent_memories(database: sqlite3.Connection) -> None:
     """Retire the episodic kind and the recent activation.
 
@@ -423,6 +549,8 @@ MIGRATIONS: tuple[Migration, ...] = (
     _drop_goal_authority,
     _add_memory_operation_failed_state,
     _retire_episodic_and_recent_memories,
+    _add_memory_operation_failures,
+    _unify_memory_kinds,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

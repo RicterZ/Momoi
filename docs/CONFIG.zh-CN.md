@@ -349,7 +349,8 @@ Webhook 的预配置 `uses: exec` 仍以 argv 执行，不受此模型工具开�
 {
   "turn": {
     "max_seconds": 0,
-    "max_total_tokens": 0
+    "max_total_tokens": 0,
+    "max_protocol_retries": 3
   }
 }
 ```
@@ -358,8 +359,9 @@ Webhook 的预配置 `uses: exec` 仍以 argv 执行，不受此模型工具开�
 | --- | --- | --- |
 | `max_seconds` | `0` | 单个 Turn 的运行时间上限；`0` 表示不限制 |
 | `max_total_tokens` | `0` | 累计原始输入/输出 token 上限；`0` 表示不限制 |
+| `max_protocol_retries` | `3` | 单个 Turn 内协议/工具错误的统一重试次数；达到上限后熔断并通过 workflow/channel 汇报 |
 
-两个值都必须为非负数。
+`max_seconds` 和 `max_total_tokens` 必须为非负数；`max_protocol_retries` 必须为正整数。
 
 ## 通知
 

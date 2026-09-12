@@ -8,12 +8,24 @@ from xml.sax.saxutils import escape, quoteattr
 
 
 
+# The one classification used by both memory planes: confirmed memory (owner
+# evidence) and reflection memory (daily review). They differ in provenance and
+# reliability, not in what a fact is about, so they share this vocabulary.
+#
+# What memory holds, and what it deliberately does not:
+#   - episodes narrate one-off events, so shared experiences are not a kind here;
+#     they belong to episode summaries.
+#   - current state owns temporary state, so memories never expire.
+# A kind describes the subject of the fact, never its confidence.
 MEMORY_KINDS = {
-    "profile",
-    "preference",
-    "relationship",
-    "shared",
-    "routine",
+    "profile",           # who the owner is: identity, background, rhythm, habits
+    "preference",        # what the owner wants: preferences, constraints, standing wording
+    "relationship",      # the bond with the owner: nature, boundaries, forms of address, agreements
+    "third_party",       # stable facts about other people in the world
+    "practice",          # how to do things: reusable methods, decision procedures, tool usage
+    "world_knowledge",   # facts about the world outside the relationship
+    "self_insight",      # the agent's own tendencies, feelings, and patterns
+    "cross_event_state", # a durable state that outlives the event that produced it
 }
 
 MEMORY_ACTIVATIONS = {"always", "recall"}

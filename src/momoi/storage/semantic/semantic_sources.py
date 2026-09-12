@@ -30,7 +30,13 @@ class SemanticSourceStore:
         }
         reflections = {
             str(row["id"])
-            for row in self._db.execute("SELECT id FROM reflection_memories")
+            for row in self._db.execute(
+                """SELECT id FROM reflection_memories AS rm
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM reflection_memory_tombstones AS t
+                       WHERE t.kind=rm.kind AND t.key=rm.key
+                   )"""
+            )
         }
         episodes = {
             str(row["id"])
@@ -240,7 +246,13 @@ class SemanticSourceStore:
             ], True
         if source_type == "reflection_memory":
             row = self._db.execute(
-                "SELECT id, kind, key, content FROM reflection_memories WHERE id=?",
+                """SELECT rm.id, rm.kind, rm.key, rm.content
+                   FROM reflection_memories AS rm
+                   WHERE rm.id=?
+                     AND NOT EXISTS (
+                         SELECT 1 FROM reflection_memory_tombstones AS t
+                         WHERE t.kind=rm.kind AND t.key=rm.key
+                     )""",
                 (source_id,),
             ).fetchone()
             if row is None:

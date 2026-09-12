@@ -62,10 +62,11 @@ def handle_no_tool_response(
     last_tool_error: str,
     external_effect: bool = False,
     continuation: dict | None = None,
+    max_failures: int = MAX_CONSECUTIVE_TOOL_FAILURES,
 ) -> NoToolResolution:
     if workflow_correction is not None or heartbeat_turn or goal_turn or require_response:
         failed_rounds += 1
-        if failed_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
+        if failed_rounds >= max_failures:
             error_type = (
                 ExternalToolTurnError
                 if external_effect and workflow_correction is None

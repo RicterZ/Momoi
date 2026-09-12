@@ -1741,6 +1741,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             memory_results=2,
                             database=Path(directory) / "momoi.sqlite3",
                             log_level="INFO",
+                            turn_max_protocol_retries=3,
                         )
                         daemon = MomoiDaemon(config)
                         try:

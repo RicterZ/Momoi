@@ -242,6 +242,11 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         "turn.max_total_tokens",
         minimum=0,
     )
+    turn_max_protocol_retries = integer(
+        turn_raw.get("max_protocol_retries", 3),
+        "turn.max_protocol_retries",
+        minimum=1,
+    )
 
     return AppConfig(
         channel=channel_config,
@@ -279,6 +284,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
             turn_raw.get("max_seconds", 0), "turn.max_seconds"
         ),
         turn_max_total_tokens=turn_max_total_tokens,
+        turn_max_protocol_retries=turn_max_protocol_retries,
         webhooks=WebhookConfig(
             enabled=webhook_enabled,
             host=str(webhook_raw.get("host", "127.0.0.1")),

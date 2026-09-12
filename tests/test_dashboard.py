@@ -807,7 +807,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 """INSERT INTO reflection_memories
                    (kind, key, content, evidence, confidence, source_reflection_id,
                     created_at, updated_at) VALUES
-                   ('shared_experience', 'testing', '一起完成测试。', '今天完成了测试。',
+                   ('self_insight', 'testing', '一起完成测试。', '今天完成了测试。',
                     0.8, 'reflection:2026-08-13', ?, ?)""",
                 (now, now),
             )

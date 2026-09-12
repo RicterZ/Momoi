@@ -5,17 +5,6 @@ from zoneinfo import ZoneInfo
 from ..core.integrity import decode_stored_json
 
 
-REFLECTION_MEMORY_KINDS = {
-    "owner_profile",
-    "owner_preference",
-    "world_knowledge",
-    "self_insight",
-    "relationship",
-    "shared_experience",
-    "practice",
-    "tool_skill",
-}
-
 def reflection_window(
     local_date: str, at: str, timezone: ZoneInfo, *, end_at: float | None = None,
 ) -> tuple[float, float]:

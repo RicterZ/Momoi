@@ -11,7 +11,7 @@ from ..channel import (
 from ..storage.delivery.emotions import EMOTION_PREFIX
 from ..models import AgentReply
 from ..storage.delivery.reply_wait import REPLY_WAIT_MAX_MINUTES, REPLY_WAIT_MIN_MINUTES
-from ..storage import REFLECTION_MEMORY_KINDS
+from ..storage import MEMORY_KINDS
 
 
 def response_text(content: list[dict[str, Any]]) -> str:
@@ -295,7 +295,7 @@ def parse_reflection_finish(
         evidence = item.get("evidence")
         confidence = item.get("confidence")
         if (
-            kind not in REFLECTION_MEMORY_KINDS
+            kind not in MEMORY_KINDS
             or not isinstance(key, str)
             or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key)
             or not isinstance(content, str)
@@ -311,7 +311,7 @@ def parse_reflection_finish(
         ):
             return None, "invalid_reflection_memory"
         if (
-            kind in {"owner_profile", "owner_preference"}
+            kind in {"profile", "preference"}
             and evidence not in owner_source
         ):
             return None, "owner_reflection_requires_owner_evidence"

@@ -503,9 +503,9 @@ class ContextAssemblerTest(unittest.TestCase):
                        VALUES (?, ?, ?, 'evidence', 0.8,
                                'reflection:layers', ?, ?)""",
                     [
-                        ("owner_profile", "cup.core", "复盘认为蓝色杯子很重要", now, now),
-                        ("shared_experience", "cup.day", "那天一起找过蓝色杯子", now, now),
-                        ("owner_profile", "cat.unrelated", "复盘认为主人喜欢猫", now, now),
+                        ("profile", "cup.core", "复盘认为蓝色杯子很重要", now, now),
+                        ("self_insight", "cup.day", "那天一起找过蓝色杯子", now, now),
+                        ("profile", "cat.unrelated", "复盘认为主人喜欢猫", now, now),
                     ],
                 )
 
@@ -1387,14 +1387,14 @@ class ContextAssemblerTest(unittest.TestCase):
                    VALUES (?, ?, ?, 'evidence', 0.8, 'reflection:test', ?, ?)""",
                 [
                     (
-                        "shared_experience",
+                        "self_insight",
                         "project.mail.context",
                         "项目邮件关系到当前合作",
                         now,
                         now,
                     ),
                     (
-                        "shared_experience",
+                        "self_insight",
                         "social.cat.context",
                         "微博猫是一次闲聊",
                         now,

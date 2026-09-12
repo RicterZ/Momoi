@@ -21,10 +21,9 @@ from .protocol import (
 from .tool_batch import ToolBatchRequest, ToolBatchState
 from ..tool_contracts.conversation import end_turn_tool_spec, end_turn_correction
 from ..tool_contracts.context import recall_correction
-from ...storage.memory.current_state_contract import CURRENT_STATE_SOURCE_STAGES
+from ...storage.memory.current_state_contract import CURRENT_STATE_TRIGGER_STAGES
 from ..turn_support import (
     ExternalToolTurnError,
-    MAX_CONSECUTIVE_TOOL_FAILURES,
     OwnerMessagesChanged,
     tool_error_block as _tool_error_block,
     tool_result_block,
@@ -72,7 +71,7 @@ class AgentLoop:
         accept_owner_updates = execution.accept_owner_updates
         dynamic_tool_policies = execution.dynamic_tool_policies
         external_tool_used = False
-        failed_tool_rounds = 0
+        protocol_failures = 0
         last_tool_error = ""
         history_messages = max(0, len(messages) - 1)
         batch_state = ToolBatchState()
@@ -113,7 +112,7 @@ class AgentLoop:
                 source_event_id = self._absorb_owner_updates(
                     updates, messages, delivery_channel, harness
                 )
-                failed_tool_rounds = 0
+                protocol_failures = 0
                 remind_owner_bubbles = False
             required_tool = harness.spec.first_tool if not harness.started else None
             if required_tool == "recall":
@@ -194,7 +193,7 @@ class AgentLoop:
                 source_event_id = self._absorb_owner_updates(
                     updates, messages, delivery_channel, harness
                 )
-                failed_tool_rounds = 0
+                protocol_failures = 0
                 remind_owner_bubbles = False
                 continue
             except Exception as error:
@@ -231,7 +230,7 @@ class AgentLoop:
                 source_event_id = self._absorb_owner_updates(
                     updates, messages, delivery_channel, harness
                 )
-                failed_tool_rounds = 0
+                protocol_failures = 0
                 remind_owner_bubbles = False
                 continue
             bubbles = parse_tagged_bubbles(response_text(response.content))
@@ -256,23 +255,32 @@ class AgentLoop:
                     tool_call_id=call.id, bubbles=len(bubbles),
                 )
             if not response.tool_calls:
-                resolution = handle_no_tool_response(
-                    messages,
-                    response.content,
-                    workflow_correction=(
-                        workflow.no_tool_correction if workflow is not None else None
-                    ),
-                    heartbeat_turn=heartbeat_turn,
-                    harness_started=harness.started,
-                    goal_turn=autonomous_goal_id is not None,
-                    require_response=require_response,
-                    owner_turn=authority == "owner",
-                    failed_rounds=failed_tool_rounds,
-                    last_tool_error=last_tool_error,
-                    external_effect=external_tool_used,
-                    continuation=response.continuation,
-                )
-                failed_tool_rounds = resolution.failed_rounds
+                try:
+                    resolution = handle_no_tool_response(
+                        messages,
+                        response.content,
+                        workflow_correction=(
+                            workflow.no_tool_correction if workflow is not None else None
+                        ),
+                        heartbeat_turn=heartbeat_turn,
+                        harness_started=harness.started,
+                        goal_turn=autonomous_goal_id is not None,
+                        require_response=require_response,
+                        owner_turn=authority == "owner",
+                        failed_rounds=protocol_failures,
+                        last_tool_error=last_tool_error,
+                        external_effect=external_tool_used,
+                        continuation=response.continuation,
+                        max_failures=self.config.turn_max_protocol_retries,
+                    )
+                except (WorkflowProtocolError, ExternalToolTurnError) as error:
+                    log_event(logger, logging.WARNING, "protocol_circuit_open",
+                              stage=stage, turn_id=turn_id, round=llm_round,
+                              failures=protocol_failures + 1,
+                              failure_limit=self.config.turn_max_protocol_retries,
+                              reason=str(error))
+                    raise
+                protocol_failures = resolution.failed_rounds
                 if resolution.log_rejection:
                     log_event(
                         logger,
@@ -293,7 +301,7 @@ class AgentLoop:
                 has_assistant_text=bool(response_text(response.content)),
             )
             if harness_error is not None:
-                failed_tool_rounds += 1
+                protocol_failures += 1
                 log_event(
                     logger,
                     logging.DEBUG,
@@ -305,10 +313,15 @@ class AgentLoop:
                     channel=delivery_channel.name,
                     reason=harness_error,
                     tool_names=[call.name for call in response.tool_calls],
-                    consecutive_failures=failed_tool_rounds,
-                    failure_limit=MAX_CONSECUTIVE_TOOL_FAILURES,
+                    consecutive_failures=protocol_failures,
+                    failure_limit=self.config.turn_max_protocol_retries,
                 )
-                if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
+                if protocol_failures >= self.config.turn_max_protocol_retries:
+                    log_event(logger, logging.WARNING, "protocol_circuit_open",
+                              stage=stage, turn_id=turn_id, round=llm_round,
+                              failures=protocol_failures,
+                              failure_limit=self.config.turn_max_protocol_retries,
+                              reason=harness_error)
                     error_type = (
                         WorkflowProtocolError
                         if workflow is not None
@@ -397,10 +410,10 @@ class AgentLoop:
                 source_event_id = self._absorb_owner_updates(
                     updates, messages, delivery_channel, harness
                 )
-                failed_tool_rounds = 0
+                protocol_failures = 0
                 continue
             if batch.ended:
-                if stage in CURRENT_STATE_SOURCE_STAGES:
+                if stage in CURRENT_STATE_TRIGGER_STAGES:
                     self.store.stage_current_state_task(
                         turn_id, stage, model_round.request_system,
                         model_round.request_tools,
@@ -409,25 +422,22 @@ class AgentLoop:
             if workflow is not None and workflow.is_complete():
                 return workflow.completion_result() or {"ok": True}
             if any(not block["is_error"] for block in results):
-                failed_tool_rounds = 0
+                protocol_failures = 0
                 continue
-            failed_tool_rounds += 1
-            if failed_tool_rounds < MAX_CONSECUTIVE_TOOL_FAILURES:
+            protocol_failures += 1
+            if protocol_failures < self.config.turn_max_protocol_retries:
                 continue
-            if not require_response:
-                error_type = WorkflowProtocolError if workflow else RuntimeError
-                raise error_type(last_tool_error or "repeated tool validation failures")
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "[Trusted runtime protocol stop. Tool calls failed validation "
-                        "three consecutive times. Do not retry tools in this Turn. "
-                        "Use send_bubbles for the last concrete failure reason, then "
-                        "end_turn. Both may occur in the same response.]"
-                    ),
-                }
+            log_event(logger, logging.WARNING, "protocol_circuit_open",
+                      stage=stage, turn_id=turn_id, round=llm_round,
+                      failures=protocol_failures,
+                      failure_limit=self.config.turn_max_protocol_retries,
+                      reason=last_tool_error or "repeated tool validation failures")
+            error_type = (
+                ExternalToolTurnError
+                if external_tool_used and workflow is None
+                else WorkflowProtocolError
             )
+            raise error_type(last_tool_error or "repeated tool validation failures")
 
     async def _run_agent_workflow(
         self,

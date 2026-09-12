@@ -373,7 +373,8 @@ Unlike `config.json`, MCP environment values, URLs, and headers expand
 {
   "turn": {
     "max_seconds": 0,
-    "max_total_tokens": 0
+    "max_total_tokens": 0,
+    "max_protocol_retries": 3
   }
 }
 ```
@@ -382,8 +383,9 @@ Unlike `config.json`, MCP environment values, URLs, and headers expand
 | --- | --- | --- |
 | `max_seconds` | `0` | Per-Turn wall-time limit; `0` disables it |
 | `max_total_tokens` | `0` | Accumulated raw input/output token limit; `0` disables it |
+| `max_protocol_retries` | `3` | Unified retries for protocol/tool errors in one Turn; after the limit the circuit opens and the workflow reports the failure through the channel |
 
-Both values must be non-negative.
+`max_seconds` and `max_total_tokens` must be non-negative; `max_protocol_retries` must be a positive integer.
 
 ## Notifications
 

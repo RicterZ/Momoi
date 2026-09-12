@@ -9,7 +9,6 @@ from .memory.memory_values import (
     memory_snapshot_fingerprint,
     truncate_tokens,
 )
-from .reflection.reflection_values import REFLECTION_MEMORY_KINDS
 from .episode.episode_consolidation import (
     EPISODE_CONSOLIDATION_BATCH_SIZE,
     EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
@@ -36,7 +35,6 @@ __all__ = [
     "MEMORY_KINDS",
     "REFLECTION_MEMORY_CAUTION",
     "MemoryRecallQuery",
-    "REFLECTION_MEMORY_KINDS",
     "Store",
     "estimate_tokens",
     "format_reflection_memory",

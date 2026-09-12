@@ -42,7 +42,12 @@ Reuse an appropriate existing kind/key. Keep one fact per memory; group requests
 that concern the same fact into one decision.
 
 Classify final writes:
-- kind describes the topic: profile, preference, relationship, shared, or routine.
+- kind describes the subject, never the confidence: profile (who the owner is),
+  preference (what the owner wants), relationship (the bond and its boundaries),
+  third_party (other people), practice (reusable methods and tool usage),
+  world_knowledge (the world outside), self_insight (your own tendencies),
+  cross_event_state (a durable state outliving its event). Shared experiences
+  belong to the Episode, never to a memory.
 - recall: durable topic fact, retrieved when relevant.
 - always: only an explicit, topic-independent interpersonal preference or constraint.
   Importance alone does not justify always.

@@ -81,6 +81,10 @@ class MemoryRecallStore:
                       rm.updated_at, r.local_date
                FROM reflection_memories AS rm
                LEFT JOIN reflections AS r ON r.id=rm.source_reflection_id
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM reflection_memory_tombstones AS t
+                   WHERE t.kind=rm.kind AND t.key=rm.key
+               )
                ORDER BY rm.updated_at DESC"""
         ).fetchall()
 

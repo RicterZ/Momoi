@@ -9,7 +9,7 @@ from ....observability.events import log_event
 from ....observability.values import safe_preview
 from ....models import AgentReply, IncomingMessage, TurnDraft
 from ....llm.errors import ProviderError
-from ...agent import TurnExecutionSpec
+from ...agent import TurnExecutionSpec, WorkflowProtocolError
 from ...transcript.building import build_transcript
 from ...transcript.rendering import (
     render_proactive_bubble_evidence,
@@ -144,6 +144,24 @@ class OwnerWorkflow:
             failure_message = (
                 "This task reached its per-turn processing limit, so I stopped to "
                 "avoid further usage. Ask me to continue when ready."
+            )
+            failure_reason = type(error).__name__
+        except WorkflowProtocolError as error:
+            log_event(
+                logger,
+                logging.WARNING,
+                "turn_failure",
+                stage="owner",
+                turn_id=turn_id,
+                channel=channel.name,
+                layer="protocol",
+                error_type=type(error).__name__,
+                reason=safe_preview(str(error), 300),
+            )
+            failure_message = (
+                "This turn stopped after repeated protocol/tool errors. "
+                f"Last reported problem: {safe_preview(str(error), 300)}. "
+                "Please retry the request."
             )
             failure_reason = type(error).__name__
         except asyncio.CancelledError:

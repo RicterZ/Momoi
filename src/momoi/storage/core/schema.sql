@@ -97,6 +97,17 @@ CREATE INDEX IF NOT EXISTS memories_active
     ON memories(kind, key) WHERE superseded_by IS NULL;
 CREATE INDEX IF NOT EXISTS memories_activation
     ON memories(activation, updated_at DESC) WHERE superseded_by IS NULL;
+-- Reflects a forgotten reflection insight. Separate from memory_tombstones
+-- because the two planes keep independent key spaces: forgetting an insight
+-- must never hide a confirmed fact that happens to share kind and key.
+CREATE TABLE IF NOT EXISTS reflection_memory_tombstones (
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    evidence_quote TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+
 CREATE TABLE IF NOT EXISTS memory_tombstones (
     kind TEXT NOT NULL,
     key TEXT NOT NULL,

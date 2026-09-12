@@ -13,6 +13,10 @@ KEY_PATTERN = r"^[a-z][a-z0-9_.-]*(?![\s\S])"
 VALUE_MAX_LENGTH = 512
 ID_MAX_LENGTH = 128
 CURRENT_STATE_SOURCE_STAGES = frozenset({"owner", "goal", "heartbeat", "webhook", "reply_followup"})
+# Current-state maintenance is temporarily driven only by completed owner Turns.
+# Keep CURRENT_STATE_SOURCE_STAGES broad because it also controls which stages
+# may receive current-state context; this narrower set controls task staging.
+CURRENT_STATE_TRIGGER_STAGES = frozenset({"owner"})
 
 CURRENT_STATE_CHANGE_SCHEMA = {
     "type": "object",

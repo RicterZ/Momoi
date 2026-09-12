@@ -129,6 +129,10 @@ class ReflectionRecordStore:
         rows = self._db.execute(
             """SELECT m.*, r.local_date FROM reflection_memories AS m
                JOIN reflections AS r ON r.id=m.source_reflection_id
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM reflection_memory_tombstones AS t
+                   WHERE t.kind=m.kind AND t.key=m.key
+               )
                ORDER BY m.updated_at DESC, m.id DESC"""
         ).fetchall()
         return [self._reflection_memory_public_dict(row) for row in rows]
@@ -151,13 +155,37 @@ class ReflectionRecordStore:
             )
         row = self._db.execute(
             """SELECT m.*, r.local_date FROM reflection_memories AS m
-               JOIN reflections AS r ON r.id=m.source_reflection_id WHERE m.id=?""",
+               JOIN reflections AS r ON r.id=m.source_reflection_id
+               WHERE m.id=? AND NOT EXISTS (
+                   SELECT 1 FROM reflection_memory_tombstones AS t
+                   WHERE t.kind=m.kind AND t.key=m.key
+               )""",
             (memory_id,),
         ).fetchone()
         return self._reflection_memory_public_dict(row) if row else None
 
     def delete_reflection_memory(self, memory_id: int) -> bool:
+        """Forget one insight permanently.
+
+        The row is removed and a tombstone records why, so regenerating that
+        day's reflection cannot derive the forgotten insight back into view.
+        The regeneration path that replaces a day's whole set is not a user
+        deletion and deliberately leaves no tombstone.
+        """
         with self._db:
-            return self._db.execute(
-                "DELETE FROM reflection_memories WHERE id=?", (memory_id,)
-            ).rowcount > 0
+            row = self._db.execute(
+                "SELECT kind, key, evidence FROM reflection_memories WHERE id=?",
+                (memory_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            self._db.execute(
+                """INSERT INTO reflection_memory_tombstones
+                   (kind, key, evidence_quote, created_at) VALUES (?,?,?,?)
+                   ON CONFLICT(kind, key) DO UPDATE SET
+                     evidence_quote=excluded.evidence_quote,
+                     created_at=excluded.created_at""",
+                (row["kind"], row["key"], str(row["evidence"])[:500], time.time()),
+            )
+            self._db.execute("DELETE FROM reflection_memories WHERE id=?", (memory_id,))
+        return True

@@ -129,7 +129,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                             "summary": "主人明确表达了饮食偏好，今后推荐食物时应留意。",
                             "memories": [
                                 {
-                                    "kind": "owner_preference",
+                                    "kind": "preference",
                                     "key": "food.avoids_cilantro",
                                     "content": "主人不吃香菜。",
                                     "evidence": "我不吃香菜",
@@ -146,7 +146,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                                     "confidence": 0.6,
                                 },
                                 {
-                                    "kind": "tool_skill",
+                                    "kind": "practice",
                                     "key": "tools.gmail.search_project_summary",
                                     "content": (
                                         "Search project-summary mail with "
@@ -171,8 +171,11 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             daemon.provider = Provider()
-            await daemon._complete_reflection_turn("2026-07-21", asyncio.Event())
-            maintenance = await daemon.autonomous.get()
+            await asyncio.wait_for(
+                daemon._complete_reflection_turn("2026-07-21", asyncio.Event()),
+                timeout=5,
+            )
+            maintenance = await asyncio.wait_for(daemon.autonomous.get(), timeout=5)
             self.assertEqual(maintenance.kind, "memory_maintenance")
             self.assertEqual(
                 daemon.store.pending_memory_maintenance_turn(),
@@ -203,7 +206,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("mcp__gog__gmail_search", ranked_reflection)
             self.assertIn('date="2026-07-21" confidence="0.8"', ranked_reflection)
             stored_memories = json.loads(reflection["memories_json"])
-            self.assertEqual(stored_memories[2]["kind"], "tool_skill")
+            self.assertEqual(stored_memories[2]["kind"], "practice")
             self.assertEqual(
                 daemon.store.next_reflection_due_at(
                     config.reflection,
@@ -221,7 +224,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 "summary": "测试",
                 "memories": [
                     {
-                        "kind": "owner_profile",
+                        "kind": "profile",
                         "key": "owner.job",
                         "content": "主人是医生。",
                         "evidence": "主人是医生",
@@ -485,7 +488,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             daemon.provider = Provider()
-            await daemon._complete_reflection_turn("2026-07-21", asyncio.Event())
+            await asyncio.wait_for(
+                daemon._complete_reflection_turn("2026-07-21", asyncio.Event()),
+                timeout=5,
+            )
             reflection = daemon.store.reflection("2026-07-21")
             self.assertEqual(reflection["state"], "completed")
             always = {
@@ -629,7 +635,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 first_now
             )
             self.assertEqual(first["local_date"], "2026-07-21")
-            await daemon._complete_reflection_turn("2026-07-21", asyncio.Event())
+            await asyncio.wait_for(
+                daemon._complete_reflection_turn("2026-07-21", asyncio.Event()),
+                timeout=5,
+            )
             first_reflection = daemon.store.reflection("2026-07-21")
             self.assertEqual(first_reflection["state"], "completed")
             self.assertEqual(first_reflection["summary"], "第一版日记")
@@ -644,7 +653,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotEqual(first["claimed_at"], second["claimed_at"])
             self.assertEqual(first["scheduled_at"], first_now)
             self.assertEqual(second["scheduled_at"], second_now)
-            await daemon._complete_reflection_turn("2026-07-21", asyncio.Event())
+            await asyncio.wait_for(
+                daemon._complete_reflection_turn("2026-07-21", asyncio.Event()),
+                timeout=5,
+            )
             overwritten = daemon.store.reflection("2026-07-21")
             self.assertEqual(overwritten["state"], "completed")
             self.assertEqual(overwritten["summary"], "覆盖后的日记")
@@ -773,7 +785,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
 
             daemon.provider = Provider()
             daemon._episode_annealing_dirty = False
-            await daemon._complete_reflection_turn("2026-07-21", asyncio.Event())
+            await asyncio.wait_for(
+                daemon._complete_reflection_turn("2026-07-21", asyncio.Event()),
+                timeout=5,
+            )
             closed = daemon.store.episode("trip-kyoto")
             kept = daemon.store.episode("chat-today")
             self.assertEqual(closed["status"], "closed")

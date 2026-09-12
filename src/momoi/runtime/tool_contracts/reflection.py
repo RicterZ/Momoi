@@ -1,6 +1,6 @@
 from typing import Any
 
-from ...storage.reflection.reflection_values import REFLECTION_MEMORY_KINDS
+from ...storage import MEMORY_KINDS
 
 
 REFLECTION_FINISH_SPEC: dict[str, Any] = {
@@ -62,15 +62,19 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                     "properties": {
                         "kind": {
                             "type": "string",
-                            "enum": sorted(REFLECTION_MEMORY_KINDS),
+                            "enum": sorted(MEMORY_KINDS),
                             "description": (
-                                "shared_experience: meaningful experiences together; "
-                                "relationship: situated understanding of the relationship; "
+                                "profile: who the owner is, their background, rhythm, "
+                                "and habits; preference: what the owner wants, including "
+                                "constraints and standing wording; relationship: the bond "
+                                "and its boundaries, forms of address, agreements; "
+                                "third_party: stable facts about other people; practice: "
+                                "reusable methods or decision processes, including tool "
+                                "usage; world_knowledge: observed knowledge about the world; "
                                 "self_insight: subjective understanding of your own feelings "
-                                "or tendencies; owner_profile/owner_preference: owner-stated "
-                                "facts or preferences; world_knowledge: observed knowledge; "
-                                "practice: reusable methods or decision processes; "
-                                "tool_skill: knowledge of a specific tool or integration."
+                                "or tendencies; cross_event_state: a durable state that "
+                                "outlives the event that produced it. A shared experience "
+                                "belongs to the day's Episode, not here."
                             ),
                         },
                         "key": {

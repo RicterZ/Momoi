@@ -22,6 +22,7 @@ from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent.harness import TurnHarness
 from momoi.runtime.workflows.memory_operation.parsing import parse_decisions
 from momoi.storage import Store
+from momoi.storage.memory.memory_operations import MEMORY_OPERATION_MAX_ATTEMPTS
 from momoi.tools.memory import MemoryTools
 from tests.support import provider_catalog, seed_memory
 
@@ -302,6 +303,57 @@ def test_fifo_retry_blocks_later_requests(store):
     batch = store.claim_memory_operation("first")
     apply(store, batch, [write(first)])
     assert store.pending_memory_operation() == "second"
+
+
+def test_interruptions_do_not_spend_the_retry_budget(store):
+    """A restart or cancellation is not a failure of the batch.
+
+    `attempts` counts claims, so an interrupted batch keeps being re-queued; the
+    retry bound reads `failures`, so interruptions must not consume it.
+    """
+    source = event(store, "source")
+    submit(store, source)
+    interruptions = MEMORY_OPERATION_MAX_ATTEMPTS + 3
+    for _ in range(interruptions):
+        batch = store.claim_memory_operation("source")
+        assert batch is not None
+        store.release_memory_operation(
+            "source", batch["turn_id"], "cancelled", interrupted=True
+        )
+        with store._db:
+            store._db.execute(
+                "UPDATE memory_operation_batches SET retry_at=0 WHERE id='source'"
+            )
+
+    row = store._db.execute(
+        "SELECT state, attempts, failures FROM memory_operation_batches WHERE id='source'"
+    ).fetchone()
+    assert row["state"] == "pending"
+    assert row["attempts"] == interruptions
+    assert row["failures"] == 0
+
+    # A genuine error still gets the full budget, unaffected by the restarts.
+    for expected in range(1, MEMORY_OPERATION_MAX_ATTEMPTS):
+        batch = store.claim_memory_operation("source")
+        assert batch is not None
+        store.release_memory_operation("source", batch["turn_id"], "boom")
+        with store._db:
+            store._db.execute(
+                "UPDATE memory_operation_batches SET retry_at=0 WHERE id='source'"
+            )
+        row = store._db.execute(
+            "SELECT state, failures FROM memory_operation_batches WHERE id='source'"
+        ).fetchone()
+        assert (row["state"], row["failures"]) == ("pending", expected)
+
+    batch = store.claim_memory_operation("source")
+    assert batch is not None
+    store.release_memory_operation("source", batch["turn_id"], "boom")
+    row = store._db.execute(
+        "SELECT state, failures FROM memory_operation_batches WHERE id='source'"
+    ).fetchone()
+    assert row["state"] == "failed"
+    assert row["failures"] == MEMORY_OPERATION_MAX_ATTEMPTS
 
 
 def test_readd_never_unhides_deleted_versions(store):

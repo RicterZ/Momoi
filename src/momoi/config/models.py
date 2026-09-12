@@ -81,6 +81,7 @@ class AppConfig:
     tool_result_retention_days: float = 30
     turn_max_seconds: float = 0
     turn_max_total_tokens: int = 0
+    turn_max_protocol_retries: int = 3
     webhooks: WebhookConfig = WebhookConfig()
     dashboard: DashboardConfig = DashboardConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()

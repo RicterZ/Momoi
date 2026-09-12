@@ -100,6 +100,7 @@ class ConfigurationTest(unittest.TestCase):
                 ("context", "summary_tokens"): -1,
                 ("tools", "result_max_chars"): 999,
                 ("turn", "max_total_tokens"): -1,
+                ("turn", "max_protocol_retries"): 0,
             }
             for (section, setting), invalid_value in invalid.items():
                 with self.subTest(setting=f"{section}.{setting}"):
