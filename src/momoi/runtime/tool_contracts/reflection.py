@@ -88,7 +88,7 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                             "description": (
                                 "Concisely describe what happened, was understood, or was "
                                 "learned, according to kind, within the evidence's scope. "
-                                "For practice/tool_skill, include applicability and an "
+                                "For practice, include applicability and an "
                                 "observable outcome; absence of criticism is not evidence "
                                 "of success."
                             ),

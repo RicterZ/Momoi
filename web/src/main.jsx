@@ -338,18 +338,14 @@ function useNarrowScreen() {
 function memoryKindLabel(kind) {
   return (
     {
-      profile: "关于你",
-      preference: "你的偏好",
-      relationship: "相处方式",
-      shared: "共同经历",
-      routine: "日常习惯",
-      owner_profile: "关于你",
-      owner_preference: "你的偏好",
-      world_knowledge: "外部信息",
-      self_insight: "Momoi 的体会",
-      shared_experience: "共同经历",
-      practice: "方法论",
-      tool_skill: "工具经验",
+      profile: "主人档案",
+      preference: "主人偏好",
+      relationship: "关系与约定",
+      third_party: "其他人物",
+      practice: "方法与工具",
+      world_knowledge: "外部世界",
+      self_insight: "自我洞见",
+      cross_event_state: "跨事件状态",
     }[kind] || "记忆"
   );
 }
