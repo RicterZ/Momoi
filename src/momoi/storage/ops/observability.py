@@ -255,6 +255,14 @@ class ObservabilityStore:
             steps = json.loads(row["steps_json"] or "[]")
             turn_ids = [str(step.get("turn_id") or "") for step in steps if step.get("turn_id")]
             members = [by_turn[tid] for tid in turn_ids if tid in by_turn]
+            # A large thinking store may omit older calls from the broad
+            # search window; read referenced step Turns directly as fallback.
+            for tid in turn_ids:
+                if tid not in by_turn:
+                    direct = self.read_thinking(tid)
+                    calls = direct.get("calls") or []
+                    if calls:
+                        members.append(_group_thinking_turns(calls)[0])
             if not members:
                 continue
             consumed.update(turn_ids)
