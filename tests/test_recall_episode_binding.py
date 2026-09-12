@@ -32,6 +32,51 @@ def config(directory: str) -> AppConfig:
 
 
 class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_recall_kind_allowlist_limits_confirmed_and_reflection_memory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            self.addCleanup(daemon.store.close)
+            now = 10.0
+            with daemon.store._db:
+                daemon.store._db.execute(
+                    """INSERT INTO memories
+                       (kind, key, content, activation, authority, source_event_id,
+                        evidence_quote, importance, created_at, updated_at)
+                       VALUES (?, 'tea.preference', '主人偏好绿茶', 'recall', 'owner', 'seed', '绿茶', 0.5, ?, ?)""",
+                    ("preference", now, now),
+                )
+                daemon.store._db.execute(
+                    """INSERT INTO memories
+                       (kind, key, content, activation, authority, source_event_id,
+                        evidence_quote, importance, created_at, updated_at)
+                       VALUES (?, 'tea.practice', '泡茶用八十度水', 'recall', 'owner', 'seed', '八十度', 0.5, ?, ?)""",
+                    ("practice", now, now),
+                )
+            event = IncomingMessage("kind-filter", "owner", "茶", 20, 20)
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+            unit = {
+                "intent": "茶的信息",
+                "kind": ["preference"],
+                "recall_mode": "search",
+                "recall_queries": [{"semantic": "茶", "keywords": ["茶"]}],
+                "recall_from_turn_id": "",
+                "episode": {"action": "none", "ref": "", "title": ""},
+            }
+            result = await recall_owner_context(
+                ToolCall("recall", "recall", {"units": [unit]}),
+                current_events=[event], turn_id=turn_id,
+                submit_context=daemon.submit_owner_context,
+            )
+            self.assertTrue(result["ok"])
+            self.assertIn("主人偏好绿茶", result["memory"])
+            self.assertNotIn("泡茶用八十度水", result["memory"])
+            self.assertEqual(
+                daemon.store.context_plan(turn_id)["plan"]["intent_units"][0]["kind"],
+                ["preference"],
+            )
+
     async def test_malformed_recall_returns_actionable_example_without_persistence(self):
         from jsonschema import Draft202012Validator
         from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC, RECALL_SKIP_EXAMPLE

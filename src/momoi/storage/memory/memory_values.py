@@ -44,6 +44,10 @@ class MemoryRecallQuery:
     unit_ids: tuple[str, ...] = ()
     priority: int = 0
     semantic_expression: str = ""
+    # Empty means all canonical memory kinds.  This is deliberately part of
+    # the query (rather than a post-filter) so sparse and dense ranking share
+    # the same eligibility boundary.
+    kinds: tuple[str, ...] = ()
 
     @property
     def dense_expression(self) -> str:

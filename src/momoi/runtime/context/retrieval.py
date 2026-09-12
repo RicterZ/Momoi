@@ -40,7 +40,8 @@ def select_plan_recall_queries(
             }
         )
     reused_units_by_turn: dict[str, list[str]] = {}
-    unit_queries: list[tuple[str, list[dict[str, object]]]] = []
+    unit_kinds: dict[str, tuple[str, ...]] = {}
+    unit_queries: list[tuple[str, tuple[str, ...], list[dict[str, object]]]] = []
     for unit in recall_units:
         if not isinstance(unit, dict):
             continue
@@ -53,6 +54,9 @@ def select_plan_recall_queries(
             if source_turn_id and unit_id:
                 reused_units_by_turn.setdefault(source_turn_id, []).append(unit_id)
             continue
+        raw_kinds = unit.get("kind") or (recall.get("kind") if isinstance(recall, dict) else []) or []
+        kinds = tuple(dict.fromkeys(str(kind) for kind in raw_kinds))
+        unit_kinds[unit_id] = kinds
         queries: list[dict[str, object]] = []
         for raw_query in unit.get("recall_queries") or []:
             if not isinstance(raw_query, dict):
@@ -71,23 +75,24 @@ def select_plan_recall_queries(
             if semantic and query not in queries:
                 queries.append(query)
         if queries:
-            unit_queries.append((unit_id, queries))
+            unit_queries.append((unit_id, kinds, queries))
     emitted_queries = {
         str(query["semantic"])
-        for _unit_id, queries in unit_queries
+        for _unit_id, _kinds, queries in unit_queries
         for query in queries
     }
-    selected_by_query: dict[str, dict[str, object]] = {}
+    selected_by_query: dict[tuple[str, tuple[str, ...]], dict[str, object]] = {}
     selected: list[dict[str, object]] = []
     skipped_unit_ids: set[str] = set()
-    for query_rank in range(max((len(queries) for _, queries in unit_queries), default=0)):
-        for unit_id, queries in unit_queries:
+    for query_rank in range(max((len(queries) for _, _kinds, queries in unit_queries), default=0)):
+        for unit_id, kinds, queries in unit_queries:
             if query_rank >= len(queries):
                 continue
             query = queries[query_rank]
             semantic = str(query["semantic"])
             keywords = list(query["keywords"])
-            existing = selected_by_query.get(semantic)
+            query_key = (semantic, kinds)
+            existing = selected_by_query.get(query_key)
             if existing is not None:
                 unit_ids = existing["unit_ids"]
                 assert isinstance(unit_ids, list)
@@ -112,7 +117,9 @@ def select_plan_recall_queries(
                 "unit_ids": [unit_id] if unit_id else [],
                 "priority": query_rank,
             }
-            selected_by_query[semantic] = item
+            if kinds:
+                item["kinds"] = list(kinds)
+            selected_by_query[query_key] = item
             selected.append(item)
     return selected, reused_units_by_turn, emitted_queries, skipped_unit_ids
 
@@ -200,6 +207,11 @@ def build_plan_retrieval(
     inherited_episodes: list[dict[str, object]] = []
     inherited_queries: list[str] = []
     visited_reuse_sources: set[str] = set()
+    unit_kinds = {
+        str(unit.get("id") or ""): tuple(str(kind) for kind in (unit.get("kind") or []))
+        for unit in plan.get("intent_units") or []
+        if isinstance(unit, dict) and unit.get("id")
+    }
 
     def inherit_recall(source_turn_id: str, unit_ids: list[str]) -> None:
         if not source_turn_id or source_turn_id in visited_reuse_sources:
@@ -222,6 +234,12 @@ def build_plan_retrieval(
         )
         for item in source_retrieval.get("recall_memories") or []:
             if isinstance(item, dict):
+                if all(
+                    unit_kinds.get(unit_id)
+                    and str(item.get("kind") or "") not in unit_kinds[unit_id]
+                    for unit_id in unit_ids
+                ):
+                    continue
                 current = store.active_memory(str(item["kind"]), str(item["key"]))
                 if current is not None:
                     inherited_memories.append({
@@ -230,6 +248,12 @@ def build_plan_retrieval(
                     })
         for item in source_retrieval.get("reflection_memories") or []:
             if isinstance(item, dict):
+                if all(
+                    unit_kinds.get(unit_id)
+                    and str(item.get("kind") or "") not in unit_kinds[unit_id]
+                    for unit_id in unit_ids
+                ):
+                    continue
                 inherited_reflections.append(
                     {**copy.deepcopy(item), "unit_ids": unit_ids}
                 )
@@ -281,6 +305,7 @@ def build_plan_retrieval(
                 unit_ids=tuple(str(value) for value in item["unit_ids"]),
                 priority=int(item["priority"]),
                 semantic_expression=str(item["semantic_expression"]),
+                kinds=tuple(str(kind) for kind in item.get("kinds") or []),
             )
             for item in recall_queries
         ],

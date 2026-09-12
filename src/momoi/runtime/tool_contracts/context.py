@@ -3,6 +3,7 @@ import json
 from typing import Any
 
 from ...semantic.cue_contract import CUE_QUERY_CONTRACT
+from ...storage import MEMORY_KINDS
 
 
 NEW_EPISODE_REF = "new:<slug>"
@@ -31,7 +32,9 @@ def recall_correction(message: str) -> dict[str, Any]:
             "and an empty recall_from_turn_id; reuse requires [] and a displayed recalled Turn id; "
             "skip requires [] and an empty id. episode is an object: none, continue with a "
             "candidate ref, or new with new:<slug> and title. Choose from actual evidence; "
-            "the example only illustrates skip when supplied context is sufficient."
+            "the example only illustrates skip when supplied context is sufficient. "
+            "Each unit may optionally set kind to [] (all canonical memory kinds) or a "
+            "list such as [\"profile\", \"preference\"]; Episodes are separate."
         ),
         "example_arguments": copy.deepcopy(RECALL_SKIP_EXAMPLE),
     }
@@ -69,6 +72,18 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                 "shared information, incorporating corrections. "
                                 "Preserve uncertainty; do not add unstated needs or "
                                 "your intended response strategy."
+                            ),
+                        },
+                        "kind": {
+                            "type": "array",
+                            "minItems": 0,
+                            "maxItems": len(MEMORY_KINDS),
+                            "uniqueItems": True,
+                            "items": {"type": "string", "enum": sorted(MEMORY_KINDS)},
+                            "description": (
+                                "Optional memory-kind allowlist. Empty or omitted means all "
+                                "canonical kinds; use this to avoid importing unrelated memory. "
+                                "Episode summaries are searched separately and are not kinds."
                             ),
                         },
                         "recall_mode": {

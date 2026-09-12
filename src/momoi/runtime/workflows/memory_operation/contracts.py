@@ -30,7 +30,14 @@ _EVIDENCE = {
 _MEMORY = {
     "type": "object",
     "properties": {
-        "kind": {"type": "string", "enum": sorted(MEMORY_KINDS)},
+        "kind": {
+            "type": "string", "enum": sorted(MEMORY_KINDS),
+            "description": (
+                "Canonical subject kind: profile, preference, relationship, third_party, "
+                "practice, world_knowledge, self_insight, or cross_event_state. "
+                "A specific/shared experience is an Episode, never a memory."
+            ),
+        },
         "key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,199}$"},
         "content": {"type": "string", "minLength": 1, "maxLength": 2000},
         "activation": {"type": "string", "enum": sorted(MEMORY_ACTIVATIONS)},

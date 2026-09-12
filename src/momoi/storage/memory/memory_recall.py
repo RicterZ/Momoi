@@ -177,6 +177,9 @@ class MemoryRecallStore:
                 )
             ]
             for index, document in enumerate(documents):
+                allowed_kinds = set(query.kinds)
+                if allowed_kinds and str(candidates[index]["kind"]) not in allowed_kinds:
+                    continue
                 match = search_expression(
                     query.expression,
                     document,

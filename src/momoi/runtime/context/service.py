@@ -3,6 +3,7 @@ import uuid
 
 from ...models import IncomingMessage
 from ...storage import MemoryRecallQuery
+from ...storage import MEMORY_KINDS
 from ...storage.episode.episode_ranking import EpisodeRecallQuery
 from ...semantic.topic_selector import TOPIC_CANDIDATE_LIMIT, select_topics
 from ..agent.context_window import context_compaction_tokens
@@ -104,6 +105,19 @@ class ContextService:
             if not isinstance(raw.get("episode"), dict):
                 raise ValueError(f'{path}.episode: expected a JSON object, e.g. {{"action":"none"}}, not a string')
             unit_id = f"u{index}"
+            raw_kinds = raw.get("kind", [])
+            if raw_kinds is None:
+                raw_kinds = []
+            if (
+                not isinstance(raw_kinds, list)
+                or len(raw_kinds) > len(MEMORY_KINDS)
+                or len(set(raw_kinds)) != len(raw_kinds)
+                or any(not isinstance(kind, str) or kind not in MEMORY_KINDS for kind in raw_kinds)
+            ):
+                raise ValueError(
+                    f"{path}.kind: expected an optional unique array of canonical memory kinds; empty means all"
+                )
+            kinds = list(raw_kinds)
             mode = str(raw.get("recall_mode") or "search")
             queries = [
                 {
@@ -144,10 +158,12 @@ class ContextService:
                     "recall_mode": mode,
                     "recall_queries": queries if mode == "search" else [],
                     "recall_from_turn_id": from_turn_id if mode == "reuse" else "",
+                    "kind": kinds,
                     "recall": {
                         "mode": mode,
                         "from_turn_id": from_turn_id if mode == "reuse" else "",
                         "queries": queries if mode == "search" else [],
+                        "kind": kinds,
                     },
                 }
             )
@@ -258,6 +274,7 @@ class ContextService:
                         unit_ids=tuple(str(value) for value in item["unit_ids"]),
                         priority=int(item["priority"]),
                         semantic_expression=str(item["semantic_expression"]),
+                        kinds=tuple(str(kind) for kind in item.get("kinds") or []),
                     )
                     for item in selected
                 ],

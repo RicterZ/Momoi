@@ -54,8 +54,9 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                 "type": "array",
                 "maxItems": 12,
                 "description": (
-                    "Experiences, understandings, or knowledge worth retaining beyond "
-                    "today. May be empty; do not manufacture lessons to fill the list."
+                    "Durable claims worth retaining beyond today. May be empty; do not "
+                    "manufacture lessons to fill the list. Do not record a specific or "
+                    "shared experience/event; those belong to the Episode summary."
                 ),
                 "items": {
                     "type": "object",
@@ -73,8 +74,9 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                                 "usage; world_knowledge: observed knowledge about the world; "
                                 "self_insight: subjective understanding of your own feelings "
                                 "or tendencies; cross_event_state: a durable state that "
-                                "outlives the event that produced it. A shared experience "
-                                "belongs to the day's Episode, not here."
+                                "outlives the event that produced it. A specific or shared "
+                                "experience belongs to the day's Episode, not here; record "
+                                "only a durable claim matching the selected kind."
                             ),
                         },
                         "key": {

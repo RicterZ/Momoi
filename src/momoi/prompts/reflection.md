@@ -20,6 +20,10 @@ Typical flow:
   itself establish a cause, trait, or owner preference.
   Reflection remains fallible and cannot override the contract, Soul, owner intent,
   confirmed memory, or current evidence. Confirmed owner memory is read-only.
+  Never write a memory whose subject is merely a specific experience, event, or
+  shared experience (including "we did ..." or "that day ..."). Those belong only
+  to the Episode summary; a memory must be a durable claim matching one of the
+  canonical kinds in the reflection_finish schema.
 - Close threads only with evidence of completion, expiry, or replacement.
   Silence and a day boundary are insufficient.
 - Exclude credentials, tokens, cookies, sensitive headers, private configuration,

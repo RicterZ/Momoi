@@ -25,6 +25,9 @@ without a request.
   only records something that happened. If already represented, use noop or
   combine true duplicates. Similar subject alone does not make two facts
   duplicates.
+  A specific or shared experience (for example, "we went ..." or "that day ...")
+  is never a memory, regardless of emotional importance; keep it in the Episode
+  summary and only write a durable claim matching its canonical kind.
 - replace: resolve the identified old fact against the newer owner evidence.
   Preserve object, polarity, scope and conditions. If the target has since changed,
   reconcile against the current evidence, not the snapshot.

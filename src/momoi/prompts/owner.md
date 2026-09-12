@@ -15,6 +15,11 @@ recall → … → send_bubbles? / send_voice? → … → end_turn
 
 ## Recall scope
 
+- Each recall unit may include `kind: []` (all canonical memory kinds) or a
+  nonempty allowlist of canonical kinds such as `["profile", "preference"]`.
+  Use the narrowest list that answers the need; Episode summaries remain
+  separate and are never memory kinds.
+
 - Separate outcomes that can finish independently; a correction replaces the
   intent it revokes.
 - Assess whether supplied context leaves a historical question that could
