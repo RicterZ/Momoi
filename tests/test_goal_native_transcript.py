@@ -177,7 +177,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("Trusted autonomous event", current)
             self.assertEqual(
                 [message["role"] for message in provider.first_messages],
-                ["user", "user", "assistant", "user", "assistant", "user"],
+                ["user", "user", "assistant", "user", "assistant", "user", "user"],
             )
             self.assertIn("继续检查", str(provider.first_messages[1]["content"]))
             self.assertIn("好", str(provider.first_messages[2]["content"]))
