@@ -72,6 +72,7 @@ class ToolExecutor:
             "heartbeat_begin",
             "heartbeat_activity",
             "goal_review",
+            "plan_create", "plan_start",
         }:
             return "runtime"
         if self.mcp.has_tool(name):

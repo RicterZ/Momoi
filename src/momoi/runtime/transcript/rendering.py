@@ -1,3 +1,6 @@
+import json
+from xml.etree.ElementTree import Element, SubElement, tostring
+
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from xml.sax.saxutils import escape, quoteattr
@@ -123,7 +126,25 @@ def render_review(
     kind: str, text: str, identifier: int, completed_at: float, timezone: ZoneInfo
 ) -> str:
     timestamp = datetime.fromtimestamp(completed_at, timezone).isoformat(timespec="seconds")
-    prefix = {"goal": "G", "heartbeat": "H"}[kind]
+    if kind == "plan_step":
+        try:
+            record = json.loads(text)
+        except (ValueError, TypeError):
+            record = {"result": text}
+        if not isinstance(record, dict):
+            record = {"result": text}
+        root = Element("plan_step", id=f"P{identifier}", completed_at=timestamp)
+        for key in ("plan_id", "step_id", "status"):
+            if key in record:
+                root.set(key, str(record[key]))
+        SubElement(root, "result").text = str(record.get("result", ""))
+        outputs = SubElement(root, "outputs")
+        for ref in record.get("output_refs", []):
+            SubElement(outputs, "output", ref=str(ref))
+        if "plan_status" in record:
+            SubElement(root, "plan_status").text = str(record["plan_status"])
+        return tostring(root, encoding="unicode")
+    prefix = {"goal": "G", "heartbeat": "H", "plan_step": "P"}[kind]
     return (
         f'<{kind} id="{prefix}{identifier}" completed_at="{timestamp}">\n'
         f'{escape(text)}\n</{kind}>'
@@ -242,7 +263,7 @@ def render_messages(
     messages: list[dict[str, object]] = []
     previous: TranscriptGroup | None = None
     for group_index, group in enumerate(groups):
-        if group.role in {"event", "goal", "heartbeat"}:
+        if group.role in {"event", "goal", "heartbeat", "plan_step"}:
             lines = []
             for turn_id in group.turn_ids:
                 if (labels or {}).get(turn_id):

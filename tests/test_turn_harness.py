@@ -17,7 +17,7 @@ class TurnHarnessTest(unittest.TestCase):
                 for external_effect in (False, True):
                     with self.subTest(stage=stage, started=started, external_effect=external_effect):
                         workflow = stage in {
-                            "reflection", "memory_maintenance", "memory_operation",
+                            "plan_step", "reflection", "memory_maintenance", "memory_operation",
                             "episode_consolidate", "episode_anneal",
                             "current_state_maintenance",
                         }
@@ -91,7 +91,7 @@ class TurnHarnessTest(unittest.TestCase):
                 "memory_maintenance", "memory_operation",
                 "episode_consolidate",
                 "episode_anneal",
-                "current_state_maintenance",
+                "current_state_maintenance", "plan_step",
             },
         )
 
@@ -262,7 +262,7 @@ class TurnHarnessTest(unittest.TestCase):
                 terminal = ToolCall("terminal", spec.terminal_tool, {})
                 self.assertEqual(
                     harness.validate([work, terminal]),
-                    f"{spec.terminal_tool}_must_be_alone",
+                    f"{spec.terminal_tool}_must_be_alone" if spec.terminal_alone else None,
                 )
 
     def test_unknown_stage_cannot_fall_back_to_an_empty_harness(self) -> None:

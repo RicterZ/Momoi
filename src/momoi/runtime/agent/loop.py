@@ -24,6 +24,7 @@ from ..tool_contracts.context import recall_correction
 from ...storage.memory.current_state_contract import CURRENT_STATE_TRIGGER_STAGES
 from ..turn_support import (
     ExternalToolTurnError,
+    TurnBudgetExceeded,
     OwnerMessagesChanged,
     tool_error_block as _tool_error_block,
     tool_result_block,
@@ -98,6 +99,8 @@ class AgentLoop:
         )
         harness.validate_surface({str(tool["name"]) for tool in tools})
         while True:
+            if execution.max_rounds and llm_round >= execution.max_rounds:
+                raise TurnBudgetExceeded("model round limit reached")
             if reply_wait_turn and self.store.pending_owner_reply() is None:
                 return None
             updates = (
@@ -378,6 +381,8 @@ class AgentLoop:
             )
             batch = await self.tool_batch.execute(
                 ToolBatchRequest(
+                    system=model_round.request_system,
+                    context_messages=model_round.request_messages,
                     response=response,
                     messages=messages,
                     request_tools=request_tools,

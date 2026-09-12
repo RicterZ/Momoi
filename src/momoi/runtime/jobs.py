@@ -4,7 +4,7 @@ from dataclasses import dataclass, field, replace
 from typing import Literal
 
 
-JobKind = Literal["goal", "reflection", "memory_maintenance", "memory_operation", "heartbeat", "current_state_maintenance"]
+JobKind = Literal["plan_step", "goal", "reflection", "memory_maintenance", "memory_operation", "heartbeat", "current_state_maintenance"]
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,7 @@ class AutonomousJob:
         object.__setattr__(
             self,
             "priority",
-            {"current_state_maintenance": -1, "goal": 0, "memory_operation": 1, "reflection": 1, "memory_maintenance": 2, "heartbeat": 3}[
+            {"plan_step": 0, "current_state_maintenance": -1, "goal": 0, "memory_operation": 1, "reflection": 1, "memory_maintenance": 2, "heartbeat": 3}[
                 self.kind
             ],
         )

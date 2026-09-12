@@ -9,6 +9,18 @@ from collections.abc import Callable
 from ..episode.episode_claims import render_verified_claims
 
 
+from ..agenda.plans import PLAN_SCHEMA
+
+
+def _add_task_plans(database):
+    database.execute(PLAN_SCHEMA)
+
+
+def _add_plan_context(database):
+    if "context_json" not in _columns(database, "task_plans"):
+        database.execute("ALTER TABLE task_plans ADD COLUMN context_json TEXT")
+
+
 Migration = Callable[[sqlite3.Connection], None]
 
 
@@ -89,6 +101,10 @@ def _add_turn_workflow(database: sqlite3.Connection, workflow: str) -> None:
 
 def _add_memory_operation_workflow(database: sqlite3.Connection) -> None:
     _add_turn_workflow(database, "memory_operation")
+
+
+def _add_plan_step_workflow(database: sqlite3.Connection) -> None:
+    _add_turn_workflow(database, "plan_step")
 
 
 def _add_current_state_workflow(database: sqlite3.Connection) -> None:
@@ -551,6 +567,9 @@ MIGRATIONS: tuple[Migration, ...] = (
     _retire_episodic_and_recent_memories,
     _add_memory_operation_failures,
     _unify_memory_kinds,
+    _add_plan_step_workflow,
+    _add_task_plans,
+    _add_plan_context,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

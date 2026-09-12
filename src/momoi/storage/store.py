@@ -60,7 +60,10 @@ from .conversation.turn_commits import TurnCommitStore
 from .ops.webhooks import WebhookStore
 from .core.lifecycle import LifecycleStore
 
+from .agenda.plans import PlanStore
+
 class Store(
+    PlanStore,
     CurrentStateTaskStore,
     LifecycleStore,
     GoalStore,

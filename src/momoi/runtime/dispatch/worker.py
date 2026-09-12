@@ -48,7 +48,9 @@ class AgentWorker:
                     assert isinstance(job, AutonomousJob)
                     self._stop_requested = False
                     requeue_memory_maintenance = False
-                    if job.kind == "current_state_maintenance":
+                    if job.kind == "plan_step":
+                        work = self._complete_plan_step_turn(job.id, stop)
+                    elif job.kind == "current_state_maintenance":
                         if not self._current_state_batch_ready():
                             self._queued_current_state.discard(job.id)
                             self.agenda_changed.set()
@@ -224,6 +226,8 @@ class AgentWorker:
         own CancelledError handling; only scheduler claims need it here.
         Returns the turn_cancelled log fields for the job kind.
         """
+        if job.kind == "plan_step":
+            return {"plan_id": job.id}
         if job.kind == "heartbeat":
             self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
             return {}

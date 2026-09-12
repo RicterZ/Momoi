@@ -13,6 +13,7 @@ class TurnHarnessSpec:
     require_bubbles_before_progress_work: bool = False
     permitted_tools: frozenset[str] | None = None
     required_before_end: frozenset[str] = frozenset()
+    terminal_alone: bool = True
 
 
 TURN_HARNESS_SPECS = {
@@ -31,6 +32,7 @@ TURN_HARNESS_SPECS = {
             ),
         ),
         TurnHarnessSpec("goal", None, "end_turn", required_before_end=frozenset({"goal_review"})),
+        TurnHarnessSpec("plan_step", None, "plan_step_finish", terminal_alone=False),
         TurnHarnessSpec("reflection", None, "reflection_finish"),
         TurnHarnessSpec("memory_maintenance", None, "memory_maintenance_finish"),
         TurnHarnessSpec("memory_operation", None, "memory_operation_finish", permitted_tools=frozenset({"memory_operation_finish", "memory_operation_search"})),
@@ -146,7 +148,7 @@ class TurnHarness:
             terminal == "end_turn" and names[-1:] == [terminal]
             and all(name in {"send_bubbles", "send_voice"} for name in names[:-1])
         )
-        if terminal in names and not send_and_end and (len(names) != 1 or names[0] != terminal):
+        if self.spec.terminal_alone and terminal in names and not send_and_end and (len(names) != 1 or names[0] != terminal):
             return f"{terminal}_must_be_alone"
         if "end_turn" in names and has_assistant_text and "send_bubbles" not in names:
             return "send_bubbles_required_before_end_turn"

@@ -46,6 +46,7 @@ class CommandRouter:
         )
         if message.text.strip() == "/stop":
             stop_channel = self._channel_for(message.channel).name
+            self.store.stop_task_plans(stop_channel)
             cancelled_outbox = self.store.cancel_pending_outbox(
                 stop_channel, "owner_stop"
             )

@@ -91,6 +91,7 @@ class MomoiDaemon(
         accounting = balance.accounting if balance is not None else None
         if accounting is not None:
             self.store.set_usage_accounting(accounting)
+        self.store.recover_task_plans()
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
         self.memory_tools = MemoryTools(

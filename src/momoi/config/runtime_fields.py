@@ -11,6 +11,7 @@ THINKING_STAGES = {
     "reply_followup": "回复跟进",
     "webhook": "Webhook",
     "goal": "目标执行",
+    "plan_step": "Plan 步骤执行",
     "reflection": "每日复盘",
     "memory_maintenance": "记忆维护",
     "memory_operation": "记忆操作",

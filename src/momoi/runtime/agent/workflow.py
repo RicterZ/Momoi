@@ -16,6 +16,7 @@ class TurnExecutionSpec:
     """Non-combinable execution contract for one shared Agent loop."""
 
     stage: str
+    max_rounds: int = 0
     goal_id: str | None = None
     allowed_capabilities: frozenset[str] | None = None
     artifact_root: Path | None = None

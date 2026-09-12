@@ -18,6 +18,7 @@ from ..tool_contracts.runtime import (
     READ_TOOL_RESULT_SPEC,
     tool_enable_spec,
 )
+from ..tool_contracts.plan import PLAN_TOOLS, PLAN_STEP_FINISH
 from .progress import public_tool_spec, requires_owner_progress
 from ..tool_contracts.voice import SEND_VOICE_TOOL_SPEC
 
@@ -39,7 +40,7 @@ class ToolSurface:
         return [public_tool_spec(spec) for spec in specs]
 
     def owner_progress_tool_names(self) -> frozenset[str]:
-        specs = [*AGENDA_TOOL_SPECS, *self.builtin_specs, *self.mcp.tool_specs]
+        specs = [*PLAN_TOOLS, *AGENDA_TOOL_SPECS, *self.builtin_specs, *self.mcp.tool_specs]
         return frozenset(
             str(spec.get("name") or "")
             for spec in specs
@@ -113,6 +114,8 @@ class ToolSurface:
             *copy.deepcopy(MEMORY_TOOL_SPECS),
             *copy.deepcopy(THINKING_TOOL_SPECS),
             *self.public_specs(AGENDA_TOOL_SPECS),
+            *self.public_specs(PLAN_TOOLS),
+            copy.deepcopy(PLAN_STEP_FINISH),
             *self.public_specs(self.builtin_specs),
             *([tool_enable_spec(catalog)] if catalog else []),
             current_state_finish_spec(),
@@ -143,7 +146,7 @@ class ToolSurface:
             *external,
         }
         if stage == "owner":
-            return frozenset(general_chat)
+            return frozenset(general_chat | {"plan_create", "plan_start"})
         if stage == "heartbeat":
             return frozenset(
                 {

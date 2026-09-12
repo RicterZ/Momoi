@@ -19,7 +19,11 @@ from .workflows import (
 )
 
 
+from .workflows.plan import PlanWorkflow
+
+
 class TurnRunner(
+    PlanWorkflow,
     CurrentStateWorkflow,
     EpisodeAnnealingWorkflow,
     EpisodeConsolidationWorkflow,

@@ -46,6 +46,11 @@ _HEARTBEAT_RECORD_SQL = """(
     AND json_extract(m.source_event_ids_json, '$[0]')='heartbeat-record:' || m.turn_id
 )"""
 
+_PLAN_RECORD_SQL = """(
+    m.role='assistant' AND m.delivery_state='internal'
+    AND json_extract(m.source_event_ids_json, '$[0]')='plan-step-record:' || m.turn_id
+)"""
+
 _MESSAGE_TIME_SQL = """CASE WHEN m.role='event' THEN COALESCE(wr.created_at, m.created_at)
                             ELSE m.created_at END"""
 
@@ -62,7 +67,7 @@ class TranscriptStore:
                    SELECT 1 FROM messages AS m
                    WHERE m.turn_id=t.id
                      AND (
-                         m.role IN ('user', 'event') OR {_GOAL_RECORD_SQL} OR {_HEARTBEAT_RECORD_SQL}
+                         m.role IN ('user', 'event') OR {_GOAL_RECORD_SQL} OR {_HEARTBEAT_RECORD_SQL} OR {_PLAN_RECORD_SQL}
                          OR m.role='assistant'
                             AND m.delivery_state IN ('delivered', 'uncertain', 'queued')
                      )
@@ -95,7 +100,7 @@ class TranscriptStore:
                              SELECT 1 FROM messages AS m
                              WHERE m.turn_id=t.id
                                AND (
-                                   m.role IN ('user', 'event') OR {_GOAL_RECORD_SQL} OR {_HEARTBEAT_RECORD_SQL}
+                                   m.role IN ('user', 'event') OR {_GOAL_RECORD_SQL} OR {_HEARTBEAT_RECORD_SQL} OR {_PLAN_RECORD_SQL}
                                    OR m.role='assistant'
                                       AND m.delivery_state IN (
                                           'delivered', 'uncertain', 'queued'
@@ -155,7 +160,7 @@ class TranscriptStore:
                    SELECT 1 FROM messages AS m
                    WHERE m.turn_id=t.id
                      AND (
-                         m.role IN ('user', 'event') OR {_GOAL_RECORD_SQL} OR {_HEARTBEAT_RECORD_SQL}
+                         m.role IN ('user', 'event') OR {_GOAL_RECORD_SQL} OR {_HEARTBEAT_RECORD_SQL} OR {_PLAN_RECORD_SQL}
                          OR m.role='assistant'
                             AND m.delivery_state IN ('delivered', 'uncertain', 'queued')
                      )
@@ -206,7 +211,7 @@ class TranscriptStore:
         rows = self._db.execute(
             f"""SELECT m.id, m.turn_id,
                        CASE WHEN {_GOAL_RECORD_SQL} THEN 'goal'
-                            WHEN {_HEARTBEAT_RECORD_SQL} THEN 'heartbeat' ELSE m.role END AS role,
+                            WHEN {_HEARTBEAT_RECORD_SQL} THEN 'heartbeat' WHEN {_PLAN_RECORD_SQL} THEN 'plan_step' ELSE m.role END AS role,
                        m.content,
                        {_MESSAGE_TIME_SQL} AS created_at,
                        m.delivery_state,
@@ -218,7 +223,7 @@ class TranscriptStore:
                   ON m.turn_id=('webhook:' || ws.run_id || ':' || ws.step_index)
                 LEFT JOIN webhook_runs AS wr ON wr.id=ws.run_id
                 WHERE {scope}
-                  AND ({_GOAL_RECORD_SQL} OR {_HEARTBEAT_RECORD_SQL} OR m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain', 'queued'))
+                  AND ({_GOAL_RECORD_SQL} OR {_HEARTBEAT_RECORD_SQL} OR {_PLAN_RECORD_SQL} OR m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain', 'queued'))
                 ORDER BY m.id""",
             tuple(parameters),
         ).fetchall()

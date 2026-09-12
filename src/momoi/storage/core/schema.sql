@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS turns (
     workflow_kind TEXT CHECK (workflow_kind IN (
         'owner', 'webhook', 'goal', 'heartbeat', 'reply_followup',
         'reflection', 'memory_maintenance', 'memory_operation', 'episode_consolidate',
-        'episode_anneal', 'current_state_maintenance'
+        'episode_anneal', 'current_state_maintenance', 'plan_step'
     )),
     source_ids_json TEXT NOT NULL,
     state TEXT NOT NULL CHECK (
