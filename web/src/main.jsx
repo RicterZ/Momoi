@@ -2528,26 +2528,16 @@ function ThinkingDetail({ item, calls, recall }) {
       </header>
       {recall && !recallHasEvidence ? <RecallDetail recall={recall} /> : null}
       <div className="messages">
-        {item?.plan_id || item?.plan ? (
-          <div className="plan-inline-overview">
-            <span className="panel-label">PLAN // 执行计划</span>
-            {(item.plan || item).steps?.map((step, index) => (
-              <div className="plan-inline-step" key={step.id || index}>
-                <span>STEP {step.id || index + 1}</span><strong>{step.task}</strong><em>{step.status || "pending"}</em>
-              </div>
-            ))}
-          </div>
-        ) : null}
         {flow.map((call, index) => (
           <Fragment key={call.call_id}>
-            {call.plan_step_id && (index === 0 || flow[index - 1]?.plan_step_id !== call.plan_step_id) ? (
-              <div className="plan-step-marker"><span>STEP {call.plan_step_id}</span><strong>{call.plan_step_task || "执行计划步骤"}</strong><em>{call.plan_step_status || "pending"}</em></div>
-            ) : null}
             <article className="message">
               <div className="message-role momoi">
                 {thinkingStageCode(call.stage)}
               </div>
               <div className="message-body">
+                {call.plan_step_id && (index === 0 || flow[index - 1]?.plan_step_id !== call.plan_step_id) ? (
+                  <div className="plan-step-marker"><span>STEP {call.plan_step_id}</span><strong>{call.plan_step_task || "执行计划步骤"}</strong><em>{call.plan_step_status || "pending"}</em></div>
+                ) : null}
                 <p className="message-content thinking-body">
                   {call.reasoning || call.excerpt || "这次调用没有可见推理。"}
                 </p>

@@ -1681,11 +1681,9 @@ a.tag:hover {
   background: var(--surface);
   box-shadow: 4px 4px 0 var(--pink);
 }
-.plan-inline-overview { margin: 0 0 16px 52px; padding: 10px 12px; border-left: 3px solid var(--pink); background: var(--wash); }
-.plan-inline-step { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); }
-.plan-inline-step:last-child { border-bottom: 0; }
-.plan-inline-step span,.plan-inline-step em { color: var(--muted); font: 850 9px/1 ui-monospace,monospace; }
-.plan-inline-step strong { font-size: 12px; }
+.plan-step-marker { display:grid; grid-template-columns:58px minmax(0,1fr) auto; gap:8px; align-items:baseline; margin:0 0 12px; padding:0 0 10px; border-bottom:1px solid var(--line); }
+.plan-step-marker span,.plan-step-marker em { color:var(--muted); font:850 9px/1 ui-monospace,monospace; }
+.plan-step-marker strong { font-size:12px; }
 .plan-step-marker { display:flex; align-items:center; gap:10px; margin:14px 0 6px; padding:8px 10px; border-left:4px solid var(--pink); background:var(--wash); }
 .plan-step-marker span,.plan-step-marker em { font:850 9px/1 ui-monospace,monospace; color:var(--muted); }
 .plan-step-marker strong { flex:1; font-size:12px; }
