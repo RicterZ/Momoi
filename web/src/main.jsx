@@ -2487,6 +2487,13 @@ function ThinkingDetail({ item, calls, recall }) {
   const titleItem = item?.stages?.length || item?.stage
     ? item
     : { stages: flow.map((call) => call.stage) };
+  // Recall is persisted once per Turn; place that single panel after the
+  // complete CUES sequence instead of duplicating it for each CUES call.
+  const lastCuesIndex = flow.reduce(
+    (last, call, index) =>
+      ["topic_selection", "episode_cue_admit"].includes(call.stage) ? index : last,
+    -1,
+  );
   return (
     <>
       <header className={`conversation-head${recall ? " has-recall" : ""}`}>
@@ -2501,26 +2508,29 @@ function ThinkingDetail({ item, calls, recall }) {
         ) : null}
       </header>
       <div className="messages">
-        {flow.map((call) => (
+        {flow.map((call, index) => (
           <Fragment key={call.call_id}>
-          <article className="message">
-            <div className="message-role momoi">
-              {thinkingStageCode(call.stage)}
-            </div>
-            <div className="message-body">
-              <p className="message-content thinking-body">
-                {call.reasoning || call.excerpt || "这次调用没有可见推理。"}
-              </p>
-              <div className="message-meta">
-                <time>{formatDate(call.created_at)}</time>
-                <span>
-                  {thinkingStageLabel(call.stage)}
-                  {call.tools?.length ? ` · ${call.tools.join(" / ")}` : ""}
-                </span>
+            <article className="message">
+              <div className="message-role momoi">
+                {thinkingStageCode(call.stage)}
               </div>
-            </div>
-          </article>
-          {call.stage === "topic_selection" ? <RecallDetail recall={recall} /> : null}
+              <div className="message-body">
+                <p className="message-content thinking-body">
+                  {call.reasoning || call.excerpt || "这次调用没有可见推理。"}
+                </p>
+                <div className="message-meta">
+                  <time>{formatDate(call.created_at)}</time>
+                  <span>
+                    {thinkingStageLabel(call.stage)}
+                    {call.tools?.length ? ` · ${call.tools.join(" / ")}` : ""}
+                  </span>
+                </div>
+              </div>
+            </article>
+            {((lastCuesIndex >= 0 && index === lastCuesIndex) ||
+              (lastCuesIndex < 0 && index === flow.length - 1)) ? (
+              <RecallDetail recall={recall} />
+            ) : null}
           </Fragment>
         ))}
       </div>
