@@ -183,12 +183,25 @@ class ToolBatchExecutor:
                     if execution.goal_id else {"ok": False, "error": "tool_not_allowed"}
                 )
             elif call.name == "recall":
-                result = await recall_owner_context(
-                    call,
-                    current_events=request.current_events,
+                # Recall can issue its own topic-selection model request.  Preserve
+                # the enclosing Turn so that its CUES reasoning is part of this
+                # timeline rather than an orphaned thinking record.
+                with log_context(
+                    stage=execution.stage,
                     turn_id=request.turn_id,
-                    submit_context=request.submit_owner_context,
-                )
+                    call_id=request.call_id,
+                    round=request.round_number,
+                    channel=request.delivery_channel.name,
+                    goal_id=execution.goal_id,
+                    tool_call_id=call.id,
+                    tool_name=call.name,
+                ):
+                    result = await recall_owner_context(
+                        call,
+                        current_events=request.current_events,
+                        turn_id=request.turn_id,
+                        submit_context=request.submit_owner_context,
+                    )
                 if result.get("ok"):
                     record = self.store.context_plan(request.turn_id)
                     recalled = record.get("retrieval", {}).get("recall_memories", []) if record else []

@@ -93,23 +93,29 @@ def test_runtime_prefilter_bypasses_gate_and_keeps_selection_order(tmp_path):
 
 def test_configured_effort_applies_to_initial_call_and_repair():
     from momoi.integrations.request_context import model_request
+    from momoi.observability.context import current_log_context, log_context
     rows = [dict(id='a', title='topic')]
     store = SimpleNamespace(topic_conversation_time=lambda _: None)
     for effort in ['low', 'medium', 'high', 'xhigh', 'max', '']:
         seen = []
+        call_contexts = []
 
         async def complete(*args, **kwargs):
-            from momoi.observability.context import current_log_context
             assert current_log_context()['stage'] == 'topic_selection'
+            call_contexts.append(current_log_context())
             seen.append(requested_thinking_effort('provider-default'))
             return response([9] if len(seen) == 1 else [0])
 
         async def run():
-            with model_request(thinking_effort='high'):
-                result = await select_topics(SimpleNamespace(complete=complete), store,
-                                             'request', [], rows, thinking_effort=effort)
-                assert requested_thinking_effort() == 'high'
-                return result
+            with log_context(turn_id='turn-one', call_id='owner-call', round=3):
+                with model_request(thinking_effort='high'):
+                    result = await select_topics(SimpleNamespace(complete=complete), store,
+                                                 'request', [], rows, thinking_effort=effort)
+                    assert requested_thinking_effort() == 'high'
+                    return result
 
         assert asyncio.run(run()) == rows
         assert seen == [effort or 'provider-default'] * 2
+        assert [context['turn_id'] for context in call_contexts] == ['turn-one'] * 2
+        assert all(context['call_id'] != 'owner-call' for context in call_contexts)
+        assert len({context['call_id'] for context in call_contexts}) == 2

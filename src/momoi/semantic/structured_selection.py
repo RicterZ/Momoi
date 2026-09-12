@@ -2,7 +2,7 @@
 import asyncio
 
 from ..integrations.request_context import model_request
-from ..observability.context import log_context
+from ..observability.context import log_context, new_trace_id
 
 
 class SelectionProtocolError(ValueError):
@@ -13,7 +13,14 @@ async def select_structured(provider, system, messages, spec, parse, *, timeout,
     async def run():
         conversation = list(messages)
         for attempt in range(2):
-            with log_context(stage=stage), model_request(thinking_effort=thinking_effort):
+            # This selection is a distinct model call nested in an Owner turn.
+            # Keep the inherited turn id, but never reuse the Owner call id:
+            # the thinking store keys calls by call_id and would otherwise
+            # overwrite the Owner's preceding reasoning.
+            with log_context(
+                stage=stage,
+                call_id=new_trace_id(),
+            ), model_request(thinking_effort=thinking_effort):
                 response = await provider.complete(
                     system, conversation, [spec], required_tool=spec["name"],
                 )
