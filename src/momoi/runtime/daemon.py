@@ -156,6 +156,7 @@ class MomoiDaemon(
             self._owner_message_changed,
             self._channel_for,
         )
+        self._pending_webhook_jobs: dict[str, Any] = {}
         self.webhook_requests: asyncio.Queue[
             tuple[str, str, asyncio.Future[AgentReply]]
         ] = asyncio.Queue()

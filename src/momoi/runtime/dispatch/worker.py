@@ -181,10 +181,23 @@ class AgentWorker:
             return "owner", stopped
         if self._deferred_incoming:
             return "owner", self._deferred_incoming.popleft()
-        if not self.webhook_requests.empty():
-            return "webhook", await self.webhook_requests.get()
-        if not self.autonomous.empty():
-            return "goal", self._next_autonomous()
+        # Owner is the only out-of-band priority. Webhooks participate in the
+        # same aging competition as every autonomous job.
+        autonomous_candidates = []
+        while not self.autonomous.empty():
+            autonomous_candidates.append(self.autonomous.get_nowait())
+        while not self.webhook_requests.empty():
+            prompt, turn_id, future = self.webhook_requests.get_nowait()
+            autonomous_candidates.append(AutonomousJob("webhook", turn_id))
+            self._pending_webhook_jobs[turn_id] = (prompt, turn_id, future)
+        if autonomous_candidates:
+            chosen = min(autonomous_candidates, key=lambda item: (item.effective_priority, -item.wait_rounds))
+            for item in autonomous_candidates:
+                if item is chosen: continue
+                self.autonomous.put_nowait(item.waited())
+            if chosen.kind == "webhook":
+                return "webhook", self._pending_webhook_jobs.pop(chosen.id)
+            return "goal", chosen
         owner = asyncio.create_task(self.incoming.get())
         webhook = asyncio.create_task(self.webhook_requests.get())
         goal = asyncio.create_task(self.autonomous.get())
@@ -198,7 +211,7 @@ class AgentWorker:
                 {owner, webhook, goal}, return_when=asyncio.FIRST_COMPLETED
             )
             chosen_kind = next(
-                kind for kind in ("owner", "webhook", "goal") if tasks[kind][0] in done
+                kind for kind in ("owner", "goal", "webhook") if tasks[kind][0] in done
             )
             chosen = tasks[chosen_kind][0]
             for kind, (task, queue) in tasks.items():
