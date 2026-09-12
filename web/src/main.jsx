@@ -2491,7 +2491,9 @@ function ThinkingDetail({ item, calls, recall }) {
   if (!flow.length) return <Empty text="这个 Turn 还没有思考记录。" />;
   const episodeId = item?.episode_id;
   const episodeTitle = item?.episode_title || "查看聊天记录";
-  const titleItem = item?.stages?.length || item?.stage
+  const titleItem = item?.plan_id || item?.plan
+    ? { ...item, stages: ["plan_step"], excerpt: item.title || item.excerpt }
+    : item?.stages?.length || item?.stage
     ? item
     : { stages: flow.map((call) => call.stage) };
   // A recall can be recorded even when every candidate is filtered out. Keep
@@ -2513,9 +2515,8 @@ function ThinkingDetail({ item, calls, recall }) {
   );
   return (
     <>
-      {item?.plan_id || item?.plan ? <PlanTimeline plan={item.plan || item} calls={flow} /> : null}
       <header className={`conversation-head${recall ? " has-recall" : ""}`}>
-        <h2>{thinkingFlowTitle(titleItem)}</h2>
+        <h2>{item?.plan_id || item?.plan ? (item.title || item.plan?.title || "执行计划") : thinkingFlowTitle(titleItem)}</h2>
         {episodeId ? (
           <a
             className="tag thinking-conversation"
@@ -2527,6 +2528,16 @@ function ThinkingDetail({ item, calls, recall }) {
       </header>
       {recall && !recallHasEvidence ? <RecallDetail recall={recall} /> : null}
       <div className="messages">
+        {item?.plan_id || item?.plan ? (
+          <div className="plan-inline-overview">
+            <span className="panel-label">PLAN // 执行计划</span>
+            {(item.plan || item).steps?.map((step, index) => (
+              <div className="plan-inline-step" key={step.id || index}>
+                <span>STEP {step.id || index + 1}</span><strong>{step.task}</strong><em>{step.status || "pending"}</em>
+              </div>
+            ))}
+          </div>
+        ) : null}
         {flow.map((call, index) => (
           <Fragment key={call.call_id}>
             {call.plan_step_id && (index === 0 || flow[index - 1]?.plan_step_id !== call.plan_step_id) ? (
@@ -2557,16 +2568,6 @@ function ThinkingDetail({ item, calls, recall }) {
         ))}
       </div>
     </>
-  );
-}
-
-function PlanTimeline({ plan, calls }) {
-  const steps = plan?.steps || [];
-  return (
-    <details className="plan-panel" open>
-      <summary className="plan-panel-head"><div className="plan-panel-title"><span className="panel-label">PLAN // 执行计划</span><h3>{plan.title || "计划任务"}</h3><p>{plan.request || ""}</p></div><div className="plan-panel-summary"><span>{steps.length} 步</span><span>{plan.status || ""}</span></div><span className="plan-panel-toggle" aria-hidden="true" /></summary>
-      <div className="plan-panel-body"><div className="plan-steps">{steps.map((step, index) => <div className={`plan-step-card is-${step.status || "pending"}`} key={step.id || index}><div className="plan-step-card-head"><span>STEP {step.id || index + 1}</span><b>{step.status || "pending"}</b></div><p>{step.task}</p>{step.result ? <small>{step.result}</small> : null}</div>)}</div></div>
-    </details>
   );
 }
 

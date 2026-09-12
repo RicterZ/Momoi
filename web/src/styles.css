@@ -1675,28 +1675,17 @@ a.tag:hover {
 }
 
 .recall-panel,
-.settings-panel,
-.plan-panel {
+.settings-panel {
   border: 2px solid var(--ink);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: 4px 4px 0 var(--pink);
 }
-.plan-panel { margin: 0 0 24px; overflow: hidden; }
-.plan-panel-head { position:relative; display:grid; grid-template-columns:minmax(0,1fr) auto 30px; gap:14px; align-items:center; padding:18px 20px; cursor:pointer; list-style:none; }
-.plan-panel-head::-webkit-details-marker { display:none; }
-.plan-panel[open] .plan-panel-head { border-bottom:2px solid var(--ink); }
-.plan-panel-title h3 { margin:4px 0 0; font-size:18px; }
-.plan-panel-title p { margin:5px 0 0; color:var(--muted); font-size:11px; }
-.plan-panel-summary { display:flex; gap:6px; }
-.plan-panel-summary span,.plan-step-card-head b { padding:5px 7px; border:1px solid var(--ink); font-size:9px; font-weight:850; }
-.plan-panel-body { padding:18px; background:linear-gradient(var(--wash) 1px,transparent 1px),linear-gradient(90deg,var(--wash) 1px,transparent 1px),var(--canvas); background-size:22px 22px; }
-.plan-steps { display:grid; gap:10px; }
-.plan-step-card { padding:12px; border:2px solid var(--ink); border-radius:9px; background:var(--surface); box-shadow:3px 3px 0 var(--blue); }
-.plan-step-card:nth-child(even) { box-shadow:3px 3px 0 var(--pink); }
-.plan-step-card-head { display:flex; justify-content:space-between; color:var(--muted); font:850 10px/1 ui-monospace,monospace; }
-.plan-step-card p { margin:10px 0 0; font-weight:650; }
-.plan-step-card small { display:block; margin-top:8px; color:var(--muted); white-space:pre-wrap; }
+.plan-inline-overview { margin: 0 0 16px 52px; padding: 10px 12px; border-left: 3px solid var(--pink); background: var(--wash); }
+.plan-inline-step { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.plan-inline-step:last-child { border-bottom: 0; }
+.plan-inline-step span,.plan-inline-step em { color: var(--muted); font: 850 9px/1 ui-monospace,monospace; }
+.plan-inline-step strong { font-size: 12px; }
 .plan-step-marker { display:flex; align-items:center; gap:10px; margin:14px 0 6px; padding:8px 10px; border-left:4px solid var(--pink); background:var(--wash); }
 .plan-step-marker span,.plan-step-marker em { font:850 9px/1 ui-monospace,monospace; color:var(--muted); }
 .plan-step-marker strong { flex:1; font-size:12px; }

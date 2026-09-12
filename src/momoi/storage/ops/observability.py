@@ -247,12 +247,22 @@ class ObservabilityStore:
         )
         # Plan steps are separate Turns for execution/audit, but one item in
         # the dashboard should represent the whole Plan timeline.
-        plan_rows = self._db.execute("SELECT id, title, request, steps_json, status, created_at, updated_at FROM task_plans").fetchall()
+        plan_sql = "SELECT id, title, request, steps_json, status, created_at, updated_at FROM task_plans"
+        plan_args: tuple[float, float] | tuple[()] = ()
+        if after is not None and before is not None:
+            plan_sql += " WHERE created_at < ? AND updated_at >= ?"
+            plan_args = (before, after)
+        plan_rows = self._db.execute(plan_sql, plan_args).fetchall()
         by_turn = {str(item.get("turn_id") or ""): item for item in turns}
         consumed: set[str] = set()
         plan_items: list[dict[str, object]] = []
         for row in plan_rows:
-            steps = json.loads(row["steps_json"] or "[]")
+            try:
+                steps = json.loads(row["steps_json"] or "[]")
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(steps, list):
+                continue
             turn_ids = [str(step.get("turn_id") or "") for step in steps if step.get("turn_id")]
             members = [by_turn[tid] for tid in turn_ids if tid in by_turn]
             # A large thinking store may omit older calls from the broad
