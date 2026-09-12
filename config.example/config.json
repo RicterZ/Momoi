@@ -76,6 +76,9 @@
     "idle_seconds": 60,
     "max_seconds": 650
   },
+  "current_state": {
+    "max_seconds": 180
+  },
   "webhooks": {
     "enabled": false,
     "host": "127.0.0.1",

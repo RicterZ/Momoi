@@ -12,6 +12,7 @@ from .models import (
     ConfigError,
     DashboardConfig,
     EpisodeAnnealingConfig,
+    CurrentStateConfig,
     HeartbeatConfig,
     NotificationConfig,
     ReflectionConfig,
@@ -46,6 +47,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         "heartbeat",
         "reflection",
         "episode_annealing",
+        "current_state",
         "thinking",
     }
     if unknown := set(raw) - allowed:
@@ -142,6 +144,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
     heartbeat_raw = mapping(raw.get("heartbeat", {}), "heartbeat")
     reflection_raw = mapping(raw.get("reflection", {}), "reflection")
     annealing_raw = mapping(raw.get("episode_annealing", {}), "episode_annealing")
+    current_state_raw = mapping(raw.get("current_state", {}), "current_state")
     from ..integrations.fields import normalize_fields
 
     thinking = normalize_fields(
@@ -154,6 +157,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         ("heartbeat", heartbeat_raw, {"enabled", "initial_delay_seconds", "min_interval_seconds", "max_interval_seconds"}),
         ("reflection", reflection_raw, {"enabled", "at"}),
         ("episode_annealing", annealing_raw, {"enabled", "idle_seconds", "max_seconds"}),
+        ("current_state", current_state_raw, {"max_seconds"}),
     ):
         if unknown := section.keys() - allowed:
             raise ConfigError(f"unknown {name} field: {sorted(unknown)[0]}")
@@ -319,6 +323,12 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
             max_seconds=positive(
                 annealing_raw.get("max_seconds", 650),
                 "episode_annealing.max_seconds",
+            ),
+        ),
+        current_state=CurrentStateConfig(
+            max_seconds=positive(
+                current_state_raw.get("max_seconds", 180),
+                "current_state.max_seconds",
             ),
         ),
         workspace=config_path.parent,

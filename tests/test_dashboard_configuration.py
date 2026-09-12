@@ -221,12 +221,13 @@ class ConfigurationManagerTest(unittest.TestCase):
     def test_app_fields_expose_enum_types_defaults_and_are_isolated(self):
         snapshot = self.manager.snapshot()
         fields = snapshot["app_fields"]
-        self.assertEqual(set(fields), {"heartbeat", "logging", "reflection", "episode_annealing", "thinking", "tools"})
+        self.assertEqual(set(fields), {"heartbeat", "logging", "reflection", "episode_annealing", "current_state", "thinking", "tools"})
         self.assertEqual(fields["logging"]["fields"]["level"]["enum"], ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
         self.assertEqual(fields["reflection"]["fields"]["at"]["format"], "time")
         self.assertEqual(snapshot["app"]["reflection"]["at"], "03:00")
         self.assertTrue(snapshot["app"]["episode_annealing"]["enabled"])
         self.assertTrue(snapshot["app"]["heartbeat"]["enabled"])
+        self.assertEqual(fields["current_state"]["fields"]["max_seconds"]["default"], 180)
         fields["logging"]["fields"]["level"]["enum"].append("INVALID")
         self.assertNotIn("INVALID", self.manager.snapshot()["app_fields"]["logging"]["fields"]["level"]["enum"])
 

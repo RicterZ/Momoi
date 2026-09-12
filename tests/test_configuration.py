@@ -66,6 +66,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertTrue(config.episode_annealing.enabled)
             self.assertEqual(config.episode_annealing.idle_seconds, 60)
             self.assertEqual(config.episode_annealing.max_seconds, 650)
+            self.assertEqual(config.current_state.max_seconds, 180)
             self.assertEqual(
                 [type(item) for item in config.channel_configs],
                 [NapCatConfig, WeixinConfig],
@@ -101,6 +102,7 @@ class ConfigurationTest(unittest.TestCase):
                 ("tools", "result_max_chars"): 999,
                 ("turn", "max_total_tokens"): -1,
                 ("turn", "max_protocol_retries"): 0,
+                ("current_state", "max_seconds"): 0,
             }
             for (section, setting), invalid_value in invalid.items():
                 with self.subTest(setting=f"{section}.{setting}"):

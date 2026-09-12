@@ -3,6 +3,7 @@ import copy
 import json
 import sqlite3
 import time
+from dataclasses import replace
 from importlib.resources import files
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -11,7 +12,7 @@ from xml.etree import ElementTree
 import pytest
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig
+from momoi.config.models import AppConfig, CurrentStateConfig
 from momoi.integrations.models import LLMConfig
 from momoi.models import (
     IncomingMessage,
@@ -448,14 +449,14 @@ def test_failed_maintenance_preserves_source_and_retries_without_overwriting(
     daemon.provider = SimpleNamespace(
         complete=complete, config=SimpleNamespace(api_format="anthropic")
     )
-    with patch(
-        "momoi.runtime.workflows.current_state.MAINTENANCE_TIMEOUT_SECONDS", 0.02
-    ):
-        if failure == "cancel":
-            with pytest.raises(asyncio.CancelledError):
-                asyncio.run(daemon._complete_current_state_task("source"))
-        else:
+    daemon.config = replace(
+        daemon.config, current_state=CurrentStateConfig(max_seconds=0.02)
+    )
+    if failure == "cancel":
+        with pytest.raises(asyncio.CancelledError):
             asyncio.run(daemon._complete_current_state_task("source"))
+    else:
+        asyncio.run(daemon._complete_current_state_task("source"))
     assert not any(
         slot.key == "availability"
         for slot in daemon.store.current_state.snapshot().slots

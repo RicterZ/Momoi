@@ -18,7 +18,6 @@ from ..turn_support import PROMPT_ROOT, live_prompt, context_data_message
 
 logger = logging.getLogger(__name__)
 PROMPT_PATH = PROMPT_ROOT.joinpath("current_state.md")
-MAINTENANCE_TIMEOUT_SECONDS = 30
 
 
 class CurrentStateWorkflow:
@@ -61,7 +60,7 @@ class CurrentStateWorkflow:
         try:
             await asyncio.wait_for(
                 self._run_current_state_task(batch),
-                timeout=MAINTENANCE_TIMEOUT_SECONDS,
+                timeout=self.config.current_state.max_seconds,
             )
         except asyncio.CancelledError:
             self.store.release_current_state_batch(

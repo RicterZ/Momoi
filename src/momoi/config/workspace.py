@@ -42,6 +42,7 @@ def default_config() -> dict:
         "heartbeat": {"enabled": True},
         "reflection": {"enabled": False},
         "episode_annealing": {"enabled": True},
+        "current_state": {"max_seconds": 180},
     }
 
 

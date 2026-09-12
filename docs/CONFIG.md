@@ -467,6 +467,20 @@ by new messages remain in place.
 | `idle_seconds` | `60` | Non-negative owner-idle time before a partial batch of fewer than 6 eligible Turns may run; a full 6-Turn batch does not wait for this timeout |
 | `max_seconds` | `650` | Positive model-time limit for one batch |
 
+## Current-state maintenance
+
+```json
+{
+  "current_state": {
+    "max_seconds": 180
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `max_seconds` | `180` | Positive model-time limit for one current-state maintenance batch |
+
 ## Webhooks
 
 ```json

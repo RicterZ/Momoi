@@ -55,6 +55,11 @@ class EpisodeAnnealingConfig:
 
 
 @dataclass(frozen=True)
+class CurrentStateConfig:
+    max_seconds: float = 180
+
+
+@dataclass(frozen=True)
 class AppConfig:
     providers: "ProviderCatalog"
     channel: object
@@ -87,6 +92,7 @@ class AppConfig:
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     reflection: ReflectionConfig = ReflectionConfig()
     episode_annealing: EpisodeAnnealingConfig = EpisodeAnnealingConfig()
+    current_state: CurrentStateConfig = CurrentStateConfig()
     workspace: Path | None = None
     heartbeat_prompt: str = ""
     soul_prompt_path: Path | None = None

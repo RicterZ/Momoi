@@ -85,6 +85,18 @@ _FIELDS = {
             "enabled": {"type": "boolean", "label": "启用 Episode 退火", "default": True},
         },
     },
+    "current_state": {
+        "label": "当前状态维护",
+        "fields": {
+            "max_seconds": {
+                "type": "number",
+                "label": "模型运行时限（秒）",
+                "default": 180,
+                "minimum": 0.001,
+                "description": "当前状态维护单批次的模型运行时间上限。",
+            },
+        },
+    },
 }
 
 

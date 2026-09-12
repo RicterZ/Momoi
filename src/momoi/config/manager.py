@@ -37,6 +37,7 @@ EDITABLE = {
     "heartbeat",
     "reflection",
     "episode_annealing",
+    "current_state",
     "webhooks",
     "logging",
     "thinking",
