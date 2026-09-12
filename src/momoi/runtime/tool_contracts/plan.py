@@ -27,4 +27,8 @@ PLAN_STEP_FINISH = {
         "abort_remaining": {"type": "boolean"},
     }, "required": ["outcome", "summary", "output_refs", "abort_remaining"], "additionalProperties": False},
 }
-PLAN_TOOLS = [PLAN_CREATE, PLAN_START]
+
+PLAN_GET = {"name":"plan_get","description":"Get a Plan status and steps.","input_schema":{"type":"object","properties":{"plan_id":{"type":"string"}},"required":["plan_id"],"additionalProperties":False}}
+PLAN_UPDATE = {"name":"plan_update","description":"Update pending Plan steps using the current version.","input_schema":{"type":"object","properties":{"plan_id":{"type":"string"},"version":{"type":"integer","minimum":1},"steps":{"type":"array","maxItems":12,"items":{"type":"object"}}},"required":["plan_id","version","steps"],"additionalProperties":False}}
+PLAN_CANCEL = {"name":"plan_cancel","description":"Cancel a Plan and its remaining steps.","input_schema":{"type":"object","properties":{"plan_id":{"type":"string"}},"required":["plan_id"],"additionalProperties":False}}
+PLAN_TOOLS = [PLAN_CREATE, PLAN_START, PLAN_GET, PLAN_UPDATE, PLAN_CANCEL]

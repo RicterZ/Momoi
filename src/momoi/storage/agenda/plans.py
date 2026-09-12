@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS task_plans (
  id TEXT PRIMARY KEY, source_turn_id TEXT NOT NULL, channel TEXT NOT NULL,
  title TEXT NOT NULL, request TEXT NOT NULL, status TEXT NOT NULL,
  steps_json TEXT NOT NULL, step_index INTEGER NOT NULL DEFAULT 0,
- created_at REAL NOT NULL, updated_at REAL NOT NULL,
+ created_at REAL NOT NULL, updated_at REAL NOT NULL, version INTEGER NOT NULL DEFAULT 1,
  UNIQUE(source_turn_id, title)
 );
 """
@@ -21,6 +21,7 @@ class PlanStore:
             return None
         plan = dict(row)
         plan["steps"] = json.loads(plan.pop("steps_json"))
+        plan["version"] = int(plan.get("version", 1))
         plan["context"] = json.loads(plan.pop("context_json") or "null")
         return plan
 
@@ -58,6 +59,25 @@ class PlanStore:
             )
         return self.task_plan(plan_id)
 
+    def update_task_plan(self, plan_id, channel, version, steps):
+        plan = self.task_plan(plan_id)
+        if plan is None or plan["channel"] != channel: raise ValueError("plan not found")
+        if plan["version"] != version: raise ValueError("plan version conflict; reload with plan_get")
+        if plan["status"] in {"running", "completed", "cancelled", "failed", "blocked"}: raise ValueError("only a non-running plan can be updated")
+        if not isinstance(steps, list) or not steps: raise ValueError("steps required")
+        normalized=[]
+        for i, step in enumerate(steps):
+            if not isinstance(step, dict) or not str(step.get("task") or "").strip() or step.get("on_failure") not in {"stop","continue"}: raise ValueError("invalid step")
+            normalized.append({"id":str(i+1),"task":str(step["task"]),"on_failure":step["on_failure"],"status":"pending"})
+        with self._db: self._db.execute("UPDATE task_plans SET steps_json=?,version=version+1,updated_at=? WHERE id=? AND version=?",(json.dumps(normalized,ensure_ascii=False),time.time(),plan_id,version))
+        return self.task_plan(plan_id)
+
+    def cancel_task_plan(self, plan_id, channel):
+        plan=self.task_plan(plan_id)
+        if plan is None or plan["channel"] != channel: raise ValueError("plan not found")
+        with self._db: self._db.execute("UPDATE task_plans SET status='cancelled',updated_at=?,version=version+1 WHERE id=? AND status NOT IN ('completed','cancelled')",(time.time(),plan_id))
+        return self.task_plan(plan_id)
+
     def start_task_plan(self, plan_id, channel, context=None):
         plan = self.task_plan(plan_id)
         if plan is None or plan["channel"] != channel:
@@ -71,7 +91,7 @@ class PlanStore:
     def claim_task_plan(self):
         with self._db:
             row = self._db.execute("""SELECT p.id FROM task_plans p JOIN turns t ON t.id=p.source_turn_id
-                WHERE p.status='ready' AND t.state='completed' ORDER BY p.created_at LIMIT 1""").fetchone()
+                WHERE p.status='ready' AND t.state='completed' AND NOT EXISTS (SELECT 1 FROM task_plans r WHERE r.status='running') ORDER BY p.created_at LIMIT 1""").fetchone()
             if row is None:
                 return None
             self._db.execute("UPDATE task_plans SET status='running', updated_at=? WHERE id=?", (time.time(), row[0]))

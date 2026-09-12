@@ -156,34 +156,25 @@ class ToolBatchExecutor:
                 }
             elif call.name not in allowed_tool_names:
                 result = {"ok": False, "error": "tool_not_allowed"}
-            elif call.name in {"plan_create", "plan_start"}:
+            elif call.name in {"plan_create", "plan_start", "plan_get", "plan_update", "plan_cancel"}:
                 if execution.stage != "owner":
                     result = {"ok": False, "error": "tool_not_allowed"}
                 else:
                     try:
                         if call.name == "plan_create":
                             plan = self.store.create_task_plan(call.arguments, request.turn_id, request.delivery_channel.name)
+                        elif call.name == "plan_start":
+                            context_messages = copy.deepcopy(request.context_messages or request.messages[:-1])
+                            plan = self.store.start_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, {"system": request.system, "tools": request.request_tools, "messages": context_messages})
+                        elif call.name == "plan_get":
+                            plan = self.store.task_plan(call.arguments.get("plan_id"))
+                            if plan is None: raise ValueError("plan not found")
+                        elif call.name == "plan_update":
+                            plan = self.store.update_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, call.arguments.get("version"), call.arguments.get("steps"))
                         else:
-                            if set(call.arguments) != {"plan_id"} or not isinstance(call.arguments["plan_id"], str):
-                                raise ValueError("Supply plan_id")
-                            context_messages = copy.deepcopy(
-                                request.context_messages if request.context_messages is not None
-                                else request.messages[:-1]
-                            )
-                            if results:
-                                # Freeze only the already executed prefix of this batch;
-                                # pending calls must not become orphaned tool uses in X.
-                                completed_ids = {block["tool_use_id"] for block in results}
-                                content = [block for block in request.response.content
-                                           if block.get("type") == "tool_use" and block.get("id") in completed_ids]
-                                context_messages.append(assistant_history_message(content))
-                                context_messages.append({"role": "user", "content": copy.deepcopy(results)})
-                            plan = self.store.start_task_plan(
-                                call.arguments["plan_id"], request.delivery_channel.name,
-                                {"system": request.system, "tools": request.request_tools, "messages": context_messages},
-                            )
-                        result = {"ok": True, "plan_id": plan["id"], "status": plan["status"], "steps": plan["steps"]}
-                    except (ValueError, TypeError) as error:
+                            plan = self.store.cancel_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name)
+                        result = {"ok": True, "plan_id": plan["id"], "status": plan["status"], "version": plan.get("version", 1), "steps": plan["steps"]}
+                    except (ValueError, TypeError, KeyError) as error:
                         result = {"ok": False, "error": "invalid_plan_arguments", "message": str(error)}
             elif call.name == "heartbeat_begin":
                 async def prepare_heartbeat_context(arguments):

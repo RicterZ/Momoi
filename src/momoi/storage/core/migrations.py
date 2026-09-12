@@ -16,6 +16,11 @@ def _add_task_plans(database):
     database.execute(PLAN_SCHEMA)
 
 
+def _add_plan_version(database):
+    if "version" not in _columns(database, "task_plans"):
+        database.execute("ALTER TABLE task_plans ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+
+
 def _add_plan_context(database):
     if "context_json" not in _columns(database, "task_plans"):
         database.execute("ALTER TABLE task_plans ADD COLUMN context_json TEXT")
@@ -570,6 +575,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_plan_step_workflow,
     _add_task_plans,
     _add_plan_context,
+    _add_plan_version,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 
