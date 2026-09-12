@@ -2476,6 +2476,92 @@ function RecallDetail({ recall }) {
   );
 }
 
+function RecallInline({ recall }) {
+  const [open, setOpen] = useState(false);
+  if (!recall) return null;
+  const memories = [
+    ...(recall.memories || []).map((item) => ({ ...item, source: "memory" })),
+    ...(recall.reflections || []).map((item) => ({ ...item, source: "reflection" })),
+  ];
+  const episodes = recall.episodes || [];
+  const evidenceCount = memories.length + episodes.length;
+  const units = recall.units || [];
+  return (
+    <div className="recall-inline">
+      <div className="recall-inline-head">
+        <span className="recall-section-label">RECALL // 召回范围</span>
+        <span>{evidenceCount ? `${evidenceCount} 条依据` : "未命中依据"}</span>
+      </div>
+      {!!units.length && (
+        <div className="recall-inline-queries">
+          {units.map((unit) => (
+            <div className="recall-inline-query" key={unit.id}>
+              <span>{unit.mode === "reuse" ? "沿用" : unit.mode === "skip" ? "跳过" : "检索"}</span>
+              <p>{unit.intent || unit.queries?.map((query) => query.semantic).join("；")}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {evidenceCount > 0 && (
+        <>
+          <button
+            className="recall-inline-toggle"
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+          >
+            {open ? "收起召回依据" : "展开召回依据"}
+            <span aria-hidden="true">{open ? "−" : "＋"}</span>
+          </button>
+          {open && (
+            <div className="recall-inline-evidence">
+              {!!memories.length && (
+                <RecallEvidenceGroup
+                  title="记忆与复盘"
+                  items={memories}
+                  tone="memory"
+                  renderItem={(item, index) => (
+                    <li key={`${item.source}:${item.kind}:${item.key || index}`}>
+                      <div className="recall-evidence-meta">
+                        <span>{memoryKindLabel(item.kind)}</span>
+                        {item.local_date ? <time>{item.local_date}</time> : null}
+                      </div>
+                      <p>{item.content || "这条记录没有正文。"}</p>
+                    </li>
+                  )}
+                />
+              )}
+              {!!episodes.length && (
+                <RecallEvidenceGroup
+                  title="相关聊天与 CUES"
+                  items={episodes}
+                  tone="episode"
+                  renderItem={(item) => (
+                    <li key={item.id}>
+                      <a className="recall-evidence-link" href={`#conversations/episode/${encodeURIComponent(item.id)}`}>
+                        {item.title || "未命名聊天记录"} <span aria-hidden="true">↗</span>
+                      </a>
+                      {item.summary ? <p>{item.summary}</p> : null}
+                      {Array.isArray(item.cues) && item.cues.length > 0 ? (
+                        <div className="recall-cues">
+                          <span className="recall-cues-label">CUES · 采用的检索线索</span>
+                          <div className="recall-cues-list">
+                            {item.cues.map((cue, index) => <span key={index}>{cue}</span>)}
+                          </div>
+                        </div>
+                      ) : null}
+                    </li>
+                  )}
+                />
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ThinkingDetail({ item, calls, recall }) {
   const flow = [...calls].sort((left, right) => {
     const time = Number(left.created_at || 0) - Number(right.created_at || 0);
@@ -2500,7 +2586,6 @@ function ThinkingDetail({ item, calls, recall }) {
           </a>
         ) : null}
       </header>
-      <RecallDetail recall={recall} />
       <div className="messages">
         {flow.map((call) => (
           <article className="message" key={call.call_id}>
@@ -2511,6 +2596,7 @@ function ThinkingDetail({ item, calls, recall }) {
               <p className="message-content thinking-body">
                 {call.reasoning || call.excerpt || "这次调用没有可见推理。"}
               </p>
+              {call.stage === "topic_selection" ? <RecallInline recall={recall} /> : null}
               <div className="message-meta">
                 <time>{formatDate(call.created_at)}</time>
                 <span>
