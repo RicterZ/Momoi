@@ -1,4 +1,5 @@
 from tests.support import write_app_config
+import json
 import tempfile
 import time
 import unittest
@@ -304,4 +305,24 @@ class ThinkingStoreTests(unittest.TestCase):
                 [call["stage"] for call in detail["calls"]],
                 ["owner", "topic_selection", "owner"],
             )
+            store.close()
+
+    def test_dashboard_groups_plan_steps_before_pagination(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            plan = store.create_task_plan(
+                {"title": "两步测试", "request": "执行两步", "steps": [
+                    {"task": "第一步", "on_failure": "stop"},
+                    {"task": "第二步", "on_failure": "stop"},
+                ]}, "owner-plan", "weixin")
+            with store._db:
+                store._db.execute("UPDATE task_plans SET steps_json=? WHERE id=?", (json.dumps([
+                    {"id": "1", "task": "第一步", "on_failure": "stop", "status": "succeeded", "turn_id": "step-one"},
+                    {"id": "2", "task": "第二步", "on_failure": "stop", "status": "succeeded", "turn_id": "step-two"},
+                ]), plan["id"]))
+            for turn, call, at in (("step-one", "c1", time.time()), ("step-two", "c2", time.time() + 1)):
+                store.record_thinking_call(created_at=at, turn_id=turn, call_id=call, stage="plan_step", reasoning=turn)
+            listed = store.dashboard_thinking(month="all", limit=1)
+            self.assertEqual(listed["items"][0]["id"], f"plan:{plan['id']}")
+            self.assertEqual(listed["items"][0]["step_count"], 2)
             store.close()
