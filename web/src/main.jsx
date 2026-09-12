@@ -2298,6 +2298,7 @@ function RecallDetail({ recall }) {
     ...(recall.reflections || []).map((item) => ({ ...item, source: "reflection" })),
   ];
   const episodes = recall.episodes || [];
+  const topics = recall.topics || [];
   const evidenceCount = memories.length + episodes.length;
   const searchCount = units.filter((unit) => unit.mode === "search").length;
   const reuseCount = units.filter((unit) => unit.mode === "reuse").length;
@@ -2498,6 +2499,19 @@ function RecallInline({ recall }) {
             <div className="recall-inline-query" key={unit.id}>
               <span>{unit.mode === "reuse" ? "沿用" : unit.mode === "skip" ? "跳过" : "检索"}</span>
               <p>{unit.intent || unit.queries?.map((query) => query.semantic).join("；")}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {!!topics.length && (
+        <div className="recall-inline-topics">
+          <span className="recall-cues-label">CUES · 采用的检索线索</span>
+          {topics.map((topic) => (
+            <div className="recall-inline-topic" key={topic.episode_id}>
+              <span>{topic.episode_id}</span>
+              <div className="recall-cues-list">
+                {(topic.cues || []).map((cue, index) => <span key={index}>{cue}</span>)}
+              </div>
             </div>
           ))}
         </div>

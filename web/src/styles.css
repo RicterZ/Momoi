@@ -2220,6 +2220,10 @@ a.tag:hover {
 .recall-inline-query { align-items: flex-start; }
 .recall-inline-query > span { flex: 0 0 auto; color: var(--pink); font-size: 11px; font-weight: 750; }
 .recall-inline-query p { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.55; }
+.recall-inline-topics { display: grid; gap: 7px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.recall-inline-topic { display: grid; gap: 5px; }
+.recall-inline-topic > span { color: var(--muted); font-size: 11px; font-weight: 700; }
+.recall-inline-topic .recall-cues-list { margin-top: 0; }
 .recall-inline-toggle { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 0; border: 0; background: transparent; color: var(--ink); cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; }
 .recall-inline-toggle span { color: var(--pink); font-size: 16px; line-height: 1; }
 .recall-inline-evidence { display: grid; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }

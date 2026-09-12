@@ -121,6 +121,14 @@ def _dashboard_recall(store: Store, turn_id: str) -> dict[str, object] | None:
         if isinstance(unit, dict)
     ]
     selection = retrieval.get("topic_selection") or {}
+    topics = [
+        {
+            "episode_id": str(item.get("episode_id") or ""),
+            "cues": [str(cue) for cue in item.get("cues") or []],
+        }
+        for item in selection.get("candidates", [])
+        if isinstance(item, dict) and item.get("episode_id")
+    ] if isinstance(selection, dict) else []
     cue_snapshots = {
         str(item.get("episode_id")): item.get("cues", [])
         for item in selection.get("candidates", []) if isinstance(item, dict)
@@ -179,6 +187,7 @@ def _dashboard_recall(store: Store, turn_id: str) -> dict[str, object] | None:
             if isinstance(item, dict)
         ],
         "episodes": episodes,
+        "topics": topics,
         "semantic": semantic if isinstance(semantic, dict) else {},
     }
 
