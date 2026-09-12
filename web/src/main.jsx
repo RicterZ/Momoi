@@ -2171,7 +2171,7 @@ function ThinkingLayout({
   onSelect,
   setDetail,
 }) {
-  const turnId = String(active?.turn_id || "").trim();
+  const turnId = String(active?.plan_id ? `plan:${active.plan_id}` : active?.turn_id || "").trim();
   const activeId = String(active?.id || "");
   const listRef = useRef(null);
   const moreRef = useRef(null);
@@ -2258,6 +2258,7 @@ function ThinkingLayout({
               ...active,
               episode_id: detail.data.episode_id || active.episode_id,
               episode_title: detail.data.episode_title || active.episode_title,
+              plan: detail.data.plan || active.plan,
             }}
             calls={detail.data.items || (detail.data.item ? [detail.data.item] : [])}
             recall={detail.data.recall}
@@ -2512,6 +2513,7 @@ function ThinkingDetail({ item, calls, recall }) {
   );
   return (
     <>
+      {item?.plan_id || item?.plan ? <PlanTimeline plan={item.plan || item} calls={flow} /> : null}
       <header className={`conversation-head${recall ? " has-recall" : ""}`}>
         <h2>{thinkingFlowTitle(titleItem)}</h2>
         {episodeId ? (
@@ -2527,6 +2529,9 @@ function ThinkingDetail({ item, calls, recall }) {
       <div className="messages">
         {flow.map((call, index) => (
           <Fragment key={call.call_id}>
+            {call.plan_step_id && (index === 0 || flow[index - 1]?.plan_step_id !== call.plan_step_id) ? (
+              <div className="plan-step-marker"><span>STEP {call.plan_step_id}</span><strong>{call.plan_step_task || "执行计划步骤"}</strong><em>{call.plan_step_status || "pending"}</em></div>
+            ) : null}
             <article className="message">
               <div className="message-role momoi">
                 {thinkingStageCode(call.stage)}
@@ -2552,6 +2557,16 @@ function ThinkingDetail({ item, calls, recall }) {
         ))}
       </div>
     </>
+  );
+}
+
+function PlanTimeline({ plan, calls }) {
+  const steps = plan?.steps || [];
+  return (
+    <details className="plan-panel" open>
+      <summary className="plan-panel-head"><div className="plan-panel-title"><span className="panel-label">PLAN // 执行计划</span><h3>{plan.title || "计划任务"}</h3><p>{plan.request || ""}</p></div><div className="plan-panel-summary"><span>{steps.length} 步</span><span>{plan.status || ""}</span></div><span className="plan-panel-toggle" aria-hidden="true" /></summary>
+      <div className="plan-panel-body"><div className="plan-steps">{steps.map((step, index) => <div className={`plan-step-card is-${step.status || "pending"}`} key={step.id || index}><div className="plan-step-card-head"><span>STEP {step.id || index + 1}</span><b>{step.status || "pending"}</b></div><p>{step.task}</p>{step.result ? <small>{step.result}</small> : null}</div>)}</div></div>
+    </details>
   );
 }
 

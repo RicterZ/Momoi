@@ -1,3 +1,4 @@
+import json
 import time
 from datetime import date, datetime, time as local_time, timedelta
 
@@ -244,6 +245,31 @@ class ObservabilityStore:
         turns = _group_thinking_turns(
             self._attach_legacy_topic_selection_turns(found.get("calls") or [])
         )
+        # Plan steps are separate Turns for execution/audit, but one item in
+        # the dashboard should represent the whole Plan timeline.
+        plan_rows = self._db.execute("SELECT id, title, request, steps_json, status, created_at, updated_at FROM task_plans").fetchall()
+        by_turn = {str(item.get("turn_id") or ""): item for item in turns}
+        consumed: set[str] = set()
+        plan_items: list[dict[str, object]] = []
+        for row in plan_rows:
+            steps = json.loads(row["steps_json"] or "[]")
+            turn_ids = [str(step.get("turn_id") or "") for step in steps if step.get("turn_id")]
+            members = [by_turn[tid] for tid in turn_ids if tid in by_turn]
+            if not members:
+                continue
+            consumed.update(turn_ids)
+            members.sort(key=lambda item: float(item.get("created_at") or 0))
+            plan_items.append({
+                "id": f"plan:{row['id']}", "plan_id": str(row["id"]),
+                "turn_id": members[0].get("turn_id"), "turn_ids": turn_ids,
+                "title": str(row["title"]), "request": str(row["request"]),
+                "status": str(row["status"]), "created_at": members[0].get("created_at"),
+                "updated_at": members[-1].get("updated_at"),
+                "call_count": sum(int(m.get("call_count") or 0) for m in members),
+                "stages": ["plan_step"], "tools": sorted({tool for m in members for tool in m.get("tools") or []}),
+                "excerpt": str(row["title"]), "step_count": len(turn_ids),
+            })
+        turns = [item for item in turns if str(item.get("turn_id") or "") not in consumed] + plan_items
         start = max(0, cursor)
         size = min(200, max(1, limit))
         page = turns[start : start + size]

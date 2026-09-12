@@ -353,6 +353,20 @@ def create_dashboard_app(
 
     async def thinking_turn(request: web.Request) -> web.Response:
         turn_id = request.match_info["turn_id"]
+        if turn_id.startswith("plan:"):
+            plan = store.task_plan(turn_id[5:])
+            if not plan:
+                raise web.HTTPNotFound(text="thinking not found")
+            calls = []
+            for step in plan.get("steps") or []:
+                step_turn = str(step.get("turn_id") or "")
+                if not step_turn:
+                    continue
+                found = store.read_thinking(step_turn)
+                for call in found.get("calls") or []:
+                    calls.append({**call, "plan_id": plan["id"], "plan_step_id": step.get("id"), "plan_step_task": step.get("task"), "plan_step_status": step.get("status")})
+            calls.sort(key=lambda item: (float(item.get("created_at") or 0), int(item.get("round") or 0)))
+            return web.json_response({"ok": True, "items": calls, "count": len(calls), "plan": plan})
         item = store.read_thinking(
             turn_id,
             str(request.query.get("call_id") or "").strip(),
