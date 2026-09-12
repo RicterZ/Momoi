@@ -2208,9 +2208,11 @@ a.tag:hover {
 .recall-cues-list > span { padding: 4px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; max-width: 100%; }
 .recall-inline {
   margin-top: 14px;
+  border: 1px solid var(--line);
   border-left: 3px solid var(--pink);
   background: var(--canvas);
   padding: 12px 14px;
+  box-shadow: 3px 3px 0 var(--pink);
 }
 .recall-inline-head,
 .recall-inline-query { display: flex; align-items: baseline; gap: 10px; }

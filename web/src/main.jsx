@@ -2490,7 +2490,7 @@ function RecallInline({ recall }) {
   return (
     <div className="recall-inline">
       <div className="recall-inline-head">
-        <span className="recall-section-label">RECALL // 召回范围</span>
+        <span className="recall-section-label">CUES // 话题筛选 · RECALL</span>
         <span>{evidenceCount ? `${evidenceCount} 条依据` : "未命中依据"}</span>
       </div>
       {!!units.length && (
