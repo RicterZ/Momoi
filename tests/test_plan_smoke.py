@@ -16,8 +16,19 @@ from momoi.runtime.workflows.plan_context import frozen_plan_messages
 from tests.support import provider_catalog
 
 
+def approve_and_start(store, plan_id, channel, context=None):
+    plan = store.task_plan(plan_id)
+    if plan["status"] in {"draft", "awaiting_approval"}:
+        if plan["status"] == "draft":
+            plan = store.submit_task_plan(plan_id, channel, plan["version"], "方案", "已核实来源", "检查产物", "proposal-turn")
+        return store.start_task_plan(plan_id, channel, context, version=plan["version"], approval={
+            "event_id": "approval-event", "quote": "同意", "turn_id": "approval-turn", "received_at": time.time() + 1,
+        })
+    return store.start_task_plan(plan_id, channel, context)
+
+
 class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
-    async def test_plan_keeps_uncommitted_owner_request_after_shared_history(self):
+    async def test_plan_does_not_repeat_original_owner_request_after_shared_history(self):
         plan = {"id": "p", "title": "Check", "request": "look at image",
                 "step_index": 0, "steps": [{"id": "s", "task": "inspect",
                                               "on_failure": "stop", "status": "running"}]}
@@ -34,11 +45,12 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             source_messages=[source],
         )
         self.assertEqual(messages[0]["content"], "shared transcript")
-        self.assertEqual(messages[1]["content"], source["content"][1:4])
+        self.assertEqual(len(messages), 2)
+        self.assertNotIn("AAAA", str(messages))
         self.assertNotIn("owner only", str(messages))
         self.assertNotIn("stale", str(messages))
         self.assertNotIn("owner permissions", str(messages))
-        self.assertIn("current_plan_step", str(messages[2]["content"]))
+        self.assertIn("current_plan_step", str(messages[1]["content"]))
 
     async def asyncSetUp(self):
         directory = tempfile.TemporaryDirectory()
@@ -64,7 +76,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
                 {"task": f"send {user}", "on_failure": "stop"} for user in "ABC"
             ],
         }, self.owner_turn, daemon.channel.name)
-        daemon.store.start_task_plan(plan["id"], daemon.channel.name, {
+        approve_and_start(daemon.store, plan["id"], daemon.channel.name, {
             "system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(),
             "messages": [],
         })
@@ -112,7 +124,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
                 {"task": "send old result", "on_failure": "stop"},
             ]}, self.owner_turn, daemon.channel.name,
         )
-        daemon.store.start_task_plan(plan["id"], daemon.channel.name, {
+        approve_and_start(daemon.store, plan["id"], daemon.channel.name, {
             "system": daemon._system(),
             "tools": daemon.tool_surface.conversation_specs(),
             "messages": [],
@@ -147,7 +159,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
                 {"task": f"send {item}", "on_failure": "stop"} for item in "ABC"
             ],
         }, self.owner_turn, self.daemon.channel.name)
-        store.start_task_plan(plan["id"], self.daemon.channel.name, {
+        approve_and_start(store, plan["id"], self.daemon.channel.name, {
             "system": [], "tools": [], "messages": [],
         })
         store.claim_task_plan()
@@ -164,13 +176,14 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         ], "send revised A and B")
         self.assertEqual(revised["request"], "send revised A and B")
         self.assertEqual(revised["steps"][0]["interrupted_turn_id"], interrupted)
-        resumed = store.resume_task_plan(plan["id"], self.daemon.channel.name,
-                                         revised["version"], {
+        with self.assertRaises(ValueError):
+            store.resume_task_plan(plan["id"], self.daemon.channel.name, revised["version"], {})
+        resumed = approve_and_start(store, plan["id"], self.daemon.channel.name, {
             "system": [], "tools": [], "messages": [{"role": "user", "content": "BTW and correction"}],
         })
         self.assertEqual(resumed["status"], "ready")
         self.assertEqual(resumed["steps"][0]["task"], "send revised A")
-        self.assertEqual(resumed["context"]["completed_through"], 0)
+        self.assertEqual(resumed["review"]["approved_version"], revised["version"])
         self.assertEqual(store.claim_task_plan()["id"], plan["id"])
 
     def test_paused_plan_with_visible_progress_cannot_replay(self):
@@ -180,7 +193,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
                 {"task": "send A", "on_failure": "stop"},
             ],
         }, self.owner_turn, self.daemon.channel.name)
-        store.start_task_plan(plan["id"], self.daemon.channel.name, {
+        approve_and_start(store, plan["id"], self.daemon.channel.name, {
             "system": [], "tools": [], "messages": [],
         })
         store.claim_task_plan()
@@ -233,7 +246,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         plan = daemon.store.create_task_plan({"title": "failure", "request": "test", "steps": [
             {"task": "access", "on_failure": "stop"}, {"task": "never", "on_failure": "stop"},
         ]}, self.owner_turn, daemon.channel.name)
-        daemon.store.start_task_plan(plan["id"], daemon.channel.name, {"system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(), "messages": []})
+        approve_and_start(daemon.store, plan["id"], daemon.channel.name, {"system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(), "messages": []})
         daemon.store.claim_task_plan()
 
         async def complete(*args, **kwargs):
@@ -247,9 +260,9 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(daemon.store.task_plan(plan["id"])["status"], "failed")
         self.assertIsNone(daemon.store.claim_task_plan())
         with self.assertRaises(ValueError):
-            daemon.store.start_task_plan(plan["id"], daemon.channel.name, {"system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(), "messages": []})
+            approve_and_start(daemon.store, plan["id"], daemon.channel.name, {"system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(), "messages": []})
         other = daemon.store.create_task_plan({"title": "restart", "request": "test", "steps": [{"task": "x", "on_failure": "stop"}]}, self.owner_turn, daemon.channel.name)
-        daemon.store.start_task_plan(other["id"], daemon.channel.name)
+        approve_and_start(daemon.store, other["id"], daemon.channel.name)
         daemon.store.claim_task_plan()
         daemon.store.recover_task_plans()
         self.assertEqual(daemon.store.task_plan(other["id"])["status"], "blocked")
@@ -259,7 +272,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         import asyncio
         daemon = self.daemon
         plan = daemon.store.create_task_plan({"title": "bounded", "request": "test", "steps": [{"task": "read", "on_failure": "stop"}]}, self.owner_turn, daemon.channel.name)
-        daemon.store.start_task_plan(plan["id"], daemon.channel.name, {"system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(), "messages": []})
+        approve_and_start(daemon.store, plan["id"], daemon.channel.name, {"system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(), "messages": []})
         daemon.store.claim_task_plan()
         ref = daemon.tool_results.save('{"ok":true,"content":"unchanged"}')
         calls = 0
@@ -280,8 +293,8 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
     async def test_stop_cancels_queued_plan_and_scheduler_claim_is_unique(self):
         daemon = self.daemon
         plan = daemon.store.create_task_plan({"title": "cancel", "request": "test", "steps": [{"task": "send", "on_failure": "stop"}]}, self.owner_turn, daemon.channel.name)
-        daemon.store.start_task_plan(plan["id"], daemon.channel.name, {"system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(), "messages": []})
-        daemon.store.start_task_plan(plan["id"], daemon.channel.name, {"system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(), "messages": []})
+        approve_and_start(daemon.store, plan["id"], daemon.channel.name, {"system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(), "messages": []})
+        approve_and_start(daemon.store, plan["id"], daemon.channel.name, {"system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(), "messages": []})
         self.assertEqual(daemon.store.claim_task_plan()["id"], plan["id"])
         self.assertIsNone(daemon.store.claim_task_plan())
         await daemon._receive(IncomingMessage("plan-stop", "1", "/stop", time.time(), 1))
@@ -309,7 +322,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             "title": "permissions", "request": "test",
             "steps": [{"task": "finish", "on_failure": "stop"}],
         }, self.owner_turn, daemon.channel.name)
-        daemon.store.start_task_plan(plan["id"], daemon.channel.name, {
+        approve_and_start(daemon.store, plan["id"], daemon.channel.name, {
             "system": daemon._system(), "tools": tools, "messages": [],
         })
         daemon.store.claim_task_plan()
@@ -327,8 +340,8 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             else:
                 self.assertEqual(calls, 2)
                 result = json.loads(messages[-1]["content"][0]["content"])
-                self.assertFalse(result["ok"])
-                self.assertEqual(result["error"], "tool_not_allowed")
+                self.assertTrue(result["ok"])
+                self.assertEqual(result["status"], "draft")
                 call = ToolCall("finish", "plan_step_finish", {
                     "outcome": "succeeded", "summary": "done",
                     "output_refs": [], "abort_remaining": False,
@@ -341,7 +354,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         await daemon._complete_plan_step_turn(plan["id"], asyncio.Event())
         self.assertEqual(calls, 2)
         self.assertEqual(daemon.store.task_plan(plan["id"])["status"], "completed")
-        self.assertEqual(daemon.store._db.execute("SELECT COUNT(*) FROM task_plans").fetchone()[0], 1)
+        self.assertEqual(daemon.store._db.execute("SELECT COUNT(*) FROM task_plans").fetchone()[0], 2)
         self.assertNotIn("plan_step_finish", daemon.tool_surface.permitted_names("owner"))
 
 
@@ -353,7 +366,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             "title": "memory search", "request": "look up memory",
             "steps": [{"task": "search memory", "on_failure": "stop"}],
         }, self.owner_turn, daemon.channel.name)
-        daemon.store.start_task_plan(plan["id"], daemon.channel.name, {
+        approve_and_start(daemon.store, plan["id"], daemon.channel.name, {
             "system": daemon._system(), "tools": daemon.tool_surface.conversation_specs(),
             "messages": [],
         })
@@ -381,3 +394,130 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         await daemon._complete_plan_step_turn(plan["id"], asyncio.Event())
         self.assertEqual(calls, 2)
         self.assertEqual(daemon.store.task_plan(plan["id"])["status"], "completed")
+
+    def test_review_gate_rejects_early_and_stale_approval(self):
+        store, channel = self.daemon.store, self.daemon.channel.name
+        plan = store.create_task_plan({'title': 'review', 'request': 'inspect and change',
+            'steps': [{'task': 'implement and verify', 'on_failure': 'stop'}]}, self.owner_turn, channel)
+        with self.assertRaises(ValueError):
+            store.start_task_plan(plan['id'], channel)
+        self.assertIsNone(store.claim_task_plan())
+        submitted = store.submit_task_plan(plan['id'], channel, 1, '方案', '依据', '验收', 'proposal')
+        self.assertIsNone(store.claim_task_plan())
+        for approval in [None, {'event_id': 'e', 'quote': '同意', 'turn_id': 'proposal', 'received_at': time.time()+1},
+                         {'event_id': 'e', 'quote': '同意', 'turn_id': 'owner2', 'received_at': 0}]:
+            with self.assertRaises(ValueError):
+                store.start_task_plan(plan['id'], channel, {}, version=1, approval=approval)
+        revised = store.update_task_plan(plan['id'], channel, 1,
+            [{'task': 'different implementation', 'on_failure': 'stop'}])
+        self.assertEqual(revised['status'], 'draft')
+        self.assertIsNone(revised['review']['approved_version'])
+        store.submit_task_plan(plan['id'], channel, 2, '修订', '新依据', '验收', 'proposal2')
+        with self.assertRaises(ValueError):
+            store.start_task_plan(plan['id'], channel, {}, version=1, approval={
+                'event_id': 'e', 'quote': '同意', 'turn_id': 'owner2', 'received_at': time.time()+1})
+        self.assertEqual(approve_and_start(store, plan['id'], channel, {})['status'], 'ready')
+        self.assertEqual(store.claim_task_plan()['id'], plan['id'])
+
+    def test_revision_preserves_completed_handoff_without_transcript(self):
+        from momoi.runtime.workflows.plan_context import current_step_xml
+        store, channel = self.daemon.store, self.daemon.channel.name
+        plan = store.create_task_plan({'title': 'handoff', 'request': 'do work', 'steps': [
+            {'task': 'inspect', 'on_failure': 'stop'}, {'task': 'implement', 'on_failure': 'stop'}]}, self.owner_turn, channel)
+        approve_and_start(store, plan['id'], channel, {})
+        store.claim_task_plan()
+        store.begin_turn('step-one', 'plan_step', ['plan:'+plan['id']])
+        store.finish_task_plan_step(plan['id'], 'step-one', 'succeeded', 'verified fact', ['tr_evidence'])
+        revised = store.update_task_plan(plan['id'], channel, 1,
+            [{'task': 'revised implementation', 'on_failure': 'stop'}])
+        self.assertEqual(revised['step_index'], 1)
+        self.assertEqual(revised['steps'][0]['result'], 'verified fact')
+        self.assertEqual(revised['steps'][1]['task'], 'revised implementation')
+        self.assertIsNone(store.claim_task_plan())
+        rendered = current_step_xml(revised)
+        self.assertIn('verified fact', rendered)
+        self.assertIn('tr_evidence', rendered)
+
+    async def test_running_plan_can_revise_and_submit_for_review(self):
+        import asyncio
+        import json
+        daemon, channel = self.daemon, self.daemon.channel.name
+        plan = daemon.store.create_task_plan({'title': 'revise', 'request': 'work',
+            'steps': [{'task': 'investigate then implement', 'on_failure': 'stop'}]}, self.owner_turn, channel)
+        approve_and_start(daemon.store, plan['id'], channel,
+            {'tools': daemon.tool_surface.conversation_specs(), 'messages': []})
+        daemon.store.claim_task_plan()
+        count = 0
+        async def complete(system, messages, tools, **kwargs):
+            nonlocal count
+            count += 1
+            if count == 1:
+                call = ToolCall('revise', 'plan_update', {'plan_id': plan['id'], 'version': 1,
+                    'steps': [{'task': 'new approach with validation', 'on_failure': 'stop'}]})
+            else:
+                self.assertEqual(count, 2)
+                self.assertEqual(json.loads(messages[-1]['content'][0]['content'])['status'], 'draft')
+                call = ToolCall('submit', 'plan_submit', {'plan_id': plan['id'], 'version': 2,
+                    'summary': '发现新事实，建议修改方案，请确认。', 'evidence': '工具证据', 'validation': '检查输出'})
+            return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
+        daemon.provider = SimpleNamespace(complete=complete)
+        await daemon._complete_plan_step_turn(plan['id'], asyncio.Event())
+        current = daemon.store.task_plan(plan['id'])
+        self.assertEqual(current['status'], 'awaiting_approval')
+        self.assertEqual(current['version'], 2)
+        self.assertIsNone(daemon.store.claim_task_plan())
+        texts = [row[0] for row in daemon.store._db.execute('SELECT text FROM outbox')]
+        self.assertEqual(texts.count('发现新事实，建议修改方案，请确认。'), 1)
+
+    async def test_resume_keeps_approval_version_but_uses_new_execution_turn(self):
+        import asyncio
+        daemon, channel = self.daemon, self.daemon.channel.name
+        plan = daemon.store.create_task_plan({'title': 'resume', 'request': 'work',
+            'steps': [{'task': 'inspect', 'on_failure': 'stop'}]}, self.owner_turn, channel)
+        context = {'tools': daemon.tool_surface.conversation_specs(), 'messages': []}
+        approve_and_start(daemon.store, plan['id'], channel, context)
+        daemon.store.claim_task_plan()
+        old_id = daemon._turn_id('plan_step', plan['id'], '1', 1, 0)
+        daemon.store.begin_turn(old_id, 'plan_step', ['plan:'+plan['id']])
+        daemon.store.cancel_turn(old_id, reason='owner_update')
+        daemon.store.pause_task_plan(plan['id'], old_id)
+        resumed = daemon.store.resume_task_plan(plan['id'], channel, 1, context)
+        self.assertEqual(resumed['version'], 1)
+        self.assertEqual(resumed['context']['resume_count'], 1)
+        daemon.store.claim_task_plan()
+        async def complete(*args, **kwargs):
+            call = ToolCall('finish', 'plan_step_finish', {'outcome': 'succeeded', 'summary': 'verified',
+                'output_refs': [], 'abort_remaining': False})
+            return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
+        daemon.provider = SimpleNamespace(complete=complete)
+        await daemon._complete_plan_step_turn(plan['id'], asyncio.Event())
+        finished = daemon.store.task_plan(plan['id'])
+        self.assertEqual(finished['status'], 'completed')
+        self.assertNotEqual(finished['steps'][0]['turn_id'], old_id)
+
+    async def test_failed_delivery_batch_cannot_report_success(self):
+        import asyncio
+        import json
+        daemon, channel = self.daemon, self.daemon.channel.name
+        plan = daemon.store.create_task_plan({'title': 'delivery', 'request': 'send result',
+            'steps': [{'task': 'send verified result', 'on_failure': 'stop'}]}, self.owner_turn, channel)
+        approve_and_start(daemon.store, plan['id'], channel,
+            {'tools': daemon.tool_surface.conversation_specs(), 'messages': []})
+        daemon.store.claim_task_plan()
+        count = 0
+        async def complete(system, messages, tools, **kwargs):
+            nonlocal count
+            count += 1
+            outcome = {'outcome': 'succeeded', 'summary': 'sent', 'output_refs': [], 'abort_remaining': False}
+            if count == 1:
+                calls = [ToolCall('send', 'send_bubbles', {'bubbles': []}),
+                         ToolCall('finish', 'plan_step_finish', outcome)]
+            else:
+                self.assertEqual(count, 2)
+                result = json.loads(messages[-1]['content'][-1]['content'])
+                self.assertEqual(result['error'], 'verify_failed_batch_before_finishing')
+                calls = [ToolCall('failed', 'plan_step_finish', {**outcome, 'outcome': 'failed', 'summary': 'not delivered'})]
+            return ProviderResponse([{'type': 'tool_use', 'id': c.id, 'name': c.name, 'input': c.arguments} for c in calls], calls)
+        daemon.provider = SimpleNamespace(complete=complete)
+        await daemon._complete_plan_step_turn(plan['id'], asyncio.Event())
+        self.assertEqual(daemon.store.task_plan(plan['id'])['status'], 'failed')

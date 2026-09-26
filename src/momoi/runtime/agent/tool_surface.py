@@ -140,7 +140,7 @@ class ToolSurface:
             *external,
         }
         if stage == "owner":
-            return frozenset(general_chat | {"plan_create", "plan_start", "plan_get", "plan_update", "plan_cancel", "plan_resume"})
+            return frozenset(general_chat | {spec["name"] for spec in PLAN_TOOLS})
         if stage == "heartbeat":
             return frozenset(
                 {

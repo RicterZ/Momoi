@@ -2,12 +2,15 @@
 import copy
 import asyncio
 import logging
+from datetime import datetime
 
 from ...models import ToolCall, TurnDraft
 from ...observability.events import log_event
 from ..agent import AgentWorkflow, TurnExecutionSpec
 from ..turn_support import TurnBudgetExceeded
 from .plan_context import frozen_plan_messages
+from ..context.current_state import pack_current_turn_context
+from ..context.presentation import heartbeat_self_state_lines
 
 logger = logging.getLogger("momoi.runtime.turns")
 
@@ -21,10 +24,14 @@ class PlanWorkflow:
             self.store.recover_task_plans(plan_id)
             return
         step = plan["steps"][plan["step_index"]]
-        turn_id = self._turn_id("plan_step", plan_id, step["id"], plan["version"])
+        turn_id = self._turn_id("plan_step", plan_id, step["id"], plan["version"],
+                                (plan.get("context") or {}).get("resume_count", 0))
         state = self.store.begin_turn(turn_id, "plan_step", [f"plan:{plan_id}"])
         channel = self._channel_for(plan["channel"])
         completed = None
+        def stopped_or_revised():
+            current = self.store.task_plan(plan_id)
+            return completed is not None or current is None or current["status"] in {"awaiting_approval", "cancelled"}
         if state != "running":
             if self._interrupt_reason == "owner_update":
                 self.store.pause_task_plan(plan_id, turn_id)
@@ -43,7 +50,7 @@ class PlanWorkflow:
                     or any(not isinstance(ref, str) for ref in args["output_refs"])):
                 return {"ok": False, "error": "invalid_plan_step_outcome"}
             for ref in args["output_refs"]:
-                if not self.tool_results.read(ref, None, max_chars=1000, provenance={}).get("ok"):
+                if self.tool_results.read(ref, None, max_chars=1000, provenance={}).get("error") in {"tool_result_unavailable", "invalid_tool_result_cursor"}:
                     return {"ok": False, "error": "invalid_plan_output_ref"}
             try:
                 completed = self.store.finish_task_plan_step(
@@ -62,11 +69,17 @@ class PlanWorkflow:
                 shared["messages"], plan, step_rows=[], timezone=self.store.timezone,
                 source_messages=context.get("messages"),
             )
+            messages[-1]["content"].insert(0, {"type": "text", "text": pack_current_turn_context(
+                self.store, "plan_step", ("self_state", heartbeat_self_state_lines(
+                    self.store.self_state_context(),
+                    current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
+                )),
+            )})
             tools = self.tool_surface.conversation_specs()
             self.tool_surface.append_visible(tools, copy.deepcopy(context["tools"]))
             workflow = AgentWorkflow(
                 preserve_transcript=False, stage="plan_step", tool_names=frozenset({"plan_step_finish"}), execute_tool=finish,
-                is_complete=lambda: completed is not None, completion_result=lambda: completed,
+                is_complete=stopped_or_revised, completion_result=lambda: completed,
                 no_tool_correction="Use tools to execute the current step, report the outcome with plan_step_finish.",
             )
             log_event(logger, logging.INFO, "plan_step_started", plan_id=plan_id, step_id=step["id"], turn_id=turn_id)
@@ -77,6 +90,10 @@ class PlanWorkflow:
                     source_event_id=f"plan:{plan_id}", turn_id=turn_id, delivery_channel=channel, workflow=workflow,
                 )
             log_event(logger, logging.INFO, "plan_step_completed", plan_id=plan_id, step_id=step["id"], turn_id=turn_id, result=completed)
+            if completed is None and stopped_or_revised():
+                with self.store._db:
+                    self.store._archive_progress_messages(turn_id, '["plan:' + plan_id + '"]')
+                self.store.cancel_turn(turn_id, reason="plan_revised_or_cancelled")
         except asyncio.CancelledError:
             with self.store._db:
                 self.store._archive_progress_messages(turn_id, '["plan:' + plan_id + '"]')

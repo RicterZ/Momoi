@@ -8,7 +8,7 @@ from typing import Any
 
 from ...channel import Channel, ChannelMessage
 from ...observability.context import log_context
-from ...models import AgentReply, IncomingMessage, ProviderResponse, TurnDraft
+from ...models import AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
 from ...observability.events import TRACE, log_event
 from ...observability.values import safe_preview
 from ..turn_support import (
@@ -177,29 +177,59 @@ class ToolBatchExecutor:
                 result = {"ok": False, "error": "tool_not_allowed"}
             elif validation_error:
                 result = validation_error
-            elif call.name in {"plan_create", "plan_start", "plan_get", "plan_update", "plan_cancel", "plan_resume"}:
-                if execution.stage != "owner":
-                    result = {"ok": False, "error": "tool_not_allowed"}
-                else:
-                    try:
-                        if call.name == "plan_create":
-                            plan = self.store.create_task_plan(call.arguments, request.turn_id, request.delivery_channel.name)
-                        elif call.name == "plan_start":
-                            context_messages = copy.deepcopy(request.context_messages or request.messages[:-1])
-                            plan = self.store.start_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, {"system": request.system, "tools": request.request_tools, "messages": context_messages})
-                        elif call.name == "plan_get":
-                            plan = self.store.task_plan(call.arguments.get("plan_id"))
-                            if plan is None: raise ValueError("plan not found")
-                        elif call.name == "plan_update":
-                            plan = self.store.update_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, call.arguments.get("version"), call.arguments.get("steps"), call.arguments.get("request"))
-                        elif call.name == "plan_resume":
-                            context_messages = copy.deepcopy(request.context_messages or request.messages[:-1])
-                            plan = self.store.resume_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, call.arguments.get("version"), {"system": request.system, "tools": request.request_tools, "messages": context_messages})
-                        else:
-                            plan = self.store.cancel_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name)
-                        result = {"ok": True, "plan_id": plan["id"], "title": plan["title"], "request": plan["request"], "status": plan["status"], "version": plan.get("version", 1), "step_index": plan["step_index"], "resume_safety": self.store.plan_resume_safety(plan), "steps": plan["steps"]}
-                    except (ValueError, TypeError, KeyError) as error:
-                        result = {"ok": False, "error": "invalid_plan_arguments", "message": str(error)}
+            elif call.name in {"plan_create", "plan_submit", "plan_start", "plan_get", "plan_update", "plan_cancel", "plan_resume"}:
+                try:
+                    if call.name == "plan_create":
+                        plan = self.store.create_task_plan(call.arguments, request.turn_id, request.delivery_channel.name)
+                    elif call.name == "plan_start":
+                        event = next((event for event in request.current_events
+                                      if call.arguments.get("approval_quote", "").strip() in event.text
+                                      and event.channel == request.delivery_channel.name), None)
+                        quote = call.arguments.get("approval_quote", "")
+                        if event is None or not quote.strip() or quote not in event.text:
+                            raise ValueError("approval_quote must quote the current owner approval message")
+                        context_messages = copy.deepcopy(request.context_messages or request.messages[:-1])
+                        plan = self.store.start_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, {"system": request.system, "tools": request.request_tools, "messages": context_messages}, version=call.arguments.get("version"), approval={"event_id": event.event_id, "quote": quote, "received_at": event.received_at, "turn_id": request.turn_id})
+                    elif call.name == "plan_submit":
+                        args = call.arguments
+                        plan = self.store.task_plan(args["plan_id"])
+                        if plan is None or plan["channel"] != request.delivery_channel.name:
+                            raise ValueError("plan not found in this channel")
+                        if plan["version"] != args["version"] or plan["status"] not in {"draft", "awaiting_approval"}:
+                            raise ValueError("submit the current draft version")
+                        if any(not isinstance(args.get(key), str) or not args[key].strip()
+                               or len(args[key]) > 12000 for key in ("summary", "evidence", "validation")):
+                            raise ValueError("summary, evidence and validation must be nonempty")
+                        if plan["status"] == "draft":
+                            delivery = self.bubble_delivery.dispatch(
+                                ToolCall(call.id + "-summary", "send_bubbles", {"bubbles": [args["summary"]]}),
+                                turn_id=request.turn_id, stage=execution.stage,
+                                round_number=request.round_number, delivery_channel=request.delivery_channel,
+                                heartbeat_turn=execution.heartbeat, reply_followup_turn=execution.reply_followup,
+                                heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
+                                previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
+                                previous_channel=last_sent_channel,
+                            )
+                            if not delivery.result.get("ok"):
+                                raise ValueError("proposal delivery failed; retry submission")
+                            visible = True
+                            last_sent_bubbles = copy.deepcopy(delivery.bubbles)
+                            last_sent_channel = delivery.channel
+                        plan = self.store.submit_task_plan(args["plan_id"], request.delivery_channel.name,
+                            args["version"], args["summary"], args["evidence"], args["validation"], request.turn_id)
+                    elif call.name == "plan_get":
+                        plan = self.store.task_plan(call.arguments.get("plan_id"))
+                        if plan is None or plan["channel"] != request.delivery_channel.name: raise ValueError("plan not found")
+                    elif call.name == "plan_update":
+                        plan = self.store.update_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, call.arguments.get("version"), call.arguments.get("steps"), call.arguments.get("request"))
+                    elif call.name == "plan_resume":
+                        context_messages = copy.deepcopy(request.context_messages or request.messages[:-1])
+                        plan = self.store.resume_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, call.arguments.get("version"), {"system": request.system, "tools": request.request_tools, "messages": context_messages})
+                    else:
+                        plan = self.store.cancel_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name)
+                    result = {"ok": True, "plan_id": plan["id"], "title": plan["title"], "request": plan["request"], "status": plan["status"], "version": plan.get("version", 1), "step_index": plan["step_index"], "resume_safety": self.store.plan_resume_safety(plan), "steps": plan["steps"], "review": plan["review"]}
+                except (ValueError, TypeError, KeyError) as error:
+                    result = {"ok": False, "error": "invalid_plan_arguments", "message": str(error)}
             elif call.name == "heartbeat_begin":
                 with log_context(
                     stage=execution.stage,
@@ -404,7 +434,12 @@ class ToolBatchExecutor:
                     tool_call_id=call.id,
                     tool_name=call.name,
                 ):
-                    result = await request.workflow.execute_tool(call)
+                    if call.name == "plan_step_finish" and call.arguments.get("outcome") == "succeeded" and any(
+                        block.get("is_error") for block in results
+                    ):
+                        result = {"ok": False, "error": "verify_failed_batch_before_finishing"}
+                    else:
+                        result = await request.workflow.execute_tool(call)
             elif self.tool_executor.is_external(call.name):
                 result = None
                 if not call.id:

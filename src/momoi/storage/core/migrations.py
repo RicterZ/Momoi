@@ -580,6 +580,14 @@ def _add_transcript_window_observed_total(database: sqlite3.Connection) -> None:
         )
 
 
+def _add_plan_review(database: sqlite3.Connection) -> None:
+    if "review_json" not in _columns(database, "task_plans"):
+        database.execute("ALTER TABLE task_plans ADD COLUMN review_json TEXT")
+    # Old ready plans have never been submitted for review. Do not silently run
+    # them under the new approval lifecycle after an upgrade.
+    database.execute("UPDATE task_plans SET status='draft' WHERE status='ready'")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -605,6 +613,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_turn_parent,
     _add_current_state_evidence,
     _add_transcript_window_observed_total,
+    _add_plan_review,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 
