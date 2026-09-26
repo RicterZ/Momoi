@@ -331,6 +331,11 @@ class OpenAIProvider:
                 persist_thinking(
                     self.thinking_sink,
                     reasoning=reasoning,
+                    assistant_text="\n".join(
+                        block["text"] for block in content
+                        if isinstance(block, dict) and block.get("type") == "text"
+                        and isinstance(block.get("text"), str)
+                    ),
                     tools=[call.name for call in tool_calls],
                     model=config.model,
                 )

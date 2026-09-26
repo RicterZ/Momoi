@@ -2224,3 +2224,18 @@ a.tag:hover {
 .recall-cues-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
 .recall-cues-list > span { padding: 4px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; max-width: 100%; }
 .recall-evidence-group.is-episode > ul { grid-template-columns: minmax(0, 1fr); }
+
+/* One model call, two distinct output channels. */
+.thinking-call-heading { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 10px; color: var(--soft); }
+.thinking-call-heading > span { font-weight: 750; letter-spacing: .09em; color: var(--muted); }
+.thinking-call-content { border: 1px solid var(--line); background: var(--surface); }
+.thinking-part { padding: 16px 18px; }
+.thinking-part h4 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 10px; letter-spacing: .08em; }
+.thinking-part h4 span { font-weight: 400; letter-spacing: 0; color: var(--muted); }
+.reasoning-part { color: var(--muted); }
+.reasoning-part h4 { color: var(--soft); }
+.assistant-part { border-left: 3px solid var(--pink); background: var(--pink-soft); color: var(--ink); }
+.assistant-part h4 { color: #bd365d; }
+.reasoning-part + .assistant-part { border-top: 1px solid var(--line); }
+.thinking-empty { padding: 16px 18px; margin: 0; color: var(--soft); font-size: 13px; }
+@media (max-width: 600px) { .thinking-part { padding: 13px; } .thinking-call-heading { flex-wrap: wrap; } }

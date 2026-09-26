@@ -116,17 +116,20 @@ class ThinkingStore:
         model: str,
         tools: list[str],
         reasoning: str,
+        assistant_text: str = "",
     ) -> None:
         text = str(reasoning or "")
         codec, blob = encode_reasoning(text)
+        assistant_codec, assistant_blob = encode_reasoning(str(assistant_text or ""))
         month = month_key(created_at, self._timezone)
         connection = self._db(month)
         with connection:
             connection.execute(
                 """INSERT OR REPLACE INTO calls
                    (created_at, turn_id, call_id, stage, round, model, tools_json,
-                    reasoning_chars, reasoning_sha256, reasoning_codec, reasoning_blob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    reasoning_chars, reasoning_sha256, reasoning_codec, reasoning_blob,
+                    assistant_text_codec, assistant_text_blob)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     created_at,
                     str(turn_id or ""),
@@ -139,6 +142,8 @@ class ThinkingStore:
                     hashlib.sha256(text.encode("utf-8")).hexdigest(),
                     codec,
                     blob,
+                    assistant_codec,
+                    assistant_blob,
                 ),
             )
 
@@ -186,7 +191,7 @@ class ThinkingStore:
                     continue
                 excerpt = _keyword_excerpt(reasoning, found.alternatives)
             elif not turn_id:
-                excerpt = reasoning[:400]
+                excerpt = (reasoning or decode_reasoning(row["assistant_text_codec"], row["assistant_text_blob"]))[:400]
             matched.append(_public_call(row, excerpt=excerpt))
         page = matched[cursor : cursor + limit]
         result: dict[str, Any] = {
@@ -297,7 +302,8 @@ class ThinkingStore:
             values.append(stage)
         rows = self._db(month).execute(
             f"""SELECT created_at, turn_id, call_id, stage, round, model, tools_json,
-                       reasoning_chars, reasoning_codec, reasoning_blob
+                       reasoning_chars, reasoning_codec, reasoning_blob,
+                       assistant_text_codec, assistant_text_blob
                 FROM calls WHERE {' AND '.join(clauses)}
                 ORDER BY created_at DESC, round""",
             values,
@@ -312,6 +318,12 @@ class ThinkingStore:
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
         connection.executescript(_SCHEMA)
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(calls)")}
+        with connection:
+            if "assistant_text_codec" not in columns:
+                connection.execute("ALTER TABLE calls ADD COLUMN assistant_text_codec TEXT NOT NULL DEFAULT 'plain'")
+            if "assistant_text_blob" not in columns:
+                connection.execute("ALTER TABLE calls ADD COLUMN assistant_text_blob BLOB")
         self._dbs[month] = connection
         return connection
 
@@ -380,6 +392,7 @@ def _public_call(
         item["excerpt"] = excerpt
     if reasoning is not None:
         item["reasoning"] = reasoning
+        item["assistant_text"] = decode_reasoning(row["assistant_text_codec"], row["assistant_text_blob"])
     return item
 
 

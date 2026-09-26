@@ -108,6 +108,7 @@ class ObservabilityStore:
         model: str = "",
         tools: list[str] | None = None,
         reasoning: str = "",
+        assistant_text: str = "",
     ) -> None:
         self._thinking.record(
             created_at=created_at,
@@ -118,6 +119,7 @@ class ObservabilityStore:
             model=model,
             tools=list(tools or []),
             reasoning=reasoning,
+            assistant_text=assistant_text,
         )
 
     def search_thinking(

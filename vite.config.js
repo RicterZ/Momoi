@@ -76,6 +76,7 @@ function previewThinkingCalls() {
     {
       turn_id: "9d5db6937f765921b2d6cbe0773e5111",
       call_id: "216921a1df9e4da7",
+      assistant_text: "先查这次洗衣完成后的工具调用和发送记录，确认当时有没有真正发出提醒。",
       created_at: at(0),
       stage: "owner",
       round: 1,
@@ -90,6 +91,7 @@ function previewThinkingCalls() {
     {
       turn_id: "9d5db6937f765921b2d6cbe0773e5111",
       call_id: "d8afbd8f275440d0",
+      assistant_text: "已确认：那次只结束了回合，没有发送提醒。我会说明漏发的事实，不把旧判断当成老师的要求。",
       created_at: at(0, 10),
       stage: "owner",
       round: 1,

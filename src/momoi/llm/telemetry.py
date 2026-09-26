@@ -89,6 +89,7 @@ def persist_thinking(
     sink: Callable[..., None] | None,
     *,
     reasoning: str,
+    assistant_text: str = "",
     tools: list[str],
     model: str,
 ) -> None:
@@ -105,6 +106,7 @@ def persist_thinking(
             model=model,
             tools=tools,
             reasoning=reasoning,
+            assistant_text=assistant_text,
         )
     except Exception as error:
         persist_thinking_failure(error)

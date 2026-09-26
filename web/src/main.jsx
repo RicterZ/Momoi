@@ -2547,11 +2547,28 @@ function ThinkingDetail({ item, calls, recall }) {
                     ) : null}
                   </div>
                 ) : null}
-                <p className="message-content thinking-body">
-                  {call.reasoning || call.excerpt || "这次调用没有可见推理。"}
-                </p>
-                <div className="message-meta">
+                <div className="thinking-call-heading">
+                  <span>ROUND {String(call.round || 1).padStart(2, "0")}</span>
                   <time>{formatDate(call.created_at)}</time>
+                </div>
+                <div className="thinking-call-content">
+                  {call.reasoning || call.excerpt ? (
+                    <section className="thinking-part reasoning-part" aria-label="Thinking">
+                      <h4>THINKING <span>推理</span></h4>
+                      <p className="message-content thinking-body">{call.reasoning || call.excerpt}</p>
+                    </section>
+                  ) : null}
+                  {call.assistant_text ? (
+                    <section className="thinking-part assistant-part" aria-label="Assistant text">
+                      <h4>ASSISTANT TEXT <span>正文</span></h4>
+                      <p className="message-content thinking-body">{call.assistant_text}</p>
+                    </section>
+                  ) : null}
+                  {!call.reasoning && !call.excerpt && !call.assistant_text ? (
+                    <p className="thinking-empty">这次调用没有可见推理或正文。</p>
+                  ) : null}
+                </div>
+                <div className="message-meta">
                   {call.tools?.length ? <span>{call.tools.join(" / ")}</span> : null}
                 </div>
               </div>

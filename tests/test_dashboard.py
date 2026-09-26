@@ -605,6 +605,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             model="test",
             tools=["end_turn"],
             reasoning="决定先说明为什么没有提醒。",
+            assistant_text="查到没有发送记录，我会说明漏发。",
         )
         listed = await (
             await self.client.get("/api/thinking", headers=self._auth())
@@ -620,6 +621,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             await self.client.get("/api/thinking/turn-one", headers=self._auth())
         ).json()
         self.assertEqual(detail["items"][0]["reasoning"], "决定先说明为什么没有提醒。")
+        self.assertEqual(detail["items"][0]["assistant_text"], "查到没有发送记录，我会说明漏发。")
         self.assertEqual(detail["recall"]["revision"], 1)
         self.assertEqual(detail["recall"]["episodes"][0]["cues"], ["本次实际读取的线索"])
         self.assertEqual(detail["recall"]["units"][0]["mode"], "search")

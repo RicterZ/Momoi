@@ -181,7 +181,7 @@ class ThinkingStoreTests(unittest.TestCase):
 
         with log_context(turn_id="turn-1", call_id="call-1", stage="owner", round=2):
             persist_thinking(
-                sink, reasoning="决定提醒", tools=["send_bubbles"], model="test"
+                sink, reasoning="决定提醒", assistant_text="准备发送提醒", tools=["send_bubbles"], model="test"
             )
         self.assertEqual(recorded["turn_id"], "turn-1")
         self.assertEqual(recorded["call_id"], "call-1")
@@ -189,6 +189,7 @@ class ThinkingStoreTests(unittest.TestCase):
         self.assertEqual(recorded["round"], 2)
         self.assertEqual(recorded["tools"], ["send_bubbles"])
         self.assertEqual(recorded["reasoning"], "决定提醒")
+        self.assertEqual(recorded["assistant_text"], "准备发送提醒")
 
     def test_writes_into_the_month_of_created_at(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -326,3 +327,37 @@ class ThinkingStoreTests(unittest.TestCase):
             self.assertEqual(listed["items"][0]["id"], f"plan:{plan['id']}")
             self.assertEqual(listed["items"][0]["step_count"], 2)
             store.close()
+
+
+def test_legacy_thinking_database_upgrade_and_assistant_only_round(tmp_path):
+    import sqlite3
+    from momoi.storage.ops.thinking import _SCHEMA
+
+    now = time.time()
+    month = month_key(now, ZoneInfo("Asia/Shanghai"))
+    path = tmp_path / f"thinking-{month}.sqlite3"
+    connection = sqlite3.connect(path)
+    connection.executescript(_SCHEMA)
+    connection.execute(
+        "INSERT INTO calls VALUES (1, ?, 'old', 'old-call', 'owner', 1, 'test', '[]', 3, '', 'plain', ?)",
+        (now, "旧推理".encode()),
+    )
+    connection.commit()
+    connection.close()
+    store = Store(tmp_path / "momoi.sqlite3")
+    try:
+        old = store.read_thinking("old")["calls"][0]
+        assert old["reasoning"] == "旧推理"
+        assert old["assistant_text"] == ""
+        body = "正文与推理分开保存。" * 200
+        store.record_thinking_call(created_at=now, turn_id="new", call_id="new-call", assistant_text=body)
+        new = store.read_thinking("new")["calls"][0]
+        assert new["reasoning"] == ""
+        assert new["assistant_text"] == body
+    finally:
+        store.close()
+    store = Store(tmp_path / "momoi.sqlite3")
+    try:
+        assert store.read_thinking("new")["calls"][0]["assistant_text"] == body
+    finally:
+        store.close()
