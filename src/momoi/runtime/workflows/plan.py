@@ -107,17 +107,43 @@ class PlanWorkflow:
             raise
         except Exception as error:
             reason = type(error).__name__
-            explanation = "达到本步执行上限" if isinstance(error, (TurnBudgetExceeded, TimeoutError)) else "执行出现异常"
+            if isinstance(error, (TurnBudgetExceeded, TimeoutError)) and not stopped_or_revised():
+                # A separate bounded closing turn has a fresh time/token budget.
+                # Never replay actions after a timeout: their outcome may be unknown.
+                closing_id = self._turn_id("plan-close", turn_id)
+                self.store.begin_turn(closing_id, "plan_step", [f"plan:{plan_id}"])
+                from ..transcript.rendering import _native_exchange_messages
+                # Reconstruct paired exchanges if cancellation happened mid-batch.
+                closing_messages = [*frozen_plan_messages(
+                    shared["messages"], plan, step_rows=[], timezone=self.store.timezone,
+                ), *_native_exchange_messages(self.store.turn_exchanges([turn_id]).get(turn_id, []))]
+                closing_messages.append({"role": "user", "content": (
+                    "[运行时通知] 本步已达到执行上限：" + reason + "。停止执行新工作。"
+                    "根据已有证据整理已完成、未完成、未确认的结果，调用 plan_step_finish 保存收尾。"
+                    "未验证完成则报告 blocked 并 abort_remaining=true。超时操作可能已生效，不得重试。"
+                    "无需机械通知用户达到上限；确有需要说明的结果或阻碍时，可自行用 send_bubbles 表达。"
+                )})
+                try:
+                    async with asyncio.timeout(60):
+                        await self._run_tool_loop(
+                            self._system(), closing_messages, tools, [], TurnDraft(),
+                            execution=TurnExecutionSpec("plan_step", max_rounds=3,
+                                permitted_tools=frozenset({"plan_step_finish", "send_bubbles"})),
+                            source_event_id=f"plan:{plan_id}", turn_id=closing_id,
+                            delivery_channel=channel, workflow=workflow,
+                        )
+                    self.store.complete_background_turn(closing_id)
+                    if completed is not None:
+                        return
+                except asyncio.CancelledError:
+                    self.store.cancel_turn(closing_id, reason="owner_update")
+                    self.store.pause_task_plan(plan_id, turn_id)
+                    raise
+                except Exception:
+                    self.store.record_turn_failure(closing_id, "plan_close_failed")
             if self.store.turn_has_external_effect(turn_id):
                 self.store.open_reconciliation(turn_id, reason)
             if self.store.task_plan(plan_id)["status"] == "running":
-                # Reuse delivery/outbox, rather than dropping errors or retrying the whole step.
-                self.bubble_delivery.dispatch(
-                    ToolCall("plan-failure", "send_bubbles", {"bubbles": [f"计划在第 {step['id']} 步停止了：{explanation}，后续步骤没有继续。"]}),
-                    turn_id=turn_id, stage="plan_step", round_number=0, delivery_channel=channel,
-                    heartbeat_turn=False, reply_followup_turn=False, heartbeat_owner_event_revision=None,
-                    previous_tool_name=None, previous_bubbles=None, previous_channel="",
-                )
                 self.store.finish_task_plan_step(plan_id, turn_id, "blocked", reason, [], True)
             self.store.record_turn_failure(turn_id, reason)
             log_event(logger, logging.ERROR, "plan_step_failed", plan_id=plan_id, turn_id=turn_id, reason=reason, exc_info=True)

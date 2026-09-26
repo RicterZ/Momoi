@@ -280,13 +280,13 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         async def complete(*args, **kwargs):
             nonlocal calls
             calls += 1
-            self.assertLessEqual(calls, 24)
+            self.assertLessEqual(calls, 27)
             call = ToolCall(str(calls), "read_tool_result", {"result_ref": ref})
             return ProviderResponse([{"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}], [call])
 
         daemon.provider = SimpleNamespace(complete=complete)
         await daemon._complete_plan_step_turn(plan["id"], asyncio.Event())
-        self.assertEqual(calls, 24)
+        self.assertEqual(calls, 27)
         self.assertEqual(daemon.store.task_plan(plan["id"])["status"], "blocked")
         self.assertIsNone(daemon.store.claim_task_plan())
 
@@ -524,3 +524,28 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         daemon.provider = SimpleNamespace(complete=complete)
         await daemon._complete_plan_step_turn(plan['id'], asyncio.Event())
         self.assertEqual(daemon.store.task_plan(plan['id'])['status'], 'failed')
+
+    async def test_limit_is_reported_to_model_for_private_close(self):
+        import asyncio
+        from momoi.runtime.turn_support import TurnBudgetExceeded
+        daemon = self.daemon
+        plan = daemon.store.create_task_plan({'title': 'limit', 'request': 'work',
+            'steps': [{'task': 'inspect', 'on_failure': 'stop'}]}, self.owner_turn, daemon.channel.name)
+        approve_and_start(daemon.store, plan['id'], daemon.channel.name,
+            {'tools': daemon.tool_surface.conversation_specs(), 'messages': []})
+        daemon.store.claim_task_plan()
+        before = daemon.store._db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0]
+        calls = 0
+        async def loop(system, messages, tools, events, draft, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise TurnBudgetExceeded('model round limit reached')
+            self.assertIn('已达到执行上限', str(messages[-1]))
+            await kwargs['workflow'].execute_tool(ToolCall('close', 'plan_step_finish', {
+                'outcome': 'blocked', 'summary': '缺少核实证据', 'output_refs': [], 'abort_remaining': True}))
+        daemon._run_tool_loop = loop
+        await daemon._complete_plan_step_turn(plan['id'], asyncio.Event())
+        self.assertEqual(calls, 2)
+        self.assertEqual(daemon.store.task_plan(plan['id'])['steps'][0]['result'], '缺少核实证据')
+        self.assertEqual(daemon.store._db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0], before)
