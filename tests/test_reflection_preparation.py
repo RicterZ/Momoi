@@ -370,3 +370,33 @@ def test_webhook_transcript_uses_reception_time_for_window(daemon):
             )
     rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
     assert [(row["content"], row["created_at"]) for row in rows] == [("included", start)]
+
+
+def test_native_reflection_does_not_accept_recalled_background_as_daily_evidence(daemon):
+    daemon.config = replace(daemon.config, episode_annealing=EpisodeAnnealingConfig(enabled=False))
+    start, end = day_window()
+    add_turn(daemon, 'today', start + 100)
+    daemon.store.append_turn_journal('today', 'assistant_exchange', {
+        'content': [{'type': 'tool_use', 'id': 'recall-history', 'name': 'recall', 'input': {}}],
+        'results': [{'type': 'tool_result', 'tool_use_id': 'recall-history',
+                     'content': json.dumps({'ok': True, 'memory': '过去的旧结论不能为今天作证'})}],
+    }, trust='runtime')
+    with daemon.store._db:
+        daemon.store._db.execute('UPDATE turn_journal SET created_at=? WHERE turn_id=?', (start + 100, 'today'))
+    daemon.store.claim_due_reflection(ReflectionConfig(enabled=True), end)
+    async def reflect(system, messages, tools, turn_id, workflow):
+        assert 'recall-history' in str(messages)
+        assert any(t['name'] == 'read_tool_result' for t in tools)
+        rejected = await workflow.execute_tool(ToolCall('bad', 'reflection_finish', {
+            'summary': '日记', 'memories': [{'kind': 'practice', 'key': 'work.check',
+                'content': '认识', 'evidence': '过去的旧结论不能为今天作证', 'confidence': 0.8}],
+            'conversation_actions': [],
+        }))
+        assert rejected['ok'] is False
+        accepted = await workflow.execute_tool(ToolCall('done', 'reflection_finish', {
+            'summary': '日记', 'memories': [], 'conversation_actions': [],
+        }))
+        assert accepted['ok'] is True
+        return workflow.completion_result()
+    daemon._run_agent_workflow = reflect
+    asyncio.run(daemon._complete_reflection('2026-09-08', 'reflection-test'))

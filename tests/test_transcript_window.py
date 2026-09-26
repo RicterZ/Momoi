@@ -346,3 +346,18 @@ class TranscriptWindowTest(unittest.TestCase):
             )
             self.assertEqual(directory_rows[0]["turn_ids"], [current])
             store.close()
+
+    def test_review_window_replays_only_wholly_contained_completed_turns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / 'store.sqlite3')
+            for turn, start, end in [('inside', 110, 190), ('left', 90, 150), ('right', 150, 200)]:
+                store.begin_turn(turn, 'owner', [turn])
+                store.append_turn_journal(turn, 'assistant_exchange', {
+                    'content': [{'type': 'tool_use', 'id': turn, 'name': 'read_file', 'input': {'path': turn}}],
+                    'results': [{'type': 'tool_result', 'tool_use_id': turn, 'content': '{"ok":true}'}],
+                }, trust='runtime')
+                with store._db:
+                    store._db.execute("UPDATE turns SET state='completed', started_at=?, updated_at=? WHERE id=?", (start, end, turn))
+                    store._db.execute('UPDATE turn_journal SET created_at=? WHERE turn_id=?', (end-1, turn))
+            self.assertEqual(set(store.turn_exchanges(['inside', 'left', 'right'], window=(100, 200))), {'inside'})
+            self.assertEqual(set(store.turn_exchanges(['inside', 'left', 'right'])), {'inside', 'left', 'right'})

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import json
 from typing import Any
 
 from ...observability.events import log_event
@@ -131,15 +132,28 @@ class ReflectionWorkflow:
         window = (source["start_at"], source["end_at"])
         rows = self.store.conversation_messages_for_turns(None, window=window)
         transcript_messages, _ = maintenance_transcript(
-            self.store, rows, [], window=window,
+            self.store, rows, [], window=window, replay_native=True,
         )
         raw_record = "\n".join(str(row["content"]) for row in rows)
         query = raw_record[-20000:]
-        reflection_evidence = raw_record + "\n" + "\n".join(
-            message["content"] if isinstance(message["content"], str) else
-            "\n".join(block.get("text", "") for block in message["content"])
-            for message in transcript_messages
-        )
+        # Rendered calls, recall and runtime annotations are context, never an
+        # independent source proving that the recalled event happened today.
+        reflection_evidence = raw_record
+        # First-hand execution results can support work-method insights. Memory
+        # retrieval is background even when the retrieval itself happened today.
+        for record in self.store._db.execute(
+            "SELECT payload_json FROM turn_journal WHERE item_type='tool_result' "
+            "AND created_at>=? AND created_at<?", window,
+        ).fetchall():
+            try:
+                payload = json.loads(record["payload_json"])
+            except (ValueError, TypeError):
+                continue
+            if isinstance(payload, dict) and payload.get("name") not in {
+                "recall", "memory_search", "episode_search", "episode_read", "read_tool_result",
+                "thinking_search", "thinking_read",
+            }:
+                reflection_evidence += "\n" + json.dumps(payload.get("result", {}), ensure_ascii=False)
         owner_source = "\n".join(str(row["content"]) for row in rows if row["role"] == "user")
         knowledge_source = owner_source
         confirmed_memory, learned = self.store.ranked_memory_context(
@@ -160,6 +174,7 @@ class ReflectionWorkflow:
             ("reflection_memories", learned),
             ("mood_timeline", str(source.get("mood_timeline") or "(none)")),
             ("episode_timeline", str(source.get("episode_timeline") or "(none)")),
+
         )
         system = self._system()
         messages: list[dict[str, Any]] = [
@@ -175,7 +190,8 @@ class ReflectionWorkflow:
                 ],
             }
         ]
-        tools = [REFLECTION_FINISH_SPEC, *REFLECTION_RETRIEVAL_SPECS]
+        from ..tool_contracts.runtime import READ_TOOL_RESULT_SPEC
+        tools = [REFLECTION_FINISH_SPEC, *REFLECTION_RETRIEVAL_SPECS, READ_TOOL_RESULT_SPEC]
         retrieval = ReflectionRetrieval(self.store, self.memory_tools, window[1])
         workflow_complete = False
         workflow_result: dict[str, object] | None = None
@@ -220,7 +236,7 @@ class ReflectionWorkflow:
         workflow = AgentWorkflow(
             stage="reflection",
             preserve_transcript=True,
-            tool_names=frozenset(str(tool["name"]) for tool in tools),
+            tool_names=frozenset(str(tool["name"]) for tool in tools if tool["name"] != "read_tool_result"),
             execute_tool=execute_tool,
             is_complete=lambda: workflow_complete,
             completion_result=lambda: workflow_result,

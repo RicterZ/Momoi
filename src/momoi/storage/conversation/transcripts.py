@@ -56,7 +56,7 @@ _MESSAGE_TIME_SQL = """CASE WHEN m.role='event' THEN COALESCE(wr.created_at, m.c
 
 
 class TranscriptStore:
-    def turn_exchanges(self, turn_ids: list[str]) -> dict[str, list[dict[str, object]]]:
+    def turn_exchanges(self, turn_ids: list[str], *, window=None) -> dict[str, list[dict[str, object]]]:
         """Return completed native assistant/tool exchanges for transcript replay."""
         ordered_ids = [str(turn_id) for turn_id in dict.fromkeys(turn_ids) if turn_id]
         if not ordered_ids:
@@ -77,6 +77,25 @@ class TranscriptStore:
         ).fetchall()
         for row in linked:
             parent_ids[str(row["executor_id"])] = str(row["parent_id"])
+        if window is not None:
+            # A partially observed turn cannot be replayed wholesale: tool calls
+            # or speech on either side of the review boundary would leak in.
+            excluded = set()
+            for identifier, parent in parent_ids.items():
+                bounds = self._db.execute(
+                    "SELECT started_at, updated_at, state FROM turns WHERE id=?", (identifier,)
+                ).fetchone()
+                if (bounds is None or bounds["state"] != "completed"
+                        or bounds["started_at"] < window[0] or bounds["updated_at"] >= window[1]):
+                    excluded.add(parent)
+                if self._db.execute(
+                    "SELECT 1 FROM turn_journal WHERE turn_id=? AND item_type='assistant_exchange' "
+                    "AND (created_at<? OR created_at>=?) LIMIT 1", (identifier, *window)
+                ).fetchone():
+                    excluded.add(parent)
+            parent_ids = {key: value for key, value in parent_ids.items() if value not in excluded}
+            if not parent_ids:
+                return {}
         ordered_ids = list(parent_ids)
         placeholders = ",".join("?" for _ in ordered_ids)
         rows = self._db.execute(

@@ -16,15 +16,19 @@ def maintenance_transcript(store, rows, required_turn_ids, *, window=None, inclu
             turn_id: [record for record in records if window[0] <= record["at"] < window[1]]
             for turn_id, records in activity.items()
         }
+        if replay_native:
+            activity = {key: [record for record in records if record.get("name") != "recall"]
+                        for key, records in activity.items()}
     transcript = build_transcript(rows, timezone=store.timezone, tool_activity=activity)
     groups = [*transcript.orphaned, *transcript.groups]
     labels = turn_labels(groups)
     messages = render_messages(
         groups, timezone=store.timezone, tool_activity=activity, labels=labels,
-        # Time-bounded evidence must not import tools from outside its window.
+        # Partial boundary turns retain their window-filtered speech fallback.
         native_exchanges=(
-            store.turn_exchanges(list(labels))
-            if replay_native and window is None
+            (store.turn_exchanges(list(labels), window=window) if window is not None
+             else store.turn_exchanges(list(labels)))
+            if replay_native
             else None
         ),
     )
