@@ -132,6 +132,8 @@ class AgentLoop:
                 circuit_rounds += 1
             if not circuit_reason and execution.max_rounds and llm_round >= execution.max_rounds:
                 raise TurnBudgetExceeded("model round limit reached")
+            if workflow is not None and workflow.before_round is not None:
+                await workflow.before_round(llm_round, messages)
             if reply_wait_turn and self.store.pending_owner_reply() is None:
                 return None
             updates = (

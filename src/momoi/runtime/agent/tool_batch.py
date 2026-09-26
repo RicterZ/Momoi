@@ -227,7 +227,11 @@ class ToolBatchExecutor:
                         plan = self.store.update_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, call.arguments.get("version"), call.arguments.get("steps"), call.arguments.get("request"))
                     elif call.name == "plan_resume":
                         context_messages = copy.deepcopy(request.context_messages or request.messages[:-1])
-                        plan = self.store.resume_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, call.arguments.get("version"), {"system": request.system, "tools": request.request_tools, "messages": context_messages})
+                        quote = call.arguments.get("owner_feedback", "")
+                        event = next((e for e in request.current_events if quote.strip() and quote in e.text
+                                      and e.channel == request.delivery_channel.name), None)
+                        feedback = {"event_id": event.event_id, "quote": quote, "received_at": event.received_at} if event else None
+                        plan = self.store.resume_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, call.arguments.get("version"), {"system": request.system, "tools": request.request_tools, "messages": context_messages}, owner_feedback=feedback)
                     else:
                         plan = self.store.cancel_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name)
                     result = {"ok": True, "plan_id": plan["id"], "title": plan["title"], "request": plan["request"], "status": plan["status"], "version": plan.get("version", 1), "step_index": plan["step_index"], "resume_safety": self.store.plan_resume_safety(plan), "steps": plan["steps"], "review": plan["review"]}

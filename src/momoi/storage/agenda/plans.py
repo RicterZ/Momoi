@@ -86,6 +86,10 @@ class PlanStore:
                            if plan["step_index"] < len(plan["steps"]) else None)
             if interrupted:
                 normalized[plan["step_index"]]["interrupted_turn_id"] = interrupted
+            previous = plan["steps"][plan["step_index"]] if plan["step_index"] < len(plan["steps"]) else {}
+            for key in ("checkpoint_turn_id", "result", "output_refs"):
+                if key in previous:
+                    normalized[plan["step_index"]][key] = previous[key]
         review = {**plan["review"], "approved_version": None, "approval": None}
         with self._db: self._db.execute("UPDATE task_plans SET steps_json=?,request=?,status='draft',review_json=?,version=version+1,updated_at=? WHERE id=? AND version=?",(json.dumps(normalized,ensure_ascii=False),request if request is not None else plan["request"],json.dumps(review, ensure_ascii=False),time.time(),plan_id,version))
         return self.task_plan(plan_id)
@@ -112,6 +116,8 @@ class PlanStore:
         if plan["status"] != "paused":
             return "not_paused"
         step = plan["steps"][plan["step_index"]]
+        if step.get("pause_reason") == "round_limit":
+            return "owner_decision_required"
         turn_id = step.get("interrupted_turn_id")
         if not turn_id:
             return "safe"
@@ -121,7 +127,7 @@ class PlanStore:
             return "requires_review"
         return "safe"
 
-    def resume_task_plan(self, plan_id, channel, version, context):
+    def resume_task_plan(self, plan_id, channel, version, context, *, owner_feedback=None):
         plan = self.task_plan(plan_id)
         if plan is None or plan["channel"] != channel or plan["status"] != "paused":
             raise ValueError("paused plan not found in this channel")
@@ -131,16 +137,58 @@ class PlanStore:
             raise ValueError("submit the revised plan for approval before execution")
         if plan["step_index"] >= len(plan["steps"]):
             raise ValueError("plan has no remaining steps")
-        if self.plan_resume_safety(plan) != "safe":
+        safety = self.plan_resume_safety(plan)
+        if safety == "owner_decision_required":
+            step = plan["steps"][plan["step_index"]]
+            if not owner_feedback or owner_feedback.get("received_at", 0) <= step.get("paused_at", 0):
+                raise ValueError("requires new owner decision after step limit")
+            step["owner_feedback"] = owner_feedback
+            step.pop("pause_reason", None)
+            step["status"] = "pending"
+        elif safety != "safe":
             raise ValueError("interrupted step may have acted externally; inspect it and create a new plan")
         context = {**context, "completed_through": plan["step_index"],
                    "resume_count": int((plan.get("context") or {}).get("resume_count", 0)) + 1}
         with self._db:
             self._db.execute(
-                "UPDATE task_plans SET status='ready', context_json=?, updated_at=? WHERE id=? AND status='paused' AND version=?",
-                (json.dumps(context, ensure_ascii=False), time.time(), plan_id, version),
+                "UPDATE task_plans SET status='ready', context_json=?, steps_json=?, updated_at=? WHERE id=? AND status='paused' AND version=?",
+                (json.dumps(context, ensure_ascii=False), json.dumps(plan["steps"], ensure_ascii=False), time.time(), plan_id, version),
             )
         return self.task_plan(plan_id)
+
+    def pause_task_plan_for_limit(self, plan_id, turn_id):
+        plan = self.task_plan(plan_id)
+        step = plan["steps"][plan["step_index"]]
+        step.update(pause_reason="round_limit", paused_at=time.time(),
+                    checkpoint_turn_id=turn_id, status="paused")
+        with self._db:
+            self._archive_progress_messages(turn_id, json.dumps([f"plan:{plan_id}"]))
+            self._db.execute("INSERT INTO messages (turn_id,role,content,created_at,source_event_ids_json,delivery_state) "
+                             "VALUES (?,'assistant',?,?,?,'internal')", (
+                turn_id, json.dumps({"plan_id": plan_id, "step_id": step["id"], "status": "paused",
+                                     "result": "50次调用达到步骤上限，等待用户判断", "output_refs": []}, ensure_ascii=False),
+                time.time(), json.dumps([f"plan-step-record:{turn_id}"]),
+            ))
+            self._db.execute("UPDATE turns SET state='completed',stage='completed',updated_at=? WHERE id=?",
+                             (time.time(), turn_id))
+            self._db.execute("UPDATE task_plans SET status='paused',steps_json=?,updated_at=? WHERE id=?",
+                             (json.dumps(plan["steps"], ensure_ascii=False), time.time(), plan_id))
+
+    def save_plan_limit_handoff(self, plan_id, summary, output_refs):
+        plan = self.task_plan(plan_id)
+        if plan is None or plan["status"] != "paused":
+            raise ValueError("plan no longer paused")
+        step = plan["steps"][plan["step_index"]]
+        step.update(result=summary, output_refs=output_refs)
+        with self._db:
+            self._db.execute("UPDATE task_plans SET steps_json=?,updated_at=? WHERE id=?",
+                             (json.dumps(plan["steps"], ensure_ascii=False), time.time(), plan_id))
+            self._db.execute("UPDATE messages SET content=? WHERE turn_id=? AND delivery_state='internal' "
+                             "AND source_event_ids_json=?", (
+                json.dumps({"plan_id": plan_id, "step_id": step["id"], "status": "paused", "result": summary,
+                            "output_refs": output_refs}, ensure_ascii=False), step["checkpoint_turn_id"],
+                json.dumps([f"plan-step-record:{step['checkpoint_turn_id']}"]),
+            ))
 
     def cancel_task_plan(self, plan_id, channel):
         plan=self.task_plan(plan_id)

@@ -280,14 +280,14 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         async def complete(*args, **kwargs):
             nonlocal calls
             calls += 1
-            self.assertLessEqual(calls, 27)
+            self.assertLessEqual(calls, 54)
             call = ToolCall(str(calls), "read_tool_result", {"result_ref": ref})
             return ProviderResponse([{"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}], [call])
 
         daemon.provider = SimpleNamespace(complete=complete)
         await daemon._complete_plan_step_turn(plan["id"], asyncio.Event())
-        self.assertEqual(calls, 27)
-        self.assertEqual(daemon.store.task_plan(plan["id"])["status"], "blocked")
+        self.assertEqual(calls, 54)
+        self.assertEqual(daemon.store.task_plan(plan["id"])["status"], "paused")
         self.assertIsNone(daemon.store.claim_task_plan())
 
     async def test_stop_cancels_queued_plan_and_scheduler_claim_is_unique(self):
@@ -540,7 +540,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             nonlocal calls
             calls += 1
             if calls == 1:
-                raise TurnBudgetExceeded('model round limit reached')
+                raise TurnBudgetExceeded('token limit reached')
             self.assertIn('已达到执行上限', str(messages[-1]))
             await kwargs['workflow'].execute_tool(ToolCall('close', 'plan_step_finish', {
                 'outcome': 'blocked', 'summary': '缺少核实证据', 'output_refs': [], 'abort_remaining': True}))
@@ -549,3 +549,51 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, 2)
         self.assertEqual(daemon.store.task_plan(plan['id'])['steps'][0]['result'], '缺少核实证据')
         self.assertEqual(daemon.store._db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0], before)
+
+    async def test_soft_audit_then_hard_pause_and_owner_resume(self):
+        import asyncio
+        import json
+        daemon, channel = self.daemon, self.daemon.channel.name
+        plan = daemon.store.create_task_plan({'title': 'audit', 'request': 'verify target',
+            'steps': [{'task': 'find evidence', 'on_failure': 'stop'}]}, self.owner_turn, channel)
+        approve_and_start(daemon.store, plan['id'], channel,
+            {'tools': daemon.tool_surface.conversation_specs(), 'messages': []})
+        daemon.store.claim_task_plan()
+        ref = daemon.tool_results.save('{"ok":true,"content":"evidence"}')
+        rounds = audits = closes = 0
+        async def complete(system, messages, tools, **kwargs):
+            nonlocal rounds, audits, closes
+            if not tools:
+                audits += 1
+                self.assertEqual(rounds, 30)
+                self.assertNotIn('Test soul', str(system))
+                self.assertIn('独立的任务执行审计员', str(system))
+                self.assertIn('verify target', str(messages))
+                return ProviderResponse([{'type': 'text', 'text': '方向正确，继续核对证据'}], [])
+            if '50次调用硬上限' in str(messages):
+                closes += 1
+                if closes == 1:
+                    call = ToolCall('notify', 'send_bubbles', {'bubbles': ['已核对部分证据，关键来源仍不可用。继续查、调整方案，还是停止？']})
+                else:
+                    call = ToolCall('paused', 'plan_step_finish', {'outcome': 'blocked', 'summary': '关键来源不可用，保留既有证据', 'output_refs': [ref], 'abort_remaining': True})
+            else:
+                rounds += 1
+                if rounds == 31:
+                    self.assertIn('方向正确，继续核对证据', str(messages))
+                call = ToolCall(str(rounds), 'read_tool_result', {'result_ref': ref})
+            return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
+        daemon.provider = SimpleNamespace(complete=complete)
+        await daemon._complete_plan_step_turn(plan['id'], asyncio.Event())
+        paused = daemon.store.task_plan(plan['id'])
+        self.assertEqual((rounds, audits, closes), (50, 1, 2))
+        self.assertEqual(paused['status'], 'paused')
+        self.assertEqual(paused['step_index'], 0)
+        self.assertEqual(paused['steps'][0]['output_refs'], [ref])
+        with self.assertRaises(ValueError):
+            daemon.store.resume_task_plan(plan['id'], channel, 1, {})
+        resumed = daemon.store.resume_task_plan(plan['id'], channel, 1, {}, owner_feedback={
+            'event_id': 'new', 'quote': '继续', 'received_at': time.time()+1})
+        self.assertEqual(resumed['status'], 'ready')
+        self.assertEqual(resumed['step_index'], 0)
+        self.assertNotIn('pause_reason', resumed['steps'][0])
+        self.assertEqual(resumed['steps'][0]['owner_feedback']['quote'], '继续')

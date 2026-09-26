@@ -242,6 +242,14 @@ class OwnerWorkflow:
         directives: list[str] = []
         directives.extend(self._interruption_notices.pop(channel.name, []))
         for plan in self.store.paused_task_plans(channel.name):
+            if plan["status"] == "paused" and self.store.plan_resume_safety(plan) == "owner_decision_required":
+                directives.append(
+                    f"计划 {plan['id']} version={plan['version']} 因步骤50次上限暂停，等待用户介入。"
+                    "先 plan_get 查看卡点与交接。用户明确要求继续时 plan_resume，owner_feedback 引用本次用户原话；"
+                    "从交接继续，不重做已完成或可能已生效的操作。修改则 plan_update 后重新提交审核，终止则 plan_cancel。"
+                    "无关聊天不能恢复。"
+                )
+                continue
             if plan["status"] != "paused":
                 directives.append(
                     f"待处理计划：id={plan['id']} title={plan['title']!r} "
