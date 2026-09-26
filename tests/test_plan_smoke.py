@@ -597,3 +597,25 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resumed['step_index'], 0)
         self.assertNotIn('pause_reason', resumed['steps'][0])
         self.assertEqual(resumed['steps'][0]['owner_feedback']['quote'], '继续')
+
+    async def test_plan_ignores_cumulative_budget_but_still_fits_context(self):
+        import asyncio
+        from unittest.mock import patch
+        daemon = self.daemon
+        plan = daemon.store.create_task_plan({'title': 'no cumulative cap', 'request': 'work',
+            'steps': [{'task': 'verify', 'on_failure': 'stop'}]}, self.owner_turn, daemon.channel.name)
+        approve_and_start(daemon.store, plan['id'], daemon.channel.name,
+            {'tools': daemon.tool_surface.conversation_specs(), 'messages': []})
+        daemon.store.claim_task_plan()
+        async def complete(system, messages, tools, **kwargs):
+            self.assertNotIn('max_seconds="300"', str(messages))
+            call = ToolCall('done', 'plan_step_finish', {'outcome': 'succeeded',
+                'summary': 'verified', 'output_refs': [], 'abort_remaining': False})
+            return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
+        daemon.provider = SimpleNamespace(complete=complete)
+        with patch.object(daemon.context_window, 'check_budget', side_effect=AssertionError('budget must not run')) as budget, \
+             patch.object(daemon.context_window, 'fit', wraps=daemon.context_window.fit) as fit:
+            await daemon._complete_plan_step_turn(plan['id'], asyncio.Event())
+            budget.assert_not_called()
+            self.assertTrue(fit.called)
+        self.assertEqual(daemon.store.task_plan(plan['id'])['status'], 'completed')

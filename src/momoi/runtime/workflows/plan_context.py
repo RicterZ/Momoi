@@ -25,7 +25,7 @@ def current_step_xml(plan):
             SubElement(node, "checkpoint", turn_id=item["checkpoint_turn_id"]).text = "从既有进度继续，先核对实际状态，不重做已生效操作。"
         if item.get("owner_feedback"):
             SubElement(node, "owner_feedback").text = item["owner_feedback"].get("quote", "")
-    SubElement(root, "limits", audit_after_rounds="30", max_rounds="50", max_seconds="300")
+    SubElement(root, "limits", audit_after_rounds="30", max_rounds="50")
     return tostring(root, encoding="unicode")
 
 

@@ -100,12 +100,11 @@ class PlanWorkflow:
                 before_round=before_round,
             )
             log_event(logger, logging.INFO, "plan_step_started", plan_id=plan_id, step_id=step["id"], turn_id=turn_id)
-            async with asyncio.timeout(300):
-                await self._run_tool_loop(
-                    self._system(), messages, tools, [], TurnDraft(),
-                    execution=TurnExecutionSpec("plan_step", max_rounds=50),
-                    source_event_id=f"plan:{plan_id}", turn_id=turn_id, delivery_channel=channel, workflow=workflow,
-                )
+            await self._run_tool_loop(
+                self._system(), messages, tools, [], TurnDraft(),
+                execution=TurnExecutionSpec("plan_step", max_rounds=50),
+                source_event_id=f"plan:{plan_id}", turn_id=turn_id, delivery_channel=channel, workflow=workflow,
+            )
             log_event(logger, logging.INFO, "plan_step_completed", plan_id=plan_id, step_id=step["id"], turn_id=turn_id, result=completed)
             if completed is None and stopped_or_revised():
                 with self.store._db:

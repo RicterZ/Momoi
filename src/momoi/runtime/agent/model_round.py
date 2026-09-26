@@ -99,9 +99,12 @@ class ModelRoundRunner:
                 if authority == "owner"
                 else messages
             )
-            self.context_window.check_budget(
-                turn_id, request_system, request_messages, request_tools
-            )
+            # Plans use round-based audit/pause limits, not cumulative time or
+            # token budgets. Context fitting above still protects the input window.
+            if stage != "plan_step":
+                self.context_window.check_budget(
+                    turn_id, request_system, request_messages, request_tools
+                )
             response = await complete(
                 request_system,
                 request_messages,
