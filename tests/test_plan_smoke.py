@@ -458,7 +458,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(count, 2)
                 self.assertEqual(json.loads(messages[-1]['content'][0]['content'])['status'], 'draft')
                 call = ToolCall('submit', 'plan_submit', {'plan_id': plan['id'], 'version': 2,
-                    'summary': '发现新事实，建议修改方案，请确认。', 'evidence': '工具证据', 'validation': '检查输出'})
+                    'summary': '发现新事实。\n\n建议修改方案，请确认。', 'evidence': '工具证据', 'validation': '检查输出'})
             return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
         daemon.provider = SimpleNamespace(complete=complete)
         await daemon._complete_plan_step_turn(plan['id'], asyncio.Event())
@@ -467,7 +467,9 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current['version'], 2)
         self.assertIsNone(daemon.store.claim_task_plan())
         texts = [row[0] for row in daemon.store._db.execute('SELECT text FROM outbox')]
-        self.assertEqual(texts.count('发现新事实，建议修改方案，请确认。'), 1)
+        self.assertEqual(texts.count('发现新事实。'), 1)
+        self.assertEqual(texts.count('建议修改方案，请确认。'), 1)
+        self.assertEqual(current['review']['summary'], '发现新事实。\n\n建议修改方案，请确认。')
 
     async def test_resume_keeps_approval_version_but_uses_new_execution_turn(self):
         import asyncio
