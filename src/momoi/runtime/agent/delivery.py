@@ -222,12 +222,13 @@ class BubbleDelivery:
         previous_tool_name: str | None,
         previous_bubbles: list[ChannelMessage] | None,
         previous_channel: str,
+        allow_paragraphs: bool = False,
     ) -> BubbleDeliveryResult:
         if not call.id:
             return BubbleDeliveryResult(
                 {"ok": False, "error": "missing_tool_call_id"}
             )
-        bubbles, error = parse_bubbles(call.arguments)
+        bubbles, error = parse_bubbles(call.arguments, allow_paragraphs=allow_paragraphs)
         if bubbles is not None:
             error = self.policy.validate_emotions(bubbles)
             if error is not None:

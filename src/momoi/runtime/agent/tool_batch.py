@@ -1,7 +1,6 @@
 import copy
 from dataclasses import replace
 import logging
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -203,16 +202,14 @@ class ToolBatchExecutor:
                             raise ValueError("summary, evidence and validation must be nonempty")
                         if plan["status"] == "draft":
                             delivery = self.bubble_delivery.dispatch(
-                                ToolCall(call.id + "-summary", "send_bubbles", {"bubbles": [
-                                    paragraph.strip() for paragraph in re.split(r"\n\s*\n", args["summary"])
-                                    if paragraph.strip()
-                                ]}),
+                                ToolCall(call.id + "-summary", "send_bubbles", {"bubbles": [args["summary"]]}),
                                 turn_id=request.turn_id, stage=execution.stage,
                                 round_number=request.round_number, delivery_channel=request.delivery_channel,
                                 heartbeat_turn=execution.heartbeat, reply_followup_turn=execution.reply_followup,
                                 heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
                                 previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
                                 previous_channel=last_sent_channel,
+                                allow_paragraphs=True,
                             )
                             if not delivery.result.get("ok"):
                                 raise ValueError("proposal delivery failed: " + str(

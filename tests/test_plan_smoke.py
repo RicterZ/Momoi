@@ -467,8 +467,9 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current['version'], 2)
         self.assertIsNone(daemon.store.claim_task_plan())
         texts = [row[0] for row in daemon.store._db.execute('SELECT text FROM outbox')]
-        self.assertEqual(texts.count('发现新事实。'), 1)
-        self.assertEqual(texts.count('建议修改方案，请确认。'), 1)
+        self.assertEqual(texts.count('发现新事实。\n\n建议修改方案，请确认。'), 1)
+        self.assertNotIn('发现新事实。', texts)
+        self.assertNotIn('建议修改方案，请确认。', texts)
         self.assertEqual(current['review']['summary'], '发现新事实。\n\n建议修改方案，请确认。')
 
     async def test_resume_keeps_approval_version_but_uses_new_execution_turn(self):

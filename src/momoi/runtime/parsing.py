@@ -51,6 +51,7 @@ def parse_tagged_bubbles(text: str) -> list[str] | None:
 
 def parse_bubbles(
     arguments: dict[str, Any],
+    *, allow_paragraphs: bool = False,
 ) -> tuple[list[ChannelMessage] | None, str | None]:
     raw_bubbles = arguments.get("bubbles")
     if not isinstance(raw_bubbles, list) or not raw_bubbles:
@@ -60,7 +61,7 @@ def parse_bubbles(
         if isinstance(item, str):
             if not item.strip():
                 return None, "bubbles_must_contain_non_empty_items"
-            if has_blank_line(item):
+            if not allow_paragraphs and has_blank_line(item):
                 return None, "blank_lines_must_be_separate_bubbles"
             bubbles.append(item.strip())
             continue
