@@ -21,6 +21,7 @@ def arguments(**overrides):
                 "ttl_seconds": 100,
                 "status": "observed",
                 "source_turn": "T-1",
+                "source_id": "message:1",
                 "source": "虾仁出库一半",
                 "uncertainty": "是否吃完未知",
                 **overrides,
@@ -33,6 +34,7 @@ def arguments(**overrides):
 def records(role="user"):
     return [
         {
+            "source_id": "message:1",
             "turn_id": "original-turn",
             "role": role,
             "content": "小黄瓜出库两根，虾仁出库一半",
@@ -93,6 +95,8 @@ def test_provenance_uses_evidence_time_not_maintenance_time_and_roundtrips(tmp_p
     "overrides",
     [
         {"source_turn": "T-999"},
+        {"source_id": "event:invented"},
+        {"source_id": ""},
         {"source": "用户答应吃饭后告诉我"},
         {"source": ""},
     ],
@@ -202,6 +206,36 @@ def test_batched_owner_source_time_is_the_quoted_event_time(tmp_path):
     rows = state_evidence_rows(
         store, store.conversation_messages_for_turns(["original-turn"])
     )
-    resolved = resolve_state_evidence(arguments(), rows, {"original-turn": "T-1"})
+    resolved = resolve_state_evidence(arguments(source_id="event:b"), rows, {"original-turn": "T-1"})
     assert resolved["add"][0]["observed_at"] == 800
     store.close()
+
+
+def test_identical_quotes_are_disambiguated_by_source_id():
+    rows = records() + [{**records()[0], "source_id": "event:later", "created_at": 900}]
+    resolved = resolve_state_evidence(
+        arguments(source_id="event:later"), rows, {"original-turn": "T-1"}
+    )
+    assert resolved["add"][0]["observed_at"] == 900
+    assert "source_id" not in resolved["add"][0]
+
+
+def test_source_records_render_original_events_with_escaped_text(tmp_path):
+    from momoi.models import IncomingMessage, AgentReply
+    from momoi.runtime.workflows.current_state import state_evidence_rows, render_state_evidence
+
+    store = Store(tmp_path / "state.db")
+    try:
+        events = [IncomingMessage("first", "1", "<在家> & 等你", 700, 700),
+                  IncomingMessage("second", "2", "已经出门", 800, 800)]
+        for event in events:
+            store.add_event(event)
+        store.commit_turn(events, "合并文本", AgentReply([]), turn_id="source")
+        rows = state_evidence_rows(store, store.conversation_messages_for_turns(["source"]))
+        rendered = render_state_evidence(store, rows, {"source": "T-1"})
+        sources = ElementTree.fromstring("<evidence>" + rendered + "</evidence>")
+        assert [item.get("id") for item in sources] == ["event:first", "event:second"]
+        assert [item.text for item in sources] == [event.text for event in events]
+        assert [item.get("time") for item in sources] == [store.context_timestamp(700), store.context_timestamp(800)]
+    finally:
+        store.close()

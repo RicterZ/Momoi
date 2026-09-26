@@ -61,7 +61,7 @@ class TranscriptWindowTest(unittest.TestCase):
                 "content": [{"type": "tool_use", "id": "send-past", "name": "send_bubbles", "input": {"bubbles": ["过去的回答"]}}],
                 "results": [{"type": "tool_result", "tool_use_id": "send-past", "content": '{"ok":true}'}],
             }, trust="runtime")
-            for stage in ("owner", "heartbeat", "goal", "webhook", "reply_followup", "plan_step"):
+            for stage in ("owner", "heartbeat", "goal", "webhook", "reply_followup", "plan_step", "current_state_maintenance"):
                 daemon.store.begin_turn(f"active-{stage}", stage, [stage])
             with daemon.store._db:
                 daemon.store._db.execute(
@@ -69,7 +69,7 @@ class TranscriptWindowTest(unittest.TestCase):
                 )
                 daemon.store._db.execute("UPDATE turns SET updated_at=10 WHERE id='past'")
             contexts = [daemon.shared_turn_context(f"active-{stage}")["messages"]
-                        for stage in ("owner", "heartbeat", "goal", "webhook", "reply_followup", "plan_step")]
+                        for stage in ("owner", "heartbeat", "goal", "webhook", "reply_followup", "plan_step", "current_state_maintenance")]
             encoded = [json.dumps(messages, ensure_ascii=False, sort_keys=True) for messages in contexts]
             self.assertEqual(len(set(encoded)), 1)
             self.assertIn("过去的问题", encoded[0])

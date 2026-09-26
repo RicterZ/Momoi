@@ -49,6 +49,7 @@ class TurnExecutionSpec:
             "goal",
             "reply_followup",
             "plan_step",
+            "current_state_maintenance",
         }
 
     @property

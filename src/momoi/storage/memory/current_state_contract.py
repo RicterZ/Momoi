@@ -83,6 +83,10 @@ CURRENT_STATE_CHANGE_SCHEMA = {
                         "type": "string", "minLength": 1,
                         "description": "Exact T-N label of the evidence Turn in this transcript.",
                     },
+                    "source_id": {
+                        "type": "string", "minLength": 1,
+                        "description": "Exact source id from source_evidence (event:... or message:...).",
+                    },
                     "source": {
                         "type": "string", "minLength": 1, "maxLength": 512,
                         "description": "Exact contiguous quote from one source message. Never attribute assistant words to the owner. Runtime resolves speaker and evidence time.",
@@ -104,7 +108,7 @@ CURRENT_STATE_CHANGE_SCHEMA = {
                         ),
                     },
                 },
-                "required": ["subject", "key", "value", "ttl_seconds", "status", "source_turn", "source", "uncertainty"],
+                "required": ["subject", "key", "value", "ttl_seconds", "status", "source_turn", "source_id", "source", "uncertainty"],
                 "additionalProperties": False,
             },
         },

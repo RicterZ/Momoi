@@ -5,14 +5,13 @@ import copy
 import json
 import logging
 from time import time
+from xml.sax.saxutils import escape, quoteattr
 
 from ...models import IncomingMessage, TurnDraft
 from ...observability.events import log_event
 from ...storage.memory.current_state import StateConflict
 from ..agent import AgentWorkflow
 from ..context.current_state import pack_current_turn_context
-from ..tool_contracts.current_state import current_state_finish_spec
-from ..transcript.maintenance import maintenance_transcript
 from ..transcript.rendering import render_pending_turns
 from ..turn_support import PROMPT_ROOT, live_prompt
 
@@ -52,7 +51,12 @@ class CurrentStateWorkflow:
         return [self.store._incoming_message(row) for row in event_rows]
 
     async def _complete_current_state_task(self, source_turn_id: str) -> None:
-        batch = self.store.claim_current_state_batch(source_turn_id)
+        # Reserve most of the window for the reusable prefix/history. This is
+        # a conservative character heuristic, not a provider token measurement.
+        batch = self.store.claim_current_state_batch(
+            source_turn_id,
+            max_source_chars=max(1024, self._context_compaction_tokens() // 4),
+        )
         if batch is None:
             return
         turn_id = batch["turn_id"]
@@ -117,12 +121,7 @@ class CurrentStateWorkflow:
             row["id"]: row
             for row in self.store.conversation_messages_for_turns(source_turn_ids)
         }
-        evidence_messages, turn_labels = maintenance_transcript(
-            self.store,
-            list(rows.values()),
-            source_turn_ids,
-            include_activity=False,
-        )
+        turn_labels = {value: f"T-{index}" for index, value in enumerate(source_turn_ids, 1)}
         messages = copy.deepcopy(shared["messages"])
         evidence_rows = state_evidence_rows(self.store, rows.values())
         injected = shared["memories"]
@@ -131,32 +130,17 @@ class CurrentStateWorkflow:
         # a queued memory review must never capture this Turn's own tool rounds.
         draft = TurnDraft(memory_context=injected, memory_conversation=[*messages])
         labels = [turn_labels[value] for value in source_turn_ids]
-        evidence = "\n\n".join(
-            message["content"] if isinstance(message["content"], str)
-            else "\n".join(block.get("text", "") for block in message["content"])
-            for message in evidence_messages
-        )
+        evidence = render_state_evidence(self.store, evidence_rows, turn_labels)
         request = (
             render_pending_turns(labels)
             + "\n\n<source_evidence>\n" + evidence + "\n</source_evidence>\n\n"
             + latest
         )
         messages.append({"role": "user", "content": request})
-        # Retain exact schemas and order, including enabled MCP tools. Tasks staged
-        # before tool snapshots were introduced cannot recover their original surface.
-        tools = copy.deepcopy(tasks[-1].get("tools"))
-        if tools is None:
-            tools = self.tool_surface.conversation_specs()
-
-        # Upgrade queued snapshots too: older tool contracts cannot submit evidence.
-        tools = [
-            (
-                current_state_finish_spec()
-                if spec["name"] == "current_state_finish"
-                else spec
-            )
-            for spec in tools
-        ]
+        # Use the same live public prefix as Owner/Heartbeat/Plan. Queued
+        # snapshots can predate SOUL edits and dynamic tool enable changes.
+        system = self._system()
+        tools = self.tool_surface.conversation_specs()
 
         async def execute_tool(call):
             nonlocal complete
@@ -191,10 +175,9 @@ class CurrentStateWorkflow:
             is_complete=lambda: complete,
             completion_result=lambda: {"ok": True} if complete else None,
             no_tool_correction="Submit current_state_finish using its schema. Do not reply to the owner.",
-            preserve_transcript=True,
         )
         await self._run_agent_workflow(
-            tasks[-1]["system"], messages, tools, turn_id, workflow,
+            system, messages, tools, turn_id, workflow,
             current_events=events,
         )
         if not complete:
@@ -208,11 +191,13 @@ def resolve_state_evidence(arguments, rows, labels):
     for item in resolved.get("add", []):
         label = item.pop("source_turn", "")
         quote = item.pop("source", "")
+        source_id = item.pop("source_id", "")
         turn_id = by_label.get(label)
         matches = [
             row
             for row in rows
-            if row.get("turn_id") == turn_id
+            if source_id and row.get("source_id") == source_id
+            and row.get("turn_id") == turn_id
             and row.get("role") in {"user", "assistant", "event"}
             and isinstance(quote, str)
             and quote.strip()
@@ -236,7 +221,8 @@ def resolve_state_evidence(arguments, rows, labels):
 def state_evidence_rows(store, rows):
     """A batched user bubble's timestamp is not each source event's timestamp."""
     result = []
-    for row in rows:
+    for original in rows:
+        row = {**original, "source_id": f"message:{original['id']}"}
         if row.get("role") != "user":
             result.append(row)
             continue
@@ -252,9 +238,29 @@ def state_evidence_rows(store, rows):
                 events.append(
                     {
                         **row,
+                        "source_id": f"event:{event_id}",
                         "content": event["content"],
                         "created_at": event["received_at"],
                     }
                 )
         result.extend(events or [row])
     return result
+
+
+def render_state_evidence(store, rows, labels):
+    """Exact original evidence, distinct from the shared native transcript."""
+    parts = []
+    for turn_id, label in labels.items():
+        sources = [row for row in rows if row["turn_id"] == turn_id]
+        if not sources:
+            parts.append(f'<turn id={quoteattr(label)} evidence="none" />')
+        for row in sources:
+            attributes = {
+                "id": row["source_id"], "turn": label, "turn_id": turn_id,
+                "role": row["role"],
+                "time": store.context_timestamp(float(row["created_at"])),
+                "delivery": str(row.get("delivery_state") or "unknown"),
+            }
+            attrs = " ".join(f"{key}={quoteattr(str(value))}" for key, value in attributes.items())
+            parts.append(f'<source {attrs}>{escape(str(row.get("content") or ""))}</source>')
+    return "\n".join(parts)

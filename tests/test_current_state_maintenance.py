@@ -266,7 +266,7 @@ def test_allowed_end_turn_captures_tool_surface_and_waits_for_commit(daemon, kin
 
     async def maintain(system, messages, tools, **kwargs):
         assert tools == surfaces[-1]
-        assert system[:len(systems[-1])] == systems[-1]
+        assert system == daemon._system_with_tool_policies(daemon._system(), tools)
         root = ElementTree.fromstring("<request>" + messages[-1]["content"] + "</request>")
         assert root.find("source_evidence/turn").attrib == {
             "id": "T-1", "evidence": "none",
@@ -303,15 +303,16 @@ def test_commit_rollback_cancel_and_delete_never_leave_runnable_task(daemon):
     assert task_row(daemon.store, "delete-me") is None
 
 
-def test_maintenance_preserves_tools_without_replaying_source_chain(daemon):
+def test_maintenance_uses_live_public_prefix_without_replaying_source_chain(daemon):
     original_system, _ = stage(daemon.store)
-    original_tools = json.loads(task_row(daemon.store)["payload_json"])["tools"]
+    original_tools = daemon.tool_surface.conversation_specs()
     before = [tuple(row) for row in daemon.store._db.execute("SELECT * FROM messages")]
     requests = []
 
     async def complete(system, messages, tools, **kwargs):
         requests.append(copy.deepcopy(messages))
-        assert system[:len(original_system)] == original_system
+        assert system == daemon._system_with_tool_policies(daemon._system(), tools)
+        assert system != original_system
         assert len(messages) >= 2
         evidence = ElementTree.fromstring("<request>" + messages[-1]["content"] + "</request>")
         assert evidence.find("source_evidence/turn").attrib == {
@@ -341,7 +342,7 @@ def test_maintenance_preserves_tools_without_replaying_source_chain(daemon):
     with patch.object(
         daemon.model_round.context_window,
         "fit",
-        side_effect=AssertionError("must preserve source chain"),
+        wraps=daemon.model_round.context_window.fit,
     ):
         asyncio.run(daemon._complete_current_state_task("source"))
     assert len(requests) == 1
@@ -436,6 +437,7 @@ def test_invalid_ttl_is_repaired_without_partial_changes(daemon):
                         "key": "availability",
                         "value": "busy",
                         "status": "observed", "source_turn": "T-1",
+                        "source_id": "message:" + str(daemon.store._db.execute("SELECT id FROM messages WHERE turn_id='source'").fetchone()[0]),
                         "source": "I am busy", "uncertainty": "",
                         "ttl_seconds": 86401 if count == 1 else 60,
                     }
@@ -490,6 +492,7 @@ def test_failed_maintenance_preserves_source_and_retries_without_overwriting(
                         "key": "availability",
                         "value": "busy",
                         "status": "observed", "source_turn": "T-1",
+                        "source_id": "message:" + str(daemon.store._db.execute("SELECT id FROM messages WHERE turn_id='source'").fetchone()[0]),
                         "source": "I am busy", "uncertainty": "",
                         "ttl_seconds": 60,
                     }
@@ -639,7 +642,7 @@ def test_state_batch_uses_committed_transcript_including_turns_outside_window(da
         assert [node.attrib["id"] for node in root.findall("pending_turns/turn")] == [
             f"T-{index + 1}" for index in range(count)
         ]
-        bubbles = root.findall("source_evidence/bubble")
+        bubbles = root.findall("source_evidence/source")
         assert [bubble.attrib["turn"] for bubble in bubbles] == [
             f"T-{index + 1}" for index in range(count)
         ]
@@ -800,3 +803,64 @@ def test_maintenance_can_queue_memory_operation(daemon):
                 isinstance(block, dict) and block.get("type") == "tool_use"
                 for block in content
             )
+
+
+@pytest.mark.parametrize("compact", [False, True])
+def test_maintenance_provider_receives_canonical_prefix_and_live_tools(daemon, compact):
+    stage(daemon.store)
+    with daemon.store._db:
+        daemon.store._db.execute(
+            "INSERT INTO messages(turn_id,role,content,created_at,source_event_ids_json) "
+            "VALUES ('source','user','真实历史',?,'[]')", (time.time(),)
+        )
+    daemon.store.append_turn_journal("source", "assistant_exchange", {
+        "content": [{"type": "tool_use", "id": "lookup", "name": "recall", "input": {}}],
+        "results": [{"type": "tool_result", "tool_use_id": "lookup", "content": "历史 recall 原文"}],
+    }, trust="runtime")
+    batch = daemon.store.claim_current_state_batch("source")
+    canonical = daemon.shared_turn_context(batch["turn_id"])["messages"]
+    assert "历史 recall 原文" in str(canonical)
+    tools = daemon.tool_surface.conversation_specs() + [{
+        "name": "mcp__new__lookup", "description": "Enabled after enqueue",
+        "input_schema": {"type": "object", "properties": {}},
+    }]
+    expected_system = daemon._system_with_tool_policies(daemon._system(), tools)
+    seen = []
+    if compact:
+        daemon.model_round.context_window.config = replace(
+            daemon.config, context_compaction_ratio=0.000001
+        )
+
+    async def complete(system, messages, request_tools, **kwargs):
+        assert system == expected_system
+        assert request_tools == tools
+        assert messages[:-1] == (canonical[:2] if compact else canonical)
+        assert "<source_evidence>" in messages[-1]["content"]
+        assert "真实历史" in messages[-1]["content"]
+        assert "<state_update_contract>" in messages[-1]["content"]
+        assert all("<source_evidence>" not in str(message) for message in messages[:-1])
+        seen.append(True)
+        return finish()
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format="anthropic"))
+    with patch.object(daemon.tool_surface, "conversation_specs", return_value=tools):
+        asyncio.run(daemon._run_current_state_task(batch))
+    assert seen == [True]
+
+
+def test_large_evidence_batch_splits_without_losing_pending_turns(daemon):
+    for index in range(3):
+        stage(daemon.store, f"source-{index}")
+        with daemon.store._db:
+            daemon.store._db.execute(
+                "INSERT INTO messages(turn_id,role,content,created_at,source_event_ids_json) "
+                "VALUES (?,'user',?,?,'[]')",
+                (f"source-{index}", "原文" * 1000, time.time()),
+            )
+    for index in range(3):
+        batch = daemon.store.claim_current_state_batch(f"source-{index}", max_source_chars=1000)
+        assert batch["source_turn_ids"] == [f"source-{index}"]
+        rows = daemon.store.conversation_messages_for_turns(batch["source_turn_ids"])
+        assert rows[0]["content"] == "原文" * 1000
+        daemon.store.finish_current_state_batch(batch["source_turn_ids"], batch["turn_id"])
+    assert pending_state_source(daemon.store) is None

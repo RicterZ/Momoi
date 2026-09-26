@@ -5,7 +5,7 @@ import time
 
 from .current_state_contract import CURRENT_STATE_TRIGGER_STAGES
 
-# Trigger threshold; a claim includes every eligible pending Turn.
+# Trigger threshold; claims may split eligible pending Turns by evidence size.
 CURRENT_STATE_BATCH_SIZE = 6
 CURRENT_STATE_FULL_IDLE_SECONDS = 60
 CURRENT_STATE_PARTIAL_IDLE_SECONDS = 300
@@ -68,7 +68,7 @@ class CurrentStateTaskStore:
             )
             self._db.execute("DELETE FROM current_state_tasks WHERE state='staged'")
 
-    def claim_current_state_batch(self, source_turn_id):
+    def claim_current_state_batch(self, source_turn_id, *, max_source_chars=None):
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             while True:
@@ -109,6 +109,21 @@ class CurrentStateTaskStore:
             ).fetchall()
             if not rows or str(rows[0]["source_turn_id"]) != source_turn_id:
                 return None
+            if max_source_chars is not None:
+                # Split only at complete source Turns. Never clip source quotes;
+                # an individually oversized Turn is admitted intact for progress.
+                selected = []
+                used = 0
+                for row in rows:
+                    cost = self._db.execute(
+                        "SELECT COALESCE(SUM(LENGTH(content) + 512), 0) FROM messages WHERE turn_id=?",
+                        (row["source_turn_id"],),
+                    ).fetchone()[0]
+                    if selected and used + cost > max_source_chars:
+                        break
+                    selected.append(row)
+                    used += cost
+                rows = selected
             attempt = int(rows[0]["attempts"]) + 1
             turn_id = f"current-state:{source_turn_id}:{attempt}"
             now = time.time()
