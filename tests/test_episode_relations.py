@@ -267,7 +267,7 @@ def test_workflow_model_chooses_query_then_finishes():
                     )
                     result = await workflow.execute_tool(ToolCall("finish", "episode_relation_finish", {"relations": [{
                         "target_episode_id": "old", "relation": "follows_up",
-                        "explanation": "项目推进到首个阶段", "source_evidence": "完成首个阶段",
+                        "explanation": "项目推进到首个阶段", "source_evidence": "已归档对话",
                         "target_evidence": "确认项目启动",
                     }]}))
                     assert result["ok"] and workflow.is_complete()
@@ -282,6 +282,8 @@ def test_workflow_model_chooses_query_then_finishes():
             )
             runner._select_recall_topics = AsyncMock(return_value=RecallSelection(
                 [dict(store.episode("old"), matched_queries=[{"unit_ids": ["u1"]}],
+                      relevance_confidence=1.0),
+                 dict(store.episode("new"), matched_queries=[{"unit_ids": ["u1"]}],
                       relevance_confidence=1.0)], [], [],
             ))
             store.begin_turn("test", "episode_relation", [])

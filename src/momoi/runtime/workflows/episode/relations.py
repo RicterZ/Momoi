@@ -74,6 +74,10 @@ class EpisodeRelationWorkflow:
                     submit_context=submit_relation_context,
                 )
                 if result.get("ok"):
+                    result["episodes"] = [
+                        record for record in result.get("episodes", [])
+                        if str(record["id"]) != episode_id
+                    ]
                     if any(unit.get("recall_mode") == "search"
                            for unit in call.arguments.get("units", [])):
                         search_count += 1
@@ -89,10 +93,10 @@ class EpisodeRelationWorkflow:
             try:
                 self.store.finish_episode_relations(
                     episode_id, ordinal, decisions, set(recalled),
-                    evidence_records={episode_id: {
+                    evidence_records={**recalled, episode_id: {
                         "title": episode["title"], "summary": episode["narrative_summary"],
                         "conversation": [{"content": m["content"]} for m in source_messages],
-                    }, **recalled},
+                    }},
                 )
             except (TypeError, KeyError, ValueError) as error:
                 return {"ok": False, "error": "invalid_relations", "message": str(error)}
