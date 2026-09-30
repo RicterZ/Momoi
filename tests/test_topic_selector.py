@@ -100,6 +100,13 @@ def test_runtime_prefilter_bypasses_gate_and_keeps_selection_order(tmp_path):
         assert captured == []
         assert direct.memories == direct.reflections == []
         assert diagnostics['skip_reason'] == 'workflow_selects_candidates'
+        excluded = tuple(str(row['id']) for row in direct.episodes[:3])
+        filtered = asyncio.run(service._select_recall_topics(
+            'shared topic', queries, None, model_selection=False,
+            exclude_episode_ids=excluded,
+        ))
+        assert len(filtered.episodes) == 6
+        assert not set(excluded) & {str(row['id']) for row in filtered.episodes}
     finally:
         store.close()
 

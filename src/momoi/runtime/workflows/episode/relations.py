@@ -64,6 +64,7 @@ class EpisodeRelationWorkflow:
         async def submit_relation_context(events, context_turn_id, arguments):
             return await self.submit_owner_context(
                 events, context_turn_id, arguments, model_selection=False,
+                current_episode_ids=(episode_id,),
             )
 
         async def execute_tool(call: ToolCall):
@@ -74,10 +75,6 @@ class EpisodeRelationWorkflow:
                     submit_context=submit_relation_context,
                 )
                 if result.get("ok"):
-                    result["episodes"] = [
-                        record for record in result.get("episodes", [])
-                        if str(record["id"]) != episode_id
-                    ]
                     if any(unit.get("recall_mode") == "search"
                            for unit in call.arguments.get("units", [])):
                         search_count += 1

@@ -232,6 +232,7 @@ class EpisodeQueryStore:
         offset: int = 0,
         minimum_confidence: float | None = None,
         topics_only: bool = False,
+        exclude_episode_ids: tuple[str, ...] = (),
         dense_evidence: DenseRecallEvidence | None = None,
     ) -> list[dict[str, object]]:
         if max_results <= 0 or offset < 0 or not queries:
@@ -239,6 +240,8 @@ class EpisodeQueryStore:
         rows_by_id, documents = (self._episode_topic_documents()
             if topics_only and after is None and before is None else
             self._episode_search_documents(after=after, before=before))
+        excluded = set(exclude_episode_ids)
+        documents = [document for document in documents if document.episode_id not in excluded]
         matches = self._episode_query.match_many(
             [query.expression for query in queries],
             documents,
@@ -361,9 +364,10 @@ class EpisodeQueryStore:
         return {"matches": matches, "matched_message_count": len(hits),
                 "matched_message_chars": sum(len(row["content"]) for row, _ in hits)}
 
-    def search_topic_queries(self, queries, max_results, *, dense_evidence=None, minimum_confidence=None):
+    def search_topic_queries(self, queries, max_results, *, dense_evidence=None, minimum_confidence=None, exclude_episode_ids=()):
         return self._ranked_episode_results(queries, max_results,
-            topics_only=True, dense_evidence=dense_evidence, minimum_confidence=minimum_confidence)
+            topics_only=True, dense_evidence=dense_evidence, minimum_confidence=minimum_confidence,
+            exclude_episode_ids=exclude_episode_ids)
 
     def search_episode_queries(
         self,

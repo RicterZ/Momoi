@@ -17,7 +17,7 @@ _NEW_EPISODE_SLUG = re.compile(r"new:[a-z0-9][a-z0-9_-]{0,39}")
 
 
 class ContextService:
-    async def _select_recall_topics(self, request, selected, dense_evidence, diagnostics=None, *, model_selection=True):
+    async def _select_recall_topics(self, request, selected, dense_evidence, diagnostics=None, *, model_selection=True, exclude_episode_ids=()):
         if diagnostics is not None:
             diagnostics.update(
                 status="skipped", skip_reason="no_queries" if not selected else "disabled",
@@ -37,6 +37,7 @@ class ContextService:
             self.store.search_topic_queries(
                 queries, TOPIC_CANDIDATE_LIMIT, dense_evidence=dense_evidence,
                 minimum_confidence=0,
+                exclude_episode_ids=exclude_episode_ids,
             )
             if self.config.summary_results > 0 else []
         )
@@ -339,6 +340,7 @@ class ContextService:
         arguments: dict[str, object],
         *,
         model_selection: bool = True,
+        current_episode_ids: tuple[str, ...] = (),
     ) -> dict[str, str]:
         """Persist the Owner's context decision and return the evidence it asked for."""
 
@@ -367,10 +369,14 @@ class ContextService:
                 output_limit=max(self.config.memory_results, TOPIC_CANDIDATE_LIMIT),
             )
         topic_selection = {}
+        current_episode_ids = tuple(set(current_episode_ids) | {
+            item["episode_id"] for item in self.store.episodes_for_turns([turn_id]).values()
+        })
         selection = await self._select_recall_topics(
             ("\n".join(event.text for event in events) or
              "\n".join(str(unit["intent"]) for unit in plan["intent_units"])),
-            selected, dense_evidence, topic_selection, model_selection=model_selection
+            selected, dense_evidence, topic_selection, model_selection=model_selection,
+            exclude_episode_ids=current_episode_ids,
         )
         retrieval = build_plan_retrieval(
             self.store, plan, self.config, dense_evidence=dense_evidence,

@@ -282,8 +282,6 @@ def test_workflow_model_chooses_query_then_finishes():
             )
             runner._select_recall_topics = AsyncMock(return_value=RecallSelection(
                 [dict(store.episode("old"), matched_queries=[{"unit_ids": ["u1"]}],
-                      relevance_confidence=1.0),
-                 dict(store.episode("new"), matched_queries=[{"unit_ids": ["u1"]}],
                       relevance_confidence=1.0)], [], [],
             ))
             store.begin_turn("test", "episode_relation", [])
@@ -293,6 +291,7 @@ def test_workflow_model_chooses_query_then_finishes():
             assert len(semantic.prepare.call_args.args[0]) == 2
             assert runner._select_recall_topics.called
             assert runner._select_recall_topics.call_args.kwargs["model_selection"] is False
+            assert runner._select_recall_topics.call_args.kwargs["exclude_episode_ids"] == ("new",)
             assert "episode_actions" not in store.context_plan("test")["plan"]
             assert store.context_plan("test")["plan"]["intent_units"][0]["intent"] == "寻找项目此前的决定和进展"
             assert store._db.execute("SELECT count(*) FROM episode_relations").fetchone()[0] == 1
