@@ -242,3 +242,24 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
             async with asyncio.timeout(2):
                 await asyncio.gather(starting, return_exceptions=True)
         self.assertEqual(manager._workers, {})
+
+
+def test_brave_web_search_is_visible_without_enabling_other_group_tools():
+    web = {"name": "mcp__brave-search__brave_web_search", "description": "Search",
+           "input_schema": {"type": "object", "properties": {}}}
+    local = {**web, "name": "mcp__brave-search__brave_local_search"}
+    mcp = SimpleNamespace(tool_specs=[local, web], configs={},
+                          tool_group=lambda name: "brave-search")
+    surface = ToolSurface(mcp, {})
+    tools = surface.conversation_specs()
+    names = [spec["name"] for spec in tools]
+    assert names.count(web["name"]) == 1
+    assert local["name"] not in names
+    for stage in ("owner", "heartbeat", "goal"):
+        assert web["name"] in surface.permitted_names(stage)
+    added = surface.append_visible(tools, surface.mcp_server_groups()["brave-search"])
+    assert added == [local["name"]]
+    assert sum(spec["name"] == web["name"] for spec in tools) == 1
+
+    mcp.tool_specs = []
+    assert web["name"] not in {spec["name"] for spec in surface.conversation_specs()}
