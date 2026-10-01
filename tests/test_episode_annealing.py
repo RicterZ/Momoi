@@ -1472,3 +1472,30 @@ def add_named_turn(
     ).fetchone()["id"]
     daemon.store.mark_sent(int(outbox_id))
     daemon.store.link_turn_to_episode(episode_id, turn_id)
+
+
+def test_archive_dialogue_preserves_speech_ids_and_delivery_without_tool_replay():
+    from types import SimpleNamespace
+    from zoneinfo import ZoneInfo
+    from momoi.runtime.transcript.maintenance import maintenance_dialogue
+    from datetime import datetime
+
+    store = SimpleNamespace(
+        timezone=ZoneInfo("Asia/Shanghai"),
+        context_timestamp=lambda value: datetime.fromtimestamp(value, ZoneInfo("Asia/Shanghai")).isoformat(),
+    )
+    rows = [
+        {"id": 1, "turn_id": "a", "role": "user", "content": "A & B", "created_at": 1},
+        {"id": 2, "turn_id": "a", "role": "assistant", "content": "reply", "created_at": 2,
+         "delivery_state": "uncertain"},
+        {"id": 3, "turn_id": "b", "role": "user", "content": "follow-up", "created_at": 3},
+    ]
+    messages, labels = maintenance_dialogue(store, rows, ["a", "b", "silent"])
+    assert len(messages) == 1
+    assert labels == {"a": "T-1", "b": "T-2", "silent": "T-3"}
+    text = messages[0]["content"]
+    assert 'message_id="1"' in text and "OWNER: A &amp; B" in text
+    assert 'delivery="uncertain"' in text and "ASSISTANT: reply" in text
+    assert '<turn id="T-3" evidence="none" />' in text
+    assert text.index("A &amp; B") < text.index("reply") < text.index("follow-up")
+    assert "tool_use" not in text

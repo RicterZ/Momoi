@@ -1,9 +1,40 @@
 """One standard transcript and one local ID mapping for maintenance requests."""
 
-from xml.sax.saxutils import quoteattr
+from xml.sax.saxutils import escape, quoteattr
 
 from .building import build_transcript
 from .rendering import render_messages, turn_labels
+
+
+def maintenance_dialogue(store, rows, required_turn_ids):
+    """One chronological evidence message from persisted speech, without journals."""
+    transcript = build_transcript(rows, timezone=store.timezone, tool_activity={})
+    labels = turn_labels([*transcript.orphaned, *transcript.groups])
+    for identifier in required_turn_ids:
+        labels.setdefault(identifier, f"T-{len(labels) + 1}")
+    lines = ["<conversation_history>"]
+    seen = set()
+    for row in rows:
+        identifier = str(row["turn_id"])
+        role = str(row.get("role") or "")
+        if role not in {"user", "assistant"} or identifier not in labels:
+            continue
+        if role == "assistant" and str(row.get("delivery_state") or "delivered") not in {
+            "delivered", "uncertain", "queued"
+        }:
+            continue
+        seen.add(identifier)
+        attrs = f' turn={quoteattr(labels[identifier])} message_id={quoteattr(str(row["id"]))}'
+        attrs += ' time=' + quoteattr(store.context_timestamp(float(row["created_at"])))
+        if role == "assistant":
+            attrs += ' delivery=' + quoteattr(str(row.get("delivery_state") or "unknown"))
+        speaker = "OWNER" if role == "user" else "ASSISTANT"
+        lines.append(f'<speech{attrs}>{speaker}: {escape(str(row.get("content") or ""))}</speech>')
+    for identifier in required_turn_ids:
+        if identifier not in seen:
+            lines.append(f'<turn id={quoteattr(labels[identifier])} evidence="none" />')
+    lines.append("</conversation_history>")
+    return [{"role": "user", "content": "\n".join(lines)}], labels
 
 
 def maintenance_transcript(store, rows, required_turn_ids, *, window=None, include_activity=True,

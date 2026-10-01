@@ -6,7 +6,7 @@ from typing import Any
 from ....observability.events import log_event
 from ....models import ToolCall
 from ...agent import AgentWorkflow
-from ...transcript.maintenance import maintenance_transcript
+from ...transcript.maintenance import maintenance_dialogue
 from ...turn_support import EPISODE_CONSOLIDATION_SYSTEM_PROMPT
 from .contracts import (
     EPISODE_CLASSIFY_TURNS_SPEC,
@@ -51,12 +51,10 @@ class EpisodeConsolidationWorkflow:
         if state in {"completed", "cancelled"}:
             return False
         source_turn_ids = [*turn_ids, *[str(item["turn_id"]) for item in context_items]]
-        request, labels = maintenance_transcript(
+        request, labels = maintenance_dialogue(
             self.store,
             self.store.conversation_messages_for_turns(source_turn_ids),
             source_turn_ids,
-            include_activity=False,
-            replay_native=True,
         )
         source_ids = {labels[value]: value for value in source_turn_ids}
         reprocessable = {
