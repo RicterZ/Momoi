@@ -12,45 +12,10 @@ from ..memory_rendering import memory_record
 from .contracts import MEMORY_OPERATION_FINISH_SPEC, MEMORY_OPERATION_SEARCH_SPEC
 from .parsing import parse_decisions
 from .rendering import render_memory_operation_request
+from .conversation import conversation_message
 
 logger = logging.getLogger("momoi.runtime.turns")
 PROMPT_PATH = Path(__file__).resolve().parents[3] / "prompts" / "memory_operation.md"
-
-
-def _repaired_conversation(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Drop tool calls captured before their results reached the transcript.
-
-    Queued conversations are serialized while the source Turn is still running;
-    an unanswered tool call makes providers reject the whole request.
-    """
-
-    repaired: list[dict[str, Any]] = []
-    for index, message in enumerate(messages):
-        content = message.get("content")
-        if message.get("role") != "assistant" or not isinstance(content, list):
-            repaired.append(message)
-            continue
-        answered: set[str] = set()
-        if index + 1 < len(messages):
-            following = messages[index + 1].get("content")
-            if isinstance(following, list):
-                answered = {
-                    str(block.get("tool_use_id"))
-                    for block in following
-                    if isinstance(block, dict) and block.get("type") == "tool_result"
-                }
-        kept = [
-            block
-            for block in content
-            if not (
-                isinstance(block, dict)
-                and block.get("type") == "tool_use"
-                and str(block.get("id")) not in answered
-            )
-        ]
-        if kept:
-            repaired.append({**message, "content": kept})
-    return repaired
 
 
 class MemoryOperationWorkflow:
@@ -181,7 +146,7 @@ class MemoryOperationWorkflow:
         await self._run_agent_workflow(
             PROMPT_PATH.read_text(),
             [
-                *_repaired_conversation(batch["conversation"]),
+                conversation_message(batch["conversation"]),
                 {
                     "role": "user",
                     "content": [

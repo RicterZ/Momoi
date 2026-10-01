@@ -489,7 +489,7 @@ def test_real_workflow_prompt_tool_correction_commit_and_usage(daemon):
         assert current.get("id") == str(memory_id)
         assert current.get("visible") == "true"
         assert len(request.find("outdated_visible_snapshots")) == 0
-        assert messages[0]["content"] == "相关上文"
+        assert "OWNER: 相关上文" in messages[0]["content"]
         assert request.find("owner_evidence/event").text == source.text
         decisions = [] if len(calls) == 1 else [write(source)]
         return response(
@@ -939,42 +939,45 @@ def test_repeated_failures_mark_batch_failed_and_unblock_later(store):
     assert store.pending_memory_operation() == "second"
 
 
-def test_repaired_conversation_drops_unanswered_tool_calls():
-    from momoi.runtime.workflows.memory_operation.workflow import (
-        _repaired_conversation,
-    )
-
+def test_memory_conversation_projects_speech_without_internal_tool_history():
+    from momoi.runtime.workflows.memory_operation.conversation import conversation_message
     conversation = [
-        {"role": "user", "content": "历史"},
-        {
-            "role": "assistant",
-            "content": [
-                {"type": "tool_use", "id": "a1", "name": "memory_operation", "input": {}}
-            ],
-        },
-        {
-            "role": "user",
-            "content": [{"type": "tool_result", "tool_use_id": "a1", "content": "ok"}],
-        },
-        {
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": "半截"},
-                {"type": "tool_use", "id": "a2", "name": "current_state_finish", "input": {}},
-            ],
-        },
+        {"role": "user", "content": '<long_term_memories>unrelated prefix</long_term_memories>'},
+        {"role": "user", "content": '<event source="webhook">background event</event>'},
+        {"role": "user", "content": [{"type": "text", "text": '<bubble time="2026-01-01T12:00:00" turn="T1">记住这个偏好</bubble>'}]},
+        {"role": "assistant", "content": [
+            {"type": "text", "text": "private deliberation"},
+            {"type": "tool_use", "id": "a1", "name": "send_bubbles", "input": {"bubbles": ["好的", "emotion://normal"]}},
+            {"type": "tool_use", "id": "a2", "name": "exec", "input": {"command": "irrelevant"}},
+            {"type": "tool_use", "id": "a3", "name": "send_bubbles", "input": {"bubbles": ["failed speech"]}},
+            {"type": "tool_use", "id": "a4", "name": "send_bubbles", "input": {"bubbles": ["unexecuted speech"]}},
+        ]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "a1", "content": '{"ok":true}'},
+            {"type": "tool_result", "tool_use_id": "a2", "content": 'large tool output'},
+            {"type": "tool_result", "tool_use_id": "a3", "content": '{"ok":false}'},
+        ]},
     ]
-    repaired = _repaired_conversation(conversation)
-    assert len(repaired) == 4
-    assert repaired[-1]["content"] == [{"type": "text", "text": "半截"}]
-    # A fully unanswered assistant message is dropped entirely.
-    conversation.append(
-        {
-            "role": "assistant",
-            "content": [{"type": "tool_use", "id": "a3", "name": "x", "input": {}}],
-        }
-    )
-    assert len(_repaired_conversation(conversation)) == 4
+    result = conversation_message(conversation)
+    assert result["role"] == "user"
+    assert "OWNER [time=2026-01-01T12:00:00 turn=T1]: 记住这个偏好" in result["content"]
+    assert "好的" in result["content"]
+    for excluded in ("private deliberation", "irrelevant", "large tool output", "failed speech",
+                     "unexecuted speech", "emotion://", "unrelated prefix", "background event"):
+        assert excluded not in result["content"]
+
+
+def test_memory_conversation_accepts_wire_tool_calls_and_escapes_owner_text():
+    from momoi.runtime.workflows.memory_operation.conversation import conversation_message
+    result = conversation_message([
+        {"role": "user", "content": '<bubble time="now">A &amp; B</bubble>'},
+        {"role": "assistant", "content": "private", "tool_calls": [
+            {"id": "c", "function": {"name": "send_bubbles", "arguments": '{"bubbles":["回复"]}'}}]},
+        {"role": "tool", "tool_call_id": "c", "content": '{"ok":true}'},
+    ])
+    assert "A & B" in result["content"]
+    assert "回复" in result["content"]
+    assert "private" not in result["content"]
 
 
 def seed_temporary_state(store):
