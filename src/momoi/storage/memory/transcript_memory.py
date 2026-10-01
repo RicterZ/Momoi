@@ -9,6 +9,49 @@ from .memory_values import format_memory
 
 
 class TranscriptMemoryStore:
+    def retained_transcript_rows(self, rows):
+        row = self._db.execute(
+            "SELECT data_json FROM transcript_memory_state WHERE id=1"
+        ).fetchone()
+        excluded = set(json.loads(row[0]).get("dropped_turn_ids", [])) if row else set()
+        return [row for row in rows if str(row["turn_id"]) not in excluded]
+
+    def transcript_episode_snapshot(self, content):
+        """Freeze the episode prefix until the next shared compaction."""
+        with transaction(self._db):
+            row = self._db.execute(
+                "SELECT data_json FROM transcript_memory_state WHERE id=1"
+            ).fetchone()
+            if not row:
+                return content
+            state = json.loads(row[0])
+            state.setdefault("episode_snapshot", content)
+            self._db.execute(
+                "UPDATE transcript_memory_state SET data_json=? WHERE id=1",
+                (json.dumps(state, ensure_ascii=False),),
+            )
+            return state["episode_snapshot"]
+
+    def persist_transcript_compaction(self, dropped_turn_ids, episode_content):
+        with transaction(self._db):
+            row = self._db.execute(
+                "SELECT data_json FROM transcript_memory_state WHERE id=1"
+            ).fetchone()
+            if not row:
+                return
+            state = json.loads(row[0])
+            state["dropped_turn_ids"] = sorted(
+                set(state.get("dropped_turn_ids", [])) | set(dropped_turn_ids)
+            )
+            if episode_content is not None:
+                state["episode_snapshot"] = episode_content
+            # Prevent boundary tracking from folding the same compaction again.
+            state["boundary"] = ""
+            self._db.execute(
+                "UPDATE transcript_memory_state SET data_json=? WHERE id=1",
+                (json.dumps(state, ensure_ascii=False),),
+            )
+
     def _only_always_memory_changes(self, state):
         """Discard legacy recall/scoped deltas without resetting revision history."""
         tracked = {str(key) for key, row in state.get("snapshot", {}).items()
@@ -124,6 +167,7 @@ class TranscriptMemoryStore:
                     })
                 state["observed"] = current
             if compact:
+                state.pop("episode_snapshot", None)
                 state["history_format"] = 3
                 state["snapshot_revision"] = state["revision"]
                 state["snapshot"] = current

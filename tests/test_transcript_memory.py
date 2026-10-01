@@ -217,3 +217,38 @@ def test_existing_window_adopts_history_format_only_after_compaction(tmp_path):
     assert store.transcript_memory_context(['old'], compact=True)['history_format'] == 3
     assert store.transcript_memory_context(['old'])['history_format'] == 3
     store.close()
+
+
+def test_episode_prefix_stays_frozen_until_compaction_and_survives_reopen(store, tmp_path):
+    store.transcript_memory_context(["a", "b"])
+    assert store.transcript_episode_snapshot("first summary") == "first summary"
+    assert store.transcript_episode_snapshot("updated summary") == "first summary"
+    reopened = Store(tmp_path / "memory.sqlite3")
+    try:
+        assert reopened.transcript_episode_snapshot("updated summary") == "first summary"
+    finally:
+        reopened.close()
+    store.transcript_memory_context(["b"], compact=True)
+    assert store.transcript_episode_snapshot("compacted summary") == "compacted summary"
+
+
+def test_request_compaction_does_not_restore_dropped_turns_in_next_context(store):
+    store.transcript_memory_context(["a", "b"])
+    state = store.transcript_memory_context(["a", "b"])
+    prefix = context_data_message(("long_term_memories", ""), required=True)
+    prefix["_memory_snapshot"] = {
+        "revision": state["revision"], "turn_ids": ["a", "b"],
+        "current": "", "overrides": "", "goals": "",
+    }
+    messages = [prefix,
+                {"role": "user", "content": "old " * 1000, "_history_turn_ids": ["a"]},
+                {"role": "user", "content": "recent", "_history_turn_ids": ["b"]},
+                {"role": "user", "content": "current"}]
+    window = ContextWindow(SimpleNamespace(max_input_tokens=800, context_compaction_ratio=1), store, None)
+    window.fit([], messages, [], 3)
+    rows = [{"turn_id": "a"}, {"turn_id": "b"}, {"turn_id": "c"}]
+    assert store.retained_transcript_rows(rows) == rows[1:]
+    # A new executor observes the reduced boundary without resetting the snapshot.
+    store.transcript_episode_snapshot("frozen")
+    store.transcript_memory_context(["b", "c"])
+    assert store.transcript_episode_snapshot("new summaries") == "frozen"

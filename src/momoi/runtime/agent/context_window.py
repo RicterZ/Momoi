@@ -91,6 +91,10 @@ class ContextWindow:
         tools: list[dict[str, Any]],
         history_messages: int,
     ) -> int:
+        original_history_ids = {
+            str(identifier) for message in messages[:history_messages]
+            for identifier in message.get("_history_turn_ids", ())
+        }
         def refresh_episode_summary() -> None:
             summary = next(
                 (message for message in messages if "_episode_summary_before" in message),
@@ -201,8 +205,17 @@ class ContextWindow:
             refresh_episode_summary()
             estimated = size()
         if dropped:
+            retained_ids = {
+                str(identifier) for message in messages[:history_messages]
+                for identifier in message.get("_history_turn_ids", ())
+            }
+            summary = next((m for m in messages if "_episode_summary_before" in m), None)
             prefix = next((m for m in messages if "_memory_snapshot" in m), None)
             if prefix is not None:
+                self.store.persist_transcript_compaction(
+                    original_history_ids - retained_ids,
+                    summary["content"] if summary is not None else None,
+                )
                 snapshot = prefix["_memory_snapshot"]
                 replacement = context_data_message(
                     ("long_term_memories", snapshot["current"]),

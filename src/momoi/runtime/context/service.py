@@ -94,7 +94,7 @@ class ContextService:
         from ..transcript.rendering import render_messages
 
         cutoff = float(self.store.turn_usage(turn_id)["started_at"])
-        rows = self._recent_conversation_rows(cutoff)
+        rows = self.store.retained_transcript_rows(self._recent_conversation_rows(cutoff))
         ids = list(dict.fromkeys(str(row["turn_id"]) for row in rows))
         exchanges = self.store.turn_exchanges(ids)
         # Old Turns have no native exchange journal. Start at the contiguous
@@ -309,6 +309,7 @@ class ContextService:
             required=True,
         )
         assert message is not None
+        message["content"] = self.store.transcript_episode_snapshot(message["content"])
         message["_episode_summary_before"] = before_timestamp
         return message
 
