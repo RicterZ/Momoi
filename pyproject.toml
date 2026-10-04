@@ -19,6 +19,14 @@ dependencies = [
     "beautifulsoup4>=4.13,<5",
 ]
 
+[project.optional-dependencies]
+desktop = [
+    "fastapi==0.135.1",
+    "fastembed==0.8.0",
+    "huggingface-hub==1.7.2",
+    "uvicorn==0.41.0",
+]
+
 [project.scripts]
 momoi = "momoi.__main__:main"
 
@@ -33,6 +41,10 @@ artifacts = ["src/momoi/dashboard/static/**"]
 packages = ["src/momoi"]
 
 [dependency-groups]
+windows-build = [
+    "pillow>=12,<13",
+]
+
 test = [
     "pytest>=9,<10",
     "pytest-xdist>=3.8,<4",

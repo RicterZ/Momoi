@@ -20,3 +20,9 @@ var/
 dist
 src/momoi/dashboard/static/
 docs/*-user-content-review.txt
+build/
+desktop/**/bin/
+desktop/**/obj/
+# Ed25519 release signing keys are local secrets; only the public key is committed.
+desktop/Momoi.Desktop/keys/*private*
+desktop/Momoi.Desktop/keys/*.pem

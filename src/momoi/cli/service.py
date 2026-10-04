@@ -17,6 +17,7 @@ async def run(
     dashboard_host: str = "0.0.0.0",
     dashboard_port: int = 8788,
     stop: asyncio.Event | None = None,
+    announce_token: bool = True,
 ) -> None:
     if not 1 <= dashboard_port <= 65535:
         raise ValueError("dashboard port must be between 1 and 65535")
@@ -29,7 +30,7 @@ async def run(
 
         configuration = ConfigurationManager(config_path)
         config = configuration.dashboard_config()
-        if fresh:
+        if fresh and announce_token:
             print(f"Dashboard access token: {config.dashboard.token}", flush=True)
     else:
         config = load_config(config_path)

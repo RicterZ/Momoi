@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import shlex
 import sys
 import tempfile
@@ -23,6 +24,16 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         self.tools = BuiltinTools(self.root, exec_enabled=True)
+
+    def python_command(self, script):
+        if os.name == "nt":
+            return "& '" + sys.executable.replace("'", "''") + "' -X utf8 -c '" + script.replace("'", "''") + "'"
+        return shlex.quote(sys.executable) + " -X utf8 -c " + shlex.quote(script)
+
+    def delayed_child(self, marker, *, wait):
+        child = "import pathlib,sys,time; time.sleep(1); pathlib.Path(sys.argv[1]).touch()"
+        parent = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child!r},{str(marker)!r}]); "
+        return self.python_command(parent + ("time.sleep(5)" if wait else "sys.exit(0)"))
 
     def call(self, command, **options):
         return ToolCall("test-exec", "exec", {"command": command, **options})
@@ -74,16 +85,17 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((self.root / "files/b").exists())
 
     async def test_bash_working_directory_exit_status_and_bounded_output(self):
-        result = await self.tools.execute(self.call("printf '%s' \"${BASH_VERSION:+bash}\"; pwd; printf error >&2; exit 7"))
+        command = "Write-Output powershell; (Get-Location).Path; [Console]::Error.Write('error'); exit 7" if os.name == "nt" else "printf '%s' \"${BASH_VERSION:+bash}\"; pwd; printf error >&2; exit 7"
+        result = await self.tools.execute(self.call(command))
         self.assertFalse(result["ok"])
         self.assertEqual(result["exit_code"], 7)
-        self.assertIn("bash", result["stdout_tail"])
+        self.assertIn("powershell" if os.name == "nt" else "bash", result["stdout_tail"])
         self.assertIn(str(self.root.resolve()), result["stdout_tail"])
         self.assertEqual(result["stderr_tail"], "error")
-        result = await self.tools.execute(self.call("cat"))
+        result = await self.tools.execute(self.call("[Console]::In.ReadToEnd()" if os.name == "nt" else "cat"))
         self.assertTrue(result["ok"])
         self.assertEqual(result["stdout_tail"], "")
-        result = await self.tools.execute(self.call("printf '%020000d' 0"))
+        result = await self.tools.execute(self.call("[Console]::Write('0' * 20000)" if os.name == "nt" else "printf '%020000d' 0"))
         self.assertTrue(result["ok"])
         self.assertTrue(result["truncated"])
         self.assertLessEqual(len(result["stdout_tail"]), 16384)
@@ -92,10 +104,9 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["stdout_tail"].endswith("0"))
 
     async def test_truncated_output_keeps_first_and_last_complete_lines(self):
-        command = (
-            "python -c 'import sys; "
-            "sys.stdout.write(\"first\\n\" + \"middle\\n\" * 4000 + \"last\\n\"); "
-            "sys.stderr.write(\"error first\\n\" + \"error middle\\n\" * 4000 + \"error last\\n\")'"
+        command = self.python_command(
+            'import sys; sys.stdout.write("first\\n" + "middle\\n" * 4000 + "last\\n"); '
+            'sys.stderr.write("error first\\n" + "error middle\\n" * 4000 + "error last\\n")'
         )
         result = await self.tools.execute(self.call(command))
         self.assertTrue(result["truncated"])
@@ -112,7 +123,7 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
     async def test_timeout_and_cancellation_stop_children(self):
         for cancel in (False, True):
             marker = self.root / f"survived-{cancel}"
-            command = f"(sleep 1; touch {shlex.quote(str(marker))}) & wait"
+            command = self.delayed_child(marker, wait=True)
             task = asyncio.create_task(self.tools.execute(self.call(command, timeout_seconds=0.1 if not cancel else 30)))
             if cancel:
                 await asyncio.sleep(0.1)
@@ -134,7 +145,7 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
     async def test_timeout_cleans_children_after_shell_leader_exits(self):
         marker = self.root / "orphan-output"
         result = await self.tools.execute(self.call(
-            f"(sleep 1; touch {shlex.quote(str(marker))}) & exit 0", timeout_seconds=0.1,
+            self.delayed_child(marker, wait=False), timeout_seconds=0.1,
         ))
         self.assertEqual(result["error"], "exec_timeout")
         await asyncio.sleep(1.1)

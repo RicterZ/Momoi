@@ -144,7 +144,7 @@ class MemoryOperationWorkflow:
         )
         # Private processing uses its own contract, not the role-play system or Soul.
         await self._run_agent_workflow(
-            PROMPT_PATH.read_text(),
+            PROMPT_PATH.read_text(encoding="utf-8"),
             [
                 conversation_message(batch["conversation"]),
                 {

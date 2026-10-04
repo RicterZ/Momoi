@@ -1,0 +1,35 @@
+name: Windows installer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Locked Python test environment
+        run: uv sync --locked --python 3.12 --group test
+      - name: Windows shell, process tree and workspace tests
+        run: uv run --locked --group test pytest -q -n 0 tests/test_platform.py tests/test_exec_tool.py tests/test_desktop.py
+      - name: Update validation checks
+        run: dotnet run --project desktop/Momoi.Update.Check -c Release
+      - name: Build installer and smoke private runtime
+        shell: pwsh
+        run: ./packaging/windows/build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Momoi-Windows-x64
+          path: |
+            dist/windows/Momoi-Setup-*-x64.exe
+            dist/windows/releases/Momoi-Code-*.zip
+            dist/windows/releases/runtime.json
+          if-no-files-found: error

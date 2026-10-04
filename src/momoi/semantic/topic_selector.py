@@ -14,7 +14,7 @@ from ..observability.events import log_event
 
 logger = logging.getLogger(__name__)
 TOPIC_CANDIDATE_LIMIT = 8
-SYSTEM = (Path(__file__).resolve().parents[1] / "prompts/topic_selection.md").read_text().strip()
+SYSTEM = (Path(__file__).resolve().parents[1] / "prompts/topic_selection.md").read_text(encoding="utf-8").strip()
 
 
 @dataclass(frozen=True)

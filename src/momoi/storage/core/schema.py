@@ -25,5 +25,5 @@ def initialize_schema(database: sqlite3.Connection) -> None:
     # Historical databases need additive baseline objects before old migrations.
     # This file is additive only; changes to existing objects require a migration.
     with transaction(database):
-        execute_schema(database, Path(__file__).with_name("schema.sql").read_text())
+        execute_schema(database, Path(__file__).with_name("schema.sql").read_text(encoding="utf-8"))
     apply_migrations(database)
