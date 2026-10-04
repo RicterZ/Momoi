@@ -14,6 +14,7 @@ from .web_fetch import web_fetch
 from ..models import ToolCall
 from .contracts.builtin import BUILTIN_TOOL_SPECS, builtin_tool_enabled
 from .process import run_process
+from ..platform.shell import shell_argv
 
 
 class BuiltinTools:
@@ -116,7 +117,7 @@ class BuiltinTools:
             raise ValueError("timeout_seconds must be between 0.1 and 120")
         cwd = self.resolve_path(arguments.get("cwd"))
         try:
-            result = await run_process(["bash", "-c", command], cwd=cwd, timeout=timeout)
+            result = await run_process(shell_argv(command), cwd=cwd, timeout=timeout)
         except TimeoutError:
             return {"ok": False, "error": "exec_timeout"}
         return {"ok": result["exit_code"] == 0, **result}

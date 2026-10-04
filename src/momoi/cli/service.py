@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import signal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -8,6 +7,7 @@ from ..config.loading import load_config
 from ..observability.events import log_event
 from ..observability.formatting import configure_logging
 from ..runtime import MomoiDaemon
+from ..platform.signals import shutdown_signals
 
 
 async def run(
@@ -16,6 +16,7 @@ async def run(
     dashboard: bool = True,
     dashboard_host: str = "0.0.0.0",
     dashboard_port: int = 8788,
+    stop: asyncio.Event | None = None,
 ) -> None:
     if not 1 <= dashboard_port <= 65535:
         raise ValueError("dashboard port must be between 1 and 65535")
@@ -40,11 +41,12 @@ async def run(
     )
     for noisy_logger in ("httpx", "httpcore", "mcp"):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for name in ("SIGINT", "SIGTERM"):
-        if sig := getattr(signal, name, None):
-            loop.add_signal_handler(sig, stop.set)
+    stop = stop if stop is not None else asyncio.Event()
+    with shutdown_signals(stop):
+        await _run(config, configuration if dashboard else None, dashboard, dashboard_host, dashboard_port, stop)
+
+
+async def _run(config, configuration, dashboard, dashboard_host, dashboard_port, stop):
     log_event(
         logging.getLogger(__name__),
         logging.INFO,

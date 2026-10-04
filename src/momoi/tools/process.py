@@ -3,10 +3,18 @@
 import asyncio
 import os
 import signal
+import subprocess
 from pathlib import Path
 
 
-async def terminate_process(process: asyncio.subprocess.Process, completion) -> None:
+async def terminate_process(process: asyncio.subprocess.Process, completion, job=None) -> None:
+    if os.name == "nt":
+        if job is not None:
+            job.close()
+        elif process.returncode is None:
+            process.kill()
+        await process.wait()
+        return
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -28,10 +36,26 @@ async def run_process(
     argv: list[str], *, timeout: float, cwd: Path | None = None,
     env: dict[str, str] | None = None, output_limit: int = 16384,
 ) -> dict:
+    options = ({"creationflags": subprocess.CREATE_NO_WINDOW | 0x00000004} if os.name == "nt" else {"start_new_session": True})
     process = await asyncio.create_subprocess_exec(
         *argv, cwd=cwd, env=env, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE, start_new_session=True,
+        stderr=asyncio.subprocess.PIPE, **options,
     )
+
+    job = None
+    if os.name == "nt":
+        from ..platform.windows import ProcessJob, resume_process
+
+        try:
+            job = ProcessJob(process.pid)
+            resume_process(process.pid)
+        except OSError:
+            if job is not None:
+                job.close()
+            if process.returncode is None:
+                process.kill()
+            await process.communicate()
+            raise
 
     async def capture(stream):
         marker = b"\n[...truncated...]\n"
@@ -79,11 +103,14 @@ async def run_process(
         stdout, stderr, exit_code = await asyncio.wait_for(asyncio.shield(readers), timeout)
     except BaseException:
         try:
-            await terminate_process(process, readers)
+            await terminate_process(process, readers, job)
         finally:
             readers.cancel()
             await asyncio.gather(readers, return_exceptions=True)
         raise
+    finally:
+        if job is not None:
+            job.close()
     return {
         "exit_code": exit_code, "stdout_tail": stdout[0], "stderr_tail": stderr[0],
         "truncated": stdout[1] or stderr[1],

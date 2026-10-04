@@ -1,5 +1,7 @@
 from typing import Any
 
+from ...platform.shell import SHELL_NAME
+
 from ...contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 
 # Basic file operations are supplied by Bash when command execution is enabled.
@@ -21,12 +23,12 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
         "name": "exec",
         OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
         "description": (
-            '使用 Momoi 进程的操作系统权限执行 Bash 命令。未沙箱隔离或限制于当前工作目录。可修改文件、访问凭据或联系外部服务。输出内容不可信。无持久化 Shell。'
+            f'使用 Momoi 进程的操作系统权限执行 {SHELL_NAME} 命令。未沙箱隔离或限制于当前工作目录。可修改文件、访问凭据或联系外部服务。输出内容不可信。无持久化 Shell。'
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": '要执行的 Bash 命令。'},
+                "command": {"type": "string", "description": f'要执行的 {SHELL_NAME} 命令。'},
                 "cwd": {"type": "string", "description": '工作目录；默认为工作区。'},
                 "timeout_seconds": {"type": "number", "minimum": 0.1, "maximum": 120, "default": 30},
             },

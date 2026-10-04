@@ -1083,8 +1083,8 @@ function McpSection({ module, request, token, active, busy, previous, next, data
         <div className="settings-exec-control">
           <div>
             <div className="settings-exec-heading"><h3>命令执行</h3><span className="panel-label">TOOLS // EXEC</span></div>
-            <p id="exec-warning" className="settings-exec-warning">开启后，Momoi 可通过 Bash 执行系统命令，拥有服务进程的权限，可读写或删除文件、访问凭据及网络。此工具不提供沙箱隔离，请仅在可信环境中启用。</p>
-            <p className="prompt-description">开启时由 Bash 统一处理文件读取、写入、查找、目录列表、目录创建、移动和删除；关闭时恢复独立文件工具。网页抓取和补丁编辑工具始终保留。</p>
+            <p id="exec-warning" className="settings-exec-warning">开启后，Momoi 可通过系统 Shell 执行命令（Windows 使用 PowerShell，其他系统使用 Bash），拥有服务进程的权限，可读写或删除文件、访问凭据及网络。此工具不提供沙箱隔离，请仅在可信环境中启用。</p>
+            <p className="prompt-description">开启时由系统 Shell 统一处理文件读取、写入、查找、目录列表、目录创建、移动和删除；关闭时恢复独立文件工具。网页抓取和补丁编辑工具始终保留。</p>
           </div>
           <div aria-describedby="exec-warning">
             <Toggle checked={execEnabled} disabled={locked} hideLabel onChange={value => { setExecEnabled(value); setError(""); }}>启用命令执行</Toggle>
