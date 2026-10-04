@@ -19,6 +19,7 @@ from .embedding import load_encoder, create_app
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--install-dir", type=Path)
     parser.add_argument("--check-model", action="store_true")
     maintenance = parser.add_mutually_exclusive_group()
     maintenance.add_argument("--snapshot", type=Path)
@@ -58,6 +59,10 @@ async def serve(args):
     if stop.is_set():
         return
     prepare_workspace(workspace, f"http://127.0.0.1:{args.embedding_port}/v1/embeddings")
+    if args.install_dir is not None:
+        from .mcp_runtime import prepare_mcp_environment, seed_brave_config
+        prepare_mcp_environment(args.install_dir.resolve(), workspace)
+        seed_brave_config(workspace)
 
     class EmbeddedServer(Server):
         def capture_signals(self):

@@ -307,10 +307,10 @@ class MCPManager:
                 transport = await stack.enter_async_context(
                     stdio_client(
                         StdioServerParameters(
-                            command=str(command),
-                            args=[str(item) for item in config.get("args", [])],
+                            command=expand_mcp_value(str(command)),
+                            args=[expand_mcp_value(str(item)) for item in config.get("args", [])],
                             env=env,
-                            cwd=config.get("cwd"),
+                            cwd=expand_mcp_value(config["cwd"]) if config.get("cwd") else None,
                         )
                     )
                 )

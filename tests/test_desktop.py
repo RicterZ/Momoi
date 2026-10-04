@@ -76,3 +76,29 @@ def test_snapshot_handles_database_created_by_failed_start(tmp_path):
         connection.execute("create table partial (id integer)")
     restore(backup)
     assert not config.database.exists()
+
+
+def test_mcp_runtime_uses_writable_user_caches_and_private_toolchain(tmp_path):
+    from momoi.desktop.mcp_runtime import prepare_mcp_environment, seed_brave_config
+    install, workspace = tmp_path / "Program Files" / "Momoi", tmp_path / "user" / "Momoi"
+    env = {"PATH": "existing"}
+    prepare_mcp_environment(install, workspace, env)
+    assert env["MOMOI_NODE"] == str(install / "runtime/node/node.exe")
+    assert env["PATH"].startswith(str(install / "runtime/node"))
+    assert env["PATH"].endswith("existing")
+    for name in ("UV_CACHE_DIR", "UV_TOOL_DIR", "UV_TOOL_BIN_DIR", "UV_PYTHON_INSTALL_DIR", "npm_config_cache", "npm_config_prefix"):
+        assert Path(env[name]).is_dir()
+        assert Path(env[name]).is_relative_to(workspace)
+    bootstrap(workspace / "config.json")
+    seed_brave_config(workspace)
+    path = workspace / "mcp.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    brave = raw["mcpServers"]["brave-search"]
+    assert brave["disabled"] is True
+    assert brave["command"] == "${MOMOI_NODE}"
+    assert brave["env"]["BRAVE_API_KEY"] == ""
+    brave["env"]["BRAVE_API_KEY"] = "user-owned-key"
+    atomic_write(path, json.dumps(raw))
+    before = path.read_bytes()
+    seed_brave_config(workspace)
+    assert path.read_bytes() == before

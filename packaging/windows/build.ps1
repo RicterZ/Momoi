@@ -62,6 +62,8 @@ Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/smoke_bac
 # Collect notices from the shipped environment rather than developer tooling.
 Invoke-Checked $PrivatePython @("-I", "packaging/windows/collect_licenses.py", "--output", (Join-Path $Stage "licenses"))
 Copy-Item "desktop/Momoi.Desktop/packages.lock.json" (Join-Path $Stage "licenses/dotnet-packages.lock.json")
+& (Join-Path $PSScriptRoot "prepare_mcp.ps1") -Stage $Stage
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/smoke_mcp.py", "--node", (Join-Path $Stage "runtime/node/node.exe"), "--entry", (Join-Path $Stage "runtime/mcp/node_modules/@brave/brave-search-mcp-server/dist/index.js"))
 Copy-Item "uv.lock" (Join-Path $Stage "licenses/uv.lock")
 Copy-Item "LICENSE" (Join-Path $Stage "licenses/Momoi-LICENSE")
 if ($SkipInstaller) { Write-Output "Application ready: $Stage"; return }

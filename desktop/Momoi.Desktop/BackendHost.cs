@@ -56,7 +56,7 @@ internal sealed class BackendHost : IAsyncDisposable
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
             WorkingDirectory = workspace,
         };
-        foreach (string argument in new[] { "-I", "-B", "-X", "utf8", entry, "--workspace", workspace, "--model-path", model,
+        foreach (string argument in new[] { "-I", "-B", "-X", "utf8", entry, "--install-dir", AppContext.BaseDirectory, "--workspace", workspace, "--model-path", model,
             "--dashboard-port", dashboardPort.ToString(), "--embedding-port", embeddingPort.ToString() })
             info.ArgumentList.Add(argument);
         info.Environment["PYTHONUTF8"] = "1";

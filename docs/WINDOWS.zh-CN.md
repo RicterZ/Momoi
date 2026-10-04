@@ -1,6 +1,6 @@
 # Windows 桌面版与签名更新
 
-桌面版使用 .NET 10 WPF + WebView2，托盘提供打开面板、检查更新和退出。
+桌面版使用 .NET 10 WPF + WebView2，托盘提供打开面板、配置目录、检查更新和退出。
 关闭窗口隐藏到托盘；再次运行激活原实例。主体和 BGE 使用私有 Python 3.12，
 FastEmbed CPU 编码保持 `BAAI/bge-small-zh-v1.5`、512 维与原有 calibration profile。
 
@@ -119,3 +119,22 @@ uv run --locked python packaging/windows/sign_latest.py \
 应用前先正常停止后台，再备份配置与 SQLite。新版本启动失败时恢复原代码指针
 与快照；原版本保留用于恢复。备份不自动清理，需根据磁盘情况人工管理。
 不要在业务代码启动阶段执行无法由配置/SQLite 快照恢复的外部数据迁移。
+
+## MCP 运行组件
+
+安装包附带 Node 24（含 npm/npx）、uv/uvx，以及锁定的 Brave 官方 MCP Server。
+它们位于 `runtime/node`、`runtime/uv`、`runtime/mcp`，不随业务代码 ZIP 改动。
+后台只为自己的进程和 MCP 子进程设置 PATH，不改系统或用户 PATH。
+uv、npm 缓存和工具安装目录放在 `%LOCALAPPDATA%\Momoi\tool-cache`，
+npm 全局安装前缀为 `%LOCALAPPDATA%\Momoi\node-global`，避免写入 Program Files。
+
+首次桌面启动在 mcp.json 中加入禁用的 Brave 示例，不覆盖用户已有同名配置。
+在托盘点击“配置目录”，修改 mcp.json：填写 `BRAVE_API_KEY`，将 `disabled` 改为 false。
+也可以通过 Dashboard 的 MCP 设置编辑。内置 Brave 用绝对路径 node 直接启动，
+不执行 npx 下载。其他 npm/uvx MCP 首次安装仍需要联网；原生扩展、浏览器或
+特定 Python 版本等依赖需按相应 Server 单独准备，内置工具链不承诺运行任意 Server。
+
+MCP command、args、cwd 支持 `${ENV_VAR}` 展开；桌面设置 MOMOI_NODE、
+MOMOI_BRAVE_MCP 为安装路径，用户不用硬编码路径。
+运行组件版本固定在 `packaging/windows/components.json`，MCP 依赖固定在
+`packaging/windows/mcp/package-lock.json`。这些变化要求新的运行组件安装包。

@@ -66,6 +66,11 @@ public partial class App : Application
         trayImage = new Drawing.Icon(resource.Stream);
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("打开面板", null, (_, _) => Dispatcher.BeginInvoke(ShowPanel));
+        menu.Items.Add("配置目录", null, (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            Directory.CreateDirectory(workspace);
+            Process.Start(new ProcessStartInfo(workspace) { UseShellExecute = true });
+        }));
         updateMenu = menu.Items.Add("检查更新", null, (_, _) => Dispatcher.BeginInvoke(() => updateTask = UpdateAsync()));
         menu.Items.Add("退出程序", null, (_, _) => Dispatcher.BeginInvoke(() => _ = ExitAsync()));
         tray = new Forms.NotifyIcon { Icon = trayImage, Text = "Momoi", ContextMenuStrip = menu, Visible = true };
