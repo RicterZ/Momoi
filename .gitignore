@@ -26,3 +26,4 @@ desktop/**/obj/
 # Ed25519 release signing keys are local secrets; only the public key is committed.
 desktop/Momoi.Desktop/keys/*private*
 desktop/Momoi.Desktop/keys/*.pem
+/docs/WINDOWS.zh-CN.md
