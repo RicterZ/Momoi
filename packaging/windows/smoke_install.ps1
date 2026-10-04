@@ -28,6 +28,32 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Installed backend smoke failed' }
     & uv run --no-sync python (Join-Path $PSScriptRoot 'smoke_mcp.py') --node (Join-Path $Target 'runtime/node/node.exe') --entry (Join-Path $Target 'runtime/mcp/node_modules/@brave/brave-search-mcp-server/dist/index.js')
     if ($LASTEXITCODE -ne 0) { throw 'Installed MCP smoke failed' }
+    # Start the installed native shell and verify WebView2/backend initialization.
+    $Shell = Start-Process -FilePath (Join-Path $Target 'Momoi.exe') -PassThru
+    try {
+        $Deadline = [DateTime]::UtcNow.AddSeconds(120)
+        $Ready = $false
+        while ([DateTime]::UtcNow -lt $Deadline) {
+            $Shell.Refresh()
+            if ($Shell.HasExited) { throw 'Installed native shell exited before startup completed' }
+            $Logs = @(Get-ChildItem (Join-Path $Data 'logs') -Filter '*.log' -ErrorAction SilentlyContinue)
+            if ($Shell.MainWindowHandle -ne 0 -and $Logs.Count -gt 0) {
+                $Content = Get-Content $Logs[-1].FullName -Raw
+                if ($Content -match 'event=dashboard_start') { $Ready = $true; break }
+            }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $Ready) { throw 'Installed native window/backend did not become ready' }
+        if (-not (Test-Path (Join-Path $Data 'mcp.json'))) { throw 'Desktop MCP configuration was not initialized' }
+        $Shell | Select-Object Id, MainWindowTitle, MainWindowHandle | ConvertTo-Json | Set-Content (Join-Path $Evidence 'native-shell.json')
+        Start-Process -FilePath (Join-Path $Target 'Momoi.exe') -ArgumentList '--shutdown' -Wait
+        if (-not $Shell.WaitForExit(30000)) { throw 'Native shell did not shut down gracefully' }
+        Get-ChildItem (Join-Path $Data 'logs') -Filter '*.log' | Copy-Item -Destination $Evidence
+    }
+    finally {
+        $Shell.Refresh()
+        if (-not $Shell.HasExited) { Stop-Process -Id $Shell.Id -Force }
+    }
     $Sentinel = Join-Path $Data 'preserve-check.txt'
     Set-Content $Sentinel 'Momoi user data survives upgrades and uninstall'
     $Expected = (Get-FileHash $Sentinel).Hash
@@ -37,7 +63,7 @@ try {
     if ($Uninstall.ExitCode -ne 0) { throw "Uninstaller failed: $($Uninstall.ExitCode)" }
     if (Test-Path (Join-Path $Target 'Momoi.exe')) { throw 'Uninstall left the native application installed' }
     if ((Get-FileHash $Sentinel).Hash -ne $Expected) { throw 'Uninstall removed user data' }
-    'PASS: real silent installation, Users data ACL, installed backend/BGE/MCP, reinstall and uninstall data retention.' | Set-Content (Join-Path $Evidence 'result.txt')
+    'PASS: real silent installation, Users data ACL, installed backend/BGE/MCP, native shell window/startup/shutdown, reinstall and uninstall data retention.' | Set-Content (Join-Path $Evidence 'result.txt')
 }
 finally {
     if (Test-Path (Join-Path $Target 'unins000.exe')) {
