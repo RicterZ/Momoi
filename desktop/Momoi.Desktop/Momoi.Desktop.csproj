@@ -16,5 +16,6 @@
     <ProjectReference Include="../Momoi.Update/Momoi.Update.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
     <Resource Include="Assets/momoi.ico" />
+    <Resource Include="Assets/momoi.png" />
   </ItemGroup>
 </Project>
