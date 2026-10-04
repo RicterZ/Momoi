@@ -60,8 +60,19 @@ public partial class App : Application
             return;
         }
         if (Array.IndexOf(e.Args, "--shutdown") >= 0) { Shutdown(); return; }
-        workspace = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Momoi");
-        Directory.CreateDirectory(workspace);
+        workspace = Path.Combine(AppContext.BaseDirectory, "data");
+        try
+        {
+            Directory.CreateDirectory(workspace);
+            string probe = Path.Combine(workspace, ".write-check-" + Guid.NewGuid().ToString("N"));
+            using (var stream = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose)) { }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show($"无法写入配置目录：{workspace}\n请通过安装程序修复目录权限，或安装到有写入权限的目录。\n{error.Message}", "Momoi", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
         var resource = GetResourceStream(new Uri("pack://application:,,,/Assets/momoi.ico"))!;
         trayImage = new Drawing.Icon(resource.Stream);
         var menu = new Forms.ContextMenuStrip();

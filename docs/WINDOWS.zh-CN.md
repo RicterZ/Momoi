@@ -18,7 +18,7 @@ releases/bundled/release.json
 licenses/
 ```
 
-用户数据放在 `%LOCALAPPDATA%\Momoi`，不随卸载删除：
+用户数据统一放在 `<安装目录>\data`，托盘“配置目录”打开此处，升级与卸载均保留：
 
 ```text
 config.json, providers.yaml, data/, prompts/, logs/, webview/
@@ -92,7 +92,9 @@ latest.json，并设置 latest.json 为 `Cache-Control: no-cache`。
 6. 收集许可证，下载并验证 Microsoft 签名的 WebView2 与 VC++ 安装程序。
 7. 用 Inno Setup 生成 `dist/windows/Momoi-Setup-<version>-x64.exe`。
 
-安装包按机器安装并申请管理员权限，应用以普通用户运行。内含离线 WebView2
+安装包按机器安装并申请管理员权限，应用以普通用户运行。安装器为 `{app}\data`
+授予普通用户修改权限，运行组件所在目录仍使用默认权限。程序启动时检查 data
+写入权限；没有权限时显示修复提示。卸载不删除 data，备份时可复制整个 data 目录。内含离线 WebView2
 与 VC++ 安装器，用户无需安装 Python、Node、Docker 或 .NET。
 WebView2 后续由 Microsoft 的 Evergreen 机制维护。
 
@@ -125,8 +127,8 @@ uv run --locked python packaging/windows/sign_latest.py \
 安装包附带 Node 24（含 npm/npx）、uv/uvx，以及锁定的 Brave 官方 MCP Server。
 它们位于 `runtime/node`、`runtime/uv`、`runtime/mcp`，不随业务代码 ZIP 改动。
 后台只为自己的进程和 MCP 子进程设置 PATH，不改系统或用户 PATH。
-uv、npm 缓存和工具安装目录放在 `%LOCALAPPDATA%\Momoi\tool-cache`，
-npm 全局安装前缀为 `%LOCALAPPDATA%\Momoi\node-global`，避免写入 Program Files。
+uv、npm 缓存和工具安装目录放在 `<安装目录>\data\tool-cache`，
+npm 全局安装前缀为 `<安装目录>\data\node-global`，避免写入 Program Files。
 
 首次桌面启动在 mcp.json 中加入禁用的 Brave 示例，不覆盖用户已有同名配置。
 在托盘点击“配置目录”，修改 mcp.json：填写 `BRAVE_API_KEY`，将 `disabled` 改为 false。

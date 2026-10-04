@@ -31,8 +31,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 
+[Dirs]
+; Keep user data on upgrades and uninstall. Only this subdirectory is writable.
+Name: "{app}\data"; Permissions: users-modify; Flags: uninsneveruninstall
+
 [Files]
-Source: "{#Root}\dist\windows\app\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#Root}\dist\windows\app\*"; DestDir: "{app}"; Excludes: "data\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#Root}\build\windows-prerequisites\WebView2RuntimeInstallerX64.exe"; Flags: dontcopy
 Source: "{#Root}\build\windows-prerequisites\vc_redist.x64.exe"; Flags: dontcopy
 
