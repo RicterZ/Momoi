@@ -2,6 +2,7 @@
 import json
 import shutil
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from ..config.manager import ConfigurationManager
@@ -20,7 +21,7 @@ def snapshot(workspace: Path, destination: Path) -> None:
         if exists:
             shutil.copy2(source, destination / name)
     if config.database.exists():
-        with sqlite3.connect(config.database) as source, sqlite3.connect(destination / "database.sqlite3") as target:
+        with closing(sqlite3.connect(config.database)) as source, closing(sqlite3.connect(destination / "database.sqlite3")) as target:
             source.backup(target)
     (destination / "snapshot.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 

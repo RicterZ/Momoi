@@ -10,7 +10,7 @@ from momoi.tools.process import run_process
 
 def test_windows_shell_preserves_unicode_and_quoting():
     command = 'Write-Output "桃井 $env:TEMP"; exit 7'
-    with patch("momoi.platform.shell.os.name", "nt"), patch("momoi.platform.shell.Path", __import__('pathlib').PosixPath):
+    with patch("momoi.platform.shell.os.name", "nt"), patch("momoi.platform.shell.Path", __import__('pathlib').PureWindowsPath):
         argv = shell_argv(command)
     assert argv[-2] == "-EncodedCommand"
     decoded = base64.b64decode(argv[-1]).decode("utf-16-le")

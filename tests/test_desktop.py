@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import yaml
@@ -47,19 +48,19 @@ def test_failed_update_restores_database_and_configuration(tmp_path):
     prepare_workspace(workspace, "http://127.0.0.1:19001/v1/embeddings")
     config = ConfigurationManager(workspace / "config.json").dashboard_config()
     config.database.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(config.database) as connection:
+    with closing(sqlite3.connect(config.database)) as connection, connection:
         connection.execute("create table memories (text text)")
         connection.execute("insert into memories values ('桃井')")
     before = (workspace / "providers.yaml").read_bytes()
     backup = tmp_path / "backup"
     snapshot(workspace, backup)
     prepare_workspace(workspace, "http://127.0.0.1:19002/v1/embeddings")
-    with sqlite3.connect(config.database) as connection:
+    with closing(sqlite3.connect(config.database)) as connection, connection:
         connection.execute("drop table memories")
         connection.execute("pragma user_version = 9999")
     restore(backup)
     assert (workspace / "providers.yaml").read_bytes() == before
-    with sqlite3.connect(config.database) as connection:
+    with closing(sqlite3.connect(config.database)) as connection, connection:
         assert connection.execute("select text from memories").fetchone() == ("桃井",)
         assert connection.execute("pragma user_version").fetchone() == (0,)
 
@@ -71,7 +72,7 @@ def test_snapshot_handles_database_created_by_failed_start(tmp_path):
     backup = tmp_path / "backup"
     snapshot(workspace, backup)
     config.database.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(config.database) as connection:
+    with closing(sqlite3.connect(config.database)) as connection, connection:
         connection.execute("create table partial (id integer)")
     restore(backup)
     assert not config.database.exists()
