@@ -66,6 +66,14 @@ try {
     'PASS: real silent installation, Users data ACL, installed backend/BGE/MCP, native shell window/startup/shutdown, reinstall and uninstall data retention.' | Set-Content (Join-Path $Evidence 'result.txt')
 }
 finally {
+    if (Test-Path (Join-Path $Target 'data/logs')) {
+        Get-ChildItem (Join-Path $Target 'data/logs') -File | Copy-Item -Destination $Evidence -Force
+    }
+    Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-15)} -ErrorAction SilentlyContinue |
+        Where-Object { $_.ProviderName -in @('.NET Runtime', 'Application Error', 'Windows Error Reporting') } |
+        Select-Object TimeCreated, ProviderName, Id, Message | Format-List | Out-String |
+        Set-Content (Join-Path $Evidence 'windows-application-events.txt')
+    Get-Content (Join-Path $Evidence 'windows-application-events.txt')
     if (Test-Path (Join-Path $Target 'unins000.exe')) {
         Start-Process -FilePath (Join-Path $Target 'unins000.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait
     }

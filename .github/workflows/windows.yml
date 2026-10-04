@@ -2,6 +2,11 @@ name: Windows installer
 
 on:
   workflow_dispatch:
+    inputs:
+      installer_run:
+        description: "Reuse an existing Windows installer artifact for installation diagnostics"
+        default: ""
+        required: false
 
 jobs:
   build:
@@ -23,14 +28,23 @@ jobs:
       - name: Update validation checks
         run: dotnet run --project desktop/Momoi.Update.Check -c Release
       - name: Build installer and smoke private runtime
+        if: inputs.installer_run == ''
         shell: pwsh
         run: ./packaging/windows/build.ps1
+      - uses: actions/download-artifact@v4
+        if: inputs.installer_run != ''
+        with:
+          name: Momoi-Windows-x64
+          path: dist/windows
+          run-id: ${{ inputs.installer_run }}
+          github-token: ${{ github.token }}
       - name: Real installer, reinstall and uninstall test
         shell: pwsh
         run: |
           $Installer = (Get-ChildItem dist/windows/Momoi-Setup-*-x64.exe | Select-Object -First 1).FullName
           ./packaging/windows/smoke_install.ps1 -Installer $Installer
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Momoi-Windows-x64
           path: |
