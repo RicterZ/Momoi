@@ -140,3 +140,24 @@ MCP command、args、cwd 支持 `${ENV_VAR}` 展开；桌面设置 MOMOI_NODE、
 MOMOI_BRAVE_MCP 为安装路径，用户不用硬编码路径。
 运行组件版本固定在 `packaging/windows/components.json`，MCP 依赖固定在
 `packaging/windows/mcp/package-lock.json`。这些变化要求新的运行组件安装包。
+
+## 安装前检查与真实 Windows 验收
+
+CI 构建安装 EXE 后运行 `packaging/windows/smoke_install.ps1`，实际执行静默安装，
+检查普通 Users 对 data 的修改权限，在安装后的目录运行主体/BGE/Brave，再启动
+原生窗口、验证后台初始化和正常退出，最后执行覆盖安装及卸载，确认用户数据保留。
+证据日志随 `Momoi-Windows-x64` artifact 中的 `install-test/` 发布。
+此检查在 Windows runner 上执行，不替代干净桌面机器上的交互和联网验收。
+
+手工安装测试建议使用没有预装 Python、Node、uv 或 .NET 的 Windows 11 x64：
+
+1. 安装到默认 Program Files 路径，再用普通用户启动；确认内置窗口打开 Dashboard。
+2. 确认任务栏、窗口、托盘和卸载列表图标；关闭窗口后托盘仍存在，后台继续运行。
+3. 托盘“打开面板”恢复窗口，“配置目录”打开安装目录/data，修改配置并保存。
+4. 再次启动只激活现有实例；“退出程序”后主体和 MCP 子进程均退出。
+5. 不联网也能启动 Dashboard 与 BGE；Brave 配置 API key 后可检索，任意 MCP
+   的首次 npm/uv 安装按 Server 的实际依赖和联网要求另行验证。
+6. 覆盖安装后 config.json、providers.yaml、mcp.json、SQLite 和提示词保持；
+   卸载后 data 仍存在，再安装恢复数据。
+7. 填入实际 COS 内置地址并重建外壳后，分别验证拒绝安装、正常签名更新、
+   篡改包拒绝、启动失败回滚；COS 地址为空的测试包不具备线上更新入口。
