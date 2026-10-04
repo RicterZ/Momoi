@@ -27,7 +27,8 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
 
     def python_command(self, script):
         if os.name == "nt":
-            return "& '" + sys.executable.replace("'", "''") + "' -X utf8 -c '" + script.replace("'", "''") + "'"
+            encoded = "exec(bytes.fromhex('" + script.encode("utf-8").hex() + "'))"
+            return "& '" + sys.executable.replace("'", "''") + "' -X utf8 -c '" + encoded.replace("'", "''") + "'"
         return shlex.quote(sys.executable) + " -X utf8 -c " + shlex.quote(script)
 
     def delayed_child(self, marker, *, wait):
@@ -92,7 +93,7 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("powershell" if os.name == "nt" else "bash", result["stdout_tail"])
         self.assertIn(str(self.root.resolve()), result["stdout_tail"])
         self.assertEqual(result["stderr_tail"], "error")
-        result = await self.tools.execute(self.call("[Console]::In.ReadToEnd()" if os.name == "nt" else "cat"))
+        result = await self.tools.execute(self.call("[Console]::Write([Console]::In.ReadToEnd())" if os.name == "nt" else "cat"))
         self.assertTrue(result["ok"])
         self.assertEqual(result["stdout_tail"], "")
         result = await self.tools.execute(self.call("[Console]::Write('0' * 20000)" if os.name == "nt" else "printf '%020000d' 0"))
@@ -115,8 +116,8 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
             ("stderr_tail", "error first\n", "error last\n"),
         ):
             output = result[key]
-            self.assertTrue(output.startswith(first))
-            self.assertTrue(output.endswith(last))
+            self.assertTrue(output.replace("\r\n", "\n").startswith(first))
+            self.assertTrue(output.replace("\r\n", "\n").endswith(last))
             self.assertEqual(output.count("[...truncated...]"), 1)
             self.assertLessEqual(len(output.encode()), 16384)
 
