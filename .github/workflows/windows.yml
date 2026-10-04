@@ -25,6 +25,11 @@ jobs:
       - name: Build installer and smoke private runtime
         shell: pwsh
         run: ./packaging/windows/build.ps1
+      - name: Real installer, reinstall and uninstall test
+        shell: pwsh
+        run: |
+          $Installer = (Get-ChildItem dist/windows/Momoi-Setup-*-x64.exe | Select-Object -First 1).FullName
+          ./packaging/windows/smoke_install.ps1 -Installer $Installer
       - uses: actions/upload-artifact@v4
         with:
           name: Momoi-Windows-x64
@@ -32,4 +37,5 @@ jobs:
             dist/windows/Momoi-Setup-*-x64.exe
             dist/windows/releases/Momoi-Code-*.zip
             dist/windows/releases/runtime.json
+            dist/windows/install-test/
           if-no-files-found: error
