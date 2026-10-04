@@ -23,6 +23,7 @@ public partial class App : Application
     private readonly CancellationTokenSource lifetime = new();
     private Mutex? instance;
     private bool ownsInstance, exiting, updateBusy, switching;
+    private Forms.ToolStripItem? updateMenu;
     private ReleaseStore? releases;
     private CodeRelease? currentRelease;
     private string? authScript;
@@ -65,7 +66,7 @@ public partial class App : Application
         trayImage = new Drawing.Icon(resource.Stream);
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("打开面板", null, (_, _) => Dispatcher.BeginInvoke(ShowPanel));
-        menu.Items.Add("检查更新", null, (_, _) => Dispatcher.BeginInvoke(() => updateTask = UpdateAsync()));
+        updateMenu = menu.Items.Add("检查更新", null, (_, _) => Dispatcher.BeginInvoke(() => updateTask = UpdateAsync()));
         menu.Items.Add("退出程序", null, (_, _) => Dispatcher.BeginInvoke(() => _ = ExitAsync()));
         tray = new Forms.NotifyIcon { Icon = trayImage, Text = "Momoi", ContextMenuStrip = menu, Visible = true };
         tray.DoubleClick += (_, _) => Dispatcher.BeginInvoke(ShowPanel);
@@ -160,16 +161,19 @@ public partial class App : Application
     {
         if (updateBusy || exiting || releases is null || currentRelease is null || backend is null) return;
         updateBusy = true;
+        bool installationRequested = false;
+        if (updateMenu is not null) updateMenu.Enabled = false;
         try
         {
             tray!.Text = "Momoi — 正在检查更新";
             LatestRelease latest = await SignedLatest.FetchAsync(lifetime.Token);
             if (latest.ReleaseId == currentRelease.Manifest.ReleaseId)
             { if (!quiet) MessageBox.Show("当前已是最新发布版本。", "Momoi"); return; }
+            if (MessageBox.Show($"发现新版本 {latest.Version}（当前 {currentRelease.Manifest.Version}）。\n是否下载安装？安装完成后会重启后台并刷新面板。", "Momoi 更新", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes) return;
+            installationRequested = true;
+            tray!.Text = "Momoi — 正在下载并验证更新";
             CodeRelease next = await releases.DownloadAsync(latest, lifetime.Token);
-            if (next.Manifest.ReleaseId == currentRelease.Manifest.ReleaseId)
-            { if (!quiet) MessageBox.Show("当前已是该更新地址提供的版本。", "Momoi"); return; }
-            if (MessageBox.Show($"发现版本 {next.Manifest.Version}。应用更新会短暂重启后台，是否现在更新？", "Momoi", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+            tray.Text = "Momoi — 正在安装更新";
             switching = true;
             CodeRelease previous = currentRelease;
             string snapshot = Path.Combine(workspace, "update-backups", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
@@ -185,6 +189,8 @@ public partial class App : Application
                 currentRelease = next;
                 await LoadDashboardAsync(ready);
                 _ = WatchBackendAsync(backend);
+                ShowPanel();
+                tray!.ShowBalloonTip(3000, "Momoi 更新完成", $"已安装版本 {next.Manifest.Version}，后台已重启。", Forms.ToolTipIcon.Info);
             }
             catch (Exception updateError)
             {
@@ -205,11 +211,12 @@ public partial class App : Application
             }
         }
         catch (OperationCanceledException) when (exiting) { }
-        catch (Exception error) { if (!exiting && !quiet) MessageBox.Show($"更新失败：{error.Message}", "Momoi", MessageBoxButton.OK, MessageBoxImage.Error); }
+        catch (Exception error) { if (!exiting && (!quiet || installationRequested)) MessageBox.Show($"更新失败：{error.Message}", "Momoi", MessageBoxButton.OK, MessageBoxImage.Error); }
         finally
         {
             switching = false;
             updateBusy = false;
+            if (updateMenu is not null) updateMenu.Enabled = true;
             if (tray is not null && !exiting) tray.Text = "Momoi";
         }
     }

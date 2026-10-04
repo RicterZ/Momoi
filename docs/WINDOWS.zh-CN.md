@@ -37,7 +37,7 @@ update-backups/                 # 更新失败恢复所需配置和 SQLite 快�
 外壳只从 `desktop/Momoi.Update/UpdateSource.cs` 的 `LatestManifestUrl` 获取
 `latest.json`。没有配置文件、环境变量或命令行地址覆盖。
 **仓库尚未提供实际 COS 地址，当前常量为空；发布安装包前必须填入真实 HTTPS 地址。**
-可以从托盘手动检查；每次打开程序也会在后台检查，发现更新后询问是否重启应用。
+可以从托盘手动检查；每次打开程序也会在后台检查，发现更新后提示下载安装；用户确认后才下载代码 ZIP，验签并安装，然后重启后台和刷新面板。
 
 密钥位于 `desktop/Momoi.Desktop/keys/`：
 
