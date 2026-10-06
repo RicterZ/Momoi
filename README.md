@@ -25,10 +25,11 @@ confirmed, what remains unfinished, and which parts of the past matter now.
 - **One identity across time and entry points.** Owner messages, Goals,
   Heartbeats, and Webhooks enter the same runtime and share the same history,
   relationship, state, and delivery rules.
-- **Context selected by the acting Momoi.** Every Owner Turn opens with a
-  mandatory `recall` action. Momoi objectively describes the current input and
-  missing historical information, then searches, reuses a prior scope, or skips
-  retrieval when supplied context is sufficient. Episode routing is independent.
+- **Context selected by the acting Momoi.** Planner uses `recall` when current
+  context needs historical evidence, searching or reusing an existing scope.
+  Retrieval is not a mandatory opening action. Background workflows independently
+  assign Turns to Episodes, summarize them, and build topic relationships.
+
 - **Memory with provenance and authority.** Recent conversation, confirmed
   owner facts, shared Episodes, and lower-confidence reflection learning have
   different lifetimes and are never treated as interchangeable.
@@ -64,9 +65,13 @@ flowchart TB
     intake["Scheduling<br/>and batching"]
     transcript["Shared timeline<br/>speech · events · reviews"]
     context["Recall<br/>search · reuse · skip"]
-    agent["Owner / autonomous<br/>agent"]
+    agent["Planner<br/>interpret · verify · act"]
+    replyer["Replyer<br/>SOUL · dialogue · expression"]
     delivery["Commit<br/>and delivery"]
-    intake --> transcript --> context --> agent --> delivery
+    intake --> transcript --> agent
+    agent --> context --> agent
+    agent --> tools
+    agent --> replyer --> delivery
   end
 
   subgraph continuity["Momoi · Continuity services"]
@@ -111,50 +116,42 @@ in-process snapshot performs vector search.
 
 ### What happens in an owner Turn
 
-1. Incoming messages are grouped into a coherent batch while preserving their
-   timeline.
-2. Recent owner and Momoi speech is projected as native `user` and `assistant`
-   messages with explicit bubble boundaries and delivery state. Webhook events,
-   Goal reviews and Heartbeat records join the same timeline as tagged data;
-   current owner text remains the only current owner authority.
-3. The Owner model first calls `recall`. It either searches a new historical
-   scope or reuses a displayed prior scope, and independently chooses the
-   Episode binding. The runtime performs the same keyword and optional vector
-   retrieval and returns bounded evidence.
-4. The same model applies the configured Soul and system communication rules,
-   uses tools when needed, and submits bubbles to the shared outbox. Queued messages are recorded before
-   simulated typing delays or network delivery.
-5. The Turn finalizes conversation history, memory operation requests and Goal mutations, mood/activity state,
-   tool evidence, delivery state, and any pending follow-up as one recoverable
-   record.
+1. Incoming messages are batched while preserving their timeline and attachments.
+2. Planner receives SOUL, the operating rules, memory and state, and a shared
+   native transcript of prior messages, tool calls and results.
+3. Planner interprets the input, recalls history when needed, discovers tools,
+   and performs work. Plain assistant text records its current judgment; it does
+   not send a message, including when it contains `<bubble>` tags.
+4. To speak, Planner calls `reply` with an intent, necessary references and
+   `mode="text"` or `mode="voice"`. Replyer receives SOUL, expression rules,
+   actual channel dialogue and the current target, then generates the utterance.
+   It has no tools. The delivery layer validates and durably queues the result.
+5. The Turn commits history, memory-operation requests, task changes, mood,
+   tool evidence and any pending follow-up. Background topic workflows then
+   assign Turns to Episodes, summarize them and optionally build relationships.
 
-Owner, Goal, Heartbeat, and Webhook Turns differ in authority and purpose, but
-they all operate on the same timeline. Silence is a valid outcome for an
-autonomous or external-event Turn.
+### Shared timeline and cache reuse
 
-### Shared timeline
+Owner, Goal, Heartbeat, Webhook, Plan and current-state maintenance use the shared
+Planner transcript and stable system/tool prefix; the harness enforces stage
+permissions. Native assistant/tool exchanges preserve what was actually done.
+Historical large results keep bounded excerpts, truncation markers and references
+for deeper reads; `recall` results retain their special reuse behavior.
 
-The transcript contains speech and historical runtime records:
+Confirmed always-on memory is frozen in the first user message for a compaction
+cycle. Additions, replacements and deletions appear as transcript updates that
+explicitly override stale prefix facts; the next compact rebuilds the baseline.
+Domain memories are injected into the matching workflow's latest input and are
+excluded from general memory prefixes and ordinary recall.
 
-| Record | Content and timestamp |
-| --- | --- |
-| `<bubble>` | One owner or Momoi message, preserving single newlines within it; queued outgoing messages carry `delivery="queued"` |
-| `<event id="E…" source="webhook:…" received_at="…">` | A stored external event, ordered by reception time |
-| `<goal id="G…" completed_at="…">` | An immutable snapshot of one Goal review, including its result and state |
-| `<heartbeat id="H…" completed_at="…">` | One completed Heartbeat's activity and result |
+Replyer has one persisted dialogue window per channel: it starts with 12 messages,
+appends until 48, then rotates to the latest 12. Text and voice share the same
+system and history prefix, including the emotion catalog; only the latest request
+specifies the output mode. Voice outputs spoken text without emotion markers.
 
-Record IDs derive from stored message IDs. A record describes what happened;
-message delivery is tracked separately. Later Goal reviews append new records.
-Webhook, Goal and Heartbeat requests use `<recent_events>`, `<recent_goals>` and
-`<recent_heartbeats>` respectively to list the IDs present in their transcript,
-without repeating historical record bodies in the latest input. Goal and Webhook
-Turns do not run automatic pre-retrieval; Heartbeat selects search or skip through
-`heartbeat_begin`. Always/recent memory remains in the stable first user message.
-
-Reply-followup requests carry only the current `<followup>` reason and elapsed
-silence alongside normal context. Their outgoing bubbles enter conversation
-history; no separate historical reply-wait record is added. New owner messages
-cancel the pending wait.
+New owner messages can interrupt ongoing work or delivery and cancel a pending
+reply-followup. Autonomous Turns may finish silently. Delivery status remains
+separate from generation or tool acceptance.
 
 ## Memory architecture
 
@@ -164,8 +161,8 @@ different questions and carry different authority.
 | Layer | Source of truth | How it enters context | Lifecycle |
 | --- | --- | --- | --- |
 | Working context | Shared speech/event/review timeline, current input, mood, activity, active Goals, and unresolved work | Included directly by chronology and current relevance | Moves with the live conversation; it is not automatically promoted to long-term fact |
-| Confirmed memory | Facts, preferences, relationships, routines, and reusable methods grounded in authenticated owner messages | `always` facts are continuously available; `recent` facts are available for a bounded time; `recall` facts are retrieved by topic | New owner corrections can replace, narrow, expire, or retire older facts |
-| Episodes | Concrete shared experiences backed by the original Turns and messages | Recent Episodes are available directly; older Episodes are recalled by their summary or original Turn evidence | Open conversation is grouped by subject, then archived and refreshed as the subject develops |
+| Confirmed memory | Facts, preferences, relationships, routines, and reusable methods grounded in authenticated owner messages | `always` facts enter the stable prefix; `recall` facts are retrieved by topic; `scoped` facts enter their workflow domain | New owner corrections can replace, narrow, expire, or retire older facts |
+| Episodes | Concrete shared experiences backed by the original Turns and messages | Compacted history uses Episode summaries; recall returns relevant summaries, original messages and tool execution evidence | Open conversation is grouped by subject, then archived and refreshed as the subject develops |
 | Reflection memory | Dated impressions, methods, tool-use lessons, and relationship learning produced by daily reflection | Recalled separately with lower confidence and an explicit stale-information warning | May be revised or become inapplicable; it never outranks current evidence or confirmed memory |
 
 Confirmed-memory activation controls placement, not importance:
@@ -173,7 +170,7 @@ Confirmed-memory activation controls placement, not importance:
 | Activation | Use it for | Retrieval behavior |
 | --- | --- | --- |
 | `always` | Standing interpersonal preferences and constraints that should affect ordinary conversation | Included without a topic query |
-| `recent` | Time-bounded situations such as tonight's plan, a current package, or temporary location | Included until its TTL or relevance window expires |
+| `scoped` | Instructions specific to a Goal, Heartbeat or Webhook | Injected only into the matching workflow; excluded from ordinary recall |
 | `recall` | People, device playbooks, game rules, shared methods, and facts useful only when their subject returns | Retrieved only when the current Turn asks for related history |
 
 An Episode is a concrete experience, not a permanent category. It keeps a
@@ -200,11 +197,11 @@ make no nested LLM call and require no repeated memory list or extra search.
 
 The dispatcher runs private `memory_operation` Turns on the shared agent worker,
 in submission order including retries, without waiting for daily maintenance.
-Each Turn uses the standard LLM, budget, journal, and tool loop with a dedicated
+Each Turn uses the standard LLM, journal, and tool loop with a dedicated
 system prompt. Only `memory_operation_search` and `memory_operation_finish` are
 available. Review decides writes, replacements/merges, forgetting, no change, or
 insufficient evidence; optional search can find active memories across activations.
-The reviewer assigns kind, activation, and absolute expiry from owner evidence.
+The reviewer assigns kind, activation, and the applicable domain from owner evidence. Temporary state is maintained separately.
 
 `memory_operation_finish` atomically applies the complete decision batch and ends
 the Turn. Invalid decisions return tool errors for correction without partial
@@ -215,14 +212,14 @@ Ordinary owner messages wait for an active review to finish. Explicit `/stop`,
 shutdown cancellation, and process restart preserve unfinished work for recovery.
 Snapshot checks still protect against concurrent Dashboard edits.
 
-`always` and `recent` records are injected individually, sorted by memory ID, in
-the first user message for cache stability, without compression or content deduplication.
-Business recall scope is unchanged, `memory_search` remains available, and `/tidy`
-continues to handle global maintenance.
+`always` memory uses a stable baseline for each compaction cycle; accepted changes
+are appended to the transcript before the baseline is rebuilt. Retrieved and
+scoped memory do not use this baseline-update mechanism. `memory_search` is
+available through tool discovery; `/tidy` continues to handle global maintenance.
 
 ### Recall and optional semantic search
 
-Every Owner Turn starts with `recall`. The acting model submits the smallest
+When historical context is needed, Planner calls `recall` and submits the smallest
 complete historical scope as a semantic query plus literal anchors such as
 names, titles, IDs, or exact phrases. It may reuse an earlier scope only when
 the displayed queries already cover the current need. The retrieval layer then
@@ -244,7 +241,7 @@ flowchart TB
     keyword["Keyword matching<br/>exact names · IDs · phrases"]
     vector["Optional vector search<br/>paraphrases · related meaning"]
     fusion["Evidence fusion<br/>agreement + strict vector-only gates"]
-    ranking["Pool-aware ranking<br/>relevance · time · salience<br/>authority · confidence"]
+    ranking["Pool-aware ranking<br/>relevance · time<br/>authority · confidence"]
     keyword --> fusion
     vector --> fusion --> ranking
   end
@@ -291,7 +288,7 @@ Only searchable long-term material is embedded:
 - reflection memories;
 - completed, archived Episode summaries and Episode-linked Turn chunks.
 
-Always-on and recent memories, live recent Turns, Goals, mood/activity, thinking
+Always-on memories and temporary state, live recent Turns, Goals, mood/activity, thinking
 records, artifacts, and raw tool results are not placed in the semantic index.
 Source changes are recorded transactionally, then materialized and encoded in
 small background batches. New or changed material becomes searchable
@@ -303,15 +300,22 @@ incrementally without blocking owner conversation.
 | --- | --- |
 | Private chat | One owner across QQ (NapCat) and WeChat; replies return to the originating channel and proactive messages use the configured primary channel |
 | Conversation | Message batching, quoted/forwarded content, media handling, natural multi-bubble delivery, optional image reactions, and valid silence |
-| Context | Native shared transcript, mandatory Owner recall with search/reuse/skip, Episode routing, runtime re-search, and bounded model input |
+| Context | Native shared transcript, on-demand recall, background Episode archiving and relationships, runtime re-search, and bounded model input |
 | Tools | Built-in file/HTTP tools plus dynamically discovered MCP servers and per-server tool allowlists |
-| Long-running work | Tool loops, progress messages, interruption, token/time budgets, large-result snapshots, and recovery for uncertain external effects |
+| Long-running work | Tool loops, progress messages, interruption, execution limits, large-result snapshots, and recovery for uncertain external effects |
 | Time and initiative | Persistent Goals, multiple daily trigger times, Heartbeats, quiet hours, and interruption by new owner messages |
 | Memory maintenance | Daily Reflection, confirmed-memory reconciliation, Episode annealing, incremental semantic indexing, and keyword fallback |
 | Observability | Local dashboard for conversations, recall decisions and evidence, reflections, memories, Goals, image reactions, token usage, and per-Turn thinking records |
 | External events | Authenticated Webhooks with YAML workflows and predefined command executors |
 
 ## Deployment
+
+### Windows desktop
+
+Download the installer from [GitHub Releases](https://github.com/RicterZ/Momoi/releases).
+The release workflow builds and tests the installer before attaching it. The
+app includes a local backend, default prompts and six emotion assets; configure
+your model and message channel through the first-run Dashboard guide.
 
 ### Docker Compose
 
@@ -407,8 +411,8 @@ Keyword recall remains available during indexing. See
   Replyer thinking defaults to `low` and is configurable in the dashboard.
 - Edit `~/.momoi/prompts/HEARTBEAT.md` to shape what Momoi may explore, create,
   continue, share, or leave quiet during autonomous time.
-- Add optional image reactions with `momoi emotion add`; descriptions tell the
-  agent when each image fits.
+- Add optional image reactions with `momoi emotion add`; descriptions tell
+  Replyer when each image fits.
 
 ### Chat decision flow
 
@@ -434,14 +438,32 @@ See [Provider configuration and extension](./docs/PROVIDERS.md).
 
 ### Tools
 
-Place `mcp.json` in the workspace to connect stdio or remote MCP servers.
-Momoi discovers their schemas at runtime, can expose selected tools, and treats
-configured read-only tools differently from tools with external effects.
+Configure stdio or remote MCP servers in workspace `mcp.json`, with a useful
+`description` for each service. The stable system index contains service/group
+names and descriptions, not every tool's full schema.
+
+1. `tool_search` finds candidate tool names and descriptions.
+2. `tool_enable({"tools": ["exact_tool_name", "another_tool"]})` loads their schemas.
+3. Call the loaded tools; stage permissions still apply.
+
+Low-frequency built-ins follow the same flow: `thinking_search`, `thinking_read`,
+`episode_relations`, `episode_search`, `memory_search`, `write_file`, `apply_patch`,
+`makedirs`, `move_file` and `delete_file`. Available file tools depend on the Bash
+setting. Loaded tools remain available across shared Turns and restarts until
+manual or automatic compaction resets the enabled set.
+
+User-facing speech goes through `reply`; `send_bubbles` and `send_voice` are not
+model-facing tools. The description exposes configured voice channels. Text
+Replyer selects standalone `emotion://slug` bubbles from the catalog; image/file
+attachments can be supplied through `reply.attachments` and are passed through
+by delivery. Voice generation uses TTS and returns an error for text fallback
+when unavailable or unsuccessful.
 
 ### Dashboard
 
 Open `http://127.0.0.1:8788`. The dashboard can inspect conversations,
-per-Turn recall scopes and selected evidence, reflections, memories, Goals,
+Planner/Replyer decision flows, per-request tokens, cache usage, latency and
+estimated costs, recall evidence, reflections, memories, Goals,
 image reactions, usage, and thinking records; it can also edit memories, Goals,
 reaction assets, and prompt files. Enter the generated token from startup output,
 then configure providers and channels in Settings, including Weixin QR login.
@@ -467,7 +489,7 @@ nothing useful.
 
 ### Completing a Goal review
 
-A Goal review uses one sequence: work → optional `send_bubbles` / `send_voice` →
+A Goal review uses one sequence: work → optional `reply` →
 `goal_review` → `end_turn({})`. The review tool stages the result and task changes;
 they commit when the Turn finishes. `active`, `waiting` and `blocked` keep the Goal; `done` and
 `cancelled` close it. The runtime supplies the current Goal ID. For example:
@@ -478,20 +500,19 @@ they commit when the Turn finishes. `active`, `waiting` and `blocked` keep the G
 
 Continuing requires `next_action` and a future `next_review_at`; recurring active
 Goals may reuse their schedule. Waiting requires `waiting_for` and a future review;
-blocked requires `blocked_reason`. `send_bubbles` and `send_voice` use the normal
+blocked requires `blocked_reason`. `reply` uses the normal
 delivery path immediately, independently of Goal completion. Delivery and
 `end_turn` may share one response, with `end_turn` last; failed delivery prevents
 completion. Invalid outcomes return tool errors for correction.
 
-Valid `<bubble>...</bubble>` blocks in assistant text become `send_bubbles` before
-harness validation. With `end_turn`, nonempty assistant text requires `send_bubbles`
-in the same response; empty text is allowed. The harness checks the normalized
-tool calls without parsing text, and text outside bubble blocks is not delivered.
-All conversation stages receive the same tool schemas; the harness enforces
-stage permissions. `end_turn` accepts `mood` and `reply_wait` for conversations,
-or `{}` after `goal_review` for Goals. Heartbeats first stage activity, result,
-`next_check_minutes` and `reason` through `heartbeat_activity`. Normal conversations
-retain `goal_update`, `goal_finish` and `goal_cancel` for task management.
+Plain assistant text and `<bubble>` tags do not send messages. Use `reply` for
+speech and the current workflow's finish tool for completion. `end_turn` accepts
+`mood` and `reply_wait` for conversation stages, or `{}` after `goal_review` for
+Goals. Heartbeats report activity, result, `next_check_minutes` and `reason`
+through `heartbeat_activity` before ending. Before a Heartbeat sends discovered
+content, it must successfully recall that specific content to check prior sharing.
+Normal conversations retain `goal_update`, `goal_finish` and `goal_cancel` for
+task management.
 
 ## Owner controls
 
@@ -519,5 +540,3 @@ surface.
 - [Webhook workflow reference](./docs/WORKFLOW.md)
 
 Momoi is licensed under the [MIT License](./LICENSE).
-
-MCP 工具发现采用两步流程：system 中的工具索引仅包含服务名和配置 `description`；`tool_search` 按服务或工具关键词返回候选名称与描述，`tool_enable` 接受工具名数组并加载选定工具的完整 schema。启用集合在共享 transcript 的压缩周期内持久化、只追加，owner、heartbeat、goal 等共享；手动或自动 compact 时回收，调用仍受各阶段权限限制。
