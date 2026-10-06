@@ -2,9 +2,17 @@
 <embed id="avsdk" type="application/x-ppapi-avSDK" width="1" height="1">
 <script>
 const { ipcRenderer } = require('electron');
+const plugin = document.getElementById('avsdk');
+const events = [];
+plugin.addEventListener('message', event => {
+  // Record shape and command only. Never export account/token payloads.
+  let value = event.data;
+  try { if (typeof value === 'string') value = JSON.parse(value); } catch {}
+  if (events.length < 32) events.push({ type: typeof value, command: value?.cmd, keys: value && typeof value === 'object' ? Object.keys(value) : [] });
+});
+plugin.addEventListener('error', () => events.push({ error: 'embed error' }));
 setTimeout(() => {
-  const plugin = document.getElementById('avsdk');
   const methods = ['postMessage', 'login', 'acceptInvite', 'openMic', 'closeMic', 'startTRAEAudio'];
-  ipcRenderer.send('probe-result', { postMessage: typeof plugin.postMessage === 'function', methods: Object.fromEntries(methods.map(name => [name, typeof plugin[name]])) });
-}, 8000);
+  ipcRenderer.send('probe-result', { postMessage: typeof plugin.postMessage === 'function', methods: Object.fromEntries(methods.map(name => [name, typeof plugin[name]])), events });
+}, 20000);
 </script>
