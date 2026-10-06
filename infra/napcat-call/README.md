@@ -22,3 +22,8 @@ QQ/AVSDK 升级必须重新验证，不能只更新到 latest。
 `22f30c021cd3170f75af9dff66cc959a07ebda4b`，源码在镜像 `/opt/qq-call/upstream`，
 许可证为 GPL-3.0-only。`prepare.py` 对该桥的修改同样按 GPL-3.0-only 提供；
 没有将上游 MaiBot 业务插件并入 Momoi。
+
+Momoi 端在 Dashboard「语音」配置中启用腾讯 ASR 与 TTS，再在 QQ 渠道中启用
+语音电话并填写 Bridge 地址、Token。连接测试只检查服务，不会接听电话。
+本版仅自动接听主人来电；通话语音沿用行为规划与发言生成，识别后的消息与普通
+QQ 共用对话历史。主人插话会停止当前播放并作废旧回复，挂断后不补发电话音频。

@@ -75,6 +75,7 @@ class ToolExecutor:
             "heartbeat_begin",
             "heartbeat_activity",
             "goal_review",
+            "qq_call_status",
             "plan_create", "plan_submit", "plan_start", "plan_get", "plan_update", "plan_cancel", "plan_resume",
         }:
             return "runtime"

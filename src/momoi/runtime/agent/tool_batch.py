@@ -398,6 +398,10 @@ class ToolBatchExecutor:
                         visible = True
                         last_sent_bubbles = copy.deepcopy(result["bubbles"])
                         last_sent_channel = str(result["channel"])
+                elif getattr(target, "required_reply_mode", None) and (
+                    call.arguments.get("mode", "text") != target.required_reply_mode or call.arguments.get("attachments")
+                ):
+                    result = {"ok": False, "error": "call_requires_voice", "message": "当前目标为 QQ 语音电话；请使用 reply(mode=voice)，附件请另发普通 QQ。"}
                 elif call.arguments.get("mode", "text") == "voice" and (
                     self.bubble_delivery.tts_provider is None
                     or not callable(getattr(target, "send_voice", None))
@@ -417,12 +421,15 @@ class ToolBatchExecutor:
                         delivery_call = ToolCall(call.id, "send_voice" if mode == "voice" else "send_bubbles",
                                                  {"text": "\n".join(bubbles)} if mode == "voice" else {"bubbles": bubbles})
                         dispatch = self.bubble_delivery.dispatch_voice if mode == "voice" else self.bubble_delivery.dispatch
+                        call_context = next((event.delivery_context for event in reversed(request.current_events)
+                            if event.channel == target.name and event.delivery_context), {})
                         delivery = dispatch(delivery_call, turn_id=request.turn_id, stage=execution.stage,
                             round_number=request.round_number, delivery_channel=target,
                             heartbeat_turn=execution.heartbeat, reply_followup_turn=execution.reply_followup,
                             heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
                             previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
-                            previous_channel=last_sent_channel)
+                            previous_channel=last_sent_channel,
+                            **({"delivery_context": call_context} if call_context else {}))
                         if mode == "voice":
                             delivery = await delivery
                         result = {**delivery.result, "bubbles": bubbles, "mode": mode}
@@ -433,6 +440,9 @@ class ToolBatchExecutor:
                     except Exception as error:
                         logger.exception("reply_generation_failed")
                         result = {"ok": False, "error": "reply_generation_failed", "message": type(error).__name__}
+            elif call.name == "qq_call_status":
+                phone = self.bubble_delivery.channels.get("qq_call")
+                result = {"ok": True, **(phone.status if phone else {"phase": "disabled"})}
             elif call.name == "tool_search":
                 result = search_tools(
                     call,

@@ -37,7 +37,11 @@ class OwnerUpdateController:
         updates: list[IncomingMessage] = []
         for _ in range(len(self.deferred)):
             message = self.deferred.popleft()
-            if self.channel_for(message.channel).name == channel_name:
+            target = self.channel_for(message.channel)
+            check = getattr(target, "message_current", None)
+            if callable(check) and not check(message):
+                continue
+            if target.name == channel_name:
                 updates.append(message)
             else:
                 self.deferred.append(message)
@@ -46,7 +50,11 @@ class OwnerUpdateController:
                 message = self.incoming.get_nowait()
             except asyncio.QueueEmpty:
                 break
-            if self.channel_for(message.channel).name == channel_name:
+            target = self.channel_for(message.channel)
+            check = getattr(target, "message_current", None)
+            if callable(check) and not check(message):
+                continue
+            if target.name == channel_name:
                 updates.append(message)
             else:
                 self.deferred.append(message)

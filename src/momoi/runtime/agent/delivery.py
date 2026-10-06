@@ -136,6 +136,7 @@ class BubbleDelivery:
         delivery_channel: Channel,
         heartbeat_turn: bool, reply_followup_turn: bool,
         heartbeat_owner_event_revision: int | None,
+        delivery_context: dict | None = None,
     ) -> BubbleDeliveryResult:
         """Speak a complete string; only the channel payload is audio."""
         def failure(error: str) -> BubbleDeliveryResult:
@@ -159,6 +160,9 @@ class BubbleDelivery:
                 )
             return None
 
+        call_check = getattr(delivery_channel, "context_valid", None)
+        if callable(call_check) and not call_check(delivery_context):
+            return failure("call_ended_or_superseded")
         error = contact_error()
         if error:
             return failure(error)
@@ -178,11 +182,14 @@ class BubbleDelivery:
             if synthesis_error is not None:
                 return BubbleDeliveryResult(synthesis_error)
             error = contact_error()
+            if callable(call_check) and not call_check(delivery_context):
+                error = "call_ended_or_superseded"
             if error:
                 self.voice_audio.pop((turn_id, text), None)
                 return failure(error)
             self.store.queue_progress(
                 turn_id, tool_call_id, [text], delivery_channel.name, voice=True,
+                **({"delivery_context": delivery_context} if delivery_context else {}),
             )
             self.outbox_changed.set()
         return BubbleDeliveryResult(
@@ -201,6 +208,7 @@ class BubbleDelivery:
             return BubbleDeliveryResult({"ok": False, "error": "similar_bubbles_already_sent"})
         return await self.send_voice(
             call.arguments["text"], tool_call_id=call.id,
+            delivery_context=context.get("delivery_context"),
             **{key: context[key] for key in (
                 "turn_id", "delivery_channel", "heartbeat_turn",
                 "reply_followup_turn", "heartbeat_owner_event_revision",

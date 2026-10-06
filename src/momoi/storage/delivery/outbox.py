@@ -130,6 +130,7 @@ class OutboxStore:
         target_channel: str = "",
         *,
         voice: bool = False,
+        delivery_context: dict | None = None,
     ) -> None:
         if voice and (len(messages) != 1 or not isinstance(messages[0], str) or not messages[0].strip()):
             raise ValueError("voice progress requires one nonempty text string")
@@ -145,6 +146,8 @@ class OutboxStore:
                     # Keep only the original text and delivery mode in SQLite.
                     # The worker synthesizes audio in memory before sending.
                     text, kind, path, payload = message, "voice", None, {"action": "voice"}
+                    if delivery_context:
+                        payload["delivery_context"] = delivery_context
                 else:
                     text, kind, path, payload = self._outbox_content(message)
                 self._db.execute(

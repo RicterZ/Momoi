@@ -19,6 +19,8 @@ class InboxStore:
 
     def add_event(self, message: IncomingMessage) -> bool:
         payload = {"channel": message.channel, "segments": message.segments}
+        if message.delivery_context:
+            payload["delivery_context"] = message.delivery_context
         with self._db:
             self.register_images(message.segments, channel=message.channel)
             cursor = self._db.execute(
@@ -198,6 +200,7 @@ class InboxStore:
             received_at=row["received_at"],
             segments=segments,
             channel=channel,
+            delivery_context=value.get("delivery_context", {}) if isinstance(value, dict) else {},
         )
 
     def discard_events(self, events: list[IncomingMessage]) -> None:

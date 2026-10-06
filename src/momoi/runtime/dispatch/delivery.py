@@ -70,7 +70,7 @@ class OutboxWorker:
                     self.store.mark_not_dispatched(row.id, "ChannelNotConfigured")
                     continue
                 delivery = (row.channel, row.turn_id)
-                if delivery == previous_delivery:
+                if delivery == previous_delivery and channel.name != "qq_call":
                     delay = random.uniform(
                         *message_gap_bounds(row.text, self.daemon_policy)
                     )
@@ -86,6 +86,10 @@ class OutboxWorker:
                     )
                     await self._wait_outbox_gap(row.id, delay)
                 if not self.store.outbox_dispatchable(row.id):
+                    continue
+                check = getattr(channel, "context_valid", None)
+                if callable(check) and not check((row.payload or {}).get("delivery_context")):
+                    self.store.mark_failed(row.id, "Call ended or reply superseded")
                     continue
                 audio = None
                 if row.kind == "voice":
@@ -128,7 +132,10 @@ class OutboxWorker:
                         content=safe_preview(row.text, 500),
                     )
                     if row.kind == "voice":
-                        await channel.send_voice(audio)
+                        if callable(getattr(channel, "send_call_voice", None)):
+                            await channel.send_call_voice(audio, (row.payload or {}).get("delivery_context", {}), str(row.id))
+                        else:
+                            await channel.send_voice(audio)
                     else:
                         await channel.send_message(
                             row.payload

@@ -36,6 +36,8 @@ class CommandRouter:
             log_event(logger, TRACE, "owner_input_status", channel=event.channel)
             return
         message = event
+        if not self._message_current(message):
+            return
         log_event(
             logger,
             logging.INFO,

@@ -22,6 +22,7 @@ class IncomingMessage:
     received_at: float
     segments: tuple[dict[str, Any], ...] = ()
     channel: str = "unknown"
+    delivery_context: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

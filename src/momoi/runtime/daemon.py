@@ -131,6 +131,12 @@ class MomoiDaemon(
         else:
             primary_name = str(getattr(config.channel, "plugin", ""))
             self.channel = self.channels[primary_name]
+        for item in config.channel_configs:
+            phone = getattr(item, "voice_call", None)
+            if phone is not None and phone.enabled:
+                from ..qq_call.channel import QQCallChannel
+                self.channels["qq_call"] = QQCallChannel(phone, item.owner_qq, self.services.asr,
+                    tts_enabled=self.services.tts is not None, interrupt=self._interrupt_qq_call)
         self.provider = self.services.llm
         self.provider.usage_sink = self.store.record_llm_call
         if hasattr(self.provider, "request_metrics_sink"):
@@ -271,6 +277,21 @@ class MomoiDaemon(
                         task.cancel()
         finally:
             self.store.close()
+
+    def _interrupt_qq_call(self, reason):
+        self.store.cancel_pending_outbox("qq_call", reason)
+        self.outbox_changed.set()
+        if getattr(self, "_active_turn_channel", "") == "qq_call":
+            active = getattr(self, "_active_turn", None)
+            if active and not active.done():
+                self._stop_requested = True
+                self._interrupt_reason = reason
+                active.cancel()
+
+    def _message_current(self, message):
+        target = self._channel_for(message.channel)
+        check = getattr(target, "message_current", None)
+        return check(message) if callable(check) else True
 
     async def _run_channel(self, channel: Channel, stop: asyncio.Event) -> None:
         log_event(logger, logging.INFO, "channel_start", channel=channel.name)

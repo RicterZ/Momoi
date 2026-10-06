@@ -221,16 +221,17 @@ class TranscriptStore:
 
     def replyer_dialogue_rows(self, channel: str, *, limit: int = 96):
         """Actual messages, including the active turn; never journal/tool text."""
+        channels = ("napcat", "qq_call") if channel in {"napcat", "qq_call"} else (channel, channel)
         rows = self._db.execute("""SELECT m.id, m.role, m.content, m.created_at,
                     m.delivery_state, m.turn_id FROM messages m
                     LEFT JOIN outbox o ON o.id=m.outbox_id
                     WHERE ((m.role='user' AND EXISTS (
                         SELECT 1 FROM json_each(m.source_event_ids_json) src
                         JOIN events e ON e.id=src.value
-                        WHERE json_extract(e.payload_json, '$.channel')=?)) OR
+                        WHERE json_extract(e.payload_json, '$.channel') IN (?, ?))) OR
                         (m.role='assistant' AND m.delivery_state='delivered'
-                         AND o.target_channel=?))
-                    ORDER BY m.id DESC LIMIT ?""", (channel, channel, limit)).fetchall()
+                         AND o.target_channel IN (?, ?)))
+                    ORDER BY m.id DESC LIMIT ?""", (*channels, *channels, limit)).fetchall()
         return [dict(row) for row in reversed(rows)]
 
     def recent_conversation_messages(

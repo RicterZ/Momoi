@@ -114,6 +114,9 @@ class AgentWorker:
                     continue
                 message = item
                 assert isinstance(message, IncomingMessage)
+                if not self._message_current(message):
+                    self.store.discard_events([message])
+                    continue
                 batch.append(message)
                 channel = self._channel_for(message.channel)
                 now = loop.time()
@@ -154,8 +157,11 @@ class AgentWorker:
                 channel = self._channel_for(message.channel)
                 quiet_deadline = min(loop.time() + channel.quiet_seconds, hard_deadline)
             except TimeoutError:
-                sealed = batch
+                sealed = [event for event in batch if self._message_current(event)]
+                self.store.discard_events([event for event in batch if event not in sealed])
                 batch = []
+                if not sealed:
+                    continue
                 sealed_turn_id = self._turn_id(*(event.event_id for event in sealed))
                 self.start_active_turn(
                     self._complete_batch_turn(
