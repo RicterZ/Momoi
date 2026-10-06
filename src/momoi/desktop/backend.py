@@ -59,6 +59,9 @@ async def serve(args):
     if stop.is_set():
         return
     prepare_workspace(workspace, f"http://127.0.0.1:{args.embedding_port}/v1/embeddings")
+    from .emotions import seed_emotions
+
+    seed_emotions(workspace, ConfigurationManager(workspace / "config.json").dashboard_config().database)
     if args.install_dir is not None:
         from .mcp_runtime import prepare_mcp_environment
         prepare_mcp_environment(args.install_dir.resolve(), workspace)

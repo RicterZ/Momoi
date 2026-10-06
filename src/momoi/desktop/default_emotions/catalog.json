@@ -1,0 +1,32 @@
+[
+  {
+    "slug": "confused",
+    "file": "confused.png",
+    "description": "疑惑表情，不解、意外或没反应过来时使用。"
+  },
+  {
+    "slug": "cry",
+    "file": "cry.png",
+    "description": "哭泣表情，难过、遇到困难或有点不情愿时使用。"
+  },
+  {
+    "slug": "happy",
+    "file": "happy.png",
+    "description": "开心表情，高兴、赞同或表示友好时使用。"
+  },
+  {
+    "slug": "normal",
+    "file": "normal.png",
+    "description": "认真表情，强调观点、反驳或有点不服气时使用。"
+  },
+  {
+    "slug": "smug",
+    "file": "smug.png",
+    "description": "得意表情，自信、满足或小小炫耀时使用。"
+  },
+  {
+    "slug": "stunned",
+    "file": "stunned.png",
+    "description": "呆住表情，傻眼、错愕或一时不知如何回应时使用。"
+  }
+]

@@ -51,6 +51,14 @@ def main():
                     response.raise_for_status()
                     response = client.get(ready["url"] + "/api/settings", headers={"Authorization": "Bearer " + ready["token"]})
                     response.raise_for_status()
+                    response = client.get(ready["url"] + "/api/emotions", headers={"Authorization": "Bearer " + ready["token"]})
+                    response.raise_for_status()
+                    emotions = response.json()["items"]
+                    assert {item["slug"] for item in emotions} == {"cry", "normal", "happy", "smug", "confused", "stunned"}
+                    for item in emotions:
+                        asset = client.get(ready["url"] + item["asset_url"], headers={"Authorization": "Bearer " + ready["token"]})
+                        asset.raise_for_status()
+                        assert asset.content.startswith(b"\x89PNG\r\n\x1a\n")
                     response = client.post(f"http://127.0.0.1:{embedding}/v1/embeddings", json={"model": "BAAI/bge-small-zh-v1.5", "input": ["中文记忆", "English memory"]}, timeout=30)
                     response.raise_for_status()
                     assert len(response.json()["data"]) == 2
