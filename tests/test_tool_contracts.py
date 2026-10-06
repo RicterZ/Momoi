@@ -9,7 +9,7 @@ from momoi.runtime.tool_contracts.conversation import (
     send_bubbles_tool_spec,
 )
 from momoi.runtime.tool_contracts.reflection import REFLECTION_FINISH_SPEC
-from momoi.runtime.tool_contracts.runtime import READ_TOOL_RESULT_SPEC, tool_enable_spec
+from momoi.runtime.tool_contracts.runtime import READ_TOOL_RESULT_SPEC, tool_search_spec
 from momoi.runtime.tool_contracts.voice import SEND_VOICE_TOOL_SPEC
 from momoi.runtime.workflows.episode.contracts import (
     EPISODE_CLASSIFY_TURNS_SPEC,
@@ -31,12 +31,11 @@ def test_model_tool_schemas_compile_and_examples_validate():
     specs = [
         HEARTBEAT_ACTIVITY_TOOL_SPEC,
         RECALL_TOOL_SPEC,
-        heartbeat_begin_spec({}),
-        heartbeat_begin_spec({"web": "Browse"}),
+        heartbeat_begin_spec(),
         send_bubbles_tool_spec(["napcat"]),
         SEND_VOICE_TOOL_SPEC,
         READ_TOOL_RESULT_SPEC,
-        tool_enable_spec({"web": "Browse"}),
+        tool_search_spec([{"name": "mcp__web__browse", "description": "浏览网页"}]),
         REFLECTION_FINISH_SPEC,
         EPISODE_CLASSIFY_TURNS_SPEC,
         EPISODE_CONSOLIDATION_FINISH_SPEC,

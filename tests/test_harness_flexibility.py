@@ -108,7 +108,7 @@ def test_heartbeat_activity_and_end_commit_only_after_success(daemon):
         rounds += 1
         if rounds == 1:
             return response(ToolCall("begin", "heartbeat_begin", {
-                "activity": "rest", "mode": "rest", "tool_groups": [], "strategy": [],
+                "activity": "rest", "mode": "rest", "strategy": [],
             }))
         assert rounds <= 3
         if rounds == 3:

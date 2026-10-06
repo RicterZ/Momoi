@@ -52,36 +52,15 @@ async def begin_heartbeat(
     *,
     heartbeat_turn: bool,
     harness_started: bool,
-    enable_tool_groups: dict[str, list[dict[str, Any]]],
-    tools: list[dict[str, Any]],
-    tool_surface: ToolSurface,
 ) -> dict[str, object]:
-    requested = call.arguments.get("tool_groups")
-    if (
-        not heartbeat_turn
-        or harness_started
-        or not isinstance(requested, list)
-        or any(
-            not isinstance(group, str) or group not in enable_tool_groups
-            for group in requested
-        )
-    ):
+    if not heartbeat_turn or harness_started:
         return {"ok": False, "error": "invalid_heartbeat_begin"}
-    selected_tools = tool_surface.append_visible(
-        tools,
-        [
-            spec
-            for group in dict.fromkeys(requested)
-            for spec in enable_tool_groups[group]
-        ],
-    )
     return {
         "ok": True,
         "state": "started",
         "activity": call.arguments.get("activity"),
         "mode": call.arguments.get("mode"),
         "strategy": call.arguments.get("strategy"),
-        "enabled_tools": selected_tools,
     }
 
 
@@ -109,26 +88,36 @@ async def recall_owner_context(
     }
 
 
-def enable_tools(
+def search_tools(
     call: ToolCall,
     *,
     enable_tool_groups: dict[str, list[dict[str, Any]]],
     tools: list[dict[str, Any]],
     tool_surface: ToolSurface,
 ) -> dict[str, object]:
-    requested = call.arguments.get("groups")
-    if (
-        not isinstance(requested, list)
-        or not requested
-        or any(
-            not isinstance(group, str) or group not in enable_tool_groups
-            for group in requested
-        )
-    ):
-        return {"ok": False, "error": "invalid_tool_groups"}
-    groups = list(dict.fromkeys(requested))
-    enabled = tool_surface.append_visible(
-        tools,
-        [spec for group in groups for spec in enable_tool_groups[group]],
-    )
-    return {"ok": True, "state": "enabled", "groups": groups, "tools": enabled}
+    query = call.arguments.get("query")
+    limit = call.arguments.get("limit", 5)
+    if not isinstance(query, str) or not query.strip() or type(limit) is not int or not 1 <= limit <= 20:
+        return {"ok": False, "error": "invalid_tool_search"}
+    query = " ".join(query.casefold().split())
+    terms = query.replace("_", " ").replace("-", " ").split()
+    catalog = {spec["name"]: spec for specs in enable_tool_groups.values() for spec in specs}
+    matches = []
+    for name, spec in catalog.items():
+        lower_name = name.casefold()
+        description = str(spec.get("description") or "").casefold()
+        score = (1000 if query == lower_name else 0)
+        score += 300 if lower_name.startswith(query) else 0
+        score += 200 if query in lower_name else 0
+        score += 100 if query in description else 0
+        score += sum((25 if term in lower_name else 0) + (10 if term in description else 0) for term in terms)
+        if score:
+            matches.append((score, name, spec))
+    matches.sort(key=lambda item: (-item[0], item[1]))
+    selected = [item[2] for item in matches[:limit]]
+    enabled = tool_surface.append_visible(tools, selected)
+    return {
+        "ok": True, "state": "discovered", "query": query,
+        "matched_tools": [spec["name"] for spec in selected], "newly_loaded_tools": enabled,
+        **({"message": "未找到匹配工具，请换用工具名、前缀或其他关键词。"} if not selected else {}),
+    }

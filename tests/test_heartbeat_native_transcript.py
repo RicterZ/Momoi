@@ -35,7 +35,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             }]}
             calls = [
                 ToolCall("begin", "heartbeat_begin", {
-                    "activity": "read news", "mode": "work", "tool_groups": [],
+                    "activity": "read news", "mode": "work",
                     "strategy": ["Read current news"],
                 }),
                 ToolCall("early", "send_bubbles", {"bubbles": ["A show update"]}),
@@ -111,8 +111,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 self.addCleanup(daemon.store.close)
                 case = self
                 begin = ToolCall("begin", "heartbeat_begin", {
-                    "activity": "resting", "mode": "rest",
-                    "tool_groups": [], "strategy": [],
+                    "activity": "resting", "mode": "rest", "strategy": [],
                 })
                 finish = ToolCall("finish", "end_turn", {
                     "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
@@ -226,7 +225,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "activity": "resting",
                                 "mode": "rest",
-                                "tool_groups": [],
                                 "strategy": [],
                             },
                         )
@@ -303,7 +301,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("<heartbeat id=", str(provider.first_messages[0]["content"]))
             daemon.store.close()
 
-    async def test_selected_mcp_group_is_resident_and_callable(self) -> None:
+    async def test_searched_mcp_tool_is_resident_and_callable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
@@ -375,15 +373,14 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                         begin = next(
                             tool for tool in tools if tool["name"] == "heartbeat_begin"
                         )
-                        groups = begin["input_schema"]["properties"]["tool_groups"]
-                        case.assertEqual(groups["items"]["enum"], ["demo"])
+                        case.assertNotIn("tool_groups", begin["input_schema"]["properties"])
+                        case.assertIn("tool_search", names)
                         call = ToolCall(
                             "begin",
                             "heartbeat_begin",
                             {
                                 "activity": "inspect demo state",
                                 "mode": "work",
-                                "tool_groups": ["demo"],
                                 "strategy": [
                                     "Read current state",
                                     "Record the verified outcome",
@@ -391,10 +388,13 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             },
                         )
                     elif self.calls == 2:
-                        case.assertIn("mcp__demo__read", names)
+                        case.assertNotIn("mcp__demo__read", names)
                         case.assertIn('"state": "started"', str(messages[-1]))
-                        call = ToolCall("read-demo", "mcp__demo__read", {})
+                        call = ToolCall("search-demo", "tool_search", {"query": "mcp__demo__read", "limit": 1})
                     elif self.calls == 3:
+                        case.assertIn("mcp__demo__read", names)
+                        call = ToolCall("read-demo", "mcp__demo__read", {})
+                    elif self.calls == 4:
                         case.assertIn("mcp__demo__read", names)
                         case.assertIn("dynamic heartbeat tool works", str(messages[-1]))
                         call = ToolCall("activity", "heartbeat_activity", {"activity": "inspect demo state", "result": "planning complete", "next_check_minutes": 30, "reason": "test"})
@@ -427,9 +427,10 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 turn_id,
                 owner_event_revision=0,
             )
-            self.assertEqual(provider.calls, 4)
-            self.assertNotEqual(provider.surfaces[0], provider.surfaces[1])
-            self.assertEqual(provider.surfaces[1], provider.surfaces[2])
+            self.assertEqual(provider.calls, 5)
+            self.assertEqual(provider.surfaces[0], provider.surfaces[1])
+            self.assertNotEqual(provider.surfaces[1], provider.surfaces[2])
+            self.assertEqual(provider.surfaces[2], provider.surfaces[3])
             daemon.store.close()
 
 

@@ -20,7 +20,7 @@ from ...tools.validation import validate_tool_arguments
 from .harness import TurnHarness
 from .protocol import assistant_history_message, parse_end_turn
 from .runtime_tools import (
-    begin_heartbeat, enable_tools, recall_owner_context, record_heartbeat_activity,
+    begin_heartbeat, search_tools, recall_owner_context, record_heartbeat_activity,
 )
 from .workflow import AgentWorkflow, TurnExecutionSpec
 
@@ -254,9 +254,6 @@ class ToolBatchExecutor:
                         call,
                         heartbeat_turn=execution.heartbeat,
                         harness_started=request.harness.started,
-                        enable_tool_groups=request.enable_tool_groups,
-                        tools=request.tools,
-                        tool_surface=self.tool_surface,
                     )
             elif call.name == "heartbeat_activity":
                 result = record_heartbeat_activity(
@@ -417,8 +414,8 @@ class ToolBatchExecutor:
                     visible = True
                     last_sent_bubbles = copy.deepcopy(delivery.bubbles)
                     last_sent_channel = delivery.channel
-            elif call.name == "tool_enable":
-                result = enable_tools(
+            elif call.name == "tool_search":
+                result = search_tools(
                     call,
                     enable_tool_groups=request.enable_tool_groups,
                     tools=request.tools,

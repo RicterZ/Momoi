@@ -1,29 +1,24 @@
 from typing import Any
 
 
-def tool_enable_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
-    groups = {
-        group: str(description).strip()
-        for group, description in sorted(group_descriptions.items())
-    }
+def tool_search_spec(catalog: list[dict[str, Any]]) -> dict[str, Any]:
+    index = "\n".join(
+        f"- {spec['name']}: {str(spec.get('description') or '').strip()}"
+        for spec in sorted(catalog, key=lambda item: item['name'])
+    )
     return {
-        "name": "tool_enable",
-        "description": '启用下一行动所需的 MCP 组。',
+        "name": "tool_search",
+        "description": (
+            "按工具名、前缀或描述关键词搜索 MCP 工具，只将命中的工具加载到本轮后续请求；"
+            "不执行业务，不解除阶段权限限制。新 turn 不保留发现状态。\n工具索引：\n" + index
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "groups": {
-                    "type": "array",
-                    "description": "; ".join(
-                        f"{group}: {description}" for group, description in groups.items()
-                    ),
-                    "minItems": 1,
-                    "maxItems": max(1, len(groups)),
-                    "uniqueItems": True,
-                    "items": {"type": "string", "enum": list(groups)},
-                }
+                "query": {"type": "string", "minLength": 1, "description": "工具名、前缀或描述关键词；精确工具名优先匹配。"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5, "description": "最多加载的工具数，默认 5。"},
             },
-            "required": ["groups"],
+            "required": ["query"],
             "additionalProperties": False,
         },
     }

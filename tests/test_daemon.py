@@ -1053,8 +1053,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn("mcp__demo__read", names)
                         call = ToolCall(
                             "enable-demo",
-                            "tool_enable",
-                            {"groups": ["demo"]},
+                            "tool_search",
+                            {"query": "mcp__demo__read", "limit": 1},
                         )
                     elif provider_self.calls == 2:
                         self.assertIn("mcp__demo__read", names)
@@ -1529,7 +1529,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "activity": "整理小游戏关卡灵感",
                                 "mode": "work",
-                                "tool_groups": [],
                                 "strategy": [
                                     "读取一条玩法资讯",
                                     "有可复用灵感就记录，否则安静结束",
@@ -1564,7 +1563,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "activity": "把关卡灵感安排成后续草案",
                                 "mode": "work",
-                                "tool_groups": [],
                                 "strategy": [
                                     "创建后续 Goal",
                                     "把新点子分享给老师后结束",

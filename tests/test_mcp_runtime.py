@@ -10,7 +10,7 @@ from momoi.config.manager import ConfigurationManager
 from momoi.config.workspace import atomic_write, bootstrap
 from momoi.mcp.manager import MCPManager
 from momoi.models import ToolCall
-from momoi.runtime.agent.runtime_tools import enable_tools
+from momoi.runtime.agent.runtime_tools import search_tools
 from momoi.runtime.agent.tool_surface import ToolSurface
 from momoi.runtime.supervisor import RuntimeSupervisor
 from tests.test_dashboard_configuration import FakeDaemon, LLM
@@ -106,7 +106,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         first = self.runtime.daemon
         first_sessions = list(self.opened)
         tools = first.surface.conversation_specs()
-        enabled = enable_tools(ToolCall("enable", "tool_enable", {"groups": ["removed"]}),
+        enabled = search_tools(ToolCall("search", "tool_search", {"query": "mcp__removed__work", "limit": 1}),
                                enable_tool_groups=first.surface.mcp_server_groups(), tools=tools,
                                tool_surface=first.surface)
         self.assertTrue(enabled["ok"])
@@ -125,8 +125,10 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(session in self.closed for session in first_sessions))
         current = self.runtime.daemon
         specs = {spec["name"]: spec for spec in current.surface.conversation_specs()}
-        groups = specs["tool_enable"]["input_schema"]["properties"]["groups"]["items"]["enum"]
-        self.assertEqual(groups, ["changed", "new group", "stable"])
+        index = specs["tool_search"]["description"]
+        for name in ("mcp__changed__work", "mcp__new_group__work", "mcp__stable__work"):
+            self.assertIn(name, index)
+        self.assertNotIn("mcp__removed__work", index)
         self.assertEqual(current.mcp.configs["changed"]["description"], "Updated description")
         self.assertNotIn("mcp__removed__work", specs)
         changed = current.surface.mcp_server_groups()["changed"][0]
@@ -142,10 +144,8 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.write({})
         await self.runtime.apply()
         empty = {spec["name"]: spec for spec in self.runtime.daemon.surface.conversation_specs()}
-        self.assertNotIn("tool_enable", empty)
-        schema = empty["heartbeat_begin"]["input_schema"]["properties"]["tool_groups"]
-        self.assertEqual(schema["maxItems"], 0)
-        self.assertNotIn("enum", schema["items"])
+        self.assertNotIn("tool_search", empty)
+        self.assertNotIn("tool_groups", empty["heartbeat_begin"]["input_schema"]["properties"])
 
     async def test_invalid_file_preserves_runtime_and_connection_failure_allows_startup(self):
         self.write({"working": {"command": "working", "args": ["v2"]}})

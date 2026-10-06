@@ -68,7 +68,7 @@ class ToolExecutor:
             "end_turn",
             "send_bubbles",
             "send_voice",
-            "tool_enable",
+            "tool_search",
             "read_tool_result",
             "heartbeat_begin",
             "heartbeat_activity",

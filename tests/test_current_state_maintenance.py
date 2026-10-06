@@ -189,7 +189,6 @@ def test_allowed_end_turn_captures_tool_surface_and_waits_for_commit(daemon, kin
                         {
                             "activity": "rest",
                             "mode": "rest",
-                            "tool_groups": [],
                             "strategy": [],
                         },
                     )

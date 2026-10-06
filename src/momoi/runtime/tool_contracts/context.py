@@ -159,16 +159,11 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
 }
 
 
-def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
-    groups = {
-        group: str(description).strip()
-        for group, description in sorted(group_descriptions.items())
-    }
-    group_ids = list(groups)
+def heartbeat_begin_spec() -> dict[str, Any]:
     return {
         "name": "heartbeat_begin",
         "description": (
-            '开始所选自主活动，并启用本轮需要使用的 MCP 工具组。'
+            '开始所选自主活动；需要外部工具时通过 tool_search 搜索并加载。'
         ),
         "input_schema": {
             "type": "object",
@@ -184,22 +179,6 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
                 "mode": {
                     "type": "string",
                     "enum": ["work", "rest"],
-                },
-                "tool_groups": {
-                    "type": "array",
-                    "maxItems": len(group_ids),
-                    "uniqueItems": True,
-                    "items": {
-                        "type": "string",
-                        **({"enum": group_ids} if group_ids else {}),
-                    },
-                    "description": (
-                        "所选活动所需的 MCP 工具组："
-                        + "; ".join(
-                            f"{group}: {description}"
-                            for group, description in groups.items()
-                        )
-                    ),
                 },
                 "strategy": {
                     "type": "array",
@@ -217,7 +196,6 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
             "required": [
                 "activity",
                 "mode",
-                "tool_groups",
                 "strategy",
             ],
             "allOf": [

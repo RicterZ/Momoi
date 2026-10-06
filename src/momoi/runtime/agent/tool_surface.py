@@ -18,7 +18,7 @@ from ..tool_contracts.conversation import (
 )
 from ..tool_contracts.runtime import (
     READ_TOOL_RESULT_SPEC,
-    tool_enable_spec,
+    tool_search_spec,
 )
 from ..tool_contracts.plan import PLAN_TOOLS, PLAN_STEP_FINISH
 from .progress import public_tool_spec
@@ -97,13 +97,10 @@ class ToolSurface:
 
     def conversation_specs(self) -> list[dict[str, Any]]:
         groups = self.mcp_server_groups()
-        catalog = {
-            group: self.mcp_group_description(group) for group in groups
-        }
         tools = [
             copy.deepcopy(RECALL_TOOL_SPEC),
             copy.deepcopy(EPISODE_RELATIONS_TOOL_SPEC),
-            heartbeat_begin_spec(catalog),
+            heartbeat_begin_spec(),
             copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC),
             copy.deepcopy(GOAL_REVIEW_TOOL_SPEC),
             self.send_bubbles_spec(),
@@ -120,7 +117,7 @@ class ToolSurface:
                 spec for specs in groups.values() for spec in specs
                 if spec.get("name") == "mcp__brave-search__brave_web_search"
             ],
-            *([tool_enable_spec(catalog)] if catalog else []),
+            *([tool_search_spec([spec for specs in groups.values() for spec in specs])] if groups else []),
             current_state_finish_spec(),
             copy.deepcopy(END_TURN_TOOL_SPEC),
         ]
@@ -141,7 +138,7 @@ class ToolSurface:
         general_chat = {
             "recall",
             "episode_relations",
-            "tool_enable",
+            "tool_search",
             "end_turn",
             *shared,
             *agenda,
@@ -155,6 +152,7 @@ class ToolSurface:
             return frozenset(
                 {
                     "heartbeat_begin",
+                    "tool_search",
                     "recall",
                     "episode_relations",
                     "heartbeat_activity",
@@ -179,7 +177,7 @@ class ToolSurface:
                     *voice,
                     "send_bubbles",
                     "read_tool_result",
-                    "tool_enable",
+                    "tool_search",
                     "end_turn",
                     *external,
                 }
