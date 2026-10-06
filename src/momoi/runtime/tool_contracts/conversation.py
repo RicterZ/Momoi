@@ -291,7 +291,7 @@ def end_turn_tool_spec(stage: str) -> dict[str, Any]:
 def end_turn_correction(error: str, schema: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
     hints = {
         "end_turn_must_be_alone": "Call end_turn alone or last after send_bubbles, send_voice, heartbeat_activity, goal_review or save_image_summary. Finish other work tools in earlier rounds.",
-        "send_bubbles_required_before_end_turn": "This recovery phase requires a user-visible notification before ending. Internal assistant text is not delivery.",
+        "send_bubbles_required_before_end_turn": "This recovery phase requires a user-visible notification before ending.",
         "goal_review_required_before_end_turn": "Call goal_review successfully before end_turn({}); they may share a batch in that order.",
         "goal_end_turn_requires_empty_arguments": "Submit the Goal outcome through goal_review; end_turn accepts only {} in this stage.",
         "unexpected_end_turn_fields": "end_turn accepts only mood and reply_wait. Submit Goal outcomes through goal_review and Heartbeat activity and schedule through heartbeat_activity.",
