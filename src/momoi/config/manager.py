@@ -74,6 +74,14 @@ def binding_options(raw, capability):
     )
     options.update(binding.get("options", {}))
     options.update(raw.get("credentials", {}).get(service.get("credentials"), {}))
+    if capability == "tts":
+        try:
+            definition = adapter_definition(service.get("adapter"), capability)
+        except ValueError:
+            pass  # Keep malformed configuration inspectable in the dashboard.
+        else:
+            if "base_url" not in definition.schema:
+                options.pop("base_url", None)
     return copy.deepcopy(options)
 
 
@@ -298,6 +306,8 @@ class ConfigurationManager:
         options = copy.deepcopy(document.get("options", {}))
         if not isinstance(options, dict):
             raise ConfigError("options must be an object")
+        if capability == "tts" and "base_url" not in definition.schema:
+            options.pop("base_url", None)
         # Copy on write: changing one capability never mutates a shared service or credential.
         name = f"configured_{capability}"
         existing = raw.get("bindings", {}).get(capability, {}).get("service")

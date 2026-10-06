@@ -210,6 +210,9 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
             config = load_config(path)
             provider = ServiceRegistry(config.providers).tts
             self.assertEqual(provider.api_key, "config-key")
+            self.assertEqual(provider.base_url, "https://api.fish.audio")
+            # Override transport only inside the isolated integration test.
+            provider.base_url = str(self.server.make_url(""))
             from momoi.runtime import MomoiDaemon
 
             daemon = MomoiDaemon(config)
@@ -244,7 +247,6 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
             ("model", "s2.1-pro-fre"),
             ("format", "pcm"),
             ("latency", "fast"),
-            ("base_url", "bad-url"),
             ("api_key", ""),
             ("reference_id", 123),
         ):

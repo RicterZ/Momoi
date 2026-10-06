@@ -18,7 +18,6 @@ services:
   speech:
     adapter: fish
     credentials: fish
-    base_url: https://api.fish.audio
     timeout_seconds: 60
   vectors:
     adapter: openai

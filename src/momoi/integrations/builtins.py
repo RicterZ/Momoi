@@ -71,19 +71,7 @@ def register_builtins():
         validate=validate_asr, schema=builtin_schema("tencent", "asr"), test=asr_probe))
 
     def validate_tts(options):
-        fields(
-            options,
-            {
-                "api_key",
-                "reference_id",
-                "model",
-                "base_url",
-                "format",
-                "latency",
-                "timeout_seconds",
-                "max_audio_bytes",
-            },
-        )
+        fields(options, set(builtin_schema("fish", "tts")))
         FishAudioTTSProvider(**options)
 
     register_adapter(

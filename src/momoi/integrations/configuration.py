@@ -195,6 +195,10 @@ def parse_provider_catalog(raw: object, path: Path) -> ProviderCatalog:
                         f"credentials.{credential}.{key} must be a string or env reference"
                     )
                 options[key] = secret
+        # TTS adapters without an endpoint field own their supplier address.
+        # Discard obsolete saved URLs, including values left by older dashboards.
+        if capability == "tts" and "base_url" not in definition.schema:
+            options.pop("base_url", None)
         options = normalize_fields(definition.schema, options, enabled=enabled)
         if enabled:
             try:

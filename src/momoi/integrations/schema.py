@@ -49,7 +49,6 @@ SCHEMAS = {
         "api_key": field(secret=True),
         "reference_id": field(default="9bb8ad542dc44d148c21c73a0884e9ae"),
         "model": field(default="s2.1-pro-free"),
-        "base_url": field(default="https://api.fish.audio"),
         "format": field(default="mp3"),
         "latency": field(default="normal"),
         "timeout_seconds": field("number", 60),
@@ -58,7 +57,6 @@ SCHEMAS = {
     ("vocu", "tts"): {
         "api_key": field(secret=True),
         "voice_id": field(),
-        "base_url": field(default="https://v1.wusound.cn/api"),
         "prompt_id": field(default="default"),
         "preset": field(default="balance"),
         "speech_rate": field("number", 1),
@@ -151,7 +149,6 @@ def builtin_schema(name, capability):
         fields["latency"]["enum"] = ["normal", "balanced", "low"]
     if (name, capability) == ("vocu", "tts"):
         fields["voice_id"]["description"] = "悟声控制台中的语音角色 ID。"
-        fields["base_url"]["description"] = "API 根地址，包含 /api；自动追加 /tts/simple-generate。"
         fields["prompt_id"]["description"] = "使用该音色的风格 ID，default 为默认风格。"
         fields["timeout_seconds"]["minimum"] = 1
         fields["max_audio_bytes"]["minimum"] = 1
