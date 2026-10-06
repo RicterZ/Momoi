@@ -4,8 +4,9 @@ FROM ${NAPCAT_IMAGE}
 USER root
 ARG BRIDGE_REV=22f30c021cd3170f75af9dff66cc959a07ebda4b
 ARG BRIDGE_SHA256=d659c46e2d38bba14a39694c31261bf2b54eee206da78690b5f5508f8a936fd5
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pulseaudio pulseaudio-utils python3 python3-aiohttp ca-certificates curl \
+RUN apt-get update && apt-get -f install -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
+    pulseaudio pulseaudio-utils libpulse-mainloop-glib0 libegl1 libopengl0 python3 python3-aiohttp ca-certificates curl \
     ffmpeg xvfb unzip tini && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /opt/qq-call/upstream /app/napcat/plugins \
     && curl -fsSL "https://codeload.github.com/ClaudiaGardner/maibot-qq-voice-call/tar.gz/${BRIDGE_REV}" -o /tmp/bridge.tgz \
