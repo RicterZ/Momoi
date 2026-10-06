@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 import unicodedata
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -105,10 +106,13 @@ class BubbleDelivery:
 
     async def prepare_voice(self, turn_id: str, text: str, channel: str) -> dict[str, object] | None:
         revision = self.store.owner_channel_revision(channel)
+        started = time.monotonic()
         try:
             if self.tts_provider is None:
                 raise TTSError("tts_not_configured")
             audio = await self.tts_provider.synthesize(text)
+            log_event(logger, logging.INFO, "voice_synthesis_completed", turn_id=turn_id,
+                      channel=channel, elapsed_ms=round((time.monotonic() - started) * 1000))
         except TTSError as error:
             log_event(
                 logger, logging.WARNING, "voice_synthesis_failure",
@@ -178,9 +182,11 @@ class BubbleDelivery:
                     "message": "This voice message failed or was cancelled; do not report it as sent.",
                 })
         else:
-            synthesis_error = await self.prepare_voice(turn_id, text, delivery_channel.name)
-            if synthesis_error is not None:
-                return BubbleDeliveryResult(synthesis_error)
+            streaming = callable(getattr(delivery_channel, "send_call_stream", None)) and callable(getattr(self.tts_provider, "stream_pcm", None))
+            if not streaming:
+                synthesis_error = await self.prepare_voice(turn_id, text, delivery_channel.name)
+                if synthesis_error is not None:
+                    return BubbleDeliveryResult(synthesis_error)
             error = contact_error()
             if callable(call_check) and not call_check(delivery_context):
                 error = "call_ended_or_superseded"

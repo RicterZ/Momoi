@@ -93,7 +93,10 @@ class QQCallChannel:
             elif message.type == aiohttp.WSMsgType.BINARY and self.session_id:
                 _, pcm = self.segmenter.feed(message.data)
                 if pcm:
-                    item = (dict(self.routing_context()), wav_bytes(pcm))
+                    context = {**self.routing_context(), 'segment_finished_at': time.time()}
+                    log_event(logger, logging.INFO, 'qq_call_segment_finished', channel=self.name,
+                              session_id=self.session_id, audio_ms=len(pcm) // 32)
+                    item = (context, wav_bytes(pcm))
                     if self.queue.full():
                         self.queue.get_nowait()
                     self.queue.put_nowait(item)
@@ -107,7 +110,7 @@ class QQCallChannel:
                 continue
             # Queued audio can predate a previous successful recognition; bind the
             # ASR request to the current generation, not its capture generation.
-            context = dict(self.routing_context())
+            context = {**context, **self.routing_context()}
             started = time.monotonic()
             try:
                 text = await self.asr.transcribe(AudioInput(audio, 'wav'))
@@ -119,10 +122,12 @@ class QQCallChannel:
                 return
             log_event(logger, logging.INFO, 'qq_call_asr', channel=self.name,
                       session_id=context['call_session_id'], recognized=bool(text.strip()),
-                      elapsed_ms=round((time.monotonic() - started) * 1000))
+                      elapsed_ms=round((time.monotonic() - started) * 1000),
+                      queue_wait_ms=round((time.time() - context.get('segment_finished_at', time.time())) * 1000
+                                          - (time.monotonic() - started) * 1000))
             if text.strip() and self.context_valid(context):
                 self.generation += 1
-                context = dict(self.routing_context())
+                context = {**context, **self.routing_context(), 'recognized_at': time.time()}
                 log_event(logger, logging.INFO, 'qq_call_interrupt', channel=self.name,
                           session_id=self.session_id, generation=self.generation, reason='recognized_speech')
                 if self.interrupt:
@@ -173,6 +178,61 @@ class QQCallChannel:
                 if not stop.is_set() and self.providers_ready:
                     await asyncio.sleep(2)
             self.http = None
+
+    async def send_call_stream(self, provider, text, context, utterance_id):
+        if not self.context_valid(context) or self.http is None:
+            raise SendInterrupted('call_ended')
+        if self.pending_stop:
+            await self.pending_stop
+        started = time.monotonic()
+        first_ms = None
+        async def upload():
+            nonlocal first_ms
+            from contextlib import aclosing
+            async with aclosing(provider.stream_pcm(text)) as stream:
+                async for chunk in stream:
+                    if not self.context_valid(context):
+                        raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
+                    if first_ms is None:
+                        first_ms = round((time.monotonic() - started) * 1000)
+                        log_event(logger, logging.INFO, 'qq_call_tts_first_audio', channel=self.name,
+                            session_id=self.session_id, utterance_id=utterance_id, elapsed_ms=first_ms)
+                    yield chunk
+        async def request_playback():
+            async with self.http.post(self.config.bridge_url + '/v1/playback/stream', data=upload(),
+                headers={**self.headers, 'Content-Type': 'application/octet-stream',
+                    'X-Call-Session': context['call_session_id'],
+                    'X-Call-Generation': str(context['call_generation']),
+                    'X-Call-Utterance': utterance_id}, timeout=aiohttp.ClientTimeout(total=160)) as response:
+                if response.status != 200:
+                    raise SendRejected('Streaming phone playback rejected')
+                return await response.json()
+        request = asyncio.create_task(request_playback())
+        try:
+            while not request.done():
+                await asyncio.wait({request}, timeout=.05)
+                if not self.context_valid(context):
+                    raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
+            result = request.result()
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
+            if not self.context_valid(context):
+                raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended') from error
+            raise SendRejected('Streaming playback uncertain; do not retry') from error
+        finally:
+            request.cancel()
+            await asyncio.gather(request, return_exceptions=True)
+        log_event(logger, logging.INFO, 'qq_call_playback', channel=self.name,
+            session_id=context['call_session_id'], state=result.get('state'), streaming=True,
+            elapsed_ms=round((time.monotonic() - started) * 1000), tts_first_audio_ms=first_ms,
+            bridge_first_frame_ms=result.get('first_frame_ms'), played_ms=result.get('played_ms', 0),
+            recognition_to_first_frame_ms=(round((time.time() - context['recognized_at']) * 1000
+                - result.get('elapsed_ms', 0) + result.get('first_frame_ms', 0))
+                if context.get('recognized_at') and result.get('first_frame_ms') is not None else None))
+        if not self.context_valid(context) or result.get('reason') in {'owner_speech', 'call_ended'}:
+            raise SendInterrupted(result.get('reason') or 'call_ended')
+        if not result.get('ok'):
+            raise SendRejected('Streaming phone playback failed')
+        return 'call:' + context['call_session_id'] + ':' + utterance_id
 
     async def send_call_voice(self, audio, context, utterance_id):
         if not self.context_valid(context) or self.http is None:

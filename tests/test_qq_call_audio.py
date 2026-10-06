@@ -186,7 +186,8 @@ def test_empty_recognition_never_interrupts_and_valid_text_interrupts_once():
             await asyncio.wait_for(arrived.wait(), 1)
             assert interruptions == ['owner_speech']
             assert len(stops) == 1 and len(events) == 1
-            assert events[0].delivery_context == channel.routing_context()
+            assert channel.context_valid(events[0].delivery_context)
+            assert events[0].delivery_context["recognized_at"] > 0
             assert not channel.context_valid(original)
             # A second queued segment from the same call must survive the first
             # segment's generation change, rather than silently drop the message.

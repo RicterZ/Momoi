@@ -100,7 +100,8 @@ class OutboxWorker:
                         if provider is None:
                             raise TTSError("tts_not_configured")
                         audio = self.bubble_delivery.voice_audio.get((row.turn_id, row.text))
-                        if audio is None:
+                        streaming = callable(getattr(channel, "send_call_stream", None)) and callable(getattr(provider, "stream_pcm", None))
+                        if audio is None and not streaming:
                             audio = await provider.synthesize(row.text)
                     except TTSError as error:
                         if self.store.mark_sending(row.id):
@@ -132,7 +133,9 @@ class OutboxWorker:
                         content=safe_preview(row.text, 500),
                     )
                     if row.kind == "voice":
-                        if callable(getattr(channel, "send_call_voice", None)):
+                        if streaming:
+                            await channel.send_call_stream(provider, row.text, (row.payload or {}).get("delivery_context", {}), str(row.id))
+                        elif callable(getattr(channel, "send_call_voice", None)):
                             await channel.send_call_voice(audio, (row.payload or {}).get("delivery_context", {}), str(row.id))
                         else:
                             await channel.send_voice(audio)

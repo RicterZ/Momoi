@@ -208,3 +208,34 @@ class FishAudioTTSProvider(TTSProvider):
                 operation="synthesize",
                 retryable=True,
             ) from error
+
+    async def stream_pcm(self, text: str):
+        """Yield 24kHz mono s16le; never retry a stream that may have played."""
+        if not isinstance(text, str) or not text.strip():
+            raise TTSError('Fish TTS requires nonempty text')
+        try:
+            async with self.transport.session(timeout_seconds=self.timeout_seconds) as session:
+                async with session.post(f'{self.base_url}/v1/tts',
+                    headers={'Authorization': f'Bearer {self.api_key}', 'model': self.model},
+                    json={'text': text, 'reference_id': self.reference_id, 'format': 'pcm',
+                          'sample_rate': 24000, 'latency': self.latency},
+                    allow_redirects=False, timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)) as response:
+                    if response.status != 200:
+                        raise TTSError(f'Fish streaming TTS returned HTTP {response.status}')
+                    if not (response.content_type.startswith('audio/') or response.content_type == 'application/octet-stream'):
+                        raise TTSError('Fish streaming TTS returned non-audio data')
+                    total = 0
+                    pending = b''
+                    async for chunk in response.content.iter_chunked(4096):
+                        total += len(chunk)
+                        if total > min(self.max_audio_bytes, 24000 * 2 * 120):
+                            raise TTSError('Fish streaming TTS exceeds audio limit')
+                        pending += chunk
+                        size = len(pending) // 2 * 2
+                        if size:
+                            yield pending[:size]
+                            pending = pending[size:]
+                    if pending or not total:
+                        raise TTSError('Fish streaming TTS returned incomplete or empty PCM')
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:
+            raise TTSError(f'Fish streaming TTS failed: {type(error).__name__}') from error

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+import time
 from datetime import datetime
 from typing import Any
 
@@ -237,6 +238,10 @@ class OwnerWorkflow:
         channel: Channel | None = None,
     ) -> None:
         channel = channel or self._channel_for(batch[0].channel)
+        prepared_at = time.monotonic()
+        if channel.name == "qq_call":
+            log_event(logger, logging.INFO, "qq_call_turn_started", channel=channel.name, turn_id=turn_id,
+                      recognition_wait_ms=round((time.time() - batch[-1].received_at) * 1000))
         recalled = self.owner_context_baseline()
         reconciliation_control = self._apply_reconciliation_commands(batch)
         directives: list[str] = []
@@ -323,6 +328,9 @@ class OwnerWorkflow:
             )
         draft = TurnDraft(memory_context=injected_memories, memory_conversation=transcript_messages)
         tools = self.tool_surface.conversation_specs()
+        if channel.name == "qq_call":
+            log_event(logger, logging.INFO, "qq_call_context_prepared", channel=channel.name, turn_id=turn_id,
+                      elapsed_ms=round((time.monotonic() - prepared_at) * 1000))
         reply = await self._run_tool_loop(
             system,
             messages,

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import uuid
+import time
 from collections import OrderedDict
 
 from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
@@ -178,6 +179,83 @@ class MediaBroker:
         await stop_process(self.play_process)
         return web.json_response({'ok': True})
 
+    async def play_stream(self, request):
+        session_id = request.headers.get('X-Call-Session', '')
+        utterance = request.headers.get('X-Call-Utterance', '')
+        try:
+            generation = int(request.headers['X-Call-Generation'])
+        except (KeyError, ValueError):
+            raise web.HTTPBadRequest(text='Missing generation')
+        if not utterance or len(utterance) > 128:
+            raise web.HTTPBadRequest(text='Invalid utterance')
+        key = (session_id, utterance)
+        async with self.play_lock:
+            if key in self.receipts:
+                return web.json_response(self.receipts[key])
+            if not self.valid(session_id, generation):
+                raise web.HTTPConflict(text='Stale call')
+            started = time.monotonic()
+            first_ms = None
+            played = 0
+            pending = b''
+            process = None
+            complete = False
+            try:
+                async def playback():
+                    nonlocal played, pending, process, first_ms
+                    async for chunk in request.content.iter_chunked(960):
+                        if not self.valid(session_id, generation):
+                            return
+                        pending += chunk
+                        if played + len(pending) > 48000 * 120:
+                            raise ValueError('Audio exceeds limit')
+                        while len(pending) >= 960:
+                            await write_frame(pending[:960])
+                            pending = pending[960:]
+                    if pending:
+                        if len(pending) % 2:
+                            raise ValueError('Incomplete PCM sample')
+                        await write_frame(pending)
+                        pending = b''
+                    if process is not None:
+                        process.stdin.close()
+                        await asyncio.wait_for(process.wait(), 3)
+                async def write_frame(frame):
+                    nonlocal process, played, first_ms
+                    if not self.valid(session_id, generation):
+                        raise ConnectionError('Call superseded')
+                    if process is None:
+                        process = await asyncio.create_subprocess_exec('pacat', '--playback', '--raw',
+                            '--device=maibot_qq_mic', '--format=s16le', '--rate=24000', '--channels=1',
+                            '--latency-msec=50', stdin=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.DEVNULL)
+                        self.play_process = process
+                    process.stdin.write(frame)
+                    await process.stdin.drain()
+                    if first_ms is None:
+                        first_ms = round((time.monotonic() - started) * 1000)
+                        print(json.dumps({'event': 'qq_call_playback_first_frame', 'session_id': session_id,
+                            'utterance_id': utterance, 'elapsed_ms': first_ms}), flush=True)
+                    played += len(frame)
+                    await asyncio.sleep(len(frame) / 48000)
+                await asyncio.wait_for(playback(), 150)
+                complete = bool(played and process and process.returncode == 0 and self.valid(session_id, generation))
+            except (OSError, ConnectionError, ValueError, asyncio.TimeoutError):
+                pass
+            finally:
+                await stop_process(process)
+                if self.play_process is process:
+                    self.play_process = None
+            result = {'ok': complete, 'state': 'played' if complete else 'interrupted',
+                'played_ms': round(played / 48), 'first_frame_ms': first_ms,
+                'elapsed_ms': round((time.monotonic() - started) * 1000),
+                'reason': None if complete else ('call_ended' if session_id != self.session_id
+                    else 'owner_speech' if generation != self.generation else 'playback_failed')}
+            self.receipts[key] = result
+            while len(self.receipts) > 128:
+                self.receipts.popitem(last=False)
+            return web.json_response(result)
+
     async def play(self, request):
         session_id = request.headers.get('X-Call-Session', '')
         utterance = request.headers.get('X-Call-Utterance', '')
@@ -305,6 +383,7 @@ class MediaBroker:
         app.router.add_get('/v1/status', status)
         app.router.add_get('/v1/audio', self.socket)
         app.router.add_post('/v1/playback', self.play)
+        app.router.add_post('/v1/playback/stream', self.play_stream)
         app.router.add_post('/v1/playback/stop', self.stop_playback)
         app.on_startup.append(self.startup)
         app.on_cleanup.append(self.cleanup)
