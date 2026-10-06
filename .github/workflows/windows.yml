@@ -79,7 +79,6 @@ jobs:
             dist/windows/Momoi-Setup-*-x64.exe
             dist/windows/releases/Momoi-Code-*.zip
             dist/windows/releases/runtime.json
-            dist/windows/install-test/
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
