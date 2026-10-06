@@ -128,7 +128,7 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
             webui["disableWebUI"] = false;
             WriteJson(webuiPath, webui);
             var info = new ProcessStartInfo(Path.Combine(runtime, "node.exe")) {
-                UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Data,
+                UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = runtime,
                 RedirectStandardOutput = true, RedirectStandardError = true,
                 StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
             };

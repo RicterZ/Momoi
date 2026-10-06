@@ -27,6 +27,13 @@ jobs:
         run: uv run --locked --group test pytest -q -n 0 tests/test_platform.py tests/test_exec_tool.py tests/test_desktop.py tests/test_desktop_qq.py
       - name: Update validation checks
         run: dotnet run --project desktop/Momoi.Update.Check -c Release
+      - name: Native QQ library and isolated data smoke
+        if: inputs.installer_run == ''
+        shell: pwsh
+        run: |
+          uv run --locked --group test python packaging/windows/prepare_napcat.py --stage build/qq-smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv run --locked --group test python packaging/windows/smoke_napcat.py --runtime build/qq-smoke/runtime/napcat
       - name: Build installer and smoke private runtime
         if: inputs.installer_run == ''
         shell: pwsh
