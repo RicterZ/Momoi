@@ -1817,10 +1817,9 @@ export default function ConfigurationSettings({
 }
 
 
-function QQCallSettings({ value, disabled, status, onChange, onTest }) {
+function QQCallSettings({ value, disabled, onChange, onTest }) {
   const [test, setTest] = useState(null);
   const [testing, setTesting] = useState(false);
-  const labels = { disabled: "已关闭", unavailable: "未就绪", idle: "待机", ringing: "来电", accepting: "接听中", accepted: "接听中", connected: "通话中", ended: "已结束", error: "异常" };
   async function probe() {
     setTesting(true);
     try {
@@ -1830,11 +1829,10 @@ function QQCallSettings({ value, disabled, status, onChange, onTest }) {
     finally { setTesting(false); }
   }
   function edit(key, next) { setTest(null); onChange({ ...value, [key]: next }); }
-  return <Disclosure className="settings-qq-call" title="语音电话" description="连接通话 Bridge · 仅接主人来电">
+  return <Disclosure className="settings-qq-call" title="语音电话">
     <Toggle checked={Boolean(value.enabled)} disabled={disabled} onChange={v => edit("enabled", v)}>启用语音电话</Toggle>
-    <p className="settings-channel-note">Windows 可连接远端 Linux 通话 Bridge；内置 Windows QQ 暂不提供本地电话音频。消息渠道与 Bridge 必须属于同一个机器人 QQ，不要同时启动两个实例。主人 QQ 和声音复用已有配置。需要另行启用 ASR 与 TTS。状态：{labels[status?.phase || "disabled"] || "未就绪"}{status?.error ? ` · ${status.error}` : ""}</p>
     <Fields as="div" disabled={disabled}>
-      <OptionField name="bridge_url" spec={{ type: "string", label: "Bridge 地址", default: "", description: "Docker 内例如 http://napcat-call:6112；Windows 请填写可访问的 Linux 服务器地址。不要填写服务器的 localhost。" }} value={value.bridge_url} onChange={v => edit("bridge_url", v)} />
+      <OptionField name="bridge_url" spec={{ type: "string", label: "Bridge 地址", default: "" }} value={value.bridge_url} onChange={v => edit("bridge_url", v)} />
       <OptionField name="bridge_token" spec={{ type: "string", label: "认证 Token", secret: true }} value={value.bridge_token} onChange={v => edit("bridge_token", v)} />
       <div className="settings-qq-call-test-row">
         <OptionField name="request_timeout_seconds" spec={{ type: "number", label: "控制请求超时（秒）", default: 5 }} value={value.request_timeout_seconds} onChange={v => edit("request_timeout_seconds", Number(v))} />
