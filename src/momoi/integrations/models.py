@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class ThinkingConfig:
-    effort: str = ""
+    effort: str = "low"
 
 
 @dataclass(frozen=True)

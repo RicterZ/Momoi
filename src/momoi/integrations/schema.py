@@ -28,7 +28,7 @@ LLM = {
             "effort": {
                 "type": "string",
                 "label": "默认思考强度",
-                "default": "",
+                "default": "low",
                 "enum": ["", *THINKING_EFFORTS],
             },
         },

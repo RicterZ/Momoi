@@ -80,7 +80,7 @@ def llm_config(options, api_format):
     if "stages" in thinking:
         raise ConfigError("move thinking.stages from provider options to config.json thinking.stages")
     fields(thinking, {"effort"})
-    effort = thinking.get("effort", "")
+    effort = thinking.get("effort", "low")
     if not isinstance(effort, str) or effort not in ("", *THINKING_EFFORTS):
         raise ConfigError(f"thinking.effort must be empty or one of {', '.join(THINKING_EFFORTS)}")
     choice = options.get("tool_choice", True)

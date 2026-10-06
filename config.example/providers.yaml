@@ -39,7 +39,7 @@ bindings:
       max_retries: 3
       tool_choice: false
       thinking:
-        effort: high
+        effort: low
   tts:
     service: speech
     enabled: false
