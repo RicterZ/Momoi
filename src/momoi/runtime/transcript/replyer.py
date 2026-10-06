@@ -26,7 +26,7 @@ def visible_dialogue(rows, *, timezone="UTC", token_budget=REPLYER_HISTORY_TOKEN
         used += size
         if role == "user":
             timestamp = datetime.fromtimestamp(float(row["created_at"]), ZoneInfo(str(timezone))).isoformat()
-            text = f'<message role="user" time="{timestamp}">\n{text}\n</message>'
+            text = f'<message time="{timestamp}">\n{text}\n</message>'
         selected.append({"role": role, "content": text})
         if len(selected) >= REPLYER_HISTORY_MESSAGES:
             break

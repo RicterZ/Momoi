@@ -206,7 +206,7 @@ def owner_content_blocks(
         opening = "<current_messages>\n" if index == 0 else ""
         blocks.append({
             "type": "text",
-            "text": f'{opening}<message role="user" time={quoteattr(received_at)}>\n{escape(event.text.strip())}',
+            "text": f'{opening}<message time={quoteattr(received_at)}>\n{escape(event.text.strip())}',
         })
         blocks.extend(content_blocks(event.segments))
         blocks.append({"type": "text", "text": "\n</message>\n"})

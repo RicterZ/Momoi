@@ -15,6 +15,9 @@ def test_projection_keeps_dialogue_and_rejects_unsent_or_workflow_content():
     messages = visible_dialogue(rows)
     assert len(messages) == 2
     assert "测试输入" in messages[0]["content"]
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"].startswith('<message time="')
+    assert "role=" not in messages[0]["content"]
     assert messages[1] == {"role": "assistant", "content": "实际回复"}
 
 
