@@ -107,16 +107,24 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
             foreach (var server in servers)
                 if (server?["enable"]?.GetValue<bool>() == true && server["name"]?.GetValue<string>() != "momoi")
                     throw new InvalidDataException("该账号已有其他 WebSocket 服务配置，请先在 QQ 面板停用后重试。");
-            config["network"]!["websocketServers"] = JsonSerializer.SerializeToNode(new[] { new {
+            // Preserve disabled external entries; replace only our named connection.
+            for (int index = servers.Count - 1; index >= 0; index--)
+                if (servers[index]?["name"]?.GetValue<string>() == "momoi") servers.RemoveAt(index);
+            servers.Add(JsonSerializer.SerializeToNode(new {
                 name = "momoi", enable = true, host = "127.0.0.1", port = settings.SocketPort,
                 token = settings.AccessToken, messagePostFormat = "array", reportSelfMessage = false, enableForcePushEvent = true,
-            }});
+            }));
+            config["network"]!["websocketServers"] = servers;
             WriteJson(onebot, config);
             // The account-specific file above is authoritative; do not rewrite other accounts.
-            WriteJson(Path.Combine(Data, "config", "webui.json"), new {
-                host = "127.0.0.1", port = settings.WebPort, token = settings.WebToken,
-                autoLoginAccount = botQQ, disableWebUI = false,
-            });
+            string webuiPath = Path.Combine(Data, "config", "webui.json");
+            var webui = File.Exists(webuiPath) ? JsonNode.Parse(File.ReadAllText(webuiPath))!.AsObject() : new JsonObject();
+            webui["host"] = "127.0.0.1";
+            webui["port"] = settings.WebPort;
+            webui["token"] = settings.WebToken;
+            webui["autoLoginAccount"] = botQQ;
+            webui["disableWebUI"] = false;
+            WriteJson(webuiPath, webui);
             var info = new ProcessStartInfo(Path.Combine(runtime, "node.exe")) {
                 UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Data,
                 RedirectStandardOutput = true, RedirectStandardError = true,
