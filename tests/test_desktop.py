@@ -128,3 +128,34 @@ def test_desktop_repairs_empty_prompts_at_custom_path(tmp_path):
     atomic_write(tmp_path / "custom/REPLYER.md", "用户自定义回复风格")
     prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
     assert (tmp_path / "custom/REPLYER.md").read_text(encoding="utf-8") == "用户自定义回复风格"
+
+
+def test_desktop_model_defaults_fill_blanks_and_preserve_custom_values(tmp_path):
+    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    manager = ConfigurationManager(tmp_path / "config.json")
+    capabilities = manager.snapshot()["capabilities"]
+    assert capabilities["llm"]["adapter"] == "openai"
+    assert capabilities["llm"]["options"]["base_url"] == "https://api.deepseek.com/v1"
+    assert capabilities["llm"]["options"]["model"] == "deepseek-flash"
+    assert capabilities["tts"]["enabled"] is False
+    assert capabilities["tts"]["options"]["reference_id"] == "9bb8ad542dc44d148c21c73a0884e9ae"
+    path = tmp_path / "providers.yaml"
+    catalog = yaml.safe_load(path.read_text(encoding="utf-8"))
+    catalog["bindings"]["llm"]["options"] = {"base_url": "https://custom.example/v1", "model": "my-model", "api_key": "user-key"}
+    catalog["bindings"]["tts"]["options"]["reference_id"] = "my-voice"
+    atomic_write(path, yaml.safe_dump(catalog))
+    before = path.read_bytes()
+    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    assert path.read_bytes() == before
+    catalog["bindings"]["llm"]["options"]["model"] = "  "
+    atomic_write(path, yaml.safe_dump(catalog))
+    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    assert manager.snapshot()["capabilities"]["llm"]["options"]["model"] == "deepseek-flash"
+
+
+def test_fish_default_voice_for_missing_or_blank_reference():
+    from momoi.integrations.adapters.fish import FishAudioTTSProvider
+    for options in ({}, {"reference_id": ""}, {"reference_id": "  "}):
+        provider = FishAudioTTSProvider(api_key="test", **options)
+        assert provider.reference_id == "9bb8ad542dc44d148c21c73a0884e9ae"
+    assert FishAudioTTSProvider(api_key="test", reference_id="custom").reference_id == "custom"

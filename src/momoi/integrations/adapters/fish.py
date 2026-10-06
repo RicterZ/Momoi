@@ -26,7 +26,7 @@ class FishAudioTTSProvider(TTSProvider):
         self,
         *,
         api_key: str,
-        reference_id: str,
+        reference_id: str = "9bb8ad542dc44d148c21c73a0884e9ae",
         model: str = "s2.1-pro-free",
         base_url: str = "https://api.fish.audio",
         format: str = "mp3",
@@ -35,6 +35,8 @@ class FishAudioTTSProvider(TTSProvider):
         max_audio_bytes: int = 20 * 1024 * 1024,
         transport: HTTPTransport | None = None,
     ) -> None:
+        if isinstance(reference_id, str) and not reference_id.strip():
+            reference_id = "9bb8ad542dc44d148c21c73a0884e9ae"
         for name, value in {
             "api_key": api_key,
             "reference_id": reference_id,

@@ -39,7 +39,7 @@ SCHEMAS = {
     ("anthropic", "llm"): LLM,
     ("fish", "tts"): {
         "api_key": field(secret=True),
-        "reference_id": field(),
+        "reference_id": field(default="9bb8ad542dc44d148c21c73a0884e9ae"),
         "model": field(default="s2.1-pro-free"),
         "base_url": field(default="https://api.fish.audio"),
         "format": field(default="mp3"),

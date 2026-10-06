@@ -33,6 +33,30 @@ def prepare_workspace(workspace: Path, endpoint: str) -> None:
     manager = ConfigurationManager(workspace / "config.json")
     provider_path = manager.provider_path
     catalog = yaml.safe_load(provider_path.read_text(encoding="utf-8"))
+    before = yaml.safe_dump(catalog, allow_unicode=True, sort_keys=False)
+    bindings = catalog.setdefault("bindings", {})
+    services = catalog.setdefault("services", {})
+    for capability, adapter, defaults in (
+        ("llm", "openai", {"base_url": "https://api.deepseek.com/v1", "model": "deepseek-flash"}),
+        ("tts", "fish", {"reference_id": "9bb8ad542dc44d148c21c73a0884e9ae"}),
+    ):
+        if capability not in bindings:
+            name = f"desktop_{capability}"
+            while name in services:
+                name += "_default"
+            services[name] = {"adapter": adapter}
+            bindings[capability] = {"service": name, "enabled": capability == "llm", "options": {}}
+        configured = bindings[capability]
+        service = services.get(configured.get("service"), {})
+        if service.get("adapter") != adapter:
+            continue
+        options = configured.setdefault("options", {})
+        for key, default in defaults.items():
+            value = options.get(key, service.get("settings", {}).get(key, service.get(key)))
+            if value is None or (isinstance(value, str) and not value.strip()):
+                options[key] = default
+    if yaml.safe_dump(catalog, allow_unicode=True, sort_keys=False) != before:
+        atomic_write(provider_path, yaml.safe_dump(catalog, allow_unicode=True, sort_keys=False))
     binding = catalog.get("bindings", {}).get("embedding")
     marker_path = workspace / MARKER
     previous = yaml.safe_load(marker_path.read_text(encoding="utf-8")) if marker_path.exists() else None
