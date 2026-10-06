@@ -1260,7 +1260,7 @@ const channelOptions = [
 ];
 const channelDefaults = (name) =>
   name === "napcat" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : {};
-function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, qqConnected, qqCall }) {
+function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, qqConnected, qqCall, testCall }) {
   const [channels, setChannels] = useState(data.app.channels || { primary: "", enabled: {} });
   const [saved, setSaved] = useState(channels);
   const [status, setStatus] = useState(null);
@@ -1372,7 +1372,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                     <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "内置组件自动生成；外部 NapCat 填写其 WebSocket 令牌。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
                     <OptionField name="owner_qq" spec={{ type: "string", label: "主人 QQ" }} value={options.owner_qq} onChange={value => edit(name, { ...options, owner_qq: value })} />
                   </Fields>
-                  <QQCallSettings value={options.voice_call || {}} disabled={busy || loginActive} status={qqCall}
+                  <QQCallSettings value={options.voice_call || {}} disabled={busy || loginActive} status={qqCall} onTest={testCall}
                     onChange={voice_call => edit(name, { ...options, voice_call })} />
                   <DesktopQQ botQQ={options.bot_qq} ownerQQ={options.owner_qq} connected={qqConnected} disabled={busy || loginActive} onConnection={connectDesktopQQ} />
                   </div>
@@ -1764,6 +1764,7 @@ export default function ConfigurationSettings({
                       data={data}
                       save={save}
                       login={runtime?.weixin_login}
+                      testCall={document => call("/api/settings/channels/napcat/voice-call/test", { method: "POST", body: document })}
                       qqConnected={runtime?.qq_connected} qqCall={runtime?.qq_call}
                       action={action}
                       saving={saving || loading}
@@ -1814,28 +1815,24 @@ export default function ConfigurationSettings({
 }
 
 
-function QQCallSettings({ value, disabled, status, onChange }) {
+function QQCallSettings({ value, disabled, status, onChange, onTest }) {
   const [test, setTest] = useState(null);
   const [testing, setTesting] = useState(false);
   const labels = { disabled: "已关闭", unavailable: "未就绪", idle: "待机", ringing: "来电", accepting: "接听中", accepted: "接听中", connected: "通话中", ended: "已结束", error: "异常" };
   async function probe() {
     setTesting(true);
     try {
-      const response = await fetch("/api/settings/channels/napcat/voice-call/test", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "测试失败");
+      const result = await onTest(value);
       setTest(result.ok ? "Bridge、AV Host 和音频设备可用；测试没有接听或播放。" : result.error || "Bridge 未就绪");
     } catch (error) { setTest(error.message); }
     finally { setTesting(false); }
   }
   function edit(key, next) { setTest(null); onChange({ ...value, [key]: next }); }
-  return <Disclosure className="settings-qq-call" title="语音电话" description="Linux 通话版 NapCat · 仅接主人来电">
+  return <Disclosure className="settings-qq-call" title="语音电话" description="连接通话 Bridge · 仅接主人来电">
     <Toggle checked={Boolean(value.enabled)} disabled={disabled} onChange={v => edit("enabled", v)}>启用语音电话</Toggle>
-    <p className="settings-channel-note">主人 QQ 和声音复用已有配置。需要另行启用 ASR 与 TTS。状态：{labels[status?.phase || "disabled"] || "未就绪"}{status?.error ? ` · ${status.error}` : ""}</p>
+    <p className="settings-channel-note">Windows 可连接远端 Linux 通话 Bridge；内置 Windows QQ 暂不提供本地电话音频。消息渠道与 Bridge 必须属于同一个机器人 QQ，不要同时启动两个实例。主人 QQ 和声音复用已有配置。需要另行启用 ASR 与 TTS。状态：{labels[status?.phase || "disabled"] || "未就绪"}{status?.error ? ` · ${status.error}` : ""}</p>
     <Fields as="div" disabled={disabled}>
-      <OptionField name="bridge_url" spec={{ type: "string", label: "Bridge 地址", default: "", description: "例如 http://napcat-call:6112" }} value={value.bridge_url} onChange={v => edit("bridge_url", v)} />
+      <OptionField name="bridge_url" spec={{ type: "string", label: "Bridge 地址", default: "", description: "Docker 内例如 http://napcat-call:6112；Windows 请填写可访问的 Linux 服务器地址。不要填写服务器的 localhost。" }} value={value.bridge_url} onChange={v => edit("bridge_url", v)} />
       <OptionField name="bridge_token" spec={{ type: "string", label: "认证 Token", secret: true }} value={value.bridge_token} onChange={v => edit("bridge_token", v)} />
       <div className="settings-qq-call-test-row">
         <OptionField name="request_timeout_seconds" spec={{ type: "number", label: "控制请求超时（秒）", default: 5 }} value={value.request_timeout_seconds} onChange={v => edit("request_timeout_seconds", Number(v))} />
