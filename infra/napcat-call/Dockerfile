@@ -8,10 +8,27 @@ RUN apt-get update && apt-get -f install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
     pulseaudio pulseaudio-utils libpulse-mainloop-glib0 libegl1 libopengl0 python3 python3-aiohttp ca-certificates curl \
     ffmpeg xvfb unzip tini && rm -rf /var/lib/apt/lists/*
+# Extract only the pinned Linux bridge files; Windows tooling stays out of the image.
 RUN mkdir -p /opt/qq-call/upstream /app/napcat/plugins \
     && curl -fsSL "https://codeload.github.com/RicterZ/maibot-qq-voice-call/tar.gz/${BRIDGE_REV}" -o /tmp/bridge.tgz \
     && echo "${BRIDGE_SHA256}  /tmp/bridge.tgz" | sha256sum -c - \
+    && bridge_root="maibot-qq-voice-call-${BRIDGE_REV}" \
     && tar -xzf /tmp/bridge.tgz --strip-components=1 -C /opt/qq-call/upstream \
+        "${bridge_root}/LICENSE" \
+        "${bridge_root}/THIRD_PARTY_NOTICES.md" \
+        "${bridge_root}/bridge/README.md" \
+        "${bridge_root}/bridge/PROTOCOL.md" \
+        "${bridge_root}/bridge/av-host/host.cjs" \
+        "${bridge_root}/bridge/av-host/host.html" \
+        "${bridge_root}/bridge/napcat-plugin/index.mjs" \
+        "${bridge_root}/bridge/napcat-plugin/package.json" \
+        "${bridge_root}/bridge/scripts/audio-control.sh" \
+        "${bridge_root}/bridge/scripts/common.sh" \
+        "${bridge_root}/bridge/scripts/doctor.sh" \
+        "${bridge_root}/bridge/scripts/install.sh" \
+        "${bridge_root}/bridge/scripts/run-av-host.sh" \
+        "${bridge_root}/bridge/scripts/run-napcat.sh" \
+        "${bridge_root}/bridge/scripts/uninstall.sh" \
     && rm /tmp/bridge.tgz \
     && test -f /opt/QQ/resources/app/avsdk/libAVSDKPlugin.so \
     && test -f /opt/QQ/resources/app/loadNapCat.js
