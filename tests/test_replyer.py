@@ -48,6 +48,7 @@ def test_replyer_isolated_request_and_actual_speech(tmp_path):
         assert system == '测试人格\n\n测试表达'
         assert requested_thinking_effort() == 'low'
         assert current_log_context()['stage'] == 'replyer'
+        assert current_log_context()['tool_call_id'] == 'c'
         assert any(b['type'] == 'image' for b in messages[-1]['content'])
         assert 'memory' not in str(messages)
         return ProviderResponse([{'type': 'text', 'text': '自己的反应\n\n另一句'}], [], usage={'input': 10, 'output': 4})
@@ -119,3 +120,22 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path):
         assert daemon.store.turn_usage('owner-test')['llm_calls'] == 3
     finally:
         daemon.store.close()
+
+
+def test_thinking_trace_survives_reopen_and_old_records(tmp_path):
+    import time
+    path = tmp_path / 'db'
+    store = Store(path)
+    now = time.time()
+    trace = {'parent_call_id': 'planner', 'tool_call_id': 'dispatch', 'dump_file': 'request.json',
+             'tool_calls': [{'id': 'action', 'name': 'reply', 'arguments': {'intent': '测试意图', 'reference': ''}}]}
+    store.record_thinking_call(created_at=now, turn_id='t', call_id='new', stage='replyer', trace=trace)
+    store.record_thinking_call(created_at=now, turn_id='t', call_id='old', stage='owner')
+    store.close()
+    reopened = Store(path)
+    try:
+        calls = {call['call_id']: call for call in reopened.read_thinking('t')['calls']}
+        assert calls['new']['trace'] == trace
+        assert calls['old']['trace'] == {}
+    finally:
+        reopened.close()

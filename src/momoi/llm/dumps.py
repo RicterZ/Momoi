@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..observability.events import TRACE, log_event
+from ..observability.context import current_log_context
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ def dump_request(
                 {
                     "timestamp": timestamp.isoformat(),
                     "provider": provider,
+                    "context": current_log_context(),
                     "require_tool": require_tool,
                     "payload": safe_payload,
                 },

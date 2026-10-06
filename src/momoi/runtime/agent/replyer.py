@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from ...integrations.request_context import model_request
-from ...observability.context import log_context, new_trace_id
+from ...observability.context import log_context, new_trace_id, current_log_context
 from ...storage import estimate_tokens
 from ..transcript.replyer import visible_dialogue
 
@@ -41,7 +41,8 @@ class Replyer:
                 blocks.append({"type": "text", "text": f"目标消息附件：{event.text}"})
                 blocks.extend(request.delivery_channel.content_blocks(event.segments))
         messages.append({"role": "user", "content": blocks})
-        with log_context(stage="replyer", turn_id=request.turn_id, call_id=new_trace_id(),
+        parent_call_id = current_log_context().get("call_id", request.call_id if hasattr(request, "call_id") else "")
+        with log_context(parent_call_id=parent_call_id, stage="replyer", turn_id=request.turn_id, call_id=new_trace_id(),
                          round=request.round_number, channel=request.delivery_channel.name,
                          tool_call_id=call.id), model_request(thinking_effort=self.config.thinking_stages.get("replyer") or "low"):
             response = await self.provider.complete(system, messages, [])

@@ -409,6 +409,18 @@ Keyword recall remains available during indexing. See
 - Add optional image reactions with `momoi emotion add`; descriptions tell the
   agent when each image fits.
 
+### Chat decision flow
+
+Dashboard thinking details link each Planner request to its `reply` intent,
+reference, nested Replyer request and recorded tool outcome. Internal assistant
+text, provider reasoning, generated speech and actual outbox delivery are shown
+separately. Running turns refresh automatically; missing historical fields stay
+marked as unavailable. These records never enter the model transcript.
+
+Full request/response dumps require `logging.level=TRACE`. Each dump includes
+stage, turn/request IDs and parent dispatch context; the detail page loads it
+only when requested. Decision records remain available at other log levels.
+
 ### External API services
 
 LLM, TTS, embedding and account balance use capability interfaces, registered

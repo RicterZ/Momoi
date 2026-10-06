@@ -109,6 +109,7 @@ class ObservabilityStore:
         tools: list[str] | None = None,
         reasoning: str = "",
         assistant_text: str = "",
+        trace: dict | None = None,
     ) -> None:
         self._thinking.record(
             created_at=created_at,
@@ -120,6 +121,7 @@ class ObservabilityStore:
             tools=list(tools or []),
             reasoning=reasoning,
             assistant_text=assistant_text,
+            trace=trace,
         )
 
     def search_thinking(
@@ -249,8 +251,62 @@ class ObservabilityStore:
             int(call.get("round") or 0),
             str(call.get("call_id") or ""),
         ))
+        self.enrich_thinking_calls(calls)
+        placeholders = ",".join("?" for _ in members)
+        inputs = [dict(row) for row in self._db.execute(
+            f"""SELECT DISTINCT e.id, e.content, e.occurred_at, e.kind FROM turns t,
+                json_each(t.source_ids_json) src JOIN events e ON e.id=src.value
+                WHERE t.id IN ({placeholders}) ORDER BY e.occurred_at""", members)]
+        deliveries = [dict(row) for row in self._db.execute(
+            f"""SELECT id, turn_id, text, kind, state, target_channel, last_error FROM outbox
+                WHERE turn_id IN ({placeholders}) ORDER BY id""", members)]
         return {"ok": bool(calls), "turn_id": root, "turn_ids": members,
-                "calls": calls, "count": len(calls)}
+                "calls": calls, "count": len(calls), "flow": {"inputs": inputs, "deliveries": deliveries,
+                    "running": bool(self._db.execute(f"SELECT 1 FROM turns WHERE id IN ({placeholders}) AND state='running' LIMIT 1", members).fetchone())}}
+
+    def enrich_thinking_calls(self, calls: list[dict]) -> None:
+        """Join observed model decisions to persisted execution, only on detail reads."""
+        for turn_id in {str(call.get("turn_id") or "") for call in calls}:
+            exchanges = [json.loads(row[0]) for row in self._db.execute(
+                "SELECT payload_json FROM turn_journal WHERE turn_id=? AND item_type='assistant_exchange' ORDER BY sequence", (turn_id,))]
+            results = {}
+            for row in self._db.execute(
+                "SELECT payload_json FROM turn_journal WHERE turn_id=? AND item_type='tool_result' ORDER BY sequence", (turn_id,)):
+                observation = json.loads(row[0])
+                results[observation.get("tool_call_id")] = observation.get("result")
+            for exchange in exchanges:
+                for block in exchange.get("results", []):
+                    if block.get("type") != "tool_result":
+                        continue
+                    raw = block.get("content")
+                    try:
+                        results[block.get("tool_use_id")] = json.loads(raw) if isinstance(raw, str) else raw
+                    except (TypeError, ValueError):
+                        results[block.get("tool_use_id")] = {"content": raw}
+            for call in calls:
+                if call.get("turn_id") != turn_id:
+                    continue
+                trace = call.get("trace") or {}
+                actions = [dict(action) for action in trace.get("tool_calls", [])]
+                # Old records can recover decisions by the newly journaled request ID.
+                if not actions:
+                    for exchange in exchanges:
+                        if exchange.get("call_id") != call["call_id"]:
+                            continue
+                        actions = [{"id": b.get("id"), "name": b.get("name"), "arguments": b.get("input", {})}
+                                   for b in exchange.get("content", []) if isinstance(b, dict) and b.get("type") == "tool_use"]
+                for action in actions:
+                    if action.get("id") in results:
+                        action["result"] = results[action["id"]]
+                call["actions"] = actions
+                metric = self._db.execute(
+                    """SELECT input_tokens, output_tokens, cache_read_tokens, duration_ms, status
+                       FROM llm_request_metrics WHERE json_extract(data_json, '$.turn_id')=?
+                       AND json_extract(data_json, '$.call_id')=? ORDER BY id DESC LIMIT 1""",
+                    (turn_id, call["call_id"]),
+                ).fetchone()
+                if metric:
+                    call["request_metrics"] = dict(metric)
 
     def dashboard_thinking(
         self,

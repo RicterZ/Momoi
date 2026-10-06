@@ -340,6 +340,10 @@ class OpenAIProvider:
                         and isinstance(block.get("text"), str)
                     ),
                     tools=[call.name for call in tool_calls],
+                    tool_calls=[{"id": call.id, "name": call.name, "arguments": call.arguments,
+                                 **({"argument_error": call.argument_error} if call.argument_error else {})} for call in tool_calls],
+                    dump_file=dump_path.name if dump_path else "",
+                    protocol="openai",
                     model=config.model,
                 )
                 if tool_calls:

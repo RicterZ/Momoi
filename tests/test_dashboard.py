@@ -597,6 +597,47 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([call["turn_id"] for call in detail["items"]],
                              ["timeline-owner", "timeline-follow"])
 
+    async def test_chat_flow_links_dispatch_generation_and_delivery(self):
+        from momoi.models import IncomingMessage
+        now = time.time()
+        event = IncomingMessage("flow-event", "flow-event", "测试输入", now, now, channel="napcat")
+        self.store.add_event(event)
+        self.store.begin_turn("flow-owner", "owner", [event.event_id])
+        self.store.record_thinking_call(created_at=now, turn_id="flow-owner", call_id="planner-call", stage="owner",
+            reasoning="先决定回应方向", trace={"tool_calls": [{"id": "reply-tool", "name": "reply", "arguments": {"intent": "直接回应", "reference": "测试依据"}}]})
+        self.store.record_thinking_call(created_at=now+1, turn_id="flow-owner", call_id="replyer-call", stage="replyer",
+            assistant_text="测试发言", trace={"parent_call_id": "planner-call", "tool_call_id": "reply-tool"})
+        self.store.append_turn_journal("flow-owner", "assistant_exchange", {
+            "call_id": "planner-call", "content": [], "results": [{"type": "tool_result", "tool_use_id": "reply-tool", "content": '{"ok":true,"bubbles":["测试发言"]}'}]})
+        self.store.queue_progress("flow-owner", "reply-tool", ["测试发言"], "napcat")
+        detail = await (await self.client.get("/api/thinking/flow-owner", headers=self._auth())).json()
+        self.assertEqual(detail["items"][0]["actions"][0]["arguments"]["intent"], "直接回应")
+        self.assertEqual(detail["items"][0]["actions"][0]["result"]["bubbles"], ["测试发言"])
+        self.assertEqual(detail["items"][1]["trace"]["parent_call_id"], "planner-call")
+        self.assertEqual(detail["flow"]["inputs"][0]["content"], "测试输入")
+        self.assertTrue(detail["flow"]["running"])
+        self.assertEqual(detail["flow"]["deliveries"][0]["state"], "pending")
+        self.store.mark_sent(detail["flow"]["deliveries"][0]["id"])
+        detail = await (await self.client.get("/api/thinking/flow-owner", headers=self._auth())).json()
+        self.assertEqual(detail["flow"]["deliveries"][0]["state"], "sent")
+
+    async def test_thinking_dump_is_authenticated_and_confined_to_dump_directory(self):
+        directory = self.root / "llm-dumps"
+        directory.mkdir()
+        (directory / "test.json").write_text('{"context":{"stage":"replyer"},"payload":{"tools":[]}}')
+        self.store.record_thinking_call(created_at=time.time(), turn_id="dump-turn", call_id="dump-call", stage="replyer", trace={"dump_file": "test.json"})
+        response = await self.client.get("/api/thinking/calls/dump-call/dump", headers=self._auth())
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())["context"]["stage"], "replyer")
+        response = await self.client.get("/api/thinking/calls/dump-call/dump")
+        self.assertEqual(response.status, 401)
+        self.store.record_thinking_call(created_at=time.time(), turn_id="dump-turn", call_id="dump-call", stage="replyer", trace={"dump_file": "../config.json"})
+        response = await self.client.get("/api/thinking/calls/dump-call/dump", headers=self._auth())
+        self.assertEqual(response.status, 404)
+        self.store.record_thinking_call(created_at=time.time(), turn_id="dump-turn", call_id="dump-call", stage="replyer")
+        response = await self.client.get("/api/thinking/calls/dump-call/dump", headers=self._auth())
+        self.assertEqual(response.status, 404)
+
     async def test_thinking_endpoint_lists_and_reads_calls(self) -> None:
         now = time.time()
         self.store.record_thinking_call(

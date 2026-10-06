@@ -93,6 +93,9 @@ def persist_thinking(
     assistant_text: str = "",
     tools: list[str],
     model: str,
+    tool_calls: list[dict[str, Any]] | None = None,
+    dump_file: str = "",
+    protocol: str = "",
 ) -> None:
     if sink is None:
         return
@@ -108,6 +111,8 @@ def persist_thinking(
             tools=tools,
             reasoning=reasoning,
             assistant_text=assistant_text,
+            trace={"tool_calls": tool_calls or [], "dump_file": dump_file, "protocol": protocol,
+                   **{key: context[key] for key in ("parent_call_id", "tool_call_id", "channel") if key in context}},
         )
     except Exception as error:
         persist_thinking_failure(error)

@@ -117,10 +117,12 @@ class ThinkingStore:
         tools: list[str],
         reasoning: str,
         assistant_text: str = "",
+        trace: dict | None = None,
     ) -> None:
         text = str(reasoning or "")
         codec, blob = encode_reasoning(text)
         assistant_codec, assistant_blob = encode_reasoning(str(assistant_text or ""))
+        trace_codec, trace_blob = encode_reasoning(json.dumps(trace or {}, ensure_ascii=False))
         month = month_key(created_at, self._timezone)
         connection = self._db(month)
         with connection:
@@ -128,8 +130,8 @@ class ThinkingStore:
                 """INSERT OR REPLACE INTO calls
                    (created_at, turn_id, call_id, stage, round, model, tools_json,
                     reasoning_chars, reasoning_sha256, reasoning_codec, reasoning_blob,
-                    assistant_text_codec, assistant_text_blob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    assistant_text_codec, assistant_text_blob, trace_codec, trace_blob)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     created_at,
                     str(turn_id or ""),
@@ -144,6 +146,8 @@ class ThinkingStore:
                     blob,
                     assistant_codec,
                     assistant_blob,
+                    trace_codec,
+                    trace_blob,
                 ),
             )
 
@@ -307,7 +311,7 @@ class ThinkingStore:
         sql = (
             f"""SELECT created_at, turn_id, call_id, stage, round, model, tools_json,
                        reasoning_chars, reasoning_codec, reasoning_blob,
-                       assistant_text_codec, assistant_text_blob
+                       assistant_text_codec, assistant_text_blob, trace_codec, trace_blob
                 FROM calls WHERE {' AND '.join(clauses)}
                 ORDER BY created_at DESC, round"""
         )
@@ -332,6 +336,10 @@ class ThinkingStore:
         with connection:
             if "assistant_text_codec" not in columns:
                 connection.execute("ALTER TABLE calls ADD COLUMN assistant_text_codec TEXT NOT NULL DEFAULT 'plain'")
+            if "trace_codec" not in columns:
+                connection.execute("ALTER TABLE calls ADD COLUMN trace_codec TEXT NOT NULL DEFAULT 'plain'")
+            if "trace_blob" not in columns:
+                connection.execute("ALTER TABLE calls ADD COLUMN trace_blob BLOB")
             if "assistant_text_blob" not in columns:
                 connection.execute("ALTER TABLE calls ADD COLUMN assistant_text_blob BLOB")
         self._dbs[month] = connection
@@ -403,6 +411,7 @@ def _public_call(
     if reasoning is not None:
         item["reasoning"] = reasoning
         item["assistant_text"] = decode_reasoning(row["assistant_text_codec"], row["assistant_text_blob"])
+        item["trace"] = json.loads(decode_reasoning(row["trace_codec"], row["trace_blob"]) or "{}")
     return item
 
 

@@ -2201,12 +2201,17 @@ function ThinkingLayout({
     const path = turnId
       ? `/api/thinking/${encodeURIComponent(turnId)}`
       : `/api/thinking/calls/${encodeURIComponent(activeId.replace(/^call:/, ""))}`;
-    api(path, { signal: controller.signal, token })
-      .then((data) => setDetail({ data }))
+    let timer;
+    const load = () => api(path, { signal: controller.signal, token })
+      .then((data) => {
+        setDetail({ data });
+        if (data.flow?.running && !controller.signal.aborted) timer = window.setTimeout(load, 3000);
+      })
       .catch((error) => {
         if (error.name !== "AbortError") setDetail({ error });
       });
-    return () => controller.abort();
+    load();
+    return () => { controller.abort(); window.clearTimeout(timer); };
   }, [activeId, setDetail, token, turnId]);
 
   useEffect(() => {
@@ -2276,6 +2281,8 @@ function ThinkingLayout({
             }}
             calls={detail.data.items || (detail.data.item ? [detail.data.item] : [])}
             recall={detail.data.recall}
+            flowData={detail.data.flow || {}}
+            token={token}
           />
         )}
       </div>
@@ -2497,12 +2504,79 @@ function RecallDetail({ recall }) {
   );
 }
 
-function ThinkingDetail({ item, calls, recall }) {
+const plannerStages = new Set(["owner", "heartbeat", "webhook", "goal", "plan_step", "reply_followup"]);
+
+function ThinkingDump({ call, token }) {
+  const [value, setValue] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const filename = call.trace?.dump_file;
+  if (!filename) return <p className="flow-dump-note">未记录完整 dump（需启用 TRACE）；下面的决策与执行记录独立保存。</p>;
+  return <div className="flow-dump">
+    <button className="quiet-button" disabled={loading} onClick={async () => {
+      if (value) { setValue(null); return; }
+      setLoading(true); setError("");
+      try { setValue(await api(`/api/thinking/calls/${encodeURIComponent(call.call_id)}/dump`, { token })); }
+      catch (e) { setError(e.message); }
+      finally { setLoading(false); }
+    }}>{loading ? "读取中…" : value ? "收起请求与响应" : "查看完整请求与响应"}</button>
+    <span className="flow-request-id">{filename}</span>
+    {error && <p className="flow-dump-note">{error}</p>}
+    {value && <pre className="flow-json flow-dump-json">{JSON.stringify(value, null, 2)}</pre>}
+  </div>;
+}
+
+function ThinkingCall({ call, children = [], token, nested = false }) {
+  const replyer = call.stage === "replyer";
+  const planner = plannerStages.has(call.stage);
+  const metrics = call.request_metrics;
+  return <article className={`flow-call ${replyer ? "is-replyer" : planner ? "is-planner" : "is-workflow"}${nested ? " is-nested" : ""}`}>
+    <header className="flow-call-head">
+      <strong>{replyer ? "发言生成 · Replyer" : planner ? "行为规划 · Planner" : thinkingStageLabel(call.stage)}</strong>
+      <span>{replyer ? "由 reply 派发" : `第 ${call.round || 1} 轮`}</span>
+      <time>{formatDate(call.created_at)}</time>
+    </header>
+    <div className="flow-call-meta"><span>{call.model || "模型未记录"}</span><code>{call.call_id}</code>
+      {planner && call.stage !== "owner" && <span>{thinkingStageLabel(call.stage)}</span>}
+      {metrics && <span>{Number(metrics.input_tokens || 0).toLocaleString()} 输入 / {Number(metrics.output_tokens || 0).toLocaleString()} 输出 · {(Number(metrics.duration_ms || 0) / 1000).toFixed(2)}s</span>}
+    </div>
+    <div className="thinking-call-content">
+      {call.reasoning || call.excerpt ? <section className="thinking-part reasoning-part">
+        <h4>模型推理 <span>接口返回的 reasoning</span></h4>
+        <p className="message-content thinking-body">{call.reasoning || call.excerpt}</p>
+      </section> : <p className="thinking-empty">接口未返回可见推理；可以从实际工具调用查看决策。</p>}
+      {call.assistant_text && <section className="thinking-part assistant-part">
+        <h4>{replyer ? "生成的发言" : "内部正文"}<span>{replyer ? "是否送达以投递记录为准" : "assistant text，不等于对用户发言"}</span></h4>
+        <p className="message-content thinking-body">{call.assistant_text}</p>
+      </section>}
+    </div>
+    {(call.actions || []).map((action, index) => <section className="flow-action" key={action.id || index}>
+      <div className="flow-action-head"><strong>{action.name === "reply" ? "决定回应 → 派发 Replyer" : action.name === "end_turn" ? "结束本轮" : `调用 ${action.name}`}</strong>
+        <span className={`flow-result-state ${action.result?.ok === false ? "is-error" : ""}`}>{action.result ? action.result.ok ? "执行成功" : "执行失败" : "执行结果未记录"}</span>
+      </div>
+      {action.name === "reply" ? <dl className="flow-dispatch">
+        <dt>回应意图</dt><dd>{action.arguments?.intent || "未记录"}</dd>
+        <dt>必要参考</dt><dd>{action.arguments?.reference || "无额外参考"}</dd>
+        {action.arguments?.mode === "voice" && <><dt>发言方式</dt><dd>语音</dd></>}
+      </dl> : <details className="flow-action-data"><summary>决策参数</summary><pre className="flow-json">{JSON.stringify(action.arguments || {}, null, 2)}</pre></details>}
+      {children.filter(child => child.trace?.tool_call_id === action.id).map(child => <ThinkingCall key={child.call_id} call={child} token={token} nested />)}
+      {action.result && <details className="flow-action-data"><summary>工具结果{action.result.error ? ` · ${action.result.error}` : ""}</summary><pre className="flow-json">{JSON.stringify(action.result, null, 2)}</pre></details>}
+    </section>)}
+    {!call.actions?.length && call.tools?.length > 0 && <p className="flow-dump-note">旧记录仅保存工具名称：{call.tools.join(" / ")}；没有可核对的参数与结果。</p>}
+    {children.filter(child => !(call.actions || []).some(action => action.id === child.trace?.tool_call_id)).map(child => <ThinkingCall key={child.call_id} call={child} token={token} nested />)}
+    <ThinkingDump call={call} token={token} />
+  </article>;
+}
+
+function ThinkingDetail({ item, calls, recall, flowData = {}, token }) {
   const flow = [...calls].sort((left, right) => {
     const time = Number(left.created_at || 0) - Number(right.created_at || 0);
     return time !== 0 ? time : Number(left.round || 0) - Number(right.round || 0);
   });
   if (!flow.length) return <Empty text="这个 Turn 还没有思考记录。" />;
+  const knownIds = new Set(flow.map(call => call.call_id));
+  const roots = flow.filter(call => !call.trace?.parent_call_id || !knownIds.has(call.trace.parent_call_id));
+  const childrenFor = (call) => flow.filter(child => child.trace?.parent_call_id === call.call_id);
   const episodeId = item?.episode_id;
   const episodeTitle = item?.episode_title || "查看聊天记录";
   const titleItem = item?.plan_id || item?.plan
@@ -2541,55 +2615,16 @@ function ThinkingDetail({ item, calls, recall }) {
         ) : null}
       </header>
       {recall && !recallHasEvidence ? <RecallDetail recall={recall} /> : null}
-      <div className="messages">
-        {flow.map((call, index) => (
-          <Fragment key={call.call_id}>
-            <article className="message">
-              <div className="message-role momoi">
-                {thinkingStageCode(call.stage)}
-              </div>
-              <div className="message-body">
-                {call.plan_step_id && (index === 0 || flow[index - 1]?.plan_step_id !== call.plan_step_id) ? (
-                  <div className="plan-step-marker">
-                    <span>STEP {call.plan_step_id}</span>
-                    <strong>{call.plan_step_task || "执行计划步骤"}</strong>
-                    {call.plan_step_status && call.plan_step_status !== "succeeded" ? (
-                      <em>{call.plan_step_status}</em>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div className="thinking-call-heading">
-                  <span>ROUND {String(call.round || 1).padStart(2, "0")}</span>
-                  <time>{formatDate(call.created_at)}</time>
-                </div>
-                <div className="thinking-call-content">
-                  {call.reasoning || call.excerpt ? (
-                    <section className="thinking-part reasoning-part" aria-label="Thinking">
-                      <h4>THINKING <span>推理</span></h4>
-                      <p className="message-content thinking-body">{call.reasoning || call.excerpt}</p>
-                    </section>
-                  ) : null}
-                  {call.assistant_text ? (
-                    <section className="thinking-part assistant-part" aria-label="Assistant text">
-                      <h4>ASSISTANT TEXT <span>正文</span></h4>
-                      <p className="message-content thinking-body">{call.assistant_text}</p>
-                    </section>
-                  ) : null}
-                  {!call.reasoning && !call.excerpt && !call.assistant_text ? (
-                    <p className="thinking-empty">这次调用没有可见推理或正文。</p>
-                  ) : null}
-                </div>
-                <div className="message-meta">
-                  {call.tools?.length ? <span>{call.tools.join(" / ")}</span> : null}
-                </div>
-              </div>
-            </article>
-            {recall && recallHasEvidence && ((lastCuesIndex >= 0 && index === lastCuesIndex) ||
-              (lastCuesIndex < 0 && index === flow.length - 1)) ? (
-              <RecallDetail recall={recall} />
-            ) : null}
-          </Fragment>
-        ))}
+      <div className="chat-thinking-flow">
+        <div className="flow-overview"><strong>聊天决策流</strong>{flowData.running && <span>执行中 · 自动更新</span>}<span>{flow.filter(call => plannerStages.has(call.stage)).length} 次行为规划</span><span>{flow.filter(call => call.stage === "replyer").length} 次发言生成</span><span>{flowData.deliveries?.length || 0} 条投递记录</span></div>
+        {!!flowData.inputs?.length && <section className="flow-input"><h3>本轮输入</h3>{flowData.inputs.map(input => <div key={input.id}><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></div>)}</section>}
+        {roots.map(call => <Fragment key={call.call_id}>
+          {call.plan_step_id && <div className="plan-step-marker"><span>STEP {call.plan_step_id}</span><strong>{call.plan_step_task || "执行计划步骤"}</strong></div>}
+          <ThinkingCall call={call} children={childrenFor(call)} token={token} />
+          {recall && recallHasEvidence && ["topic_selection", "episode_cue_admit"].includes(call.stage) && flow.indexOf(call) === lastCuesIndex ? <RecallDetail recall={recall} /> : null}
+        </Fragment>)}
+        {recall && recallHasEvidence && lastCuesIndex < 0 ? <RecallDetail recall={recall} /> : null}
+        {!!flowData.deliveries?.length && <section className="flow-deliveries"><h3>实际投递</h3><p className="flow-dump-note">生成内容、提交发送和已送达是不同状态；以下直接读取 outbox。</p>{flowData.deliveries.map(delivery => <div className="flow-delivery" key={delivery.id}><span className={`flow-result-state ${["failed", "cancelled"].includes(delivery.state) ? "is-error" : ""}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"失败",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span><span>{delivery.target_channel} · {delivery.kind}</span><p className="message-content">{delivery.text}</p>{delivery.last_error && <p className="flow-dump-note">{delivery.last_error}</p>}</div>)}</section>}
       </div>
     </>
   );

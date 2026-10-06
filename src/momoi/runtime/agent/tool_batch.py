@@ -606,6 +606,8 @@ class ToolBatchExecutor:
                 request.turn_id,
                 "assistant_exchange",
                 {
+                    "call_id": request.call_id,
+                    "round": request.round_number,
                     "content": assistant_history_message(request.response.content)["content"],
                     "results": results,
                 },

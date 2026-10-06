@@ -2246,3 +2246,39 @@ a.tag:hover {
 .reasoning-part + .assistant-part { border-top: 1px solid var(--line); }
 .thinking-empty { padding: 16px 18px; margin: 0; color: var(--soft); font-size: 13px; }
 @media (max-width: 600px) { .thinking-part { padding: 13px; } .thinking-call-heading { flex-wrap: wrap; } }
+
+/* Observed chat decisions, with reply generation nested under its dispatch. */
+.chat-thinking-flow { display: grid; gap: 18px; min-width: 0; }
+.flow-overview { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.flow-overview strong { color: var(--ink); margin-right: 8px; }
+.flow-overview > span { padding: 4px 8px; background: var(--wash); border: 1px solid var(--line); }
+.flow-call { border: 1px solid var(--line); border-top: 3px solid var(--blue); min-width: 0; background: var(--surface); }
+.flow-call.is-replyer { border-top-color: var(--pink); }
+.flow-call-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--blue-soft); padding: 12px 16px; font-size: 12px; }
+.is-replyer > .flow-call-head { background: var(--pink-soft); }
+.flow-call-head > strong { font-size: 14px; }
+.flow-call-head time { margin-left: auto; color: var(--muted); font-size: 11px; }
+.flow-call-meta { display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 16px; font-size: 11px; color: var(--muted); }
+.flow-call-meta code { overflow-wrap: anywhere; }
+.flow-call > .thinking-call-content { border-left: 0; border-right: 0; }
+.flow-call.is-nested { margin: 14px 0; }
+.flow-action { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.flow-action-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.flow-result-state { font-size: 11px; color: var(--muted); background: var(--blue-soft); padding: 3px 6px; border: 1px solid var(--line); }
+.flow-result-state.is-error { background: var(--pink-soft); }
+.flow-dispatch { display: grid; grid-template-columns: 65px minmax(0,1fr); gap: 8px 12px; margin: 14px 0 0; font-size: 13px; line-height: 1.7; }
+.flow-dispatch dt { color: var(--muted); }
+.flow-dispatch dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.flow-action-data { margin-top: 12px; font-size: 12px; }
+.flow-action-data summary { cursor: pointer; color: var(--muted); }
+.flow-json { font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--wash); padding: 12px; max-height: 360px; overflow: auto; }
+.flow-dump { padding: 12px 16px; }
+.flow-dump-note { margin: 0; padding: 12px 16px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+.flow-request-id { display: block; margin-top: 8px; font-size: 10px; color: var(--soft); overflow-wrap: anywhere; }
+.flow-input, .flow-deliveries { border: 1px solid var(--line); padding: 14px 16px; }
+.flow-input { border-left: 3px solid var(--blue); }
+.flow-input h3, .flow-deliveries h3 { margin: 0 0 10px; font-size: 14px; }
+.flow-input time { font-size: 11px; color: var(--muted); }
+.flow-delivery { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; font-size: 12px; }
+.flow-delivery > span + span { margin-left: 10px; color: var(--muted); }
+@media (max-width: 600px) { .flow-call-head, .flow-action { padding: 12px; } .flow-call-head time { margin-left: 0; } .flow-dispatch { grid-template-columns: 1fr; gap: 4px; } }
