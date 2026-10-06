@@ -18,6 +18,15 @@ def runtime_requirements() -> str:
     ], cwd=ROOT, text=True, encoding="utf-8")
 
 
+def runtime_components():
+    components = json.loads((ROOT / "packaging/windows/components.json").read_text())
+    # A bridge code revision belongs to the code ZIP. Only its native QQ/loader
+    # requirements participate in runtime compatibility and installer upgrades.
+    if "qq_call" in components:
+        components["qq_call"] = {"runtime": components["qq_call"]["runtime"]}
+    return components
+
+
 def build_release(output: Path, version: str):
     if not re.fullmatch(r"\d+\.\d+\.\d+(?:[.-][A-Za-z0-9.-]+)?", version):
         raise ValueError("invalid release version")
@@ -27,13 +36,19 @@ def build_release(output: Path, version: str):
     from momoi.desktop.embedding import MODEL_REVISION
     components = {
         "requirements": requirements, "python_abi": "cp312-win_amd64", "model_revision": MODEL_REVISION,
-        "mcp": json.loads((ROOT / "packaging/windows/components.json").read_text()),
+        "mcp": runtime_components(),
     }
     runtime_id = hashlib.sha256(json.dumps(components, sort_keys=True).encode("utf-8")).hexdigest()[:24]
     payload = {}
     for path in sorted((ROOT / "src/momoi").rglob("*")):
+        # This worker is exclusively the Linux PulseAudio media broker.
+        if path.relative_to(ROOT / "src/momoi").as_posix() == "qq_call/broker.py":
+            continue
         if path.is_file() and "__pycache__" not in path.parts and path.suffix not in (".pyc", ".pyo"):
             payload["app/" + path.relative_to(ROOT / "src").as_posix()] = path.read_bytes()
+    from prepare_qq_call import windows_code_files
+    for name, content in windows_code_files().items():
+        payload["app/qq_call_bridge/" + name] = content
     payload["app/backend_entry.py"] = (ROOT / "packaging/windows/backend_entry.py").read_bytes()
     # Keep existing importlib.metadata version consumers working without installing code.
     payload[f"app/momoi-{version}.dist-info/METADATA"] = f"Metadata-Version: 2.3\nName: momoi\nVersion: {version}\n".encode()

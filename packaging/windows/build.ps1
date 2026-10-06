@@ -64,6 +64,9 @@ Invoke-Checked $PrivatePython @("-I", "packaging/windows/collect_licenses.py", "
 Copy-Item "desktop/Momoi.Desktop/packages.lock.json" (Join-Path $Stage "licenses/dotnet-packages.lock.json")
 & (Join-Path $PSScriptRoot "prepare_mcp.ps1") -Stage $Stage
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_napcat.py", "--stage", $Stage)
+# The fork exports Windows-only code into the code ZIP; native QQ/AVSDK and
+# loader are separately staged installation components. No Linux scripts run.
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_qq_call.py", "--stage", $Stage)
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/smoke_mcp.py", "--node", (Join-Path $Stage "runtime/node/node.exe"), "--uv", (Join-Path $Stage "runtime/uv/uv.exe"))
 Copy-Item "uv.lock" (Join-Path $Stage "licenses/uv.lock")
 Copy-Item "LICENSE" (Join-Path $Stage "licenses/Momoi-LICENSE")
