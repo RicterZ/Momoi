@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import io
+import os
 
 import qrcode
 import qrcode.image.svg
@@ -219,7 +220,10 @@ def register_configuration_routes(app, configuration, runtime):
         channel = configuration.read_app().get("channels", {}).get("enabled", {}).get("napcat", {})
         previous = channel.get("voice_call", {})
         try:
-            config = QQCallConfig.from_mapping({**restore_secrets(value, previous), "enabled": True})
+            options = restore_secrets(value, previous)
+            if os.environ.get("MOMOI_QQ_CALL_MANAGED"):
+                options.update({key: previous[key] for key in ("bridge_url", "bridge_token")})
+            config = QQCallConfig.from_mapping({**options, "enabled": True})
         except (ValueError, TypeError):
             return web.json_response({"ok": False, "error": "请填写有效的 Bridge 地址和认证 Token"}, status=400)
         return web.json_response(await probe(config))

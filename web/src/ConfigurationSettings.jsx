@@ -1374,7 +1374,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                     <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "内置组件自动生成；外部 NapCat 填写其 WebSocket 令牌。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
                     <OptionField name="owner_qq" spec={{ type: "string", label: "主人 QQ" }} value={options.owner_qq} onChange={value => edit(name, { ...options, owner_qq: value })} />
                   </Fields>
-                  <QQCallSettings value={options.voice_call || {}} disabled={busy || loginActive} status={qqCall} onTest={testCall}
+                  <QQCallSettings managed={data.desktop_qq_call_managed} value={options.voice_call || {}} disabled={busy || loginActive} status={qqCall} onTest={testCall}
                     onChange={voice_call => edit(name, { ...options, voice_call })} />
                   <DesktopQQ botQQ={options.bot_qq} ownerQQ={options.owner_qq} connected={qqConnected} disabled={busy || loginActive} onConnection={connectDesktopQQ} />
                   </div>
@@ -1817,7 +1817,7 @@ export default function ConfigurationSettings({
 }
 
 
-function QQCallSettings({ value, disabled, onChange, onTest }) {
+function QQCallSettings({ value, managed, disabled, onChange, onTest }) {
   const [test, setTest] = useState(null);
   const [testing, setTesting] = useState(false);
   async function probe() {
@@ -1836,8 +1836,10 @@ function QQCallSettings({ value, disabled, onChange, onTest }) {
     </header>
     {value.enabled && <div className="settings-disclosure-body">
     <Fields as="div" disabled={disabled}>
+      {managed ? <p className="settings-channel-note">连接地址和认证信息由桌面程序自动管理，无需填写。</p> : <>
       <OptionField name="bridge_url" spec={{ type: "string", label: "Bridge 地址", default: "" }} value={value.bridge_url} onChange={v => edit("bridge_url", v)} />
       <OptionField name="bridge_token" spec={{ type: "string", label: "认证 Token", secret: true }} value={value.bridge_token} onChange={v => edit("bridge_token", v)} />
+      </>}
       <div className="settings-qq-call-test-row">
         <OptionField name="request_timeout_seconds" spec={{ type: "number", label: "控制请求超时（秒）", default: 5 }} value={value.request_timeout_seconds} onChange={v => edit("request_timeout_seconds", Number(v))} />
         <button type="button" className="quiet-button settings-button" disabled={disabled || testing} onClick={probe}>{testing ? "测试中…" : "测试连接"}</button>

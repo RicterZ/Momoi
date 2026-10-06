@@ -44,6 +44,31 @@ EDITABLE = {
 }
 
 
+def managed_qq_call(app):
+    """Desktop shell owns connection credentials; channel preferences stay editable."""
+    reference = os.environ.get("MOMOI_QQ_CALL_MANAGED")
+    if not reference:
+        return app
+    from urllib.parse import urlsplit
+
+    try:
+        settings = json.loads(Path(reference).read_text(encoding="utf-8"))
+        address, token = settings["bridge_url"], settings["bridge_token"]
+        url = urlsplit(address)
+        if (url.scheme != "http" or url.hostname != "127.0.0.1"
+                or not url.port or url.username or url.password
+                or url.path or url.query or url.fragment
+                or not isinstance(token, str) or len(token.encode()) < 32):
+            raise ValueError("invalid managed connection")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        raise ConfigError("desktop voice-call connection metadata is invalid") from None
+    channel = app.get("channels", {}).get("enabled", {}).get("napcat")
+    if isinstance(channel, dict):
+        previous = channel.get("voice_call", {})
+        channel["voice_call"] = {**previous, "bridge_url": address, "bridge_token": token}
+    return app
+
+
 class RevisionConflict(ConfigError):
     pass
 
@@ -116,7 +141,7 @@ class ConfigurationManager:
             raise ConfigError("cannot read config.json") from None
         if not isinstance(raw, dict):
             raise ConfigError("config.json must be an object")
-        return raw
+        return managed_qq_call(raw)
 
     def _provider_path(self, raw):
         reference = raw.get("providers")
@@ -225,6 +250,7 @@ class ConfigurationManager:
                 str(error) if isinstance(error, ConfigError) else type(error).__name__
             )
         return {
+            "desktop_qq_call_managed": bool(os.environ.get("MOMOI_QQ_CALL_MANAGED")),
             "revision": self.revision(),
             "providers": copy.deepcopy(providers),
             "app": redact(app_values),
@@ -393,6 +419,7 @@ class ConfigurationManager:
                     raise ConfigError(
                         "prompt file paths require a process restart; edit prompt content in the prompt editor"
                     )
+            candidate = managed_qq_call(candidate)
             self.validate(candidate, providers)
             path, content = (
                 self.path,

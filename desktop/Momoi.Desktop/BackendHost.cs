@@ -59,6 +59,7 @@ internal sealed class BackendHost : IAsyncDisposable
         foreach (string argument in new[] { "-I", "-B", "-X", "utf8", entry, "--install-dir", AppContext.BaseDirectory, "--workspace", workspace, "--model-path", model,
             "--dashboard-port", dashboardPort.ToString(), "--embedding-port", embeddingPort.ToString() })
             info.ArgumentList.Add(argument);
+        info.Environment["MOMOI_QQ_CALL_MANAGED"] = QQCallSettings.Prepare(workspace);
         info.Environment["PYTHONUTF8"] = "1";
         info.Environment["HF_HUB_OFFLINE"] = "1";
         info.Environment["TRANSFORMERS_OFFLINE"] = "1";
