@@ -42,7 +42,7 @@ import(require('node:url').pathToFileURL(require('node:path').join(process.argv[
 '''
     result = subprocess.run([node, '-e', script, str(runtime), str(account_data), str(ROOT / 'src/momoi/desktop/napcat_entry.cjs')], capture_output=True, text=True, encoding='utf-8', check=True)
     assert 'PASS' in result.stdout
-    assert (account_data / ".native-data-ready").read_text() == str(account_data)
+    assert (account_data / ".native-data-ready").read_text(encoding="utf-8") == str(account_data)
     assert list(runtime.iterdir()) == [runtime / 'napcat']
 
 
