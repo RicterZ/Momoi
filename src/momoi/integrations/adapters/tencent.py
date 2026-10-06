@@ -167,6 +167,4 @@ class TencentASRProvider(ASRProvider):
             code = str(error_data.get("Code") or "Unknown")
             raise ASRError(f"Tencent ASR rejected the request: {code}")
         text = str(response_data.get("Result") or "").strip()
-        if not text:
-            raise ASRError("Tencent ASR returned an empty result")
         return text
