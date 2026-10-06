@@ -127,7 +127,7 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3) -> Non
                 flush()
                 run_name = ""
             if history_format >= 3 and payload.get("ok") is True:
-                if name in {"send_bubbles", "end_turn"} and not payload.get("error") and not payload.get("truncated"):
+                if name in {"reply", "send_bubbles", "end_turn"} and not payload.get("error") and not payload.get("truncated"):
                     allowed = {"ok", "error", "truncated", "provenance", "result_ref", "state", "channel", "bubbles"}
                     if set(payload) <= allowed:
                         block["content"] = json.dumps({k: payload[k] for k in ("ok", "state", "bubbles") if k in payload}, ensure_ascii=False)

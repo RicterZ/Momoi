@@ -193,7 +193,7 @@ class GoalWorkflow:
         tools = self.tool_surface.conversation_specs()
         draft = TurnDraft()
         await self._run_tool_loop(
-            self._system(),
+            self._system(planner=True),
             messages,
             tools,
             [],
@@ -216,7 +216,7 @@ class GoalWorkflow:
             turn_id=turn_id,
             goal_id=goal_id,
             notified=any(
-                call["tool"] in {"send_bubbles", "send_voice"} and call["ok"]
+                call["tool"] in {"reply", "send_bubbles", "send_voice"} and call["ok"]
                 for call in draft.tool_calls
             ),
             tools=_turn_tool_names(draft),

@@ -23,6 +23,7 @@ from ..tool_contracts.runtime import (
 from ..tool_contracts.plan import PLAN_TOOLS, PLAN_STEP_FINISH
 from .progress import public_tool_spec
 from ..tool_contracts.voice import SEND_VOICE_TOOL_SPEC
+from ..tool_contracts.reply import REPLY_TOOL_SPEC
 
 logger = logging.getLogger("momoi.runtime.turns")
 
@@ -103,6 +104,7 @@ class ToolSurface:
             heartbeat_begin_spec(),
             copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC),
             copy.deepcopy(GOAL_REVIEW_TOOL_SPEC),
+            {**copy.deepcopy(REPLY_TOOL_SPEC), "description": REPLY_TOOL_SPEC["description"] + (" 可选择 mode=voice。" if self.voice_enabled else " 当前仅支持 mode=text。")},
             self.send_bubbles_spec(),
             *([copy.deepcopy(SEND_VOICE_TOOL_SPEC)] if self.voice_enabled else []),
             READ_TOOL_RESULT_SPEC,
@@ -132,7 +134,7 @@ class ToolSurface:
         agenda = {str(spec["name"]) for spec in AGENDA_TOOL_SPECS}
         memory = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}
         thinking = {str(spec["name"]) for spec in THINKING_TOOL_SPECS}
-        shared = {"send_bubbles", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
+        shared = {"reply", "send_bubbles", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
         voice = {"send_voice"} if self.voice_enabled else set()
         shared.update(voice)
         general_chat = {
@@ -165,13 +167,14 @@ class ToolSurface:
                 }
             )
         if stage == "webhook":
-            return frozenset({"send_bubbles", "web_fetch", "read_tool_result", "end_turn", *voice})
+            return frozenset({"reply", "send_bubbles", "web_fetch", "read_tool_result", "end_turn", *voice})
         if stage == "reply_followup":
             return frozenset(general_chat)
         if stage == "goal":
             return frozenset(
                 {
                     "goal_review",
+                    "reply",
                     "goal_create",
                     "memory_search",
                     *voice,

@@ -139,7 +139,7 @@ class CurrentStateWorkflow:
         messages.append({"role": "user", "content": request})
         # Use the same live public prefix as Owner/Heartbeat/Plan. Queued
         # snapshots can predate SOUL edits and dynamic tool enable changes.
-        system = self._system()
+        system = self._system(planner=True)
         tools = self.tool_surface.conversation_specs()
 
         async def execute_tool(call):

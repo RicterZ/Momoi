@@ -99,6 +99,7 @@ class ToolBatchExecutor:
         thinking_tools: Any,
         tool_results: Any,
         outbox_changed: Any,
+        replyer: Any = None,
     ) -> None:
         self.config = config
         self.store = store
@@ -110,6 +111,7 @@ class ToolBatchExecutor:
         self.thinking_tools = thinking_tools
         self.tool_results = tool_results
         self.outbox_changed = outbox_changed
+        self.replyer = replyer
 
     async def execute(self, request: ToolBatchRequest) -> ToolBatchResult:
         execution = request.execution
@@ -386,6 +388,32 @@ class ToolBatchExecutor:
                     **({"mood_decision": "updated" if reply and reply.mood_update else "unchanged"}
                        if ended else {"reason": result.get("error")}),
                 )
+            elif call.name == "reply":
+                if self.replyer is None:
+                    result = {"ok": False, "error": "replyer_unavailable"}
+                else:
+                    try:
+                        bubbles = await self.replyer.generate(call, request)
+                        mode = call.arguments.get("mode", "text")
+                        delivery_call = ToolCall(call.id, "send_voice" if mode == "voice" else "send_bubbles",
+                                                 {"text": "\n".join(bubbles)} if mode == "voice" else {"bubbles": bubbles})
+                        dispatch = self.bubble_delivery.dispatch_voice if mode == "voice" else self.bubble_delivery.dispatch
+                        delivery = dispatch(delivery_call, turn_id=request.turn_id, stage=execution.stage,
+                            round_number=request.round_number, delivery_channel=request.delivery_channel,
+                            heartbeat_turn=execution.heartbeat, reply_followup_turn=execution.reply_followup,
+                            heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
+                            previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
+                            previous_channel=last_sent_channel)
+                        if mode == "voice":
+                            delivery = await delivery
+                        result = {**delivery.result, "bubbles": bubbles}
+                        if delivery.bubbles is not None:
+                            visible = True
+                            last_sent_bubbles = copy.deepcopy(delivery.bubbles)
+                            last_sent_channel = delivery.channel
+                    except Exception as error:
+                        logger.exception("reply_generation_failed")
+                        result = {"ok": False, "error": "reply_generation_failed", "message": type(error).__name__}
             elif call.name in {"send_bubbles", "send_voice"}:
                 dispatch = (
                     self.bubble_delivery.dispatch_voice

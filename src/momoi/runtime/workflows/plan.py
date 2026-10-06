@@ -100,7 +100,7 @@ class PlanWorkflow:
             )
             log_event(logger, logging.INFO, "plan_step_started", plan_id=plan_id, step_id=step["id"], turn_id=turn_id)
             await self._run_tool_loop(
-                self._system(), messages, tools, [], TurnDraft(),
+                self._system(planner=True), messages, tools, [], TurnDraft(),
                 execution=TurnExecutionSpec("plan_step", max_rounds=50),
                 source_event_id=f"plan:{plan_id}", turn_id=turn_id, delivery_channel=channel, workflow=workflow,
             )
@@ -141,14 +141,14 @@ class PlanWorkflow:
                     closing_messages = copy.deepcopy(messages)
                 closing_messages.append({"role": "user", "content": (
                     "[运行时通知] 已到本步骤50次调用硬上限，计划已暂停，不能继续执行。"
-                    "必须用 send_bubbles 告诉用户当前进展、具体卡点、已验证与未确认的部分，"
+                    "必须用 reply 告诉用户当前进展、具体卡点、已验证与未确认的部分，"
                     "请用户判断继续、修改计划或步骤、还是终止。不要自行继续或宣称成功。"
                     "随后用 plan_step_finish 保存交接摘要和结果引用；这只保存暂停状态，不会推进步骤。"
                     if hard_round_limit else
                     "[运行时通知] 本步已达到执行上限：" + reason + "。停止执行新工作。"
                     "根据已有证据整理已完成、未完成、未确认的结果，调用 plan_step_finish 保存收尾。"
                     "未验证完成则报告 blocked 并 abort_remaining=true。超时操作可能已生效，不得重试。"
-                    "无需机械通知用户达到上限；确有需要说明的结果或阻碍时，可自行用 send_bubbles 表达。"
+                    "无需机械通知用户达到上限；确有需要说明的结果或阻碍时，可自行用 reply 表达。"
                 )})
                 closing_complete = False
                 async def close_paused(call):
@@ -169,14 +169,14 @@ class PlanWorkflow:
                     stage="plan_step", tool_names=frozenset({"plan_step_finish"}),
                     execute_tool=close_paused, is_complete=lambda: closing_complete,
                     completion_result=lambda: {"ok": True, "state": "paused"},
-                    no_tool_correction="先通过 send_bubbles 向用户说明卡点，再 plan_step_finish 保存暂停交接。",
+                    no_tool_correction="先通过 reply 向用户说明卡点，再 plan_step_finish 保存暂停交接。",
                 ) if hard_round_limit else workflow
                 try:
                     async with asyncio.timeout(60):
                         await self._run_tool_loop(
-                            self._system(), closing_messages, tools, [], TurnDraft(),
+                            self._system(planner=True), closing_messages, tools, [], TurnDraft(),
                             execution=TurnExecutionSpec("plan_step", max_rounds=3,
-                                permitted_tools=frozenset({"plan_step_finish", "send_bubbles"})),
+                                permitted_tools=frozenset({"plan_step_finish", "reply", "send_bubbles", "send_voice"})),
                             source_event_id=f"plan:{plan_id}", turn_id=closing_id,
                             delivery_channel=channel, workflow=closing_workflow,
                         )

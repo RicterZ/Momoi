@@ -287,7 +287,7 @@ class OwnerWorkflow:
         candidates = self.owner_context_candidates(
             [str(row["turn_id"]) for row in conversation_rows],
         )
-        system = self._system()
+        system = self._system(planner=True)
         injected_memories = shared["memories"]
         runtime_text = pack_current_turn_context(
             self.store, "owner",

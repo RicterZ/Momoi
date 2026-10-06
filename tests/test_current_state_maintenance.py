@@ -264,7 +264,7 @@ def test_allowed_end_turn_captures_tool_surface_and_waits_for_commit(daemon, kin
 
     async def maintain(system, messages, tools, **kwargs):
         assert tools == surfaces[-1]
-        assert system == daemon._system_with_tool_policies(daemon._system(), tools)
+        assert system == daemon._system_with_tool_policies(daemon._system(planner=True), tools)
         root = ElementTree.fromstring("<request>" + messages[-1]["content"] + "</request>")
         assert root.find("source_evidence/turn").attrib == {
             "id": "T-1", "evidence": "none",
@@ -309,7 +309,7 @@ def test_maintenance_uses_live_public_prefix_without_replaying_source_chain(daem
 
     async def complete(system, messages, tools, **kwargs):
         requests.append(copy.deepcopy(messages))
-        assert system == daemon._system_with_tool_policies(daemon._system(), tools)
+        assert system == daemon._system_with_tool_policies(daemon._system(planner=True), tools)
         assert system != original_system
         assert len(messages) >= 2
         evidence = ElementTree.fromstring("<request>" + messages[-1]["content"] + "</request>")
@@ -823,7 +823,7 @@ def test_maintenance_provider_receives_canonical_prefix_and_live_tools(daemon, c
         "name": "mcp__new__lookup", "description": "Enabled after enqueue",
         "input_schema": {"type": "object", "properties": {}},
     }]
-    expected_system = daemon._system_with_tool_policies(daemon._system(), tools)
+    expected_system = daemon._system_with_tool_policies(daemon._system(planner=True), tools)
     seen = []
     if compact:
         daemon.model_round.context_window.config = replace(

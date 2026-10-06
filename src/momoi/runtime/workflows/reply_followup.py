@@ -51,7 +51,7 @@ class ReplyFollowupWorkflow:
                 ),
             ),
         )
-        system = self._system()
+        system = self._system(planner=True)
         messages: list[dict[str, Any]] = [
             *shared["messages"],
             {

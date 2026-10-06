@@ -195,7 +195,7 @@ class BubbleDelivery:
         if set(call.arguments) != {"text"}:
             return BubbleDeliveryResult({"ok": False, "error": "invalid_voice_arguments"})
         text = call.arguments["text"]
-        if (isinstance(text, str) and context.get("previous_tool_name") in {"send_bubbles", "send_voice"}
+        if (isinstance(text, str) and context.get("previous_tool_name") in {"reply", "send_bubbles", "send_voice"}
                 and context.get("previous_bubbles") is not None
                 and context.get("previous_channel") == context["delivery_channel"].name
                 and self.policy.similarity(context["previous_bubbles"], [text]) >= SIMILAR_BUBBLES_THRESHOLD):
@@ -255,7 +255,7 @@ class BubbleDelivery:
             return BubbleDeliveryResult({"ok": False, "error": "invalid_channel"})
         similarity = (
             self.policy.similarity(previous_bubbles, bubbles)
-            if previous_tool_name in {"send_bubbles", "send_voice"}
+            if previous_tool_name in {"reply", "send_bubbles", "send_voice"}
             and previous_bubbles is not None
             and previous_channel == target.name
             else 0.0

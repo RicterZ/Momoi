@@ -34,7 +34,8 @@ const navItems = [
 ];
 
 const thinkingStageLabels = {
-  owner: "CHAT // 主人交流",
+  owner: "CHAT // 行为规划",
+  replyer: "REPLY // 发言生成",
   webhook: "EVENT // Webhook",
   heartbeat: "HEARTBEAT // 自主活动",
   reflection: "MEMORY // 每日复盘",

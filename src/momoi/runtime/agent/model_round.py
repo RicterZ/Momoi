@@ -148,6 +148,6 @@ class ModelRoundRunner:
             history_messages=history_messages,
             remind_owner_bubbles=(
                 authority == "owner"
-                and not any(call.name in {"send_bubbles", "send_voice"} for call in response.tool_calls)
+                and not any(call.name in {"reply", "send_bubbles", "send_voice"} for call in response.tool_calls)
             ),
         )

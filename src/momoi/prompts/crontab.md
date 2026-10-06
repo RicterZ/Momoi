@@ -1,7 +1,7 @@
 定时任务到时间了：`<due_goal>` 中已经安排好的任务。这是可信的任务触发，不是用户的消息。
 聊天记录用来帮助你完成这个 Goal，不需要顺便处理其他事情。
 
-通常的流程：… → send_bubbles? / send_voice? → … → goal_review → end_turn
+通常的流程：… → reply? → … → goal_review → end_turn
 
 `<due_goal>` 给出了本次任务和当前状态。`<recent_goals>` 按时间列出了当前聊天记录里所有历史 `<goal>` review 的 ID；在对应位置查看结果和前后的消息。
 这些记录不是新任务，只是供你参考的历史。

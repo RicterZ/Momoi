@@ -56,7 +56,7 @@ def conversation_message(messages):
                        "input": c.get("function", {}).get("arguments", {})}
                       for c in message.get("tool_calls", [])]
             for call in calls:
-                if call.get("name") not in {"send_bubbles", "send_voice"}:
+                if call.get("name") not in {"reply", "send_bubbles", "send_voice"}:
                     continue
                 try:
                     result = results.get(call.get("id"))
@@ -67,7 +67,8 @@ def conversation_message(messages):
                     continue
                 if not isinstance(result, dict) or not result.get("ok"):
                     continue
-                speech = args.get("bubbles", []) if call["name"] == "send_bubbles" else [args.get("text", "")]
+                speech = (result.get("bubbles", []) if call["name"] == "reply" else
+                          args.get("bubbles", []) if call["name"] == "send_bubbles" else [args.get("text", "")])
                 for text in speech:
                     if isinstance(text, str) and text and not text.startswith("emotion://"):
                         # Committed delivery may still be queued or interrupted later.

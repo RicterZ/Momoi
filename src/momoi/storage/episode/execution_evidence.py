@@ -2,7 +2,7 @@
 import json
 from itertools import groupby
 
-EXCLUDED = {'recall', 'end_turn', 'heartbeat_end_turn', 'send_bubbles', 'send_voice'}
+EXCLUDED = {'recall', 'end_turn', 'heartbeat_end_turn', 'reply', 'send_bubbles', 'send_voice'}
 
 
 def clip(text, limit=100, terms=()):

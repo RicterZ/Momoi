@@ -66,6 +66,7 @@ class ToolExecutor:
     def source(self, name: str) -> str:
         if name in {
             "end_turn",
+            "reply",
             "send_bubbles",
             "send_voice",
             "tool_search",

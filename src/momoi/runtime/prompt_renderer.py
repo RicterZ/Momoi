@@ -82,8 +82,14 @@ class PromptRenderer:
         head, _, tail = template.partition("{{SOUL}}")
         return "\n\n".join(part.strip() for part in (head, tail) if part.strip())
 
-    def _system(self) -> list[dict[str, Any]]:
+    def _system(self, *, planner: bool = False) -> list[dict[str, Any]]:
         soul_prompt = self._workspace_soul() or "未配置额外的 SOUL。"
+        if planner:
+            from importlib.resources import files
+            default = files("momoi").joinpath("prompts/planner.md").read_text(encoding="utf-8")
+            path = self.config.soul_prompt_path.parent / "PLANNER.md" if self.config.soul_prompt_path else None
+            prompt = _live_prompt(path, default, optional=True) if path else default
+            soul_prompt = prompt.replace("{{SOUL}}", soul_prompt)
         blocks: list[dict[str, Any]] = []
         # Identity first, operating contract second: the rules then sit closest to
         # the conversation, where their influence on the next step is strongest.

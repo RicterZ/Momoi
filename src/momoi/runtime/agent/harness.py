@@ -27,7 +27,7 @@ TURN_HARNESS_SPECS = {
             None,
             "end_turn",
             permitted_tools=frozenset(
-                {"send_bubbles", "send_voice", "web_fetch", "read_tool_result", "end_turn"}
+                {"reply", "send_bubbles", "send_voice", "web_fetch", "read_tool_result", "end_turn"}
             ),
         ),
         TurnHarnessSpec("goal", None, "end_turn", required_before_end=frozenset({"goal_review"})),
@@ -120,7 +120,7 @@ class TurnHarness:
         ):
             return "tool_not_allowed"
         if self.spec.stage == "heartbeat" and any(
-            name in {"send_bubbles", "send_voice"} for name in names
+            name in {"reply", "send_bubbles", "send_voice"} for name in names
         ):
             if not self.heartbeat_recall_ready or "recall" in names:
                 return "heartbeat_recall_required_before_send"
@@ -156,7 +156,7 @@ class TurnHarness:
         terminal = self.spec.terminal_tool
         declarations_and_end = (
             terminal == "end_turn" and names[-1:] == [terminal]
-            and all(name in {"send_bubbles", "send_voice", "heartbeat_activity", "goal_review", "save_image_summary"} for name in names[:-1])
+            and all(name in {"reply", "send_bubbles", "send_voice", "heartbeat_activity", "goal_review", "save_image_summary"} for name in names[:-1])
         )
         review_and_end = self.spec.stage == "goal" and names == ["goal_review", "end_turn"]
         if self.spec.terminal_alone and terminal in names and not review_and_end and not declarations_and_end and (len(names) != 1 or names[0] != terminal):
@@ -195,7 +195,7 @@ class TurnHarness:
         if self.spec.stage == "heartbeat":
             if tool_name == "recall":
                 self.heartbeat_recall_ready = True
-            elif tool_name in {"send_bubbles", "send_voice"}:
+            elif tool_name in {"reply", "send_bubbles", "send_voice"}:
                 self.heartbeat_recall_ready = False
         if tool_name == self.spec.first_tool or (
             self.spec.first_tool == "send_bubbles" and tool_name == "send_voice"

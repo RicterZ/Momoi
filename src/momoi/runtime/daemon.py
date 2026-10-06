@@ -187,6 +187,7 @@ class MomoiDaemon(
             self.outbox_changed,
             tts_provider=self.services.tts,
         )
+        from .agent.replyer import Replyer
         self.tool_batch = ToolBatchExecutor(
             config,
             self.store,
@@ -198,6 +199,7 @@ class MomoiDaemon(
             self.thinking_tools,
             self.tool_results,
             self.outbox_changed,
+            replyer=Replyer(config, self.store, self.provider),
         )
         self.agenda_changed = asyncio.Event()
         self._active_turn: asyncio.Task[Any] | None = None

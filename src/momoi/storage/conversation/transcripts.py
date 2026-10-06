@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 TRANSCRIPT_PROTOCOL_TOOLS = frozenset(
     {
         "send_bubbles",
+        "reply",
         "end_turn",
         "heartbeat_end_turn",
         "tool_enable",
@@ -217,10 +218,14 @@ class TranscriptStore:
         """Actual messages, including the active turn; never journal/tool text."""
         rows = self._db.execute("""SELECT m.id, m.role, m.content, m.created_at,
                     m.delivery_state, m.turn_id FROM messages m
-                    JOIN turns t ON t.id=m.turn_id
-                    WHERE t.channel=? AND (m.role='user' OR
-                        (m.role='assistant' AND m.delivery_state='delivered'))
-                    ORDER BY m.id DESC LIMIT ?""", (channel, limit)).fetchall()
+                    LEFT JOIN outbox o ON o.id=m.outbox_id
+                    WHERE ((m.role='user' AND EXISTS (
+                        SELECT 1 FROM json_each(m.source_event_ids_json) src
+                        JOIN events e ON e.id=src.value
+                        WHERE json_extract(e.payload_json, '$.channel')=?)) OR
+                        (m.role='assistant' AND m.delivery_state='delivered'
+                         AND o.target_channel=?))
+                    ORDER BY m.id DESC LIMIT ?""", (channel, channel, limit)).fetchall()
         return [dict(row) for row in reversed(rows)]
 
     def recent_conversation_messages(

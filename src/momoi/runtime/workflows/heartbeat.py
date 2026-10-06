@@ -180,7 +180,7 @@ class HeartbeatWorkflow:
                 ),
             ),
         )
-        system = self._system()
+        system = self._system(planner=True)
         injected_memories = shared["memories"]
         messages: list[dict[str, Any]] = [
             *shared["messages"],
