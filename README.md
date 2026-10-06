@@ -519,3 +519,5 @@ surface.
 - [Webhook workflow reference](./docs/WORKFLOW.md)
 
 Momoi is licensed under the [MIT License](./LICENSE).
+
+MCP 工具发现采用两步流程：system 中的工具索引仅包含服务名和配置 `description`；`tool_search` 按服务或工具关键词返回候选名称与描述，`tool_enable` 接受工具名数组并加载选定工具的完整 schema。启用集合在共享 transcript 的压缩周期内持久化、只追加，owner、heartbeat、goal 等共享；手动或自动 compact 时回收，调用仍受各阶段权限限制。

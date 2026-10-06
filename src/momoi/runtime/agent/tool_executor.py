@@ -70,6 +70,7 @@ class ToolExecutor:
             "send_bubbles",
             "send_voice",
             "tool_search",
+            "tool_enable",
             "read_tool_result",
             "heartbeat_begin",
             "heartbeat_activity",

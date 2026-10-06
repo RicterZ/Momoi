@@ -392,9 +392,13 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                         case.assertIn('"state": "started"', str(messages[-1]))
                         call = ToolCall("search-demo", "tool_search", {"query": "mcp__demo__read", "limit": 1})
                     elif self.calls == 3:
+                        case.assertNotIn("mcp__demo__read", names)
+                        case.assertIn("mcp__demo__read", str(messages[-1]))
+                        call = ToolCall("enable-demo", "tool_enable", {"tools": ["mcp__demo__read"]})
+                    elif self.calls == 4:
                         case.assertIn("mcp__demo__read", names)
                         call = ToolCall("read-demo", "mcp__demo__read", {})
-                    elif self.calls == 4:
+                    elif self.calls == 5:
                         case.assertIn("mcp__demo__read", names)
                         case.assertIn("dynamic heartbeat tool works", str(messages[-1]))
                         call = ToolCall("activity", "heartbeat_activity", {"activity": "inspect demo state", "result": "planning complete", "next_check_minutes": 30, "reason": "test"})
@@ -427,10 +431,12 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 turn_id,
                 owner_event_revision=0,
             )
-            self.assertEqual(provider.calls, 5)
+            self.assertEqual(provider.calls, 6)
             self.assertEqual(provider.surfaces[0], provider.surfaces[1])
-            self.assertNotEqual(provider.surfaces[1], provider.surfaces[2])
-            self.assertEqual(provider.surfaces[2], provider.surfaces[3])
+            self.assertEqual(provider.surfaces[1], provider.surfaces[2])
+            self.assertNotEqual(provider.surfaces[2], provider.surfaces[3])
+            self.assertEqual(provider.surfaces[3], provider.surfaces[4])
+            self.assertEqual(provider.surfaces[4], provider.surfaces[5])
             daemon.store.close()
 
 

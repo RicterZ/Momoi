@@ -119,6 +119,10 @@ class PromptRenderer:
                     "cache_control": {"type": "ephemeral"},
                 }
             )
+        surface = getattr(self, "tool_surface", None)
+        index = surface.tool_index() if surface is not None else ""
+        if index:
+            blocks.append({"type": "text", "text": index, "cache_control": {"type": "ephemeral"}})
         return blocks
 
     def _system_with_tool_policies(

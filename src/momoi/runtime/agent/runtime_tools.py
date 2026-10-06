@@ -92,7 +92,6 @@ def search_tools(
     call: ToolCall,
     *,
     enable_tool_groups: dict[str, list[dict[str, Any]]],
-    tools: list[dict[str, Any]],
     tool_surface: ToolSurface,
 ) -> dict[str, object]:
     query = call.arguments.get("query")
@@ -101,23 +100,41 @@ def search_tools(
         return {"ok": False, "error": "invalid_tool_search"}
     query = " ".join(query.casefold().split())
     terms = query.replace("_", " ").replace("-", " ").split()
-    catalog = {spec["name"]: spec for specs in enable_tool_groups.values() for spec in specs}
     matches = []
-    for name, spec in catalog.items():
-        lower_name = name.casefold()
-        description = str(spec.get("description") or "").casefold()
-        score = (1000 if query == lower_name else 0)
-        score += 300 if lower_name.startswith(query) else 0
-        score += 200 if query in lower_name else 0
-        score += 100 if query in description else 0
-        score += sum((25 if term in lower_name else 0) + (10 if term in description else 0) for term in terms)
-        if score:
-            matches.append((score, name, spec))
+    for group, specs in enable_tool_groups.items():
+        service_description = tool_surface.mcp_group_description(group).casefold()
+        service_hit = query in group.casefold() or query in service_description
+        for spec in specs:
+            name = spec["name"]
+            lower_name = name.casefold()
+            description = str(spec.get("description") or "").casefold()
+            score = 1000 if query == lower_name else 0
+            score += 300 if lower_name.startswith(query) else 0
+            score += 200 if query in lower_name else 0
+            score += 100 if query in description else 0
+            score += 50 if service_hit else 0
+            score += sum((25 if term in lower_name else 0) + (10 if term in description else 0) for term in terms)
+            if score:
+                matches.append((score, name, spec))
     matches.sort(key=lambda item: (-item[0], item[1]))
-    selected = [item[2] for item in matches[:limit]]
-    enabled = tool_surface.append_visible(tools, selected)
     return {
-        "ok": True, "state": "discovered", "query": query,
-        "matched_tools": [spec["name"] for spec in selected], "newly_loaded_tools": enabled,
-        **({"message": "未找到匹配工具，请换用工具名、前缀或其他关键词。"} if not selected else {}),
+        "ok": True,
+        "tools": [{"name": spec["name"], "description": str(spec.get("description") or "")} for _, _, spec in matches[:limit]],
+        "total": len(matches), "has_more": len(matches) > limit,
+        **({"message": "未找到匹配工具，请换用服务名、工具名或其他关键词。"} if not matches else {}),
     }
+
+
+def enable_tools(call: ToolCall, *, enable_tool_groups, tools, tool_surface):
+    names = call.arguments.get("tools")
+    if not isinstance(names, list) or not 1 <= len(names) <= 20 or any(not isinstance(name, str) or not name.strip() for name in names):
+        return {"ok": False, "error": "invalid_tool_enable"}
+    names = list(dict.fromkeys(names))
+    catalog = {spec["name"]: spec for specs in enable_tool_groups.values() for spec in specs}
+    unknown = [name for name in names if name not in catalog]
+    if unknown:
+        return {"ok": False, "error": "unknown_tools", "tools": unknown}
+    newly_loaded = tool_surface.append_visible(tools, [catalog[name] for name in names])
+    if tool_surface.store is not None:
+        tool_surface.store.enable_transcript_tools(names)
+    return {"ok": True, "enabled_tools": names, "newly_loaded_tools": newly_loaded}

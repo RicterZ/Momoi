@@ -813,3 +813,8 @@ CREATE TABLE IF NOT EXISTS replyer_history_windows (
     channel TEXT PRIMARY KEY,
     rows_json TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS transcript_enabled_tools (
+    name TEXT PRIMARY KEY,
+    position INTEGER NOT NULL
+);

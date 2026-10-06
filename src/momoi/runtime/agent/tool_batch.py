@@ -20,7 +20,7 @@ from ...tools.validation import validate_tool_arguments
 from .harness import TurnHarness
 from .protocol import assistant_history_message, parse_end_turn
 from .runtime_tools import (
-    begin_heartbeat, search_tools, recall_owner_context, record_heartbeat_activity,
+    begin_heartbeat, search_tools, enable_tools, recall_owner_context, record_heartbeat_activity,
 )
 from .workflow import AgentWorkflow, TurnExecutionSpec
 
@@ -454,8 +454,12 @@ class ToolBatchExecutor:
                 result = search_tools(
                     call,
                     enable_tool_groups=request.enable_tool_groups,
-                    tools=request.tools,
                     tool_surface=self.tool_surface,
+                )
+            elif call.name == "tool_enable":
+                result = enable_tools(
+                    call, enable_tool_groups=request.enable_tool_groups,
+                    tools=request.tools, tool_surface=self.tool_surface,
                 )
             elif call.name == "read_tool_result":
                 result = self.tool_results.read(

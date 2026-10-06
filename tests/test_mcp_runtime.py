@@ -10,7 +10,7 @@ from momoi.config.manager import ConfigurationManager
 from momoi.config.workspace import atomic_write, bootstrap
 from momoi.mcp.manager import MCPManager
 from momoi.models import ToolCall
-from momoi.runtime.agent.runtime_tools import search_tools
+from momoi.runtime.agent.runtime_tools import enable_tools
 from momoi.runtime.agent.tool_surface import ToolSurface
 from momoi.runtime.supervisor import RuntimeSupervisor
 from tests.test_dashboard_configuration import FakeDaemon, LLM
@@ -106,7 +106,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         first = self.runtime.daemon
         first_sessions = list(self.opened)
         tools = first.surface.conversation_specs()
-        enabled = search_tools(ToolCall("search", "tool_search", {"query": "mcp__removed__work", "limit": 1}),
+        enabled = enable_tools(ToolCall("enable", "tool_enable", {"tools": ["mcp__removed__work"]}),
                                enable_tool_groups=first.surface.mcp_server_groups(), tools=tools,
                                tool_surface=first.surface)
         self.assertTrue(enabled["ok"])
@@ -125,7 +125,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(session in self.closed for session in first_sessions))
         current = self.runtime.daemon
         specs = {spec["name"]: spec for spec in current.surface.conversation_specs()}
-        index = specs["tool_search"]["description"]
+        index = current.surface.tool_index()
         for name in ("changed", "new group", "stable"):
             self.assertIn(f"- {name}:", index)
         self.assertIn("Updated description", index)

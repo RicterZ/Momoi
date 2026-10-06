@@ -163,7 +163,7 @@ def heartbeat_begin_spec() -> dict[str, Any]:
     return {
         "name": "heartbeat_begin",
         "description": (
-            '开始所选自主活动；需要外部工具时通过 tool_search 搜索并加载。'
+            '开始所选自主活动；需要外部工具时用 tool_search 查找候选，再用 tool_enable 加载选定工具。'
         ),
         "input_schema": {
             "type": "object",

@@ -145,6 +145,7 @@ class MomoiDaemon(
             voice_enabled=self.services.tts is not None,
             exec_enabled=config.exec_enabled,
             emotion_catalog=lambda: bool(self.store.emotion_context().strip()),
+            store=self.store,
         )
         self.delivery_policy = DeliveryPolicy(config, self.store)
         self.tool_executor = ToolExecutor(

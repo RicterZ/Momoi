@@ -13,6 +13,7 @@ from ..episode.episode_claims import render_verified_claims
 
 from ..agenda.plans import PLAN_SCHEMA
 from ..conversation.replyer import REPLYER_HISTORY_SCHEMA
+from ..conversation.tool_discovery import TOOL_DISCOVERY_SCHEMA
 
 
 def _add_task_plans(database):
@@ -665,6 +666,10 @@ def _add_scoped_memory_activation(database: sqlite3.Connection) -> None:
         database.execute(statement)
 
 
+def _add_tool_discovery(database):
+    database.execute(TOOL_DISCOVERY_SCHEMA)
+
+
 def _add_replyer_history_windows(database: sqlite3.Connection) -> None:
     database.execute(REPLYER_HISTORY_SCHEMA)
 
@@ -700,6 +705,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _remove_episode_salience,
     _add_episode_relation_reviews,
     _add_replyer_history_windows,
+    _add_tool_discovery,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

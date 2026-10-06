@@ -54,6 +54,7 @@ from .conversation.conversation_views import ConversationViewStore
 from .core.timestamps import context_timestamp
 from .conversation.transcripts import TranscriptStore
 from .conversation.replyer import ReplyerHistoryStore
+from .conversation.tool_discovery import ToolDiscoveryStore
 from .episode.episode_queries import EpisodeQueryStore
 from .episode.episode_index import EpisodeIndexStore
 from .agenda.notifications import NotificationStore
@@ -100,6 +101,7 @@ class Store(
     ConversationViewStore,
     TranscriptStore,
     ReplyerHistoryStore,
+    ToolDiscoveryStore,
     EpisodeQueryStore,
     EpisodeIndexStore,
     NotificationStore,

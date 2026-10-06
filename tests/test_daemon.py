@@ -1053,8 +1053,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn("mcp__demo__read", names)
                         call = ToolCall(
                             "enable-demo",
-                            "tool_search",
-                            {"query": "mcp__demo__read", "limit": 1},
+                            "tool_enable",
+                            {"tools": ["mcp__demo__read"]},
                         )
                     elif provider_self.calls == 2:
                         self.assertIn("mcp__demo__read", names)

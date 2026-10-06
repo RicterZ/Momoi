@@ -19,6 +19,7 @@ from ..tool_contracts.conversation import (
 from ..tool_contracts.runtime import (
     READ_TOOL_RESULT_SPEC,
     tool_search_spec,
+    TOOL_ENABLE_SPEC,
 )
 from ..tool_contracts.plan import PLAN_TOOLS, PLAN_STEP_FINISH
 from .progress import public_tool_spec
@@ -31,8 +32,9 @@ logger = logging.getLogger("momoi.runtime.turns")
 class ToolSurface:
     """Projects the tool catalog exposed to each workflow."""
 
-    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False, exec_enabled: bool = False, emotion_catalog: Callable[[], bool] | None = None):
+    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False, exec_enabled: bool = False, emotion_catalog: Callable[[], bool] | None = None, store: Any = None):
         self.mcp = mcp
+        self.store = store
         self.channel_names = list(channels)
         self.voice_enabled = voice_enabled
         self.emotion_catalog = emotion_catalog or (lambda: True)
@@ -64,6 +66,14 @@ class ToolSurface:
             else ""
         )
         return description or f"{group} 提供的外部 MCP 工具。"
+
+    def tool_index(self) -> str:
+        groups = self.mcp_server_groups()
+        if not groups:
+            return ""
+        return "工具索引：\n" + "\n".join(
+            f"- {group}: {self.mcp_group_description(group)}" for group in groups
+        ) + "\n通过 tool_search 查找候选名称与描述，再用 tool_enable 批量加载选定工具。"
 
     @staticmethod
     def _schema_tokens(specs: list[dict[str, Any]]) -> int:
@@ -122,13 +132,13 @@ class ToolSurface:
                 spec for specs in groups.values() for spec in specs
                 if spec.get("name") == "mcp__brave-search__brave_web_search"
             ],
-            *([tool_search_spec([
-                {"name": group, "description": self.mcp_group_description(group)}
-                for group in groups
-            ])] if groups else []),
+            *([tool_search_spec(), copy.deepcopy(TOOL_ENABLE_SPEC)] if groups else []),
             current_state_finish_spec(),
             copy.deepcopy(END_TURN_TOOL_SPEC),
         ]
+        catalog = {spec["name"]: spec for specs in groups.values() for spec in specs}
+        if self.store is not None:
+            self.append_visible(tools, [catalog[name] for name in self.store.transcript_enabled_tools() if name in catalog])
         self._log_conversation_surface(tools)
         return tools
 
@@ -147,6 +157,7 @@ class ToolSurface:
             "recall",
             "episode_relations",
             "tool_search",
+            "tool_enable",
             "end_turn",
             *shared,
             *agenda,
@@ -161,6 +172,7 @@ class ToolSurface:
                 {
                     "heartbeat_begin",
                     "tool_search",
+                    "tool_enable",
                     "recall",
                     "episode_relations",
                     "heartbeat_activity",
@@ -187,6 +199,7 @@ class ToolSurface:
                     "send_bubbles",
                     "read_tool_result",
                     "tool_search",
+                    "tool_enable",
                     "end_turn",
                     *external,
                 }

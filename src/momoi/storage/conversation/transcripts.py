@@ -136,6 +136,9 @@ class TranscriptStore:
                ORDER BY t.updated_at DESC, t.id DESC LIMIT 1"""
         ).fetchone()
         if latest is None:
+            if force_compact:
+                with self._db:
+                    self._db.execute("DELETE FROM transcript_enabled_tools")
             return minimum_turns
         # An existing Turn may be updated after completion (reply follow-ups
         # do this). Its updated_at moving forward must not grow the window.
@@ -190,6 +193,8 @@ class TranscriptStore:
                    WHERE id=1""",
                 (current, latest["id"], latest["updated_at"], visible_total),
             )
+            if compacted:
+                self._db.execute("DELETE FROM transcript_enabled_tools")
         if compacted:
             memory_state = self._db.execute(
                 "SELECT data_json FROM transcript_memory_state WHERE id=1"
