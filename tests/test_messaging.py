@@ -1293,9 +1293,9 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
             await daemon._complete_batch([event], turn_id)
             request = json.dumps(provider.system, ensure_ascii=False)
-            self.assertIn("happy-1", request)
-            self.assertIn("proud-1", request)
-            self.assertIn("真心高兴或庆祝时使用", request)
+            self.assertNotIn("happy-1", request)
+            self.assertNotIn("proud-1", request)
+            self.assertNotIn("真心高兴或庆祝时使用", request)
             self.assertNotIn(str(asset), request)
             self.assertEqual(
                 daemon.delivery_policy.validate_emotions(["emotion://missing"]),
@@ -1316,13 +1316,13 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             first = daemon.store.due_outbox()[0]
             self.assertEqual(first.kind, "text")
             daemon.store.mark_sent(first.id)
-            second_text = daemon.store.due_outbox()[0]
-            self.assertEqual(second_text.text, "这次我可厉害了")
-            daemon.store.mark_sent(second_text.id)
             image = daemon.store.due_outbox()[0]
             self.assertEqual(image.kind, "image")
             self.assertEqual(image.media_path, str(asset.resolve()))
             daemon.store.mark_sent(image.id)
+            second_text = daemon.store.due_outbox()[0]
+            self.assertEqual(second_text.text, "这次我可厉害了")
+            daemon.store.mark_sent(second_text.id)
             second_image = daemon.store.due_outbox()[0]
             self.assertEqual(second_image.kind, "image")
             self.assertEqual(second_image.media_path, str(second_asset.resolve()))

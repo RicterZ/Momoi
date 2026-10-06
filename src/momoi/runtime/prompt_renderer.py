@@ -4,7 +4,6 @@ from typing import Any
 from ..tools.contracts.agenda import AGENDA_TOOL_POLICY
 from ..observability.events import log_event
 from ..mcp.prompt import MCP_TOOL_POLICY
-from ..storage.delivery.emotions import EMOTION_REACTION_POLICY
 from ..tools.contracts.memory import MEMORY_TOOL_POLICY
 from ..tools.contracts.thinking import THINKING_TOOL_POLICY
 from ..tools.contracts.images import IMAGE_TOOL_POLICY
@@ -103,22 +102,6 @@ class PromptRenderer:
                         "cache_control": {"type": "ephemeral"},
                     }
                 )
-        # Keep the catalog as its own cached system block so editing stickers does
-        # not invalidate the large Soul/contract prefix. The reaction guidance
-        # travels with the catalog: with no catalog there is nothing to reference,
-        # so neither the slugs nor the instruction to use them is injected.
-        emotions = self.store.emotion_context()
-        if emotions.strip():
-            blocks.append(
-                {
-                    "type": "text",
-                    "text": _sections(
-                        ("emotion_catalog", emotions),
-                        ("emotion_reactions", EMOTION_REACTION_POLICY),
-                    ),
-                    "cache_control": {"type": "ephemeral"},
-                }
-            )
         surface = getattr(self, "tool_surface", None)
         index = surface.tool_index() if surface is not None else ""
         if index:

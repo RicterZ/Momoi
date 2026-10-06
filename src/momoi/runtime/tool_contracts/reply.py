@@ -24,10 +24,8 @@ REPLY_TOOL_SPEC = {
                      "description": "发送形式：text 为文字气泡，voice 为语音；可用能力见工具描述。"},
             "attachments": {
                 "type": "array", "minItems": 1,
-                "description": "随文字回应发送的媒体、附件或表情，原样交给发送层；不放普通发言文本，仅用于 mode=text。",
+                "description": "随文字回应发送的媒体或附件，原样交给发送层；不放普通发言文本，仅用于 mode=text。",
                 "items": {"oneOf": [
-                    {"type": "string", "pattern": "^emotion://[a-zA-Z0-9_-]+$",
-                     "description": "表情目录中真实存在的 emotion:// 标识。"},
                     *MEDIA_BUBBLE_SCHEMA,
                 ]},
             },

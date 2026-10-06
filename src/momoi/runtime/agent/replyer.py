@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from ...integrations.request_context import model_request
 from ...observability.context import log_context, new_trace_id, current_log_context
 from ...storage import estimate_tokens
+from ...storage.delivery.emotions import EMOTION_REACTION_POLICY
 from ..transcript.replyer import visible_dialogue
 
 
@@ -28,6 +29,11 @@ class Replyer:
         mode = call.arguments.get("mode", "text")
         if mode not in {"text", "voice"}:
             raise ValueError("invalid reply mode")
+        if mode == "text":
+            emotions = self.store.emotion_context()
+            if emotions.strip():
+                system += "\n\n<emotion_catalog>\n" + emotions + "\n</emotion_catalog>\n" + EMOTION_REACTION_POLICY
+                system += "\n选用表情时，将 emotion:// 标识单独作为一个气泡，用空行与文字分隔；只能使用目录中的标识。"
         expression = (
             "只输出适合朗读的一段实际发言；使用自然口语，不包含 Markdown、颜文字、表情标记、媒体路径或气泡分隔。"
             if mode == "voice" else "只输出实际发言，用空行分隔气泡。"

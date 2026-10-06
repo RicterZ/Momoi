@@ -44,7 +44,7 @@ def test_replyer_isolated_request_and_actual_speech(tmp_path):
     (tmp_path / 'REPLYER.md').write_text('测试表达')
     config = SimpleNamespace(soul_prompt_path=tmp_path / 'SOUL.md', soul_prompt='fallback',
                              timezone='UTC', thinking_stages={'replyer': 'low'})
-    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock())
+    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), emotion_context=lambda: "")
     channel = SimpleNamespace(name='test', content_blocks=lambda segments: [{'type': 'image', 'source': {'type': 'url', 'url': 'https://example.invalid/image'}}])
     request = SimpleNamespace(turn_id='turn', round_number=2, delivery_channel=channel,
                              current_events=[IncomingMessage('e', 'e', '测试图片', 1, 1, ({'type': 'image'},))])
@@ -166,7 +166,7 @@ def test_replyer_window_migrates_existing_database(tmp_path):
 @pytest.mark.parametrize("mode", ["text", "voice"])
 def test_replyer_receives_mode_and_voice_is_one_utterance(mode):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
-    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock())
+    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), emotion_context=lambda: "")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[],
                               turn_id="turn", round_number=1)
 
@@ -189,10 +189,10 @@ def test_reply_attachments_schema_preserves_media_but_rejects_voice_and_plain_st
     from momoi.tools.validation import validate_tool_arguments
     schema = REPLY_TOOL_SPEC["input_schema"]
     media = {"segments": [{"type": "image", "data": {"file": "/tmp/image.png"}}]}
-    args = {"intent": "发图", "reference": "", "attachments": [media, "emotion://normal"]}
+    args = {"intent": "发图", "reference": "", "attachments": [media]}
     normalized, error = validate_tool_arguments("reply", args, schema)
     assert error is None and normalized == args
-    for invalid in ({**args, "mode": "voice"}, {**args, "attachments": ["完整发言绕过生成"]},
+    for invalid in ({**args, "mode": "voice"}, {**args, "attachments": ["完整发言绕过生成"]}, {**args, "attachments": ["emotion://normal"]},
                     {**args, "attachments": [{"segments": [{"type": "text", "data": {"text": "绕过生成"}}]}]}):
         assert validate_tool_arguments("reply", invalid, schema)[1] is not None
 
@@ -248,3 +248,17 @@ def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
         assert rounds == 2
     finally:
         daemon.store.close()
+
+
+@pytest.mark.parametrize("mode", ["text", "voice"])
+def test_emotion_catalog_belongs_to_replyer_text_only(mode):
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
+    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
+                            emotion_context=lambda: "emotion://happy 开心时使用")
+    request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[], turn_id="t", round_number=1)
+    async def complete(system, messages, tools):
+        assert ("<emotion_catalog>" in system) == (mode == "text")
+        return ProviderResponse([{"type": "text", "text": "开心！\n\nemotion://happy\n\n下一句" if mode == "text" else "开心！"}], [])
+    actual = asyncio.run(Replyer(config, store, SimpleNamespace(complete=complete)).generate(
+        ToolCall("c", "reply", {"intent": "回应", "reference": "", "mode": mode}), request))
+    assert actual == (["开心！", "emotion://happy", "下一句"] if mode == "text" else ["开心！"])

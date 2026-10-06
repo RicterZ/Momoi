@@ -135,7 +135,7 @@ def reply_call(identifier, *, bubbles=None, text=None, mode="text", channel=None
     """Script a Planner dispatch with separately generated speech for delivery tests."""
     import json
     content = bubbles if bubbles is not None else [text]
-    speech = [value for value in content if isinstance(value, str) and not value.startswith("emotion://")]
+    speech = [value for value in content if isinstance(value, str) ]
     attachments = [value for value in content if value not in speech]
     arguments = {"intent": "测试回应", "reference": json.dumps(speech, ensure_ascii=False), "mode": mode}
     if channel:

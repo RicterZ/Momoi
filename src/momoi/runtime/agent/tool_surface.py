@@ -114,8 +114,6 @@ class ToolSurface:
             "type": "string", "enum": self.channel_names,
             "description": "目标渠道；省略时回复当前消息所在渠道。",
         }
-        if not self.emotion_catalog():
-            reply_spec["input_schema"]["properties"]["attachments"]["items"]["oneOf"].pop(0)
         if not self.voice_enabled:
             reply_spec["input_schema"]["properties"]["mode"]["enum"] = ["text"]
         tools = [
