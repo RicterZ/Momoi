@@ -15,8 +15,9 @@ try {
     Install-App (Join-Path $Evidence 'install.log')
     # Record logical file sizes before startup creates user data and caches.
     $Sizes = @{}
+    $SizeRoot = (Get-Item $Target).FullName
     Get-ChildItem $Target -File -Recurse | ForEach-Object {
-        $Relative = $_.FullName.Substring($Target.Length + 1).Replace('\', '/')
+        $Relative = [System.IO.Path]::GetRelativePath($SizeRoot, $_.FullName).Replace('\', '/')
         $Group = if ($Relative.StartsWith('models/')) { 'BGE model' }
         elseif ($Relative.StartsWith('runtime/python/')) { 'Python and dependencies' }
         elseif ($Relative.StartsWith('runtime/napcat/')) { 'NapCat and QQ (including Node)' }
