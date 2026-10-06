@@ -566,8 +566,8 @@
   text-decoration: underline;
   text-underline-offset: 4px;
 }
-.settings-disabled-toggle[aria-expanded="true"] .recall-panel-toggle::before {
-  content: "−";
+.settings-disabled-toggle[aria-expanded="true"] .recall-panel-toggle::after {
+  display: none;
 }
 .settings-disabled:has(+ div:not([hidden])) {
   margin-bottom: 24px;
@@ -851,8 +851,8 @@
   background: var(--surface);
   box-shadow: 3px 3px 0 var(--blue);
 }
-.settings-disclosure[open] > summary .recall-panel-toggle::before {
-  content: "−";
+.settings-disclosure[open] > summary .recall-panel-toggle::after {
+  display: none;
 }
 @media (max-width: 650px) {
   .settings-form-body {

@@ -1758,22 +1758,31 @@ a.tag:hover {
 }
 
 .recall-panel-toggle {
-  display: grid;
+  position: relative;
+  display: block;
+  flex-shrink: 0;
   width: 28px;
   height: 28px;
-  place-items: center;
   border: 2px solid var(--ink);
   border-radius: 7px;
   background: var(--surface);
   box-shadow: 2px 2px 0 var(--pink);
 }
-.recall-panel-toggle::before {
-  content: "+";
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1;
+.recall-panel-toggle::before,
+.recall-panel-toggle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 2px;
+  background: var(--ink);
+  transform: translate(-50%, -50%);
 }
-.recall-panel[open] .recall-panel-toggle::before { content: "−"; }
+.recall-panel-toggle::after {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+.recall-panel[open] .recall-panel-toggle::after { display: none; }
 
 .recall-panel-body,
 .settings-form-body {
