@@ -36,7 +36,10 @@ console.log('PASS');
 process.env.MOMOI_NAPCAT_RUNTIME = process.argv[1];
 process.env.MOMOI_QQ_DATA = process.argv[2];
 const util = { getNTUserDataInfoConfig: () => 'system' };
-process.dlopen = module => { module.exports = { NodeQQNTWrapperUtil: { getNTUserDataInfoConfig: () => 'system' } }; };
+process.dlopen = module => {
+  const nativeUtil = Object.freeze({ getNTUserDataInfoConfig: () => 'system' });
+  module.exports = Object.freeze({ NodeQQNTWrapperUtil: nativeUtil });
+};
 require(process.argv[3]);
 import(require('node:url').pathToFileURL(require('node:path').join(process.argv[1], 'napcat', 'napcat.mjs')).href);
 '''

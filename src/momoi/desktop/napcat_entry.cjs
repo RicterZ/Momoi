@@ -19,8 +19,13 @@ process.dlopen = function (module, filename, ...args) {
     if (!util || typeof util.getNTUserDataInfoConfig !== 'function') {
       throw new Error('Unsupported NapCat native data-directory API');
     }
-    Object.defineProperty(util, 'getNTUserDataInfoConfig', { value: () => data, configurable: true });
-    if (util.getNTUserDataInfoConfig() !== data) throw new Error('Cannot isolate QQ data');
+    // Native exports are non-configurable. Shadow on facades instead of mutating them.
+    const managedUtil = Object.create(util);
+    Object.defineProperty(managedUtil, 'getNTUserDataInfoConfig', { value: () => data });
+    const managedExports = Object.create(module.exports);
+    Object.defineProperty(managedExports, 'NodeQQNTWrapperUtil', { value: managedUtil });
+    module.exports = managedExports;
+    if (module.exports.NodeQQNTWrapperUtil.getNTUserDataInfoConfig() !== data) throw new Error('Cannot isolate QQ data');
     fs.writeFileSync(path.join(data, '.native-data-ready'), data, { mode: 0o600 });
   }
   return result;
