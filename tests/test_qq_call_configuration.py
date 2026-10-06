@@ -30,3 +30,19 @@ def test_asr_registered_and_defaults():
     assert adapter.schema['engine']['default'] == '16k_zh'
     assert adapter.schema['secret_key']['secret']
     assert adapter.test is not None
+
+
+def test_phone_reuses_connection_token_without_storing_it_twice():
+    token = 'connection-secret-' * 3
+    channel = {'url': 'ws://localhost', 'owner_qq': '123456', 'access_token': token,
+               'voice_call': {'enabled': True, 'bridge_url': 'http://localhost:6112', 'bridge_token': ''}}
+    assert NapCatConfig.from_mapping(channel).voice_call.bridge_token == token
+    channel['voice_call']['bridge_token'] = token
+    masked = redact(channel)
+    assert masked['voice_call']['bridge_token'] == ''
+    restored = restore_secrets(masked, channel)
+    assert NapCatConfig.from_mapping(restored).voice_call.bridge_token == token
+    independent = 'independent-secret-' * 3
+    channel['voice_call']['bridge_token'] = independent
+    assert redact(channel)['voice_call']['bridge_token'] == {'$secret': 'keep'}
+    assert NapCatConfig.from_mapping(channel).voice_call.bridge_token == independent

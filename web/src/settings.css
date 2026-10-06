@@ -1221,3 +1221,34 @@
 .setup-guide { padding: 20px 24px; margin-bottom: 18px; border: 2px solid var(--ink); background: var(--surface); }
 .setup-guide strong { font-size: 16px; }
 .setup-guide p { margin: 10px 0 0; line-height: 1.7; }
+
+.settings-voice-grid:not([hidden]) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.settings-voice-column { min-width: 0; padding-right: 24px; }
+.settings-voice-column + .settings-voice-column {
+  padding: 0 0 0 24px;
+  border-left: 2px solid var(--ink);
+}
+.settings-voice-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.settings-voice-heading h3 { margin: 0; font-size: 15px; }
+.settings-voice-column .settings-fields { grid-template-columns: minmax(0, 1fr); }
+.settings-channel-column .settings-qq-call { margin-top: 24px; }
+@media (max-width: 650px) {
+  .settings-voice-grid:not([hidden]) { grid-template-columns: minmax(0, 1fr); }
+  .settings-voice-column { padding: 0; }
+  .settings-voice-column + .settings-voice-column {
+    margin-top: 24px;
+    padding: 24px 0 0;
+    border-left: 0;
+    border-top: 2px solid var(--ink);
+  }
+}

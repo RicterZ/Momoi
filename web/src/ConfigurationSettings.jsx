@@ -33,7 +33,7 @@ const modules = [
     id: "voice",
     label: "语音交流",
     icon: "voice",
-    names: ["asr", "tts"],
+    names: ["tts", "asr"],
     optional: true,
     tip: "语音识别与合成分别启用。腾讯 ASR 用于 QQ 电话；普通 QQ 语音消息仍使用原生转写。",
   },
@@ -907,6 +907,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
           )}
           <div
             id={configurationId}
+            className={module.id === "voice" ? "settings-voice-grid" : undefined}
             hidden={!draft.enabled && !showDisabled}
           >
             {names.map((name) => {
@@ -960,7 +961,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
                 );
               };
               return (
-                <div key={name}>
+                <div key={name} className={module.id === "voice" ? "settings-voice-column" : undefined}>
                   {names.length > 1 && <header className="settings-voice-heading">
                     <h3>{name === "asr" ? "语音识别" : "语音合成"}</h3>
                     <Toggle checked={value.enabled} disabled={saving || !draft.enabled}
@@ -1371,7 +1372,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                     <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "内置组件自动生成；外部 NapCat 填写其 WebSocket 令牌。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
                     <OptionField name="owner_qq" spec={{ type: "string", label: "主人 QQ" }} value={options.owner_qq} onChange={value => edit(name, { ...options, owner_qq: value })} />
                   </Fields>
-                  <QQCallSettings value={options.voice_call || {}} disabled={busy || loginActive} status={qqCall}
+                  <QQCallSettings accessToken={options.access_token} value={options.voice_call || {}} disabled={busy || loginActive} status={qqCall}
                     onChange={voice_call => edit(name, { ...options, voice_call })} />
                   <DesktopQQ botQQ={options.bot_qq} ownerQQ={options.owner_qq} connected={qqConnected} disabled={busy || loginActive} onConnection={connectDesktopQQ} />
                   </div>
@@ -1813,7 +1814,8 @@ export default function ConfigurationSettings({
 }
 
 
-function QQCallSettings({ value, disabled, status, onChange }) {
+function QQCallSettings({ value, accessToken, disabled, status, onChange }) {
+  const [independentToken, setIndependentToken] = useState(Boolean(value.bridge_token));
   const [test, setTest] = useState(null);
   const [testing, setTesting] = useState(false);
   const labels = { disabled: "已关闭", unavailable: "未就绪", idle: "待机", ringing: "来电", accepting: "接听中", accepted: "接听中", connected: "通话中", ended: "已结束", error: "异常" };
@@ -1821,7 +1823,7 @@ function QQCallSettings({ value, disabled, status, onChange }) {
     setTesting(true);
     try {
       const response = await fetch("/api/settings/channels/napcat/voice-call/test", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...value, access_token: accessToken }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "测试失败");
@@ -1830,12 +1832,14 @@ function QQCallSettings({ value, disabled, status, onChange }) {
     finally { setTesting(false); }
   }
   function edit(key, next) { setTest(null); onChange({ ...value, [key]: next }); }
-  return <Disclosure title="语音电话" description="Linux 通话版 NapCat · 仅接主人来电">
+  return <Disclosure className="settings-qq-call" title="语音电话" description="Linux 通话版 NapCat · 仅接主人来电">
     <Toggle checked={Boolean(value.enabled)} disabled={disabled} onChange={v => edit("enabled", v)}>启用语音电话</Toggle>
     <p className="settings-channel-note">主人 QQ 和声音复用已有配置。需要另行启用 ASR 与 TTS。状态：{labels[status?.phase || "disabled"] || "未就绪"}{status?.error ? ` · ${status.error}` : ""}</p>
+    <Toggle checked={!independentToken} disabled={disabled}
+      onChange={reuse => { setIndependentToken(!reuse); edit("bridge_token", ""); }}>复用 QQ 连接令牌</Toggle>
     <Fields as="div" disabled={disabled}>
       <OptionField name="bridge_url" spec={{ type: "string", label: "Bridge 地址", default: "", description: "例如 http://napcat-call:6112" }} value={value.bridge_url} onChange={v => edit("bridge_url", v)} />
-      <OptionField name="bridge_token" spec={{ type: "string", label: "认证 Token", secret: true }} value={value.bridge_token} onChange={v => edit("bridge_token", v)} />
+      {independentToken && <OptionField name="bridge_token" spec={{ type: "string", label: "认证 Token", secret: true }} value={value.bridge_token} onChange={v => edit("bridge_token", v)} />}
       <OptionField name="request_timeout_seconds" spec={{ type: "number", label: "控制请求超时（秒）", default: 5 }} value={value.request_timeout_seconds} onChange={v => edit("request_timeout_seconds", Number(v))} />
     </Fields>
     <button type="button" className="quiet-button settings-button" disabled={disabled || testing} onClick={probe}>{testing ? "测试中…" : "测试连接"}</button>

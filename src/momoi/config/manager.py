@@ -50,6 +50,10 @@ class RevisionConflict(ConfigError):
 
 def redact(value, *, credential=False):
     if isinstance(value, dict):
+        phone = value.get("voice_call")
+        if isinstance(phone, dict) and value.get("access_token") and phone.get("bridge_token") == value["access_token"]:
+            value = {**value, "voice_call": {**phone, "bridge_token": ""}}
+
         return {
             key: (
                 copy.deepcopy(KEEP_SECRET)

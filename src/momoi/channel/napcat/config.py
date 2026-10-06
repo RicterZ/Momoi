@@ -11,14 +11,14 @@ class QQCallConfig:
     request_timeout_seconds: float = 5
 
     @classmethod
-    def from_mapping(cls, value):
+    def from_mapping(cls, value, *, access_token=""):
         if not isinstance(value, dict) or value.keys() - {"enabled", "bridge_url", "bridge_token", "request_timeout_seconds"}:
             raise ValueError("invalid napcat voice_call configuration")
         enabled = value.get("enabled", False)
         if type(enabled) is not bool:
             raise ValueError("voice_call.enabled must be boolean")
         url = value.get("bridge_url", "")
-        token = value.get("bridge_token", "")
+        token = value.get("bridge_token", "") or access_token
         if not isinstance(url, str) or not isinstance(token, str):
             raise ValueError("voice_call address and token must be strings")
         url = url.rstrip("/")
@@ -79,7 +79,8 @@ class NapCatConfig:
             url=url,
             access_token=str(value.get("access_token") or ""),
             bot_qq=bot_qq,
-            voice_call=QQCallConfig.from_mapping(value.get("voice_call", {})),
+            voice_call=QQCallConfig.from_mapping(value.get("voice_call", {}),
+                access_token=str(value.get("access_token") or "")),
             owner_qq=owner_qq,
             quiet_seconds=positive("quiet_seconds", 1),
             max_batch_seconds=positive("max_batch_seconds", 60),
