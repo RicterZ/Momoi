@@ -35,6 +35,10 @@ class SendRejected(ChannelError):
     pass
 
 
+class SendInterrupted(SendRejected):
+    """Delivery stopped because its user/session context was superseded."""
+
+
 @dataclass(frozen=True)
 class IncomingVoice:
     message_id: str = ""

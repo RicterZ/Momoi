@@ -14,11 +14,13 @@ from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
 
 async def stop_process(process):
     if process and process.returncode is None:
-        process.terminate()
+        with contextlib.suppress(ProcessLookupError):
+            process.terminate()
         try:
             await asyncio.wait_for(process.wait(), 2)
         except asyncio.TimeoutError:
-            process.kill()
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
             await process.wait()
 
 
@@ -73,13 +75,15 @@ class MediaBroker:
 
     async def invalidate(self):
         self.generation += 1
-        await stop_process(self.play_process)
-        await stop_process(self.capture)
+        # Invalidate delivery immediately, then cancel the reader before stopping
+        # its process. Normal hangup must not turn EOF into permanent disarming.
+        self.session_id = ''
         if self.capture_task:
             self.capture_task.cancel()
             await asyncio.gather(self.capture_task, return_exceptions=True)
+        await stop_process(self.play_process)
+        await stop_process(self.capture)
         self.capture_task = self.capture = None
-        self.session_id = ''
 
     async def send_status(self):
         if self.ws is not None and not self.ws.closed:
@@ -116,17 +120,24 @@ class MediaBroker:
             await asyncio.sleep(0.75)
 
     async def capture_audio(self, session_id):
+        process = None
         try:
-            self.capture = await asyncio.create_subprocess_exec('parec', '--raw',
+            process = await asyncio.create_subprocess_exec('parec', '--raw',
                 '--device=maibot_qq_speaker.monitor', '--format=s16le', '--rate=16000', '--channels=1',
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            self.capture = process
             while self.session_id == session_id and self.ws is not None and not self.ws.closed:
-                frame = await self.capture.stdout.readexactly(640)
+                frame = await process.stdout.readexactly(640)
                 await asyncio.wait_for(self.ws.send_bytes(frame), 2)
         except (OSError, ConnectionError, asyncio.IncompleteReadError, asyncio.TimeoutError):
-            self.armed = False
+            # Unexpected capture failures close the connection so Momoi can
+            # reconnect and re-arm, rather than leave a silently disabled socket.
+            if self.session_id == session_id and self.ws is not None and not self.ws.closed:
+                await self.ws.close(code=1011, message=b'Audio capture failed')
         finally:
-            await stop_process(self.capture)
+            await stop_process(process)
+            if self.capture is process:
+                self.capture = None
 
     async def socket(self, request):
         if self.ws is not None and not self.ws.closed:
@@ -251,7 +262,9 @@ class MediaBroker:
                 self.play_process = None
             completed = played == len(pcm) and process.returncode == 0 and self.valid(session_id, generation)
             result = {'ok': completed, 'state': 'played' if completed else 'interrupted',
-                      'played_ms': round(played / 48), 'session_id': session_id}
+                      'played_ms': round(played / 48), 'session_id': session_id,
+                      'reason': None if completed else ('call_ended' if session_id != self.session_id
+                          else 'owner_speech' if generation != self.generation else 'playback_failed')}
             self.receipts[key] = result
             while len(self.receipts) > 128:
                 self.receipts.popitem(last=False)

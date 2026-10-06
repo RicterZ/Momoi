@@ -8,7 +8,7 @@ from collections import OrderedDict
 
 import aiohttp
 
-from ..channel import SendRejected
+from ..channel import SendInterrupted, SendRejected
 from ..integrations.contracts.asr import ASRError, AudioInput
 from ..models import IncomingMessage
 from ..observability.events import log_event
@@ -40,10 +40,12 @@ class QQCallChannel:
     def routing_context(self):
         return {'call_session_id': self.session_id, 'call_generation': self.generation}
 
-    def context_valid(self, context):
+    def session_valid(self, context):
         return bool(context and self.session_id and self.status.get('phase') == 'connected'
-                    and context.get('call_session_id') == self.session_id
-                    and context.get('call_generation') == self.generation)
+                    and context.get('call_session_id') == self.session_id)
+
+    def context_valid(self, context):
+        return self.session_valid(context) and context.get('call_generation') == self.generation
 
     def message_current(self, event):
         return self.context_valid(event.delivery_context)
@@ -53,8 +55,10 @@ class QQCallChannel:
         self.session_id = ''
         self.generation += 1
         self.segmenter.reset()
-        if old and self.interrupt:
-            self.interrupt('call_ended')
+        if old:
+            log_event(logger, logging.INFO, 'qq_call_session_ended', channel=self.name, session_id=old)
+            if self.interrupt:
+                self.interrupt('call_ended')
         while not self.queue.empty():
             self.queue.get_nowait()
 
@@ -87,14 +91,7 @@ class QQCallChannel:
                     self.generation = int(value.get('generation') or 0)
                 self.status = {k: value[k] for k in ('phase', 'ready', 'error', 'dependencies') if k in value}
             elif message.type == aiohttp.WSMsgType.BINARY and self.session_id:
-                started, pcm = self.segmenter.feed(message.data)
-                if started:
-                    self.generation += 1
-                    if self.interrupt:
-                        self.interrupt('owner_speech')
-                    if self.pending_stop:
-                        self.pending_stop.cancel()
-                    self.pending_stop = asyncio.create_task(self.stop_playback(self.routing_context()))
+                _, pcm = self.segmenter.feed(message.data)
                 if pcm:
                     item = (dict(self.routing_context()), wav_bytes(pcm))
                     if self.queue.full():
@@ -106,8 +103,11 @@ class QQCallChannel:
     async def transcribe(self, on_event):
         while True:
             context, audio = await self.queue.get()
-            if not self.context_valid(context):
+            if not self.session_valid(context):
                 continue
+            # Queued audio can predate a previous successful recognition; bind the
+            # ASR request to the current generation, not its capture generation.
+            context = dict(self.routing_context())
             started = time.monotonic()
             try:
                 text = await self.asr.transcribe(AudioInput(audio, 'wav'))
@@ -118,8 +118,22 @@ class QQCallChannel:
                 await self.ws.close()
                 return
             log_event(logger, logging.INFO, 'qq_call_asr', channel=self.name,
-                      session_id=context['call_session_id'], elapsed_ms=round((time.monotonic() - started) * 1000))
+                      session_id=context['call_session_id'], recognized=bool(text.strip()),
+                      elapsed_ms=round((time.monotonic() - started) * 1000))
             if text.strip() and self.context_valid(context):
+                self.generation += 1
+                context = dict(self.routing_context())
+                log_event(logger, logging.INFO, 'qq_call_interrupt', channel=self.name,
+                          session_id=self.session_id, generation=self.generation, reason='recognized_speech')
+                if self.interrupt:
+                    self.interrupt('owner_speech')
+                if self.pending_stop:
+                    self.pending_stop.cancel()
+                    await asyncio.gather(self.pending_stop, return_exceptions=True)
+                self.pending_stop = asyncio.create_task(self.stop_playback(context))
+                await self.pending_stop
+                if not self.context_valid(context):
+                    continue
                 event_id = 'qq-call:' + context['call_session_id'] + ':' + uuid.uuid4().hex
                 now = time.time()
                 await on_event(IncomingMessage(event_id, event_id, text.strip(), now, now,
@@ -162,11 +176,11 @@ class QQCallChannel:
 
     async def send_call_voice(self, audio, context, utterance_id):
         if not self.context_valid(context) or self.http is None:
-            raise SendRejected('Call ended or reply superseded')
+            raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
         if self.pending_stop:
             await self.pending_stop
         if not self.context_valid(context):
-            raise SendRejected('Call ended or reply superseded')
+            raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
         key = (context['call_session_id'], utterance_id)
         if key in self.sent:
             return self.sent[key]
@@ -186,8 +200,12 @@ class QQCallChannel:
         log_event(logger, logging.INFO, 'qq_call_playback', channel=self.name,
                   session_id=context['call_session_id'], state=result.get('state'),
                   elapsed_ms=round((time.monotonic() - started) * 1000), played_ms=result.get('played_ms', 0))
-        if not result.get('ok') or not self.context_valid(context):
-            raise SendRejected('Phone playback interrupted')
+        if not self.context_valid(context):
+            raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
+        if not result.get('ok'):
+            if result.get('reason') in {'owner_speech', 'call_ended'}:
+                raise SendInterrupted(result['reason'])
+            raise SendRejected('Phone playback failed')
         self.sent[key] = 'call:' + context['call_session_id'] + ':' + utterance_id
         while len(self.sent) > 128:
             self.sent.popitem(last=False)

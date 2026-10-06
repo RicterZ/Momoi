@@ -3,7 +3,7 @@ import logging
 import random
 from time import monotonic
 
-from ...channel import AmbiguousSend, NotConnected, SendRejected
+from ...channel import AmbiguousSend, NotConnected, SendInterrupted, SendRejected
 from ...observability.events import TRACE, log_event
 from ...observability.values import safe_preview
 from ...policies import DaemonPolicy
@@ -173,6 +173,14 @@ class OutboxWorker:
                         error_type=type(error).__name__,
                         duration_ms=int((monotonic() - send_started) * 1000),
                     )
+                except SendInterrupted as error:
+                    if row.kind == "voice":
+                        self.bubble_delivery.voice_audio.pop((row.turn_id, row.text), None)
+                    self.store.mark_failed(row.id, str(error))
+                    log_event(logger, logging.INFO, "outbox_interrupted", stage="delivery",
+                              turn_id=row.turn_id, channel=channel.name, outbox_id=row.id,
+                              attempt=attempt, reason=str(error),
+                              duration_ms=int((monotonic() - send_started) * 1000))
                 except SendRejected as error:
                     if row.kind == "voice":
                         self.bubble_delivery.voice_audio.pop((row.turn_id, row.text), None)

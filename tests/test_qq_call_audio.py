@@ -151,3 +151,123 @@ def test_status_reaches_connected_socket_even_when_socket_is_falsey():
         await broker.send_status()
         assert socket.received['type'] == 'status'
     asyncio.run(scenario())
+
+
+def test_empty_recognition_never_interrupts_and_valid_text_interrupts_once():
+    async def scenario():
+        recognized = asyncio.Event()
+        class ASR:
+            async def transcribe(self, audio):
+                if audio.data == b'noise':
+                    recognized.set()
+                    return '  '
+                return 'synthetic reply'
+        interruptions, stops, events = [], [], []
+        channel = QQCallChannel(SimpleNamespace(), '123', ASR(), tts_enabled=True,
+                                interrupt=interruptions.append)
+        channel.session_id = 'first'
+        channel.status = {'phase': 'connected'}
+        async def stop(context):
+            stops.append(dict(context))
+        channel.stop_playback = stop
+        arrived = asyncio.Event()
+        async def receive(event):
+            events.append(event)
+            arrived.set()
+        original = dict(channel.routing_context())
+        worker = asyncio.create_task(channel.transcribe(receive))
+        try:
+            await channel.queue.put((original, b'noise'))
+            await asyncio.wait_for(recognized.wait(), 1)
+            await asyncio.sleep(0)
+            assert interruptions == stops == events == []
+            assert channel.context_valid(original)
+            await channel.queue.put((original, b'speech'))
+            await asyncio.wait_for(arrived.wait(), 1)
+            assert interruptions == ['owner_speech']
+            assert len(stops) == 1 and len(events) == 1
+            assert events[0].delivery_context == channel.routing_context()
+            assert not channel.context_valid(original)
+            # A second queued segment from the same call must survive the first
+            # segment's generation change, rather than silently drop the message.
+            arrived.clear()
+            await channel.queue.put((original, b'speech'))
+            await asyncio.wait_for(arrived.wait(), 1)
+            assert len(events) == 2 and channel.generation == 2
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+    asyncio.run(scenario())
+
+
+def test_hangup_keeps_connection_armed_for_next_call(monkeypatch):
+    async def scenario():
+        reader = asyncio.StreamReader()
+        class Process:
+            returncode = None
+            stdout = reader
+            def terminate(self):
+                self.returncode = 0
+                reader.feed_eof()
+            async def wait(self):
+                return self.returncode
+        async def spawn(*args, **kwargs):
+            return Process()
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn)
+        broker = MediaBroker('x' * 32)
+        broker.ws = SimpleNamespace(closed=False)
+        broker.armed = True
+        broker.session_id = 'first'
+        broker.status = {'phase': 'connected'}
+        broker.capture_task = asyncio.create_task(broker.capture_audio('first'))
+        await asyncio.sleep(0)
+        assert broker.capture is not None
+        await broker.invalidate()
+        assert broker.armed
+        assert broker.session_id == '' and broker.capture is None
+        broker.session_id = 'second'
+        assert broker.valid('second', broker.generation)
+        assert not broker.valid('first', 0)
+    asyncio.run(scenario())
+
+
+def test_capture_failure_closes_socket_instead_of_leaving_disabled_connection(monkeypatch):
+    async def scenario():
+        class Socket:
+            closed = False
+            async def close(self, **kwargs):
+                self.closed = True
+        async def spawn(*args, **kwargs):
+            raise OSError('Synthetic audio device failure')
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn)
+        broker = MediaBroker('x' * 32)
+        broker.ws = Socket()
+        broker.armed = True
+        broker.session_id = 'first'
+        await broker.capture_audio('first')
+        assert broker.ws.closed
+        assert broker.capture is None
+    asyncio.run(scenario())
+
+
+def test_speech_detection_only_queues_audio_until_recognition():
+    async def scenario():
+        from aiohttp import WSMessage, WSMsgType
+        class Socket:
+            def __aiter__(self):
+                async def messages():
+                    for frame in [VOICE] * 8 + [SILENCE] * 35:
+                        yield WSMessage(WSMsgType.BINARY, frame, '')
+                return messages()
+        interruptions = []
+        channel = QQCallChannel(SimpleNamespace(), '123', object(), tts_enabled=True,
+                                interrupt=interruptions.append)
+        channel.session_id = 'first'
+        channel.status = {'phase': 'connected'}
+        channel.ws = Socket()
+        await channel.receive_audio(None)
+        assert channel.queue.qsize() == 1
+        assert channel.generation == 0
+        assert interruptions == []
+        assert channel.pending_stop is None
+    asyncio.run(scenario())
