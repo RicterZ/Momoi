@@ -40,6 +40,7 @@ def prepare(stage: Path, archive: Path) -> None:
     notices = stage / 'licenses/napcat'
     notices.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT / 'packaging/windows/napcat-LICENSE', notices / 'LICENSE')
+    shutil.copy2(ROOT / 'packaging/windows/napcat-node-LICENSE', notices / 'Node-v22.11.0-LICENSE')
     (notices / 'SOURCE.txt').write_text('NapCat © 2024 Mlikiowa\nSource: https://github.com/NapNeko/NapCatQQ/tree/' + component['version'] + '\nOfficial unmodified Windows Node bundle\nSHA256: ' + component['sha256'] + '\n', encoding='utf-8')
     for path in destination.rglob('*'):
         if path.is_file() and path.name.upper().startswith(('LICENSE', 'NOTICE', 'COPYING')):
