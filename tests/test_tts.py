@@ -218,7 +218,7 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
                     daemon.bubble_delivery.tts_provider, FishAudioTTSProvider
                 )
                 self.assertIn(
-                    "send_voice",
+                    "reply",
                     {s["name"] for s in daemon.tool_surface.conversation_specs()},
                 )
             finally:

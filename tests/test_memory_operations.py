@@ -1,3 +1,4 @@
+from tests.support import reply_call, install_scripted_replyer
 import asyncio
 import copy
 import json
@@ -450,6 +451,7 @@ def daemon(tmp_path):
             log_level="INFO",
         )
     )
+    install_scripted_replyer(value)
     yield value
     value.store.close()
 
@@ -890,13 +892,14 @@ def test_assistant_text_can_accompany_private_finish(daemon, caplog, commentary)
 
 
 def test_owner_assistant_text_never_becomes_a_delivered_bubble(daemon):
+    install_scripted_replyer(daemon)
     from types import SimpleNamespace
     from tests.support import recall_response
 
     source = event(daemon.store)
     replies = [
         recall_response(),
-        response(ToolCall('send', 'send_bubbles', {'bubbles': ['这是气泡']})),
+        response(reply_call('send', bubbles=['这是气泡'])),
         response(ToolCall('end', 'end_turn', {
             'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
         })),

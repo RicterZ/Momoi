@@ -1,3 +1,4 @@
+from tests.support import reply_call, install_scripted_replyer
 from tests.support import provider_catalog
 import copy
 import tempfile
@@ -26,6 +27,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
                 turn_max_protocol_retries=5,
             ))
+            install_scripted_replyer(daemon)
             self.addCleanup(daemon.store.close)
             recall_arguments = {"units": [{
                 "intent": "Share a specific show update",
@@ -38,11 +40,11 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     "activity": "read news", "mode": "work",
                     "strategy": ["Read current news"],
                 }),
-                ToolCall("early", "send_bubbles", {"bubbles": ["A show update"]}),
+                reply_call("early", bubbles=["A show update"]),
                 ToolCall("bad-recall", "recall", recall_arguments),
-                ToolCall("still-early", "send_bubbles", {"bubbles": ["A show update"]}),
+                reply_call("still-early", bubbles=["A show update"]),
                 ToolCall("good-recall", "recall", recall_arguments),
-                ToolCall("send", "send_bubbles", {"bubbles": ["A show update"]}),
+                reply_call("send", bubbles=["A show update"]),
                 ToolCall("activity", "heartbeat_activity", {
                     "activity": "read news", "result": "Shared one update",
                     "next_check_minutes": 30, "reason": "Enough for now",
@@ -108,6 +110,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 ))
+                install_scripted_replyer(daemon)
                 self.addCleanup(daemon.store.close)
                 case = self
                 begin = ToolCall("begin", "heartbeat_begin", {
@@ -169,6 +172,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             event = IncomingMessage("heartbeat:event", "1", "我到家了", 1, 1)
             daemon.store.add_event(event)
             owner_turn = daemon.store.commit_turn(
@@ -318,6 +322,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
 
             class MCP:
                 @staticmethod

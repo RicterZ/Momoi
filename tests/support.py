@@ -129,3 +129,28 @@ def seed_memory(store, event, *, key, content, kind='preference', activation='re
         )
         store._add_memory_evidence(cursor.lastrowid,event.event_id,event.text,now)
     return cursor.lastrowid
+
+
+def reply_call(identifier, *, bubbles=None, text=None, mode="text", channel=None):
+    """Script a Planner dispatch with separately generated speech for delivery tests."""
+    import json
+    content = bubbles if bubbles is not None else [text]
+    speech = [value for value in content if isinstance(value, str) and not value.startswith("emotion://")]
+    attachments = [value for value in content if value not in speech]
+    arguments = {"intent": "测试回应", "reference": json.dumps(speech, ensure_ascii=False), "mode": mode}
+    if channel:
+        arguments["channel"] = channel
+    if attachments:
+        arguments["attachments"] = attachments
+    return ToolCall(identifier, "reply", arguments)
+
+
+def install_scripted_replyer(daemon):
+    """Stub expression only; Planner, validation, delivery, and writeback stay real."""
+    import json
+    from unittest.mock import AsyncMock
+
+    async def generate(call, request):
+        return json.loads(call.arguments["reference"])
+
+    daemon.tool_batch.replyer.generate = AsyncMock(side_effect=generate)

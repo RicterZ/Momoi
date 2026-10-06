@@ -1,3 +1,4 @@
+from tests.support import install_scripted_replyer
 import asyncio
 import json
 import tempfile
@@ -30,7 +31,7 @@ class ImageTurnsTest(unittest.IsolatedAsyncioTestCase):
                 finish,
             ),  # Missing summary must be corrected, not silently forgotten.
             ("save_image_summary", {"summary": "白色小图，主体细节不明确。"}),
-            ("send_bubbles", {"bubbles": ["我看到这张图了。"]}),
+            ("reply", {"intent": "回应图片", "reference": json.dumps(["我看到这张图了。"], ensure_ascii=False)}),
             ("end_turn", finish),
             (recall.name, recall.arguments),
             ("read_image", {}),
@@ -101,6 +102,7 @@ class ImageTurnsTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             try:
                 async with daemon.services:
                     event = incoming()

@@ -27,7 +27,7 @@ TURN_HARNESS_SPECS = {
             None,
             "end_turn",
             permitted_tools=frozenset(
-                {"reply", "send_bubbles", "send_voice", "web_fetch", "read_tool_result", "end_turn"}
+                {"reply", "web_fetch", "read_tool_result", "end_turn"}
             ),
         ),
         TurnHarnessSpec("goal", None, "end_turn", required_before_end=frozenset({"goal_review"})),
@@ -111,6 +111,8 @@ class TurnHarness:
             return "tool_not_allowed"
         if "heartbeat_activity" in names and self.spec.stage != "heartbeat":
             return "tool_not_allowed"
+        if any(name in {"send_bubbles", "send_voice"} for name in names):
+            return "tool_not_allowed"
         if any(name in self.blocked_tool_names for name in names):
             return "tool_not_allowed"
         if (
@@ -120,24 +122,15 @@ class TurnHarness:
         ):
             return "tool_not_allowed"
         if self.spec.stage == "heartbeat" and any(
-            name in {"reply", "send_bubbles", "send_voice"} for name in names
+            name == "reply" for name in names
         ):
             if not self.heartbeat_recall_ready or "recall" in names:
                 return "heartbeat_recall_required_before_send"
         first = self.spec.first_tool
         first_names = {first}
-        if (
-            first == "send_bubbles"
-            and (
-                self.permitted_tool_names is None
-                or "send_voice" in self.permitted_tool_names
-            )
-            and "send_voice" not in self.blocked_tool_names
-        ):
-            first_names.add("send_voice")
         if first is not None and not self.started:
             opening_send_and_end = (
-                first == "send_bubbles" and len(names) == 2
+                first == "reply" and len(names) == 2
                 and names[0] in first_names and names[1] == "end_turn"
             )
             if first == "recall":
@@ -156,7 +149,7 @@ class TurnHarness:
         terminal = self.spec.terminal_tool
         declarations_and_end = (
             terminal == "end_turn" and names[-1:] == [terminal]
-            and all(name in {"reply", "send_bubbles", "send_voice", "heartbeat_activity", "goal_review", "save_image_summary"} for name in names[:-1])
+            and all(name in {"reply", "heartbeat_activity", "goal_review", "save_image_summary"} for name in names[:-1])
         )
         review_and_end = self.spec.stage == "goal" and names == ["goal_review", "end_turn"]
         if self.spec.terminal_alone and terminal in names and not review_and_end and not declarations_and_end and (len(names) != 1 or names[0] != terminal):
@@ -195,9 +188,7 @@ class TurnHarness:
         if self.spec.stage == "heartbeat":
             if tool_name == "recall":
                 self.heartbeat_recall_ready = True
-            elif tool_name in {"reply", "send_bubbles", "send_voice"}:
+            elif tool_name == "reply":
                 self.heartbeat_recall_ready = False
-        if tool_name == self.spec.first_tool or (
-            self.spec.first_tool == "send_bubbles" and tool_name == "send_voice"
-        ):
+        if tool_name == self.spec.first_tool:
             self.started = True

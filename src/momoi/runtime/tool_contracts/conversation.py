@@ -232,7 +232,7 @@ END_TURN_EXAMPLE = {"reply_wait": {"wait": False}, "mood": {"decision": "unchang
 END_TURN_TOOL_SPEC: dict[str, Any] = {
     "name": "end_turn",
     "description": (
-        '结束本轮并提交其暂存状态。不发送消息。可单独调用或在 send_bubbles、send_voice、heartbeat_activity、goal_review 或 save_image_summary 之后最后调用；这些前置调用必须成功。其他工作工具必须在更早的轮次中完成。对于 owner、webhook、heartbeat 和 reply_followup，需提供 mood 和 reply_wait 对象；reply_followup 要求 wait=false。Heartbeat 要求在结束前成功调用 heartbeat_activity。对于 Goal，必须先成功调用 goal_review，然后以空参数 {} 调用 end_turn。'
+        '结束本轮并提交其暂存状态。不发送消息。可单独调用或在 reply、heartbeat_activity、goal_review 或 save_image_summary 之后最后调用；这些前置调用必须成功。其他工作工具必须在更早的轮次中完成。对于 owner、webhook、heartbeat 和 reply_followup，需提供 mood 和 reply_wait 对象；reply_followup 要求 wait=false。Heartbeat 要求在结束前成功调用 heartbeat_activity。对于 Goal，必须先成功调用 goal_review，然后以空参数 {} 调用 end_turn。'
     ),
     "input_schema": {
         "type": "object",
@@ -290,17 +290,17 @@ def end_turn_tool_spec(stage: str) -> dict[str, Any]:
 
 def end_turn_correction(error: str, schema: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
     hints = {
-        "end_turn_must_be_alone": "Call end_turn alone or last after send_bubbles, send_voice, heartbeat_activity, goal_review or save_image_summary. Finish other work tools in earlier rounds.",
-        "send_bubbles_required_before_end_turn": "This recovery phase requires a user-visible notification before ending.",
+        "end_turn_must_be_alone": "Call end_turn alone or last after reply, heartbeat_activity, goal_review or save_image_summary. Finish other work tools in earlier rounds.",
+        "reply_required_before_end_turn": "This recovery phase requires a user-visible notification before ending.",
         "goal_review_required_before_end_turn": "Call goal_review successfully before end_turn({}); they may share a batch in that order.",
         "goal_end_turn_requires_empty_arguments": "Submit the Goal outcome through goal_review; end_turn accepts only {} in this stage.",
         "unexpected_end_turn_fields": "end_turn accepts only mood and reply_wait. Submit Goal outcomes through goal_review and Heartbeat activity and schedule through heartbeat_activity.",
         "heartbeat_activity_required_before_end_turn": "Call heartbeat_activity successfully before end_turn; they may share a batch.",
         "invalid_mood_decision": 'mood must be {"decision":"unchanged"} or {"decision":"updated","state":"calm","intensity":0.3,"cause":"具体原因"}. A string is invalid.',
         "invalid_reply_wait_decision": f'reply_wait must be {{"wait":false}} or an object with wait=true, delay_minutes (integer {REPLY_WAIT_MIN_MINUTES}-{REPLY_WAIT_MAX_MINUTES}), expected_information and reason. A boolean is invalid; wait=false accepts no other fields.',
-        "reply_expectation_without_visible_bubble": "Send the actual question/continuation with send_bubbles or send_voice before waiting. Use wait=false if the conversation is complete.",
+        "reply_expectation_without_visible_bubble": "Send the actual question/continuation with reply before waiting. Use wait=false if the conversation is complete.",
         "reply_followup_cannot_schedule_another_wait": 'This follow-up cannot schedule another follow-up; use reply_wait={"wait":false}.',
-        "bubbles_not_allowed_in_end_turn": "Send bubbles through send_bubbles first; remove bubbles from end_turn.",
+        "bubbles_not_allowed_in_end_turn": "Send the response through reply first; remove bubbles from end_turn.",
         "activity_not_allowed_in_end_turn": "Remove activity; record Heartbeat activity through heartbeat_activity before ending.",
         "legacy_reply_wait_fields_not_allowed": "Remove expects_reply, reply_expectation and schedule_reply_wait; use the reply_wait object.",
     }
@@ -332,68 +332,4 @@ def end_turn_correction(error: str, schema: dict[str, Any], arguments: dict[str,
         "message": message,
         "hint": "The example illustrates structure only. Preserve truthful state decisions and do not resend messages already delivered.",
         "example_arguments": copy.deepcopy(schema["examples"][0]),
-    }
-
-
-SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
-    "name": "send_bubbles",
-    "description": (
-        '向用户发送消息。立即开始投递，独立于 end_turn。'
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "bubbles": {
-                "type": "array",
-                "minItems": 1,
-                "description": (
-                    '按序排列供用户查看的消息；每项内容作为独立的聊天气泡投递。'
-                ),
-                "items": CHANNEL_BUBBLE_SCHEMA,
-            },
-        },
-        "required": ["bubbles"],
-        "additionalProperties": False,
-    },
-}
-
-
-def _bubble_schema(*, emotion_catalog: bool) -> dict[str, Any]:
-    """Bubble schema, with the reaction format only when a catalog exists.
-
-    Naming `emotion://` is only meaningful alongside the `<emotion_catalog>`
-    block that lists valid slugs, so both appear or neither does.
-    """
-    if emotion_catalog:
-        return CHANNEL_BUBBLE_SCHEMA
-    schema = copy.deepcopy(CHANNEL_BUBBLE_SCHEMA)
-    schema["oneOf"][0]["description"] = (
-        "Put blank-line-separated text in separate bubbles."
-    )
-    return schema
-
-
-def send_bubbles_tool_spec(
-    channel_names: list[str], *, emotion_catalog: bool = True
-) -> dict[str, Any]:
-    properties = SEND_BUBBLES_TOOL_SPEC["input_schema"]["properties"]
-    return {
-        **SEND_BUBBLES_TOOL_SPEC,
-        "input_schema": {
-            **SEND_BUBBLES_TOOL_SPEC["input_schema"],
-            "properties": {
-                **properties,
-                "bubbles": {
-                    **properties["bubbles"],
-                    "items": _bubble_schema(emotion_catalog=emotion_catalog),
-                },
-                "channel": {
-                    "type": "string",
-                    "enum": channel_names,
-                    "description": (
-                        '投递通道；省略则使用当前回合的通道。'
-                    ),
-                },
-            },
-        },
     }

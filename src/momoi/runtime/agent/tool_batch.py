@@ -389,6 +389,8 @@ class ToolBatchExecutor:
                        if ended else {"reason": result.get("error")}),
                 )
             elif call.name == "reply":
+                target = self.bubble_delivery.channels.get(
+                    call.arguments.get("channel") or request.delivery_channel.name, request.delivery_channel)
                 cached_reply = self.store.committed_reply(request.turn_id, call.id)
                 if cached_reply is not None:
                     result = cached_reply
@@ -396,25 +398,34 @@ class ToolBatchExecutor:
                         visible = True
                         last_sent_bubbles = copy.deepcopy(result["bubbles"])
                         last_sent_channel = str(result["channel"])
+                elif call.arguments.get("mode", "text") == "voice" and (
+                    self.bubble_delivery.tts_provider is None
+                    or not callable(getattr(target, "send_voice", None))
+                ):
+                    result = {"ok": False, "error": "voice_not_supported",
+                              "message": "当前渠道无法发送语音，请使用 reply(mode=text)。"}
                 elif self.replyer is None:
                     result = {"ok": False, "error": "replyer_unavailable"}
                 else:
                     try:
-                        reply_request = replace(request, state=ToolBatchState(visible, previous_tool_name, last_sent_bubbles, last_sent_channel))
+                        reply_request = replace(request, delivery_channel=target,
+                                                state=ToolBatchState(visible, previous_tool_name, last_sent_bubbles, last_sent_channel))
                         bubbles = await self.replyer.generate(call, reply_request)
                         mode = call.arguments.get("mode", "text")
+                        if mode == "text":
+                            bubbles = [*bubbles, *copy.deepcopy(call.arguments.get("attachments", []))]
                         delivery_call = ToolCall(call.id, "send_voice" if mode == "voice" else "send_bubbles",
                                                  {"text": "\n".join(bubbles)} if mode == "voice" else {"bubbles": bubbles})
                         dispatch = self.bubble_delivery.dispatch_voice if mode == "voice" else self.bubble_delivery.dispatch
                         delivery = dispatch(delivery_call, turn_id=request.turn_id, stage=execution.stage,
-                            round_number=request.round_number, delivery_channel=request.delivery_channel,
+                            round_number=request.round_number, delivery_channel=target,
                             heartbeat_turn=execution.heartbeat, reply_followup_turn=execution.reply_followup,
                             heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
                             previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
                             previous_channel=last_sent_channel)
                         if mode == "voice":
                             delivery = await delivery
-                        result = {**delivery.result, "bubbles": bubbles}
+                        result = {**delivery.result, "bubbles": bubbles, "mode": mode}
                         if delivery.bubbles is not None:
                             visible = True
                             last_sent_bubbles = copy.deepcopy(delivery.bubbles)
@@ -422,34 +433,6 @@ class ToolBatchExecutor:
                     except Exception as error:
                         logger.exception("reply_generation_failed")
                         result = {"ok": False, "error": "reply_generation_failed", "message": type(error).__name__}
-            elif call.name in {"send_bubbles", "send_voice"}:
-                dispatch = (
-                    self.bubble_delivery.dispatch_voice
-                    if call.name == "send_voice"
-                    else self.bubble_delivery.dispatch
-                )
-                delivery = dispatch(
-                    call,
-                    turn_id=request.turn_id,
-                    stage=execution.stage,
-                    round_number=request.round_number,
-                    delivery_channel=request.delivery_channel,
-                    heartbeat_turn=execution.heartbeat,
-                    reply_followup_turn=execution.reply_followup,
-                    heartbeat_owner_event_revision=(
-                        request.heartbeat_owner_event_revision
-                    ),
-                    previous_tool_name=previous_tool_name,
-                    previous_bubbles=last_sent_bubbles,
-                    previous_channel=last_sent_channel,
-                )
-                if call.name == "send_voice":
-                    delivery = await delivery
-                result = delivery.result
-                if delivery.bubbles is not None:
-                    visible = True
-                    last_sent_bubbles = copy.deepcopy(delivery.bubbles)
-                    last_sent_channel = delivery.channel
             elif call.name == "tool_search":
                 result = search_tools(
                     call,

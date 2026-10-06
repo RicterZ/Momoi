@@ -6,11 +6,10 @@ from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_beg
 from momoi.runtime.tool_contracts.conversation import (
     HEARTBEAT_ACTIVITY_TOOL_SPEC,
     end_turn_tool_spec,
-    send_bubbles_tool_spec,
 )
 from momoi.runtime.tool_contracts.reflection import REFLECTION_FINISH_SPEC
 from momoi.runtime.tool_contracts.runtime import READ_TOOL_RESULT_SPEC, TOOL_ENABLE_SPEC, tool_search_spec
-from momoi.runtime.tool_contracts.voice import SEND_VOICE_TOOL_SPEC
+from momoi.runtime.tool_contracts.reply import REPLY_TOOL_SPEC
 from momoi.runtime.workflows.episode.contracts import (
     EPISODE_CLASSIFY_TURNS_SPEC,
     EPISODE_CONSOLIDATION_FINISH_SPEC,
@@ -32,8 +31,7 @@ def test_model_tool_schemas_compile_and_examples_validate():
         HEARTBEAT_ACTIVITY_TOOL_SPEC,
         RECALL_TOOL_SPEC,
         heartbeat_begin_spec(),
-        send_bubbles_tool_spec(["napcat"]),
-        SEND_VOICE_TOOL_SPEC,
+        REPLY_TOOL_SPEC,
         READ_TOOL_RESULT_SPEC,
         tool_search_spec(),
         TOOL_ENABLE_SPEC,

@@ -14,7 +14,7 @@ from . import (
     TurnHarness,
     WorkflowProtocolError,
 )
-from ..parsing import parse_tagged_bubbles, response_text
+from ..parsing import response_text
 from .protocol import (
     MAX_CONSECUTIVE_THOUGHT_ROUNDS, MAX_CONSECUTIVE_EXECUTION_FAILURES,
     assistant_history_message,
@@ -88,16 +88,12 @@ class AgentLoop:
         enable_tool_groups = self.tool_surface.mcp_server_groups()
         stage = execution.stage
         permitted_tools = execution.permitted_tools
-        voice_allowed = (
-            self.bubble_delivery.tts_provider is not None
-            and callable(getattr(delivery_channel, "send_voice", None))
-        )
         if workflow is not None and workflow.stage != stage:
             raise ValueError("workflow and execution stages do not match")
         harness = TurnHarness.for_stage(
             stage,
             permitted_tool_names=permitted_tools,
-            blocked_tool_names=frozenset() if voice_allowed else frozenset({"send_voice"}),
+            blocked_tool_names=frozenset({"send_bubbles", "send_voice"}),
         )
         harness.validate_surface({str(tool["name"]) for tool in tools})
         def open_circuit(reason: str) -> bool:
@@ -107,18 +103,18 @@ class AgentLoop:
             circuit_reason = reason
             if stage == "owner" and (external_tool_used or self.store.turn_has_external_effect(turn_id)):
                 self.store.open_reconciliation(turn_id, "protocol_circuit_open")
-            permitted_tools = frozenset({"send_bubbles", "end_turn"})
+            permitted_tools = frozenset({"reply", "end_turn"})
             # The task has stopped. Its opening and business requirements must not
             # block the final notification, nor may recovery reopen task tools.
             harness = TurnHarness(
                 replace(harness.spec, first_tool=None,
-                        required_before_end=frozenset({"send_bubbles"})),
+                        required_before_end=frozenset({"reply"})),
                 permitted_tool_names=permitted_tools,
             )
             messages.append({"role": "user", "content": (
                 "[运行时通知] 本轮连续多次工具或协议错误，已触发熔断，任务执行已停止。"
-                "现在只允许 send_bubbles 和 end_turn；此前的开场和任务流程要求不再适用。"
-                "请用你的语气通过 send_bubbles 简短告诉用户这次处理出错、未完成的部分，"
+                "现在只允许 reply 和 end_turn；此前的开场和任务流程要求不再适用。"
+                "请通过 reply(mode=text) 简短告诉用户这次处理出错、未完成的部分，"
                 "不要照抄内部错误、堆栈或工具参数，不要声称已完成或承诺自动重试。"
                 "已有操作可能生效时如实说明不确定性。发出通知后调用 end_turn，"
                 "不要要求等待用户回复。错误摘要仅供理解："
@@ -129,7 +125,7 @@ class AgentLoop:
         while True:
             if circuit_reason:
                 if circuit_rounds >= 3:
-                    if "send_bubbles" in harness.completed_tools:
+                    if "reply" in harness.completed_tools:
                         return AgentReply([])
                     raise WorkflowProtocolError("circuit_notification_failed")
                 circuit_rounds += 1
@@ -157,10 +153,6 @@ class AgentLoop:
             required_tool = harness.spec.first_tool if not harness.started else None
             if required_tool == "recall":
                 # The harness requires recall within the batch, not an exclusive tool choice.
-                required_tool = None
-            if (required_tool == "send_bubbles" and voice_allowed
-                    and (permitted_tools is None or "send_voice" in permitted_tools)):
-                # The harness accepts either delivery form for the opening reply.
                 required_tool = None
             # Keep the provider-facing tool surface stable across stages and rounds.
             # Stage-specific rules are enforced by the harness after the response.
@@ -264,7 +256,7 @@ class AgentLoop:
                 continue
             except Exception as error:
                 if circuit_reason:
-                    if "send_bubbles" in harness.completed_tools:
+                    if "reply" in harness.completed_tools:
                         return AgentReply([])
                     raise WorkflowProtocolError("circuit_notification_failed") from error
                 if external_tool_used:
@@ -304,27 +296,6 @@ class AgentLoop:
                 thought_rounds = execution_failures = 0
                 remind_owner_bubbles = False
                 continue
-            bubbles = parse_tagged_bubbles(response_text(response.content))
-            if bubbles is not None:
-                call = ToolCall(
-                    f"text-bubbles:{call_id}", "send_bubbles", {"bubbles": bubbles}
-                )
-                # Use the normal tool path for validation, delivery, deduplication,
-                # owner interruption, and the tool result consumed next round.
-                response = replace(
-                    response,
-                    content=[{
-                        "type": "tool_use", "id": call.id,
-                        "name": call.name, "input": call.arguments,
-                    }, *response.content],
-                    tool_calls=[call, *response.tool_calls],
-                )
-                log_event(
-                    logger, logging.DEBUG, "assistant_bubbles_adapted",
-                    stage=stage, turn_id=turn_id, call_id=call_id,
-                    round=llm_round, channel=delivery_channel.name,
-                    tool_call_id=call.id, bubbles=len(bubbles),
-                )
             if not response.tool_calls:
                 if stage in {"owner", "heartbeat", "reply_followup", "webhook", "goal", "plan_step"}:
                     self.store.append_turn_journal(
@@ -366,7 +337,7 @@ class AgentLoop:
                     if open_circuit(str(error)):
                         protocol_failures = 0
                         continue
-                    if circuit_reason and "send_bubbles" in harness.completed_tools:
+                    if circuit_reason and "reply" in harness.completed_tools:
                         return AgentReply([])
                     raise
                 thought_rounds = resolution.failed_rounds
@@ -451,7 +422,7 @@ class AgentLoop:
                     if open_circuit(harness_error):
                         protocol_failures = 0
                         continue
-                    if circuit_reason and "send_bubbles" in harness.completed_tools:
+                    if circuit_reason and "reply" in harness.completed_tools:
                         return AgentReply([])
                     raise error_type(harness_error)
                 continue
@@ -548,7 +519,7 @@ class AgentLoop:
             if open_circuit(last_tool_error or "repeated tool validation failures"):
                 protocol_failures = 0
                 continue
-            if circuit_reason and "send_bubbles" in harness.completed_tools:
+            if circuit_reason and "reply" in harness.completed_tools:
                 return AgentReply([])
             raise error_type(last_tool_error or "repeated tool validation failures")
 

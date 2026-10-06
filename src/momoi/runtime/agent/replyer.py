@@ -25,12 +25,21 @@ class Replyer:
         rows = self.store.replyer_history_rows(request.delivery_channel.name)
         messages = visible_dialogue(rows, timezone=self.config.timezone)
         target = "\n".join(event.text for event in request.current_events)
+        mode = call.arguments.get("mode", "text")
+        if mode not in {"text", "voice"}:
+            raise ValueError("invalid reply mode")
+        expression = (
+            "只输出适合朗读的一段实际发言；使用自然口语，不包含 Markdown、颜文字、表情标记、媒体路径或气泡分隔。"
+            if mode == "voice" else "只输出实际发言，用空行分隔气泡。"
+        )
         tail = (
             f"当前时间：{datetime.now(ZoneInfo(str(self.config.timezone))).isoformat()}\n"
-            f"本次回应意图：{call.arguments['intent']}\n必要参考：{call.arguments['reference']}\n"
+            f"发送形式：{'语音' if mode == 'voice' else '文字'}\n本次回应意图：{call.arguments['intent']}\n必要参考：{call.arguments['reference']}\n"
             f"当前目标消息：{target or '本轮自主活动，由回应意图指定对象和内容'}\n"
-            "只输出实际发言，用空行分隔气泡。"
+            + expression
         )
+        if call.arguments.get("attachments"):
+            tail += "\n本次附件由发送层原样发送，发言无需重述附件路径或生成媒体指令。"
         previous = getattr(getattr(request, "state", None), "last_sent_bubbles", None)
         if previous:
             tail += "\n本轮上一批发言已提交发送（不保证已送达），避免重复：" + str(previous)
@@ -54,4 +63,4 @@ class Replyer:
         text = "\n".join(str(block.get("text", "")) for block in response.content if block.get("type") == "text").strip()
         if not text:
             raise ValueError("Replyer returned empty text")
-        return [part.strip() for part in text.split("\n\n") if part.strip()]
+        return [text] if mode == "voice" else [part.strip() for part in text.split("\n\n") if part.strip()]

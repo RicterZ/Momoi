@@ -14,7 +14,7 @@ from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
 from ..tool_contracts.episode_relations import EPISODE_RELATIONS_TOOL_SPEC
 from ..tool_contracts.current_state import current_state_finish_spec
 from ..tool_contracts.conversation import (
-    END_TURN_TOOL_SPEC, HEARTBEAT_ACTIVITY_TOOL_SPEC, GOAL_REVIEW_TOOL_SPEC, send_bubbles_tool_spec,
+    END_TURN_TOOL_SPEC, HEARTBEAT_ACTIVITY_TOOL_SPEC, GOAL_REVIEW_TOOL_SPEC,
 )
 from ..tool_contracts.runtime import (
     READ_TOOL_RESULT_SPEC,
@@ -23,7 +23,6 @@ from ..tool_contracts.runtime import (
 )
 from ..tool_contracts.plan import PLAN_TOOLS, PLAN_STEP_FINISH
 from .progress import public_tool_spec
-from ..tool_contracts.voice import SEND_VOICE_TOOL_SPEC
 from ..tool_contracts.reply import REPLY_TOOL_SPEC
 
 logger = logging.getLogger("momoi.runtime.turns")
@@ -36,7 +35,9 @@ class ToolSurface:
         self.mcp = mcp
         self.store = store
         self.channel_names = list(channels)
-        self.voice_enabled = voice_enabled
+        self.voice_channels = [name for name, channel in channels.items()
+                               if callable(getattr(channel, "send_voice", None))]
+        self.voice_enabled = voice_enabled and bool(self.voice_channels)
         self.emotion_catalog = emotion_catalog or (lambda: True)
         self.builtin_specs = [
             spec for spec in BUILTIN_TOOL_SPECS
@@ -109,6 +110,12 @@ class ToolSurface:
     def conversation_specs(self) -> list[dict[str, Any]]:
         groups = self.mcp_server_groups()
         reply_spec = copy.deepcopy(REPLY_TOOL_SPEC)
+        reply_spec["input_schema"]["properties"]["channel"] = {
+            "type": "string", "enum": self.channel_names,
+            "description": "目标渠道；省略时回复当前消息所在渠道。",
+        }
+        if not self.emotion_catalog():
+            reply_spec["input_schema"]["properties"]["attachments"]["items"]["oneOf"].pop(0)
         if not self.voice_enabled:
             reply_spec["input_schema"]["properties"]["mode"]["enum"] = ["text"]
         tools = [
@@ -117,9 +124,7 @@ class ToolSurface:
             heartbeat_begin_spec(),
             copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC),
             copy.deepcopy(GOAL_REVIEW_TOOL_SPEC),
-            {**reply_spec, "description": REPLY_TOOL_SPEC["description"] + (" 可选择 mode=voice。" if self.voice_enabled else " 当前仅支持 mode=text。")},
-            self.send_bubbles_spec(),
-            *([copy.deepcopy(SEND_VOICE_TOOL_SPEC)] if self.voice_enabled else []),
+            {**reply_spec, "description": REPLY_TOOL_SPEC["description"] + (" 已配置语音合成；语音渠道：" + "、".join(self.voice_channels) + "。在这些渠道可选 mode=voice，其他渠道使用 mode=text。" if self.voice_enabled else " 当前仅支持 mode=text，语音合成或渠道语音能力不可用。")},
             READ_TOOL_RESULT_SPEC,
             *copy.deepcopy(MEMORY_TOOL_SPECS),
             *copy.deepcopy(THINKING_TOOL_SPECS),
@@ -150,9 +155,7 @@ class ToolSurface:
         agenda = {str(spec["name"]) for spec in AGENDA_TOOL_SPECS}
         memory = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}
         thinking = {str(spec["name"]) for spec in THINKING_TOOL_SPECS}
-        shared = {"reply", "send_bubbles", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
-        voice = {"send_voice"} if self.voice_enabled else set()
-        shared.update(voice)
+        shared = {"reply", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
         general_chat = {
             "recall",
             "episode_relations",
@@ -185,7 +188,7 @@ class ToolSurface:
                 }
             )
         if stage == "webhook":
-            return frozenset({"reply", "send_bubbles", "web_fetch", "read_tool_result", "end_turn", *voice})
+            return frozenset({"reply", "web_fetch", "read_tool_result", "end_turn"})
         if stage == "reply_followup":
             return frozenset(general_chat)
         if stage == "goal":
@@ -195,8 +198,6 @@ class ToolSurface:
                     "reply",
                     "goal_create",
                     "memory_search",
-                    *voice,
-                    "send_bubbles",
                     "read_tool_result",
                     "tool_search",
                     "tool_enable",
@@ -205,8 +206,3 @@ class ToolSurface:
                 }
             )
         raise ValueError(f"stage does not use the conversation tool surface: {stage}")
-
-    def send_bubbles_spec(self) -> dict[str, Any]:
-        return send_bubbles_tool_spec(
-            self.channel_names, emotion_catalog=self.emotion_catalog()
-        )

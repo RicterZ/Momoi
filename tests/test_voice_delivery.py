@@ -1,3 +1,4 @@
+from tests.support import reply_call, install_scripted_replyer
 from tests.support import provider_catalog
 import asyncio
 import base64
@@ -21,7 +22,6 @@ from momoi.runtime.transcript.building import build_groups
 from momoi.runtime.agent.delivery import BubbleDelivery, DeliveryPolicy
 from momoi.runtime.agent.harness import TurnHarness
 from momoi.runtime.agent.tool_surface import ToolSurface
-from momoi.runtime.tool_contracts.voice import SEND_VOICE_TOOL_SPEC
 from momoi.storage import Store
 
 
@@ -159,7 +159,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.result["ok"])
         self.assertEqual(result.result["error"], "voice_synthesis_failed")
         self.assertEqual(result.result["detail"], "failed")
-        self.assertIn("send_bubbles", result.result["message"])
+        self.assertIn("reply(mode=text)", result.result["message"])
         self.assertIsNone(result.bubbles)
         self.assertEqual(self.store.due_outbox(), [])
         self.assertFalse(self.changed.is_set())
@@ -207,7 +207,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
 
     def test_disabled_voice_is_hidden_and_harness_rejects_it(self):
         surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {"napcat": self.channel})
-        name = SEND_VOICE_TOOL_SPEC["name"]
+        name = "send_voice"
         self.assertNotIn(name, {tool["name"] for tool in surface.conversation_specs()})
         self.assertEqual(surface.mcp_server_groups(), {})
         for stage in ("owner", "heartbeat", "webhook", "reply_followup", "goal"):
@@ -224,11 +224,16 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
 
     def test_enabled_voice_is_available(self):
         surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {"napcat": self.channel}, voice_enabled=True)
-        self.assertIn("send_voice", {tool["name"] for tool in surface.conversation_specs()})
+        self.assertNotIn("send_voice", {tool["name"] for tool in surface.conversation_specs()})
+        self.assertNotIn("send_bubbles", {tool["name"] for tool in surface.conversation_specs()})
+        reply = next(tool for tool in surface.conversation_specs() if tool["name"] == "reply")
+        self.assertEqual(reply["input_schema"]["properties"]["mode"]["enum"], ["text", "voice"])
         for stage in ("owner", "heartbeat", "webhook", "reply_followup", "goal"):
-            self.assertIn("send_voice", surface.permitted_names(stage))
+            self.assertIn("reply", surface.permitted_names(stage))
+            self.assertNotIn("send_voice", surface.permitted_names(stage))
         unsupported = ToolSurface(SimpleNamespace(tool_specs=[]), {"napcat": SimpleNamespace()}, voice_enabled=True)
-        self.assertEqual(surface.conversation_specs(), unsupported.conversation_specs())
+        unsupported_reply = next(tool for tool in unsupported.conversation_specs() if tool["name"] == "reply")
+        self.assertEqual(unsupported_reply["input_schema"]["properties"]["mode"]["enum"], ["text"])
 
     async def test_voice_runs_through_chat_and_goal_workflows(self):
         for stage in ("owner", "heartbeat", "webhook", "reply_followup", "goal"):
@@ -241,6 +246,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     database=self.root / f"{stage}.sqlite3", log_level="INFO",
                 )
                 daemon = MomoiDaemon(config, tts_provider=self.provider)
+                install_scripted_replyer(daemon)
                 try:
                     turn_id = f"voice-{stage}"
                     daemon.store.begin_turn(turn_id, stage, [])
@@ -260,7 +266,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                             "recall_queries": [{"semantic": "Prior discussion of this message", "keywords": []}],
                             "recall_from_turn_id": "",
                         }]}))
-                    calls.append(ToolCall("voice", "send_voice", {"text": self.text}))
+                    calls.append(reply_call("voice", text=self.text, mode="voice"))
                     end = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
                     if stage == "goal":
                         calls.append(ToolCall("review", "goal_review", {"status": "done", "result": "voice delivered"}))
@@ -268,7 +274,8 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     calls.append(ToolCall("end", "end_turn", end))
 
                     async def complete(_system, _messages, tools, **kwargs):
-                        self.assertIn("send_voice", {tool["name"] for tool in tools})
+                        self.assertIn("reply", {tool["name"] for tool in tools})
+                        self.assertNotIn("send_voice", {tool["name"] for tool in tools})
                         if stage == "reply_followup":
                             self.assertIsNone(kwargs.get("required_tool"))
                         self.assertTrue(calls, "unexpected protocol retry")
@@ -305,7 +312,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                 finally:
                     daemon.store.close()
 
-    async def test_unsupported_channel_retains_schema_but_harness_blocks_voice(self):
+    async def test_unsupported_channel_retains_schema_but_rejects_voice_before_generation(self):
         config = AppConfig(
             providers=provider_catalog(LLMConfig("http://localhost", "test", "test", 100, 0, 1, 0)),
             channel=self.channel.config, system_prompt="test", transcript_turns_min=4,
@@ -313,6 +320,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
             database=self.root / "blocked.sqlite3", log_level="INFO",
         )
         daemon = MomoiDaemon(config, tts_provider=self.provider)
+        install_scripted_replyer(daemon)
         try:
             turn_id = "blocked-voice"
             daemon.store.begin_turn(turn_id, "webhook", [])
@@ -328,10 +336,10 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                 terminal_schema = next(tool["input_schema"] for tool in request_tools if tool["name"] == "end_turn")
                 self.assertEqual(set(terminal_schema["properties"]), {"reply_wait", "mood"})
                 if rounds == 1:
-                    call = ToolCall("voice", "send_voice", {"text": self.text})
+                    call = reply_call("voice", text=self.text, mode="voice")
                 else:
                     self.assertEqual(rounds, 2)
-                    self.assertIn("tool_not_allowed", str(messages[-1]))
+                    self.assertIn("voice_not_supported", str(messages[-1]))
                     call = ToolCall("end", "end_turn", {
                         "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
                     })
@@ -346,6 +354,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(daemon.store.due_outbox(), [])
             self.provider.synthesize.assert_not_awaited()
+            daemon.tool_batch.replyer.generate.assert_not_awaited()
         finally:
             daemon.store.close()
 
@@ -362,6 +371,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                 provider = AsyncMock(spec=TTSProvider)
                 provider.synthesize.side_effect = TTSError("connection refused (failed after 4 attempts)")
                 daemon = MomoiDaemon(config, tts_provider=provider)
+                install_scripted_replyer(daemon)
                 try:
                     turn_id = f"fallback-{stage}"
                     daemon.store.begin_turn(turn_id, stage, [])
@@ -375,19 +385,17 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         nonlocal rounds
                         rounds += 1
                         if rounds == 1:
-                            call = ToolCall("voice", "send_voice", {"text": "老师你好"})
+                            call = reply_call("voice", text="老师你好", mode="voice")
                         elif rounds == 2:
                             block = messages[-1]["content"][0]
                             result = json.loads(block["content"])
                             self.assertFalse(result["ok"])
                             self.assertEqual(result["error"], "voice_synthesis_failed")
                             self.assertIn("connection refused", result["detail"])
-                            self.assertIn("send_bubbles", result["message"])
+                            self.assertIn("reply(mode=text)", result["message"])
                             self.assertEqual(daemon.store.due_outbox(), [])
                             self.assertFalse(draft.notification_messages)
-                            call = ToolCall("fallback", "send_bubbles", {
-                                "bubbles": ["老师你好"],
-                            })
+                            call = reply_call("fallback", bubbles=["老师你好"])
                         elif stage == "goal" and rounds == 3:
                             call = ToolCall("review", "goal_review", {"status": "done", "result": "text fallback prepared"})
                         else:

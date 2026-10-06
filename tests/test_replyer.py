@@ -161,3 +161,90 @@ def test_replyer_window_migrates_existing_database(tmp_path):
         assert store._db.execute('PRAGMA user_version').fetchone()[0] == SCHEMA_VERSION
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("mode", ["text", "voice"])
+def test_replyer_receives_mode_and_voice_is_one_utterance(mode):
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
+    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock())
+    request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[],
+                              turn_id="turn", round_number=1)
+
+    async def complete(system, messages, tools):
+        tail = messages[-1]["content"][0]["text"]
+        assert f"发送形式：{'语音' if mode == 'voice' else '文字'}" in tail
+        assert ("只输出适合朗读的一段实际发言" in tail) == (mode == "voice")
+        assert ("只输出实际发言，用空行分隔气泡" in tail) == (mode == "text")
+        assert tools == []
+        return ProviderResponse([{"type": "text", "text": "第一句\n\n第二句"}], [])
+
+    replyer = Replyer(config, store, SimpleNamespace(complete=complete))
+    call = ToolCall("dispatch", "reply", {"intent": "回应", "reference": "", "mode": mode})
+    actual = asyncio.run(replyer.generate(call, request))
+    assert actual == (["第一句\n\n第二句"] if mode == "voice" else ["第一句", "第二句"])
+
+
+def test_reply_attachments_schema_preserves_media_but_rejects_voice_and_plain_strings():
+    from momoi.runtime.tool_contracts.reply import REPLY_TOOL_SPEC
+    from momoi.tools.validation import validate_tool_arguments
+    schema = REPLY_TOOL_SPEC["input_schema"]
+    media = {"segments": [{"type": "image", "data": {"file": "/tmp/image.png"}}]}
+    args = {"intent": "发图", "reference": "", "attachments": [media, "emotion://normal"]}
+    normalized, error = validate_tool_arguments("reply", args, schema)
+    assert error is None and normalized == args
+    for invalid in ({**args, "mode": "voice"}, {**args, "attachments": ["完整发言绕过生成"]},
+                    {**args, "attachments": [{"segments": [{"type": "text", "data": {"text": "绕过生成"}}]}]}):
+        assert validate_tool_arguments("reply", invalid, schema)[1] is not None
+
+
+def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
+    from unittest.mock import AsyncMock
+    from momoi.config.models import AppConfig
+    from momoi.integrations.models import LLMConfig
+    from momoi.channel.napcat import NapCatConfig
+    from momoi.integrations.contracts.tts import AudioOutput
+    from momoi.runtime import MomoiDaemon
+    from tests.support import provider_catalog
+
+    tts = SimpleNamespace(synthesize=AsyncMock(return_value=AudioOutput(b"audio", "silk")))
+    daemon = MomoiDaemon(AppConfig(
+        providers=provider_catalog(LLMConfig('http://localhost', 'test', 'model', 100, 0, 1, 0)),
+        channel=NapCatConfig('ws://localhost', 'test', 1, 60, 30, 30, 20),
+        transcript_turns_min=8, transcript_turns_max=32, episode_unsummarized_tail_turns=2, memory_results=2,
+        soul_prompt='测试人格', system_prompt='测试规则', database=tmp_path / 'db', log_level='INFO'),
+        tts_provider=tts)
+    event = IncomingMessage('voice-event', 'voice-event', '语音回应', 1, 1, channel=daemon.channel.name)
+    daemon.store.add_event(event)
+    daemon.store.begin_turn('voice-owner', 'owner', ['voice-event'])
+    messages = [{'role': 'user', 'content': '语音回应'}]
+    rounds = 0
+
+    async def complete(system, history, tools, **kwargs):
+        nonlocal rounds
+        if not tools:
+            assert '发送形式：语音' in str(history[-1])
+            return ProviderResponse([{'type': 'text', 'text': '生成的语音第一句。\n\n生成的第二句。'}], [])
+        assert not {'send_bubbles', 'send_voice'} & {tool['name'] for tool in tools}
+        rounds += 1
+        if rounds == 1:
+            call = ToolCall('voice-dispatch', 'reply', {'intent': '接住语音请求', 'reference': '', 'mode': 'voice'})
+        else:
+            assert '生成的第二句' in str(history)
+            call = ToolCall('done', 'end_turn', {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'}})
+        return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
+
+    daemon.provider = SimpleNamespace(complete=complete)
+    daemon.tool_batch.replyer.provider = daemon.provider
+    try:
+        asyncio.run(daemon._run_tool_loop(
+            daemon._system(planner=True), messages, daemon.tool_surface.conversation_specs(),
+            [event], TurnDraft(), execution=TurnExecutionSpec('owner', permitted_tools=daemon.tool_surface.permitted_names('owner')),
+            source_event_id='voice-event', turn_id='voice-owner', delivery_channel=daemon.channel))
+        speech = '生成的语音第一句。\n\n生成的第二句。'
+        tts.synthesize.assert_awaited_once_with(speech)
+        assert [(row.kind, row.text) for row in daemon.store.due_outbox()] == [('voice', speech)]
+        exchanges = daemon.store.turn_exchanges(['voice-owner'])['voice-owner']
+        assert any('生成的语音第一句' in str(exchange['results']) for exchange in exchanges)
+        assert rounds == 2
+    finally:
+        daemon.store.close()

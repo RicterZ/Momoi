@@ -1,3 +1,4 @@
+from tests.support import install_scripted_replyer
 import asyncio
 import copy
 import json
@@ -33,8 +34,8 @@ class ReasoningContinuationTest(unittest.IsolatedAsyncioTestCase):
             ("heartbeat_activity", "{}"),  # Rejected: unavailable in Owner stage.
             (recall.name, json.dumps(recall.arguments)),
             None,  # Text-only reply must also retain its reasoning during correction.
-            ("send_bubbles", "{"),  # Invalid tool arguments return an error to the model.
-            ("send_bubbles", json.dumps({"bubbles": ["修复后的回复"]})),
+            ("reply", "{"),  # Invalid tool arguments return an error to the model.
+            ("reply", json.dumps({"intent": "回应", "reference": json.dumps(["修复后的回复"], ensure_ascii=False)})),
             ("end_turn", json.dumps(finish)),
         ]
 
@@ -72,6 +73,7 @@ class ReasoningContinuationTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             try:
                 async with daemon.services:
                     event = IncomingMessage("continuation-test", "continuation-test", "测试", 1, 1)

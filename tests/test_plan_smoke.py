@@ -1,3 +1,4 @@
+from tests.support import reply_call, install_scripted_replyer
 """Plan workflow integration tests with scripted provider responses."""
 
 import copy
@@ -50,6 +51,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             memory_results=2, log_level="INFO",
             system_prompt="Momoi role and voice", database=Path(directory.name) / "store.sqlite3",
         ))
+        install_scripted_replyer(self.daemon)
         self.addCleanup(self.daemon.store.close)
         event = IncomingMessage("plan-request", "1", "看 A B C 的微博并发给我", 1, 1)
         self.daemon.store.add_event(event)
@@ -78,7 +80,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
                 calls += 1
                 if calls == 1:
                     requests.append(copy.deepcopy(messages))
-                    call = ToolCall("send", "send_bubbles", {"bubbles": [f"{user} latest post"]})
+                    call = reply_call("send", bubbles=[f"{user} latest post"])
                 else:
                     call = ToolCall("finish", "plan_step_finish", {
                         "outcome": "succeeded", "summary": f"{user} queued",
@@ -97,7 +99,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         pending = [row[0] for row in daemon.store._db.execute("SELECT text FROM outbox ORDER BY id")]
         self.assertEqual(pending[-3:], [f"{user} latest post" for user in "ABC"])
         last = str(requests[-1])
-        self.assertEqual(last.count("A latest post"), 1)
+        self.assertEqual(last.count("A latest post"), 2)  # One reference and one generated result.
         self.assertNotIn("[message delivery confirmation]", last)
         self.assertIn("A queued", last)
         self.assertIn("B queued", last)
@@ -298,7 +300,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         ]))
         step = TurnHarness.for_stage("plan_step")
         self.assertIsNone(step.validate([
-            ToolCall("send", "send_bubbles", {}), ToolCall("finish", "plan_step_finish", {}),
+            ToolCall("send", "reply", {}), ToolCall("finish", "plan_step_finish", {}),
         ]))
 
     async def test_shared_schema_does_not_grant_step_owner_permissions(self):
@@ -501,7 +503,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             count += 1
             outcome = {'outcome': 'succeeded', 'summary': 'sent', 'output_refs': [], 'abort_remaining': False}
             if count == 1:
-                calls = [ToolCall('send', 'send_bubbles', {'bubbles': []}),
+                calls = [reply_call('send', bubbles=[]),
                          ToolCall('finish', 'plan_step_finish', outcome)]
             else:
                 self.assertEqual(count, 2)
@@ -561,7 +563,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             if '50次调用硬上限' in str(messages):
                 closes += 1
                 if closes == 1:
-                    call = ToolCall('notify', 'send_bubbles', {'bubbles': ['已核对部分证据，关键来源仍不可用。继续查、调整方案，还是停止？']})
+                    call = reply_call('notify', bubbles=['已核对部分证据，关键来源仍不可用。继续查、调整方案，还是停止？'])
                 else:
                     call = ToolCall('paused', 'plan_step_finish', {'outcome': 'blocked', 'summary': '关键来源不可用，保留既有证据', 'output_refs': [ref], 'abort_remaining': True})
             else:

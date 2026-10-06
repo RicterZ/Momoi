@@ -1,3 +1,4 @@
+from tests.support import reply_call, install_scripted_replyer
 import asyncio
 import copy
 import json
@@ -171,6 +172,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
         )
+        install_scripted_replyer(self.daemon)
         self.addCleanup(self.daemon.store.close)
         self.goal_id = self.create_goal()
 
@@ -482,11 +484,11 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
 
         remaining, seen = self.provider(
             [
-                ToolCall("notice", "send_bubbles", {"bubbles": ["文件已验证"]}),
+                reply_call("notice", bubbles=["文件已验证"]),
                 ToolCall(
                     "invalid", "goal_review", {"status": "waiting", "result": "waiting"}
                 ),
-                ToolCall("more", "send_bubbles", {"bubbles": ["下载目录也清理完了"]}),
+                reply_call("more", bubbles=["下载目录也清理完了"]),
                 ToolCall(
                     "end", "goal_review", {"status": "done", "result": "File validated"}
                 ),
@@ -519,7 +521,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                 raise RuntimeError("provider unavailable")
 
         self.provider(
-            [ToolCall("notice", "send_bubbles", {"bubbles": ["已完成第一步"]})], inspect
+            [reply_call("notice", bubbles=["已完成第一步"])], inspect
         )
         await self.daemon._complete_goal_turn(self.goal_id, asyncio.Event())
         self.assertEqual(self.daemon.store.goal(self.goal_id)["status"], "active")

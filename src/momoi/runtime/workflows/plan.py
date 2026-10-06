@@ -176,7 +176,7 @@ class PlanWorkflow:
                         await self._run_tool_loop(
                             self._system(planner=True), closing_messages, tools, [], TurnDraft(),
                             execution=TurnExecutionSpec("plan_step", max_rounds=3,
-                                permitted_tools=frozenset({"plan_step_finish", "reply", "send_bubbles", "send_voice"})),
+                                permitted_tools=frozenset({"plan_step_finish", "reply"})),
                             source_event_id=f"plan:{plan_id}", turn_id=closing_id,
                             delivery_channel=channel, workflow=closing_workflow,
                         )

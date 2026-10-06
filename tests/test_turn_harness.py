@@ -117,7 +117,7 @@ class TurnHarnessTest(unittest.TestCase):
         self.assertIsNone(harness.spec.first_tool)
         self.assertTrue(harness.started)
         recall = ToolCall("recall", "recall", {})
-        send = ToolCall("send", "send_bubbles", {"bubbles": ["ok"]})
+        send = ToolCall("send", "reply", {"bubbles": ["ok"]})
         end = ToolCall("end", "end_turn", {})
         search = ToolCall("search", "memory_search", {"query": "x"})
         for calls in ([send], [search], [end], [send, end], [recall], [recall, send]):
@@ -142,7 +142,7 @@ class TurnHarnessTest(unittest.TestCase):
         self.assertIsNone(harness.validate([ToolCall("recall", "recall", {})]))
         self.assertIsNone(harness.validate([ToolCall("finish", "current_state_finish", {})]))
         self.assertEqual(
-            harness.validate([ToolCall("send", "send_bubbles", {})]),
+            harness.validate([ToolCall("send", "reply", {})]),
             "tool_not_allowed",
         )
 
@@ -169,7 +169,7 @@ class TurnHarnessTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "end_turn"):
             harness.validate_surface(set())
-        harness.validate_surface({"recall", "send_bubbles", "end_turn"})
+        harness.validate_surface({"recall", "reply", "end_turn"})
 
     def test_only_heartbeat_has_an_explicit_opening_in_autonomous_chat(self) -> None:
         self.assertEqual(
@@ -185,8 +185,8 @@ class TurnHarnessTest(unittest.TestCase):
         harness = TurnHarness.for_stage("heartbeat")
         begin = ToolCall("begin", "heartbeat_begin", {})
         recall = ToolCall("recall", "recall", {})
-        send = ToolCall("send", "send_bubbles", {})
-        voice = ToolCall("voice", "send_voice", {})
+        send = ToolCall("send", "reply", {})
+        voice = ToolCall("voice", "reply", {})
 
         self.assertIsNone(harness.validate([begin]))
         harness.accept("heartbeat_begin")
@@ -196,7 +196,7 @@ class TurnHarnessTest(unittest.TestCase):
         self.assertEqual(harness.validate([recall, send]), "heartbeat_recall_required_before_send")
         self.assertIsNone(harness.validate([send, voice]))
         self.assertIsNone(harness.validate([send]))
-        harness.accept("send_bubbles")
+        harness.accept("reply")
         self.assertEqual(harness.validate([voice]), "heartbeat_recall_required_before_send")
         harness.accept("recall")
         self.assertIsNone(harness.validate([voice]))
@@ -204,12 +204,12 @@ class TurnHarnessTest(unittest.TestCase):
     def test_reply_followup_can_work_before_or_after_optional_delivery(self) -> None:
         harness = TurnHarness.for_stage("reply_followup")
         work = ToolCall("work", "read_file", {"path": "notes.txt"})
-        send = ToolCall("send", "send_bubbles", {"bubbles": ["我再看看"]})
+        send = ToolCall("send", "reply", {"bubbles": ["我再看看"]})
         end = ToolCall("end", "end_turn", {})
 
         self.assertIsNone(harness.validate([work]))
         self.assertIsNone(harness.validate([send]))
-        harness.accept("send_bubbles")
+        harness.accept("reply")
         self.assertIsNone(harness.validate([work]))
         self.assertIsNone(harness.validate([end]))
 

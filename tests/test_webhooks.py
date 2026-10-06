@@ -1,3 +1,4 @@
+from tests.support import reply_call, install_scripted_replyer
 from tests.support import seed_memory
 from tests.support import provider_catalog
 import asyncio
@@ -266,6 +267,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 soul_prompt="natural soul",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             event = IncomingMessage(
                 "qq:1:webhook-context",
                 "webhook-context",
@@ -346,13 +348,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                     elif self.calls == 2:
                         self.assert_tool_result(messages)
-                        call = ToolCall(
-                            "notify-owner",
-                            "send_bubbles",
-                            {
-                                "bubbles": ["有一个快递到了，取件码是 1234。"],
-                            },
-                        )
+                        call = reply_call("notify-owner", bubbles=["有一个快递到了，取件码是 1234。"])
                     else:
                         call = ToolCall(
                             "finish",

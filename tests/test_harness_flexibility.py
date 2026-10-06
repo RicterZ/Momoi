@@ -1,3 +1,4 @@
+from tests.support import reply_call, install_scripted_replyer
 import asyncio
 from types import SimpleNamespace
 
@@ -15,7 +16,8 @@ def end_call():
     })
 
 
-def test_internal_thought_then_silent_completion_does_not_send(daemon):
+@pytest.mark.parametrize("internal_text", ["继续核对当前判断", "<bubble>这是思考里的示例</bubble>"])
+def test_internal_thought_then_silent_completion_does_not_send(daemon, internal_text):
     source = event(daemon.store, text="先想一想，不用发消息")
     turn_id = daemon._turn_id(source.event_id)
     rounds = 0
@@ -25,8 +27,8 @@ def test_internal_thought_then_silent_completion_does_not_send(daemon):
         rounds += 1
         assert not kwargs["require_tool"]
         if rounds <= 3:
-            return ProviderResponse([{"type": "text", "text": "继续核对当前判断"}], [])
-        assert "继续核对当前判断" in str(messages)
+            return ProviderResponse([{"type": "text", "text": internal_text}], [])
+        assert internal_text in str(messages)
         assert "熔断" not in str(messages)
         result = response(end_call())
         result.content.insert(0, {"type": "text", "text": "内部结论：不需要发送"})
@@ -41,6 +43,7 @@ def test_internal_thought_then_silent_completion_does_not_send(daemon):
 
 @pytest.mark.parametrize("failures", [4, MAX_CONSECUTIVE_EXECUTION_FAILURES])
 def test_execution_failures_have_separate_budget_and_bounded_recovery(daemon, failures):
+    install_scripted_replyer(daemon)
     source = event(daemon.store)
     turn_id = daemon._turn_id(source.event_id)
     rounds = 0
@@ -59,7 +62,7 @@ def test_execution_failures_have_separate_budget_and_bounded_recovery(daemon, fa
             return response(ToolCall(str(rounds), "read_file", {"path": f"missing-{rounds}"}))
         assert ("熔断" in str(messages)) == (failures == MAX_CONSECUTIVE_EXECUTION_FAILURES)
         if failures == MAX_CONSECUTIVE_EXECUTION_FAILURES:
-            calls = [ToolCall("notice", "send_bubbles", {"bubbles": ["查找没有成功，先停下。"]}), end_call()]
+            calls = [reply_call("notice", bubbles=["查找没有成功，先停下。"]), end_call()]
             return ProviderResponse([
                 {"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments}
                 for c in calls
@@ -76,21 +79,21 @@ def test_execution_failures_have_separate_budget_and_bounded_recovery(daemon, fa
 def test_end_allows_internal_text_but_keeps_read_result_boundary():
     harness = TurnHarness.for_stage("owner")
     assert harness.validate([end_call()], has_assistant_text=True) is None
-    assert harness.validate([ToolCall("voice", "send_voice", {}), end_call()], has_assistant_text=True) is None
+    assert harness.validate([ToolCall("voice", "reply", {}), end_call()], has_assistant_text=True) is None
     assert harness.validate([ToolCall("read", "read_file", {}), end_call()]) == "end_turn_must_be_alone"
-    assert harness.validate([end_call(), ToolCall("send", "send_bubbles", {})]) == "end_turn_must_be_alone"
+    assert harness.validate([end_call(), ToolCall("send", "reply", {})]) == "end_turn_must_be_alone"
 
 
 def test_heartbeat_recall_covers_one_batch_not_future_sends():
     harness = TurnHarness.for_stage("heartbeat")
     harness.accept("heartbeat_begin")
-    send = ToolCall("send", "send_bubbles", {})
-    voice = ToolCall("voice", "send_voice", {})
+    send = ToolCall("send", "reply", {})
+    voice = ToolCall("voice", "reply", {})
     assert harness.validate([send, voice]) == "heartbeat_recall_required_before_send"
     harness.accept("recall")
     assert harness.validate([send, voice]) is None
-    harness.accept("send_bubbles")
-    harness.accept("send_voice")
+    harness.accept("reply")
+    harness.accept("reply")
     assert harness.validate([send]) == "heartbeat_recall_required_before_send"
 
     harness.accept("recall")
@@ -126,3 +129,12 @@ def test_heartbeat_activity_and_end_commit_only_after_success(daemon):
     asyncio.run(daemon._complete_heartbeat(turn_id, owner_event_revision=0))
     assert rounds == 3
     assert daemon.store._db.execute("SELECT state FROM turns WHERE id=?", (turn_id,)).fetchone()[0] == "completed"
+
+
+@pytest.mark.parametrize("stage", ["owner", "heartbeat", "webhook", "reply_followup", "goal", "plan_step"])
+def test_hidden_delivery_tools_cannot_bypass_replyer(stage):
+    harness = TurnHarness.for_stage(stage)
+    if harness.spec.first_tool:
+        harness.accept(harness.spec.first_tool)
+    for name in ("send_bubbles", "send_voice"):
+        assert harness.validate([ToolCall("hidden", name, {})]) == "tool_not_allowed"

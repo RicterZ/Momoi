@@ -1,3 +1,4 @@
+from tests.support import reply_call, install_scripted_replyer
 from tests.support import provider_catalog
 import asyncio
 import json
@@ -264,6 +265,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             stop = asyncio.Event()
             completed = asyncio.Event()
             captured: list[IncomingMessage] = []
@@ -312,6 +314,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             stale_reply_started = asyncio.Event()
             finish_stale_reply = asyncio.Event()
             stale_reply_cancelled = asyncio.Event()
@@ -335,15 +338,15 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             stale_reply_cancelled.set()
                             raise
                         text = "只回应第一条"
-                        tool_name = "send_bubbles"
-                        arguments = {"bubbles": [text]}
+                        tool_name = "reply"
+                        arguments = reply_call("script", bubbles=[text]).arguments
                     elif provider_self.calls == 2:
                         self.assertIn(
                             "第二条", json.dumps(messages, ensure_ascii=False)
                         )
                         text = "合并两条后回复"
-                        tool_name = "send_bubbles"
-                        arguments = {"bubbles": [text]}
+                        tool_name = "reply"
+                        arguments = reply_call("script", bubbles=[text]).arguments
                     else:
                         tool_name = "end_turn"
                         arguments = {
@@ -412,6 +415,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             tool_started = asyncio.Event()
             finish_tool = asyncio.Event()
             stale_end_turn_started = asyncio.Event()
@@ -453,20 +457,14 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         except asyncio.CancelledError:
                             stale_end_turn_cancelled.set()
                             raise
-                        call = ToolCall(
-                            "stale-message",
-                            "send_bubbles",
-                            {"bubbles": ["上海天气晴"]},
-                        )
+                        call = reply_call("stale-message", bubbles=["上海天气晴"])
                     elif provider_self.calls == 3:
                         rendered = json.dumps(messages, ensure_ascii=False)
                         self.assertIn("不用查天气了", rendered)
                         self.assertIsNone(___.get("required_tool"))
                         self.assertIn("旧地址天气", rendered)
                         self.assertIn('"state": "recalled"', rendered.replace('\\"', '"'))
-                        return ProviderResponse(
-                            [{"type": "text", "text": "<bubble>收到，不查了</bubble>"}], []
-                        )
+                        call = reply_call("updated-reply", bubbles=["收到，不查了"])
                     else:
                         call = ToolCall(
                             "final-end_turn",
@@ -565,6 +563,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
             )
+            install_scripted_replyer(daemon)
             started = asyncio.Event()
             cancelled = asyncio.Event()
 
@@ -630,6 +629,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
             )
+            install_scripted_replyer(daemon)
             stop = asyncio.Event()
             second_run = asyncio.Event()
             calls = 0
@@ -665,6 +665,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 episode_unsummarized_tail_turns=2, memory_results=2,
                 database=Path(directory) / "momoi.sqlite3", log_level="INFO",
             ))
+            install_scripted_replyer(daemon)
             try:
                 for index in range(1, 5):
                     TranscriptWindowTest._add_visible_turn(daemon.store, index)
@@ -710,6 +711,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             command = IncomingMessage(
                 "qq:manual-heartbeat",
                 "manual-heartbeat",
@@ -746,6 +748,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     timezone="Asia/Shanghai",
                 )
             )
+            install_scripted_replyer(daemon)
             command = IncomingMessage(
                 "qq:manual-reflect",
                 "manual-reflect",
@@ -808,6 +811,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             command = IncomingMessage(
                 "qq:manual-tidy",
                 "manual-tidy",
@@ -850,6 +854,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             daemon.store.begin_turn("question", "owner", [])
             daemon.store.complete_background_turn("question")
             daemon.store._db.execute(
@@ -901,6 +906,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             daemon.store._db.execute(
                 """UPDATE self_state SET pending_reply_turn_id='question',
                    pending_reply_expectation='主人对问题的回答',
@@ -999,6 +1005,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     workspace=root,
                 )
             )
+            install_scripted_replyer(daemon)
             class MCP:
                 @staticmethod
                 def tool_group(_: str) -> str:
@@ -1127,6 +1134,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     workspace=root,
                 )
             )
+            install_scripted_replyer(daemon)
             event = IncomingMessage(
                 "owner-enable-workspace",
                 "owner-enable-workspace",
@@ -1205,6 +1213,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             daemon.store.commit_turn(
                 [], "", AgentReply(["正常的 Owner 回复"]), turn_id="owner-turn"
             )
@@ -1237,6 +1246,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="DEBUG",
                 )
             )
+            install_scripted_replyer(daemon)
 
             class Provider:
                 calls = 0
@@ -1259,11 +1269,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         calls = []
                         if self.calls == 1:
                             calls.append(
-                                ToolCall(
-                                    "start-message",
-                                    "send_bubbles",
-                                    {"bubbles": []},
-                                )
+                                reply_call("start-message", bubbles=[])
                             )
                         calls.append(
                             ToolCall(
@@ -1273,8 +1279,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             )
                         )
                     else:
-                        assert {"send_bubbles", "end_turn", "recall"} <= {tool["name"] for tool in tools}
-                        calls = [ToolCall("notify", "send_bubbles", {"bubbles": ["创建任务没成功，我先停下了。"]}),
+                        assert {"reply", "end_turn", "recall"} <= {tool["name"] for tool in tools}
+                        calls = [reply_call("notify", bubbles=["创建任务没成功，我先停下了。"]),
                                  ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}, "reply_wait": {"wait": False}})]
                     return ProviderResponse(
                         [
@@ -1292,7 +1298,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 @staticmethod
                 def assert_terminal_tools(tools: list[dict[str, object]]) -> None:
                     names = [tool["name"] for tool in tools]
-                    if "send_bubbles" not in names or "end_turn" not in names:
+                    if "reply" not in names or "end_turn" not in names:
                         raise AssertionError(tools)
                     if "goal_create" not in names:
                         raise AssertionError(tools)
@@ -1342,6 +1348,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             daemon.autonomous.put_nowait(AutonomousJob.heartbeat())
             daemon.autonomous.put_nowait(AutonomousJob.goal("goal-1"))
             self.assertEqual(
@@ -1367,6 +1374,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             event = IncomingMessage("qq:1:retry", "retry", "稍后继续", 1, 1)
             daemon.store.add_event(event)
             draft = TurnDraft()
@@ -1453,6 +1461,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             config.heartbeat_prompt_path.write_text("偶尔看看最近有什么有趣的新游戏。")
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             self.assertTrue((Path(directory) / "artifacts").is_dir())
             self.assertTrue((Path(directory) / "tool-results").is_dir())
             daemon.store.create_episode(
@@ -1518,7 +1527,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         expected = {
                             "heartbeat_begin",
                             "web_fetch",
-                            "send_bubbles",
+                            "reply",
                             "end_turn",
                         }
                         if not expected.issubset(names):
@@ -1590,11 +1599,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "recall_from_turn_id": "",
                         }]})
                     elif self.calls == 8:
-                        call = ToolCall(
-                            "heartbeat-live",
-                            "send_bubbles",
-                            {"bubbles": ["刚想到一个关卡点子！"]},
-                        )
+                        call = reply_call("heartbeat-live", bubbles=["刚想到一个关卡点子！"])
                     elif self.calls == 9:
                         call = ToolCall("activity-two", "heartbeat_activity", {
                             "activity": "整理小游戏关卡灵感",
@@ -1697,6 +1702,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 turn_max_total_tokens=1,
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
 
             class Provider:
                 calls = 0
@@ -1737,6 +1743,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
 
             class Provider:
                 calls = 0
@@ -1787,6 +1794,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             turn_max_protocol_retries=3,
                         )
                         daemon = MomoiDaemon(config)
+                        install_scripted_replyer(daemon)
                         try:
                             event = IncomingMessage("qq:protocol", "protocol", "测试", 1, 1)
                             daemon.store.add_event(event)
@@ -1802,8 +1810,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     self.calls += 1
                                     if self.calls > limit:
                                         assert self.calls == limit + 1
-                                        assert {"send_bubbles", "end_turn", "recall"} <= {tool["name"] for tool in _args[2]}
-                                        calls = [ToolCall("notify", "send_bubbles", {"bubbles": ["这次出错了，我先停下来，结果还没确认。"]}),
+                                        assert {"reply", "end_turn", "recall"} <= {tool["name"] for tool in _args[2]}
+                                        calls = [reply_call("notify", bubbles=["这次出错了，我先停下来，结果还没确认。"]),
                                                  ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}, "reply_wait": {"wait": False}})]
                                         return ProviderResponse([{"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments} for c in calls], calls)
                                     if external_effect and self.calls == 1:
@@ -1859,6 +1867,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             event = IncomingMessage(
                 "qq:fatal-after-tool", "fatal-after-tool", "测试", 1, 1
             )
@@ -1899,6 +1908,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ),
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             daemon.store.commit_autonomous_turn(
                 "goal",
                 TurnDraft(
@@ -1935,6 +1945,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             daemon.store.queue_progress(
                 "old-napcat-turn", "old-napcat-call", ["仍在排队"], "napcat"
             )
@@ -1972,6 +1983,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             source = IncomingMessage("qq:1:goal-stop", "goal-stop", "继续任务", 1, 1)
             daemon.store.add_event(source)
             draft = TurnDraft()
@@ -2012,11 +2024,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         started.set()
                         await asyncio.Future()
                     if self.calls == 2:
-                        call = ToolCall(
-                            "stop-message",
-                            "send_bubbles",
-                            {"bubbles": ["已经停下来了"]},
-                        )
+                        call = reply_call("stop-message", bubbles=["已经停下来了"])
                     else:
                         call = ToolCall(
                             "stop-response",
@@ -2076,6 +2084,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
 
             async def blocked_write(_: ToolCall) -> dict[str, object]:
                 await asyncio.sleep(30)
@@ -2096,13 +2105,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {"path": "/tmp/momoi-stop-test", "content": "test"},
                         )
                     elif self.calls == 2:
-                        call = ToolCall(
-                            "stop-message",
-                            "send_bubbles",
-                            {
-                                "bubbles": ["已经终止当前任务"],
-                            },
-                        )
+                        call = reply_call("stop-message", bubbles=["已经终止当前任务"])
                     else:
                         call = ToolCall(
                             "stop-after-tool",
@@ -2173,9 +2176,15 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         stop = asyncio.Event()
         sent: list[str] = []
         llm_requests: list[dict[str, object]] = []
+        replyer_requests: list[dict[str, object]] = []
 
         async def llm(request: web.Request) -> web.Response:
             payload = await request.json()
+            if not payload.get("tools"):
+                replyer_requests.append(payload)
+                self.assertIn("发送形式：文字", str(payload["messages"][-1]))
+                speech = "我先处理一下" if len(replyer_requests) == 1 else "测试回复一\n\n测试回复二"
+                return web.json_response({"content": [{"type": "text", "text": speech}]})
             llm_requests.append(payload)
             main_call = len(llm_requests)
             if main_call == 1:
@@ -2191,10 +2200,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "type": "tool_use",
                                 "id": "progress-1",
-                                "name": "send_bubbles",
-                                "input": {
-                                    "bubbles": ["我先处理一下"],
-                                },
+                                "name": "reply",
+                                "input": reply_call("script", bubbles=["我先处理一下"]).arguments,
                             }
                         ],
                     }
@@ -2225,8 +2232,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "type": "tool_use",
                                 "id": "send-final",
-                                "name": "send_bubbles",
-                                "input": {"bubbles": ["测试回复一", "测试回复二"]},
+                                "name": "reply",
+                                "input": reply_call("script", bubbles=["测试回复一", "测试回复二"]).arguments,
                             }
                         ],
                     }
@@ -2325,15 +2332,16 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(sent, ["我先处理一下", "测试回复一", "测试回复二"])
         self.assertEqual(len(llm_requests), 8)
+        self.assertEqual(len(replyer_requests), 2)
         initial_tools = [tool["name"] for tool in llm_requests[0]["tools"]]
         second_tools = [tool["name"] for tool in llm_requests[1]["tools"]]
         self.assertEqual(initial_tools, second_tools)
-        self.assertIn("send_bubbles", second_tools)
+        self.assertIn("reply", second_tools)
         self.assertIn("end_turn", second_tools)
         self.assertNotIn("tool_choice", llm_requests[0])
-        self.assertIn("send_bubbles", second_tools)
+        self.assertIn("reply", second_tools)
         final_tools = [tool["name"] for tool in llm_requests[7]["tools"]]
-        self.assertIn("send_bubbles", final_tools)
+        self.assertIn("reply", final_tools)
         self.assertIn("end_turn", final_tools)
         self.assertIn("memory_search", final_tools)
         self.assertEqual(final_tools, initial_tools)

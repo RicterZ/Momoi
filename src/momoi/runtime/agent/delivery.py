@@ -117,9 +117,8 @@ class BubbleDelivery:
             return {
                 "ok": False, "error": "voice_synthesis_failed", "detail": str(error),
                 "message": (
-                    "Voice synthesis failed; no voice message was queued or delivered. "
-                    "Use send_bubbles to reply in text instead. Do not repeat send_voice "
-                    "for this reply; TTS retries have already been handled."
+                    "语音合成失败，没有排队或发送语音。请改用 reply(mode=text) 发送文字；"
+                    "本次回应不要再尝试语音，TTS 已处理重试。"
                 ),
             }
         if self.store.owner_channel_revision(channel) != revision:

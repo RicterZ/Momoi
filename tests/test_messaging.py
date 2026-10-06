@@ -1,3 +1,4 @@
+from tests.support import reply_call, install_scripted_replyer
 from tests.support import provider_catalog
 import asyncio
 import base64
@@ -732,6 +733,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
 
             class Provider:
                 calls = 0
@@ -746,27 +748,15 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     self.calls += 1
                     if self.calls == 1:
-                        call = ToolCall(
-                            "first-message",
-                            "send_bubbles",
-                            {
-                                "bubbles": [
+                        call = reply_call("first-message", bubbles=[
                                     "嗝得这么响亮，这顿吃得超满意嘛",
                                     "吃饱了就好，下午接着瘫着养精神",
-                                ]
-                            },
-                        )
+                                ])
                     elif self.calls == 2:
-                        call = ToolCall(
-                            "similar-message",
-                            "send_bubbles",
-                            {
-                                "bubbles": [
+                        call = reply_call("similar-message", bubbles=[
                                     "嗝得这么响，看来这顿很满意嘛",
                                     "吃饱了就好，下午接着舒服瘫着",
-                                ]
-                            },
-                        )
+                                ])
                     else:
                         self.warning = json.dumps(messages[-1], ensure_ascii=False)
                         call = ToolCall(
@@ -822,6 +812,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
             now = time.time()
             with daemon.store._db:
                 daemon.store._db.execute(
@@ -905,6 +896,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             daemon.store.commit_turn(
                 [],
                 "",
@@ -959,6 +951,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             case = self
 
             class Provider:
@@ -1014,6 +1007,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
+            install_scripted_replyer(daemon)
 
             class Provider:
                 calls = 0
@@ -1030,13 +1024,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         return ProviderResponse(
                             [],
                             [
-                                ToolCall(
-                                    "live-question",
-                                    "send_bubbles",
-                                    {
-                                        "bubbles": ["老师会选哪一个？"],
-                                    },
-                                )
+                                reply_call("live-question", bubbles=["老师会选哪一个？"])
                             ],
                         )
                     return ProviderResponse(
@@ -1092,6 +1080,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             daemon.store.commit_turn([], "", AgentReply(["第一轮"]), turn_id="turn-one")
             daemon.store.commit_turn([], "", AgentReply(["第二轮"]), turn_id="turn-two")
             stop = asyncio.Event()
@@ -1130,6 +1119,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             accepted: list[IncomingMessage] = []
 
             async def receive(message: IncomingMessage) -> None:
@@ -1243,6 +1233,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             daemon.store.add_emotion("happy-1", asset, "真心高兴或庆祝时使用")
             daemon.store.add_emotion("proud-1", second_asset, "得意收尾时使用")
             case = self
@@ -1276,18 +1267,12 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             },
                         )
                         return ProviderResponse([], [call])
-                    call = ToolCall(
-                        "emotion-response",
-                        "send_bubbles",
-                        {
-                            "bubbles": [
+                    call = reply_call("emotion-response", bubbles=[
                                 "太好了",
                                 "emotion://happy-1",
                                 "这次我可厉害了",
                                 "emotion://proud-1",
-                            ],
-                        },
-                    )
+                            ])
                     return ProviderResponse(
                         [
                             {
@@ -1331,13 +1316,13 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             first = daemon.store.due_outbox()[0]
             self.assertEqual(first.kind, "text")
             daemon.store.mark_sent(first.id)
+            second_text = daemon.store.due_outbox()[0]
+            self.assertEqual(second_text.text, "这次我可厉害了")
+            daemon.store.mark_sent(second_text.id)
             image = daemon.store.due_outbox()[0]
             self.assertEqual(image.kind, "image")
             self.assertEqual(image.media_path, str(asset.resolve()))
             daemon.store.mark_sent(image.id)
-            second_text = daemon.store.due_outbox()[0]
-            self.assertEqual(second_text.text, "这次我可厉害了")
-            daemon.store.mark_sent(second_text.id)
             second_image = daemon.store.due_outbox()[0]
             self.assertEqual(second_image.kind, "image")
             self.assertEqual(second_image.media_path, str(second_asset.resolve()))
@@ -1359,6 +1344,10 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
+            asset = Path(directory) / "known.jpg"
+            asset.write_bytes(b"image")
+            daemon.store.add_emotion("known", asset, "已有表情")
 
             class Provider:
                 def __init__(self) -> None:
@@ -1377,8 +1366,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.errors.append(json.dumps(messages[-1], ensure_ascii=False))
                     if self.calls <= 2:
                         value = "emotion://missing" if self.calls == 1 else "改成文字回复"
-                        tool_name = "send_bubbles"
-                        arguments = {"bubbles": [value]}
+                        tool_name = "reply"
+                        arguments = reply_call("script", bubbles=[value]).arguments
                     else:
                         tool_name = "end_turn"
                         arguments = {
@@ -1560,6 +1549,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     workspace=root,
                 )
             )
+            install_scripted_replyer(daemon)
             case = self
 
             class Provider:
@@ -1582,7 +1572,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         case.assertNotIn("channel=weixin", serialized)
                         case.assertNotIn("channel=napcat", serialized)
                         spec = next(
-                            tool for tool in tools if tool["name"] == "send_bubbles"
+                            tool for tool in tools if tool["name"] == "reply"
                         )
                         channel = spec["input_schema"]["properties"][  # type: ignore[index]
                             "channel"
@@ -1607,11 +1597,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         return ProviderResponse(
                             [],
                             [
-                                ToolCall(
-                                    f"progress-{self.calls}",
-                                    "send_bubbles",
-                                    arguments,
-                                )
+                                reply_call(f"progress-{self.calls}", **arguments)
                             ],
                         )
                     return ProviderResponse(
@@ -1709,6 +1695,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     workspace=root,
                 )
             )
+            install_scripted_replyer(daemon)
             daemon.store.commit_turn(
                 [],
                 "",

@@ -1,3 +1,4 @@
+from tests.support import reply_call, install_scripted_replyer
 from tests.support import provider_catalog
 import asyncio
 import json
@@ -216,6 +217,7 @@ class ProvidersToolsTest(unittest.TestCase):
                 tool_result_max_chars=1000,
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             call = ToolCall("large", "read_file", {"path": "/tmp/x"})
             result = daemon.tool_executor.normalize(
                 call,
@@ -302,6 +304,7 @@ class ProvidersToolsTest(unittest.TestCase):
                 tool_result_max_chars=1000,
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
             raw = {"ok": True, "items": [{"text": "原文" * 1000}]}
             call = ToolCall("large", "mcp__demo__search", {"query": "x"})
             first = daemon.tool_executor.normalize(call, raw, "mcp")
@@ -1151,6 +1154,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
 
             class FakeProvider:
                 def __init__(self) -> None:
@@ -1169,11 +1173,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             [{"type": "text", "text": "ignored protocol"}], []
                         )
                     if len(self.calls) == 2:
-                        call = ToolCall(
-                            "send-corrected",
-                            "send_bubbles",
-                            {"bubbles": ["已纠正"]},
-                        )
+                        call = reply_call("send-corrected", bubbles=["已纠正"])
                     else:
                         call = ToolCall(
                             "end_turn-corrected",
@@ -1227,6 +1227,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            install_scripted_replyer(daemon)
 
             class FakeProvider:
                 calls = 0
@@ -1243,18 +1244,14 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if self.calls == 1:
                         call = ToolCall(
                             "bad-json",
-                            "send_bubbles",
+                            "reply",
                             {},
                             "invalid_tool_arguments_json",
                         )
                     elif self.calls == 2:
                         self_test.assertIn("invalid_tool_arguments_json", rendered)
                         self_test.assertNotIn("先纠正参数", rendered)
-                        call = ToolCall(
-                            "corrected-message",
-                            "send_bubbles",
-                            {"bubbles": ["参数已纠正"]},
-                        )
+                        call = reply_call("corrected-message", bubbles=["参数已纠正"])
                     else:
                         call = ToolCall(
                             "corrected-response",
