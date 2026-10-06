@@ -1,6 +1,8 @@
 name: Windows installer
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       installer_run:
@@ -8,11 +10,28 @@ on:
         default: ""
         required: false
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve release version
+        id: version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'release') {
+            $Version = $env:RELEASE_TAG -replace '^v', ''
+            if ($Version -notmatch '^\d+\.\d+\.\d+(?:[.-][A-Za-z0-9.-]+)?$') {
+              throw "Release tag must be a version such as v1.1.0: $env:RELEASE_TAG"
+            }
+            "value=$Version" >> $env:GITHUB_OUTPUT
+          }
       - uses: astral-sh/setup-uv@v6
       - uses: actions/setup-node@v4
         with:
@@ -24,7 +43,7 @@ jobs:
       - name: Locked Python test environment
         run: uv sync --locked --python 3.12 --group test
       - name: Windows shell, process tree and workspace tests
-        run: uv run --locked --group test pytest -q -n 0 tests/test_platform.py tests/test_exec_tool.py tests/test_desktop.py tests/test_desktop_qq.py
+        run: uv run --locked --group test pytest -q -n 0 tests/test_platform.py tests/test_exec_tool.py tests/test_desktop.py tests/test_desktop_qq.py tests/test_desktop_emotions.py
       - name: Update validation checks
         run: dotnet run --project desktop/Momoi.Update.Check -c Release
       - name: Native QQ library and isolated data smoke
@@ -37,7 +56,9 @@ jobs:
       - name: Build installer and smoke private runtime
         if: inputs.installer_run == ''
         shell: pwsh
-        run: ./packaging/windows/build.ps1
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: ./packaging/windows/build.ps1 -Version $env:RELEASE_VERSION
       - uses: actions/download-artifact@v4
         if: inputs.installer_run != ''
         with:
@@ -67,3 +88,31 @@ jobs:
           name: Momoi-Windows-diagnostics
           path: dist/windows/install-test/
           if-no-files-found: ignore
+
+  publish-release:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Momoi-Windows-x64
+          path: dist/windows
+      - name: Attach tested installer to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          installers=(dist/windows/Momoi-Setup-*-x64.exe)
+          if [ "${#installers[@]}" -ne 1 ]; then
+            echo "Expected exactly one tested Windows installer" >&2
+            exit 1
+          fi
+          gh release upload "$RELEASE_TAG" "${installers[0]}" --clobber
