@@ -1,5 +1,4 @@
 """Bounded Windows native AVSDK host probe; does not log in or place calls."""
-import ctypes
 import hashlib
 import json
 import os
@@ -35,17 +34,14 @@ def main():
     app = package.parent
     avsdk = app / 'avsdk/AVSDKPlugin.dll'
     result['avsdk_bytes'] = avsdk.stat().st_size
-    handles = [os.add_dll_directory(str(path)) for path in (app, app / 'avsdk', app.parent.parent, extracted / 'Files')]
-    try:
-        library = ctypes.WinDLL(str(avsdk))
-        result['dll_load'] = True
-        for symbol in ('PPP_GetInterface', 'PPP_InitializeModule', 'PPP_ShutdownModule'):
-            result['exports'][symbol] = bool(getattr(library, symbol, None))
-    except OSError as error:
-        result['dll_error'] = str(error)
-    winmm = ctypes.WinDLL('winmm')
-    result['wave_input_count'] = winmm.waveInGetNumDevs()
-    result['wave_output_count'] = winmm.waveOutGetNumDevs()
+    # Native SDK constructors/teardown may terminate their process. Isolate
+    # inspection so a native exit cannot terminate the diagnostic runner.
+    native_report = TARGET / 'native-report.json'
+    native = subprocess.run([sys.executable, str(Path(__file__).parent / 'native_probe.py'),
+        str(app), str(extracted / 'Files'), str(native_report)], timeout=30)
+    result['native_probe_exit'] = native.returncode
+    if native_report.exists():
+        result.update(json.loads(native_report.read_text(encoding='utf-8')))
     probe_app = TARGET / 'probe-app'
     probe_app.mkdir(exist_ok=True)
     for name in ('host.cjs', 'host.html'):
@@ -71,7 +67,7 @@ def main():
             if host_report.exists():
                 result['host'] = json.loads(host_report.read_text())
             else:
-                result['host_error'] = 'No host report; launcher or package main override did not execute'
+                result['host_error'] = 'No host report; QQ launcher did not execute the external app'
         finally:
             subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     result['assets'] = {str(path.relative_to(app / 'avsdk')): path.stat().st_size for path in (app / 'avsdk').rglob('*') if path.is_file()}
@@ -84,6 +80,4 @@ except Exception as error:
 finally:
     REPORT.write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps(result, indent=2), flush=True)
-    # The third-party DLL owns process teardown hooks; do not invoke its
-    # unsupported standalone shutdown while exiting this diagnostic process.
-    os._exit(0)
+
