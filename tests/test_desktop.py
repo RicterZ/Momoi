@@ -102,3 +102,33 @@ def test_mcp_runtime_uses_writable_user_caches_and_private_toolchain(tmp_path):
     before = path.read_bytes()
     seed_brave_config(workspace)
     assert path.read_bytes() == before
+
+
+def test_desktop_prompt_defaults_match_examples(tmp_path):
+    from importlib.resources import files
+
+    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    examples = Path(__file__).resolve().parents[1] / "config.example/prompts"
+    for name in ("SOUL", "PLANNER", "REPLYER"):
+        expected = (examples / f"{name}.md").read_text(encoding="utf-8")
+        assert expected.strip()
+        assert files("momoi.desktop").joinpath(f"default_prompts/{name}.md").read_text(encoding="utf-8") == expected
+        assert (tmp_path / f"prompts/{name}.md").read_text(encoding="utf-8") == expected
+
+
+def test_desktop_repairs_empty_prompts_at_custom_path(tmp_path):
+    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    config_path = tmp_path / "config.json"
+    app = json.loads(config_path.read_text(encoding="utf-8"))
+    app["context"]["soul_prompt"] = "custom/SOUL.md"
+    atomic_write(config_path, json.dumps(app))
+    atomic_write(tmp_path / "custom/SOUL.md", "我的自定义人格\n")
+    atomic_write(tmp_path / "custom/PLANNER.md", "\ufeff  \n")
+    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    assert (tmp_path / "custom/SOUL.md").read_text(encoding="utf-8") == "我的自定义人格\n"
+    examples = Path(__file__).resolve().parents[1] / "config.example/prompts"
+    for name in ("PLANNER", "REPLYER"):
+        assert (tmp_path / f"custom/{name}.md").read_text(encoding="utf-8") == (examples / f"{name}.md").read_text(encoding="utf-8")
+    atomic_write(tmp_path / "custom/REPLYER.md", "用户自定义回复风格")
+    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    assert (tmp_path / "custom/REPLYER.md").read_text(encoding="utf-8") == "用户自定义回复风格"

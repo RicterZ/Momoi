@@ -1,5 +1,7 @@
 """Desktop-only defaults; preserve user-selected providers and credentials."""
 
+import json
+from importlib.resources import files
 from pathlib import Path
 
 import yaml
@@ -12,7 +14,18 @@ MARKER = ".desktop-embedding.yaml"
 
 
 def prepare_workspace(workspace: Path, endpoint: str) -> None:
-    bootstrap(workspace / "config.json")
+    config_path = workspace / "config.json"
+    app = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    soul_path = workspace / app.get("context", {}).get("soul_prompt", "prompts/SOUL.md")
+    for name, path in (
+        ("SOUL", soul_path),
+        ("PLANNER", soul_path.parent / "PLANNER.md"),
+        ("REPLYER", soul_path.parent / "REPLYER.md"),
+    ):
+        if not path.exists() or not path.read_text(encoding="utf-8-sig").strip():
+            content = files("momoi.desktop").joinpath(f"default_prompts/{name}.md").read_text(encoding="utf-8")
+            atomic_write(path, content)
+    bootstrap(config_path)
     provider_path = workspace / "providers.yaml"
     from ..config.manager import ConfigurationManager
 
