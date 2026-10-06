@@ -1,0 +1,23 @@
+# Run from the repository root:
+# docker compose -f infra/napcat-call/compose.yaml up -d --build
+services:
+  napcat-call:
+    build:
+      context: ../..
+      dockerfile: infra/napcat-call/Dockerfile
+    image: momoi-napcat-call:local
+    restart: unless-stopped
+    environment:
+      QQ_CALL_ENABLED: ${QQ_CALL_ENABLED:-0}
+      ACCOUNT: ${NAPCAT_ACCOUNT:-}
+      NAPCAT_UID: ${NAPCAT_UID:-0}
+      NAPCAT_GID: ${NAPCAT_GID:-0}
+    ports:
+      - "127.0.0.1:${NAPCAT_WEBUI_PORT:-6099}:6099"
+      - "127.0.0.1:${NAPCAT_ONEBOT_PORT:-3001}:3001"
+      # Containers on the same network can use port 6112 without publishing it.
+      - "127.0.0.1:${QQ_CALL_PORT:-6112}:6112"
+    volumes:
+      - ${NAPCAT_QQ_DATA:-./data/qq}:/app/.config/QQ
+      - ${NAPCAT_CONFIG:-./data/config}:/app/napcat/config
+      - ${QQ_CALL_DATA:-./data/call}:/app/qq-call
