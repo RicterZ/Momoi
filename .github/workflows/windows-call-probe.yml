@@ -1,0 +1,23 @@
+name: Windows QQ call research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Inspect native AVSDK without QQ login
+        run: uv run --no-project --python 3.12 python packaging/windows/qq_call_probe/probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Windows-QQ-call-research
+          path: |
+            build/windows-call-probe/report.json
+            build/windows-call-probe/host-report.json
+            build/windows-call-probe/host.log
+          if-no-files-found: error
