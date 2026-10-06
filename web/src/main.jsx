@@ -942,7 +942,7 @@ function Conversations({ refreshKey, token, routeParam }) {
   return (
     <DataView path="/api/conversations?limit=100" refreshKey={refreshKey} token={token}>
       {(data) => {
-        const items = [...(data.items || [])].reverse();
+        const items = data.items || [];
         const activeRecord =
           selected ||
           (items[0]
