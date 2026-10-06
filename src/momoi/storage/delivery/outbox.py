@@ -18,6 +18,22 @@ class OutboxStore:
         ).fetchone()
         return dict(row) if row else None
 
+    def committed_reply(self, turn_id: str, tool_call_id: str) -> dict[str, object] | None:
+        """Recover exact generated speech on replay of an already queued call."""
+        rows = self._db.execute(
+            """SELECT p.text, o.target_channel, o.state FROM turn_progress p
+               JOIN outbox o ON o.dedupe_key = 'turn:' || p.turn_id || ':progress:' ||
+                    p.tool_call_id || ':' || p.part_index
+               WHERE p.turn_id=? AND p.tool_call_id=? ORDER BY p.part_index""",
+            (turn_id, tool_call_id),
+        ).fetchall()
+        if not rows:
+            return None
+        failed = any(row["state"] in {"failed", "cancelled"} for row in rows)
+        return {"ok": not failed, "state": "committed", "channel": rows[0]["target_channel"],
+                "bubbles": [row["text"] for row in rows],
+                **({"error": "reply_delivery_failed"} if failed else {})}
+
     @staticmethod
     def _message_delivery_state(
         outbox_state: str, possible_duplicate: bool = False

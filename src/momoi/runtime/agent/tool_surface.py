@@ -98,13 +98,16 @@ class ToolSurface:
 
     def conversation_specs(self) -> list[dict[str, Any]]:
         groups = self.mcp_server_groups()
+        reply_spec = copy.deepcopy(REPLY_TOOL_SPEC)
+        if not self.voice_enabled:
+            reply_spec["input_schema"]["properties"]["mode"]["enum"] = ["text"]
         tools = [
             copy.deepcopy(RECALL_TOOL_SPEC),
             copy.deepcopy(EPISODE_RELATIONS_TOOL_SPEC),
             heartbeat_begin_spec(),
             copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC),
             copy.deepcopy(GOAL_REVIEW_TOOL_SPEC),
-            {**copy.deepcopy(REPLY_TOOL_SPEC), "description": REPLY_TOOL_SPEC["description"] + (" 可选择 mode=voice。" if self.voice_enabled else " 当前仅支持 mode=text。")},
+            {**reply_spec, "description": REPLY_TOOL_SPEC["description"] + (" 可选择 mode=voice。" if self.voice_enabled else " 当前仅支持 mode=text。")},
             self.send_bubbles_spec(),
             *([copy.deepcopy(SEND_VOICE_TOOL_SPEC)] if self.voice_enabled else []),
             READ_TOOL_RESULT_SPEC,

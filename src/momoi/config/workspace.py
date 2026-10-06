@@ -80,4 +80,7 @@ def bootstrap(config_path: Path) -> bool:
         "你是 Momoi，是主人的个人助手。请用自然、清晰的语言交流。\n",
     )
     _create(root / "prompts/HEARTBEAT.md", "")
+    for name in ("planner", "replyer"):
+        _create(root / f"prompts/{name.upper()}.md",
+                files("momoi").joinpath(f"prompts/{name}.md").read_text(encoding="utf-8"))
     return _create(config_path, json.dumps(config, ensure_ascii=False, indent=2) + "\n")

@@ -11,7 +11,7 @@ from ..transcript.replyer import visible_dialogue
 
 def prompt_text(config, name, fallback):
     path = config.soul_prompt_path.parent / name if config.soul_prompt_path else None
-    return path.read_text(encoding="utf-8").strip() if path and path.is_file() else fallback
+    return (path.read_text(encoding="utf-8").strip() or fallback) if path and path.is_file() else fallback
 
 
 class Replyer:
@@ -43,7 +43,7 @@ class Replyer:
         messages.append({"role": "user", "content": blocks})
         with log_context(stage="replyer", turn_id=request.turn_id, call_id=new_trace_id(),
                          round=request.round_number, channel=request.delivery_channel.name,
-                         tool_call_id=call.id), model_request(thinking_effort=self.config.thinking_stages.get("replyer", "low")):
+                         tool_call_id=call.id), model_request(thinking_effort=self.config.thinking_stages.get("replyer") or "low"):
             response = await self.provider.complete(system, messages, [])
         usage = response.usage or {}
         self.store.record_turn_usage(request.turn_id, int(usage.get("input", estimate_tokens(system + str(messages)))),

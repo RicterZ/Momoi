@@ -2015,6 +2015,7 @@ function thinkingStageCode(stage) {
   return (
     {
       owner: "MOMOI",
+      replyer: "REPLY",
       webhook: "HOOK",
       heartbeat: "BEAT",
       reflection: "NOTE",

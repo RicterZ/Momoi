@@ -27,6 +27,8 @@ def test_replyer_channel_history_uses_actual_delivery(tmp_path):
         rows = store.replyer_dialogue_rows('first')
         assert [r['content'] for r in rows] == ['first input', 'first output']
         assert [r['content'] for r in store.replyer_dialogue_rows('second')] == ['second input']
+        assert store.committed_reply('first', 'first-send')['bubbles'] == ['first output']
+        assert store.committed_reply('first', 'missing') is None
     finally:
         store.close()
 

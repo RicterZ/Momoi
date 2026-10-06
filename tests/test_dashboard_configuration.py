@@ -673,10 +673,10 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200, await response.text())
         response = await save({"episode_anneal": "max"})
         self.assertEqual(response.status, 200)
-        self.assertEqual(self.manager.validate().thinking_stages, {"episode_anneal": "max", "reply_followup": "low", "topic_selection": "low"})
+        self.assertEqual(self.manager.validate().thinking_stages, {"episode_anneal": "max", "reply_followup": "low", "topic_selection": "low", "replyer": "low"})
         response = await save({"episode_anneal": ""})
         self.assertEqual(response.status, 200)
-        self.assertEqual(self.manager.validate().thinking_stages, {"reply_followup": "low", "topic_selection": "low"})
+        self.assertEqual(self.manager.validate().thinking_stages, {"reply_followup": "low", "topic_selection": "low", "replyer": "low"})
         self.assertEqual(self.manager.provider_path.read_bytes(), providers_before)
         for effort in ("low", "medium", "high", "xhigh", "max", ""):
             response = await save({"owner": effort})
@@ -692,7 +692,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
             document = copy.deepcopy(LLM)
             document["adapter"] = protocol
             self.manager.save_binding("llm", document, self.manager.revision())
-            self.assertEqual(self.manager.validate().thinking_stages, {"reply_followup": "low", "topic_selection": "low"})
+            self.assertEqual(self.manager.validate().thinking_stages, {"reply_followup": "low", "topic_selection": "low", "replyer": "low"})
 
     async def test_topic_selection_default_save_and_follow_model(self):
         self.client.session.headers["Authorization"] = self.auth
@@ -731,7 +731,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 200)
             await applied()
             self.assertTrue(first.closed)
-            self.assertEqual(self.runtime.daemon.config.thinking_stages, {"episode_anneal": "low", "reply_followup": "low", "topic_selection": "low"})
+            self.assertEqual(self.runtime.daemon.config.thinking_stages, {"episode_anneal": "low", "reply_followup": "low", "topic_selection": "low", "replyer": "low"})
             second = self.runtime.daemon
             app = self.manager.read_app()
             app["thinking"]["stages"]["episode_anneal"] = "high"

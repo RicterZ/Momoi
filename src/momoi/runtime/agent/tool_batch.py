@@ -389,11 +389,19 @@ class ToolBatchExecutor:
                        if ended else {"reason": result.get("error")}),
                 )
             elif call.name == "reply":
-                if self.replyer is None:
+                cached_reply = self.store.committed_reply(request.turn_id, call.id)
+                if cached_reply is not None:
+                    result = cached_reply
+                    if result.get("ok"):
+                        visible = True
+                        last_sent_bubbles = copy.deepcopy(result["bubbles"])
+                        last_sent_channel = str(result["channel"])
+                elif self.replyer is None:
                     result = {"ok": False, "error": "replyer_unavailable"}
                 else:
                     try:
-                        bubbles = await self.replyer.generate(call, request)
+                        reply_request = replace(request, state=ToolBatchState(visible, previous_tool_name, last_sent_bubbles, last_sent_channel))
+                        bubbles = await self.replyer.generate(call, reply_request)
                         mode = call.arguments.get("mode", "text")
                         delivery_call = ToolCall(call.id, "send_voice" if mode == "voice" else "send_bubbles",
                                                  {"text": "\n".join(bubbles)} if mode == "voice" else {"bubbles": bubbles})

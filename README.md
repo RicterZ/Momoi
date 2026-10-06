@@ -397,6 +397,13 @@ Keyword recall remains available during indexing. See
 
 - Edit `~/.momoi/prompts/SOUL.md` for identity, relationship, values, interests,
   and natural voice.
+- Edit `~/.momoi/prompts/PLANNER.md` for the shared agent’s interpretation,
+  recall, tool use and response intent. `{{SOUL}}` includes the current identity.
+- Edit `~/.momoi/prompts/REPLYER.md` for expression. Replyer receives SOUL,
+  recent delivered channel dialogue (up to 48 messages / 5,000 estimated tokens),
+  the current input and Planner’s intent/reference; it has no tools. Its actual
+  speech returns to Planner as the `reply` result and follows normal delivery.
+  Replyer thinking defaults to `low` and is configurable in the dashboard.
 - Edit `~/.momoi/prompts/HEARTBEAT.md` to shape what Momoi may explore, create,
   continue, share, or leave quiet during autonomous time.
 - Add optional image reactions with `momoi emotion add`; descriptions tell the

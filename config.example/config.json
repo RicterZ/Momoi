@@ -5,7 +5,8 @@
       "episode_anneal": "low",
       "episode_relation": "low",
       "memory_maintenance": "low",
-      "reply_followup": "low"
+      "reply_followup": "low",
+      "replyer": "low"
     }
   },
   "timezone": "UTC",

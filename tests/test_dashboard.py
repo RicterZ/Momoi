@@ -201,6 +201,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             (
                 PromptFile("soul", self.soul_prompt, True),
                 PromptFile("heartbeat", self.heartbeat_prompt, False),
+                PromptFile("planner", prompt_root / "PLANNER.md", True),
+                PromptFile("replyer", prompt_root / "REPLYER.md", True),
             ),
         )
 
@@ -349,6 +351,15 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(items["soul"]["content"], "原来的人格")
         self.assertEqual(items["soul"]["filename"], "SOUL.md")
         self.assertNotIn("required", items["soul"])
+        for prompt_id in ("planner", "replyer"):
+            self.assertEqual(items[prompt_id]["filename"], prompt_id.upper() + ".md")
+            self.assertTrue(items[prompt_id]["content"].strip())
+            saved = await self.client.put(
+                "/api/settings/prompts/" + prompt_id, headers=auth,
+                json={"content": "测试提示词"},
+            )
+            self.assertEqual(saved.status, 200)
+            self.assertEqual((self.soul_prompt.parent / (prompt_id.upper() + ".md")).read_text(), "测试提示词")
 
         updated = await self.client.put(
             "/api/settings/prompts/soul",
