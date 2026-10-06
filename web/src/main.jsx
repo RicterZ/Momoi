@@ -2594,6 +2594,8 @@ function ThinkingDetail({ item, calls, recall }) {
 }
 
 const promptDetails = {
+  planner: { code: "03 / PLANNER", title: "行为规划", description: "主 agent 如何理解、取证、行动及派发回应。" },
+  replyer: { code: "04 / REPLYER", title: "发言生成", description: "Replyer 如何结合人格、真实对话及回应意图生成发言。" },
   soul: {
     code: "01 / PERSONA",
     title: "人格设定",
@@ -2643,7 +2645,7 @@ function PromptSettings({ items, token, navigation }) {
     if (!dirtyItems.length || saveLock.current) return;
     saveLock.current = true;
     setSaving(true);
-    setProgress({ state: "saving", title: "正在保存提示词", message: "正在提交人格设定与心跳指引…" });
+    setProgress({ state: "saving", title: "正在保存提示词", message: "正在提交人格、规划、发言与心跳提示词…" });
     try {
       const results = await Promise.allSettled(dirtyItems.map(async item => {
         const result = await api(`/api/settings/prompts/${encodeURIComponent(item.id)}`, {
@@ -2656,7 +2658,7 @@ function PromptSettings({ items, token, navigation }) {
       setDrafts(current => ({ ...current, ...completed }));
       const failed = results.flatMap((result, index) => result.status === "rejected" ? [`${promptDetails[dirtyItems[index].id].title}：${result.reason.message}`] : []);
       setStatus({ text: failed.length ? "部分提示词未保存，请重试" : "提示词已保存", error: failed.length > 0 });
-      setProgress({ state: failed.length ? "error" : "success", title: failed.length ? "提示词未全部保存" : "提示词已保存", message: failed.length ? failed.join("；") : "人格设定与心跳指引已更新。" });
+      setProgress({ state: failed.length ? "error" : "success", title: failed.length ? "提示词未全部保存" : "提示词已保存", message: failed.length ? failed.join("；") : "提示词已更新。" });
     } finally {
       saveLock.current = false;
       setSaving(false);

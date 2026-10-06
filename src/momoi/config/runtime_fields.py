@@ -5,7 +5,8 @@ import copy
 from ..integrations.request_context import THINKING_EFFORTS
 LOG_LEVELS = ("TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 THINKING_STAGES = {
-    "owner": "用户对话",
+    "owner": "用户对话（Planner）",
+    "replyer": "发言生成（Replyer）",
     "topic_selection": "话题召回筛选",
     "heartbeat": "心跳",
     "reply_followup": "回复跟进",

@@ -26,6 +26,8 @@ class DashboardSettings:
             (
                 PromptFile("soul", config.soul_prompt_path, True),
                 PromptFile("heartbeat", config.heartbeat_prompt_path, False),
+                PromptFile("planner", config.soul_prompt_path.parent / "PLANNER.md", True),
+                PromptFile("replyer", config.soul_prompt_path.parent / "REPLYER.md", True),
             )
         )
 
@@ -35,6 +37,9 @@ class DashboardSettings:
     def read(self, prompt_id: str) -> dict[str, object]:
         item = self._file(prompt_id)
         content = item.path.read_text(encoding="utf-8") if item.path.is_file() else ""
+        if not content and prompt_id in {"planner", "replyer"}:
+            from importlib.resources import files
+            content = files("momoi").joinpath(f"prompts/{prompt_id}.md").read_text(encoding="utf-8")
         return {
             "id": item.id,
             "filename": item.path.name,
