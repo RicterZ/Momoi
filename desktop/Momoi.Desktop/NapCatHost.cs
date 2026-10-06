@@ -141,6 +141,7 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
             // DLL search includes the shipped native libraries, not a machine-wide Node installation.
             info.Environment["PATH"] = runtime + Path.PathSeparator + info.Environment["PATH"];
             string nativeMarker = Path.Combine(Data, "qq", ".native-data-ready");
+            Directory.CreateDirectory(Path.GetDirectoryName(nativeMarker)!);
             File.Delete(nativeMarker);
             job = new ProcessJob();
             process = Process.Start(info) ?? throw new InvalidOperationException("无法启动内置 QQ 客户端。");

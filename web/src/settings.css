@@ -1201,3 +1201,14 @@
   .settings-runtime-fields { flex-wrap: wrap; gap: 16px; }
   .settings-runtime-fields > .settings-field { width: 150px; }
 }
+
+.settings-qq-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.settings-qq-actions .settings-button {
+  width: auto;
+  padding: 8px 12px;
+}
