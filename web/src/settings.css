@@ -1215,3 +1215,9 @@
   width: auto;
   padding: 8px 12px;
 }
+
+/* First-run setup shares the normal configuration forms. */
+.shell.is-setup { grid-template-columns: minmax(0, 1fr); }
+.setup-guide { padding: 20px 24px; margin-bottom: 18px; border: 2px solid var(--ink); background: var(--surface); }
+.setup-guide strong { font-size: 16px; }
+.setup-guide p { margin: 10px 0 0; line-height: 1.7; }

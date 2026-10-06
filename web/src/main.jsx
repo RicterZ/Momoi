@@ -1,3 +1,4 @@
+import { hasModelApiKey } from "./setupGuide.js";
 import { Fragment, StrictMode, createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
@@ -2692,10 +2693,10 @@ function PromptSettings({ items, token, navigation }) {
   );
 }
 
-function Settings({ refreshKey, token }) {
+function Settings({ refreshKey, token, setupMode, onSetupComplete }) {
   return (
     <div className="settings-page">
-      <ConfigurationSettings key={refreshKey} token={token} request={api} promptContent={navigation => (
+      <ConfigurationSettings key={refreshKey} token={token} request={api} setupMode={setupMode} onSetupComplete={onSetupComplete} promptContent={navigation => (
         <DataView path="/api/settings" refreshKey={refreshKey} token={token}>
           {data => <PromptSettings items={data.prompts || []} token={token} navigation={navigation} />}
         </DataView>
@@ -2783,15 +2784,36 @@ function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [token, setToken] = useState(readToken);
   const [tokenDraft, setTokenDraft] = useState("");
+  const [setupMode, setSetupMode] = useState(null);
+  const [setupError, setSetupError] = useState("");
+  useEffect(() => {
+    if (!token) return;
+    const controller = new AbortController();
+    api("/api/settings/configuration", { token, signal: controller.signal })
+      .then(data => {
+        const pending = sessionStorage.getItem("momoi-setup-pending") === "true";
+        const needed = pending || !hasModelApiKey(data);
+        if (needed) sessionStorage.setItem("momoi-setup-pending", "true");
+        setSetupMode(current => current === true ? true : needed);
+        setSetupError("");
+      })
+      .catch(error => { if (error.name !== "AbortError") setSetupError(error.message); });
+    return () => controller.abort();
+  }, [token, refreshKey]);
+  function finishSetup() {
+    sessionStorage.removeItem("momoi-setup-pending");
+    setSetupMode(false);
+    location.hash = "overview";
+  }
   const [version, setVersion] = useState("");
   const [timezone, setTimezone] = useState("UTC");
   const locked = !token;
-  const [pageTitle, eyebrow] = pages[view];
-  const View = viewComponents[view];
-  const isRecord = view === "conversations" || view === "thinking";
+  const [pageTitle, eyebrow] = setupMode ? ["首次配置", "WELCOME // MOMOI"] : pages[view];
+  const View = setupMode ? Settings : viewComponents[view];
+  const isRecord = !setupMode && (view === "conversations" || view === "thinking");
 
   async function allowSettingsLeave() {
-    if (view !== "settings" || !document.querySelector('.settings-studio [data-dirty="true"]')) return true;
+    if ((!setupMode && view !== "settings") || !document.querySelector('.settings-studio [data-dirty="true"]')) return true;
     return confirm({
       title: "还有修改没有保存",
       message: "离开或刷新页面会丢弃配置与提示词的草稿。",
@@ -2839,7 +2861,7 @@ function App() {
   return (
     <>
       <div
-        className={`shell${locked ? " is-locked" : ""}${isRecord ? " is-record" : ""}`}
+        className={`shell${setupMode !== false ? " is-setup" : ""}${locked ? " is-locked" : ""}${isRecord ? " is-record" : ""}`}
         onClickCapture={async (event) => {
           const link = event.target.closest('a[href^="#"]');
           if (view !== "settings" || !link || link.hash === location.hash || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -2851,7 +2873,7 @@ function App() {
         aria-hidden={locked || undefined}
         inert={locked || undefined}
       >
-        <aside className="sidebar">
+        {setupMode === false && <aside className="sidebar">
           <a className="brand" href="#overview" aria-label="Momoi 首页">
             <span className="brand-mark">M</span>
             <span>
@@ -2880,7 +2902,7 @@ function App() {
             <span>SYSTEM ONLINE</span>
             {version ? <span className="sidebar-version">{version}</span> : null}
           </div>
-        </aside>
+        </aside>}
         <main className={isRecord ? "is-record" : undefined}>
           <header className="topbar">
             <div>
@@ -2897,13 +2919,15 @@ function App() {
             </button>
           </header>
           <div id="content">
-            <View
+            {setupMode === null ? <div role="status">{setupError || "正在检查首次配置…"}</div> : <View
               refreshKey={refreshKey}
               token={token}
+              setupMode={setupMode}
+              onSetupComplete={finishSetup}
               routeParam={param}
               onMutated={() => setRefreshKey((value) => value + 1)}
 
-            />
+            />}
           </div>
         </main>
       </div>

@@ -1,3 +1,4 @@
+import { hasModelApiKey, hasMessageChannel } from "./setupGuide.js";
 import {
   Children,
   isValidElement,
@@ -554,11 +555,11 @@ function NextButton({ next, busy }) {
     <button
       type="button"
       className="quiet-button settings-button settings-next-button"
-      disabled={busy}
+      disabled={busy || next.disabled}
       onClick={next.onClick}
       aria-label={`下一步：${next.label}`}
     >
-      下一步
+      {next.buttonLabel || "下一步"}
     </button>
   );
 }
@@ -1421,6 +1422,8 @@ export default function ConfigurationSettings({
   token,
   request,
   promptContent,
+  setupMode = false,
+  onSetupComplete,
 }) {
   const [data, setData] = useState(null);
   const [runtime, setRuntime] = useState(null);
@@ -1608,6 +1611,25 @@ export default function ConfigurationSettings({
       setActionBusy(false);
     }
   }
+  const visibleModules = setupMode ? modules.filter(module => ["model", "prompts", "channel", "voice"].includes(module.id)) : modules;
+  const stepReady = id => id === "model" ? hasModelApiKey(data) : id === "channel" ? hasMessageChannel(data) : true;
+  function advanceSetup(target) {
+    if (root.current?.querySelector('[data-dirty="true"]')) {
+      setError("请先保存当前修改，再继续；如需跳过，请先撤销未保存的修改。");
+      return;
+    }
+    if (!stepReady(activeSection)) {
+      setError(activeSection === "model" ? "请先填写并保存语言模型 API 密钥。" : "请先配置并保存消息渠道。");
+      return;
+    }
+    if (!target && (!hasModelApiKey(data) || !hasMessageChannel(data))) {
+      setError("请先完成 API 密钥和消息渠道配置。");
+      return;
+    }
+    setError("");
+    if (target) setActiveSection(target);
+    else onSetupComplete?.();
+  }
   const issue = error || pollError || runtime?.error || data?.validation_error;
   const runtimeContent = issue ? (
     <section className="settings-runtime" aria-label="配置错误">
@@ -1619,12 +1641,17 @@ export default function ConfigurationSettings({
   ) : null;
   return (
     <div className="settings-studio" ref={root}>
+      {setupMode && <div className="setup-guide" role="status">
+        <strong>欢迎使用 Momoi · 第 {visibleModules.findIndex(module => module.id === activeSection) + 1} / 4 步</strong>
+        <p>依次配置 API 密钥、提示词、消息渠道和语音合成。每步修改后请保存，再继续。</p>
+        <p>{activeSection === "model" ? "填写服务商提供的 API 密钥、服务地址和模型名称。" : activeSection === "prompts" ? "已内置默认提示词，可以直接使用默认内容并继续。" : activeSection === "channel" ? "选择消息渠道并保存配置，再完成扫码登录。QQ 请填写接收消息的主人账号。" : "语音合成为可选项，可以配置后保存，也可以直接完成配置。"}</p>
+      </div>}
       {applyProgress && <ApplyDialog progress={applyProgress} onClose={() => setApplyProgress(null)} onRetry={retryMonitor} />}
       {data ? (
         <div className="settings-workspace">
           <aside className="settings-module-rail">
             <div className="dash-tabs" role="tablist" aria-label="配置分类">
-              {modules.map((module) => (
+              {visibleModules.map((module) => (
                 <button
                   key={module.id}
                   type="button"
@@ -1641,25 +1668,26 @@ export default function ConfigurationSettings({
                     )
                       return;
                     event.preventDefault();
-                    const index = modules.indexOf(module);
+                    if (setupMode) return;
+                    const index = visibleModules.indexOf(module);
                     const next =
                       event.key === "Home"
                         ? 0
                         : event.key === "End"
-                          ? modules.length - 1
+                          ? visibleModules.length - 1
                           : (index +
                               (event.key === "ArrowRight" ? 1 : -1) +
-                              modules.length) %
-                            modules.length;
-                    setActiveSection(modules[next].id);
+                              visibleModules.length) %
+                            visibleModules.length;
+                    setActiveSection(visibleModules[next].id);
 
                     document
-                      .getElementById(`settings-tab-${modules[next].id}`)
+                      .getElementById(`settings-tab-${visibleModules[next].id}`)
                       ?.focus();
                   }}
                   aria-controls={`settings-panel-${module.id}`}
                   onClick={() => {
-                    setActiveSection(module.id);
+                    if (!setupMode) setActiveSection(module.id);
                   }}
                 >
                   <span>{module.label}</span>
@@ -1668,17 +1696,27 @@ export default function ConfigurationSettings({
             </div>
           </aside>
           <div className="settings-panels">
-            {modules.map((module, index) => {
-              const preceding = modules[index - 1];
+            {visibleModules.map((module, index) => {
+              const preceding = visibleModules[index - 1];
               const previous = preceding ? {
                 label: preceding.label,
                 onClick: () => {
+                  if (setupMode && root.current?.querySelector('[data-dirty="true"]')) {
+                    setError("请先保存当前修改，再返回上一步。");
+                    return;
+                  }
+                  setError("");
                   setActiveSection(preceding.id);
                   document.getElementById(`settings-tab-${preceding.id}`)?.focus();
                 },
               } : null;
-              const following = modules[index + 1];
-              const next = following
+              const following = visibleModules[index + 1];
+              const next = setupMode ? {
+                label: following?.label || "完成配置",
+                buttonLabel: module.id === "prompts" ? "使用默认提示词，继续" : module.id === "voice" ? "完成配置 / 跳过语音" : "下一步",
+                disabled: !stepReady(module.id),
+                onClick: () => advanceSetup(following?.id),
+              } : following
                 ? {
                     label: following.label,
                     onClick: () => {
