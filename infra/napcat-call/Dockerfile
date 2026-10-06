@@ -9,7 +9,7 @@ RUN apt-get update && apt-get -f install -y --no-install-recommends \
     pulseaudio pulseaudio-utils libpulse-mainloop-glib0 libegl1 libopengl0 python3 python3-aiohttp ca-certificates curl \
     ffmpeg xvfb unzip tini && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /opt/qq-call/upstream /app/napcat/plugins \
-    && curl -fsSL "https://codeload.github.com/ClaudiaGardner/maibot-qq-voice-call/tar.gz/${BRIDGE_REV}" -o /tmp/bridge.tgz \
+    && curl -fsSL "https://codeload.github.com/RicterZ/maibot-qq-voice-call/tar.gz/${BRIDGE_REV}" -o /tmp/bridge.tgz \
     && echo "${BRIDGE_SHA256}  /tmp/bridge.tgz" | sha256sum -c - \
     && tar -xzf /tmp/bridge.tgz --strip-components=1 -C /opt/qq-call/upstream \
     && rm /tmp/bridge.tgz \

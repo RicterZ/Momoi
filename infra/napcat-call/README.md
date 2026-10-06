@@ -18,7 +18,7 @@ docker compose -f infra/napcat-call/compose.yaml build
 原容器的 QQ 登录态、NapCat 配置卷可沿用，保留原镜像用于回滚。
 QQ/AVSDK 升级必须重新验证，不能只更新到 latest。
 
-上游：ClaudiaGardner/maibot-qq-voice-call，固定提交
+构建使用我们的 fork：RicterZ/maibot-qq-voice-call（原上游 ClaudiaGardner/maibot-qq-voice-call），固定提交
 `22f30c021cd3170f75af9dff66cc959a07ebda4b`，源码在镜像 `/opt/qq-call/upstream`，
 许可证为 GPL-3.0-only。`prepare.py` 对该桥的修改同样按 GPL-3.0-only 提供；
 没有将上游 MaiBot 业务插件并入 Momoi。
