@@ -125,7 +125,7 @@ class PromptRenderer:
             *system,
             {
                 "type": "text",
-                "text": "# 可用能力使用指引\n\n"
+                "text": "# 可用能力使用指引\n\n未出现在当前工具参数列表中的能力，先通过 tool_search 查找，再调用 tool_enable 加载；加载后仍遵守当前阶段权限。\n\n"
                 + "\n\n".join(policies),
             },
         ]

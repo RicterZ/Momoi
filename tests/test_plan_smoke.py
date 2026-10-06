@@ -367,9 +367,13 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             nonlocal calls
             calls += 1
             if calls == 1:
+                self.assertNotIn("memory_search", {tool["name"] for tool in tools})
+                call = ToolCall("enable", "tool_enable", {"tools": ["memory_search"]})
+            elif calls == 2:
+                self.assertIn("memory_search", {tool["name"] for tool in tools})
                 call = ToolCall("search", "memory_search", {"query": "游戏"})
             else:
-                self.assertEqual(calls, 2)
+                self.assertEqual(calls, 3)
                 result = json.loads(messages[-1]["content"][0]["content"])
                 self.assertTrue(result["ok"], result)
                 call = ToolCall("finish", "plan_step_finish", {
@@ -382,7 +386,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
 
         daemon.provider = SimpleNamespace(complete=complete)
         await daemon._complete_plan_step_turn(plan["id"], asyncio.Event())
-        self.assertEqual(calls, 2)
+        self.assertEqual(calls, 3)
         self.assertEqual(daemon.store.task_plan(plan["id"])["status"], "completed")
 
     def test_review_gate_rejects_early_and_stale_approval(self):

@@ -399,7 +399,8 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(daemon.services.embedding)
         names = {item["name"] for item in daemon.tool_surface.conversation_specs()}
         self.assertNotIn("send_voice", names)
-        self.assertIn("memory_search", names)
+        self.assertNotIn("memory_search", names)
+        self.assertIn("memory_search", {spec["name"] for specs in daemon.tool_surface.discovery_groups().values() for spec in specs})
         self.assertIn("recall", names)
         with daemon.store._db:
             daemon.store._db.execute("""INSERT INTO memories

@@ -136,3 +136,32 @@ def test_system_index_is_independent_of_enabled_tool_schema(tmp_path):
         assert 'mcp__calendar__create' in {spec['name'] for spec in current.conversation_specs()}
     finally:
         store.close()
+
+
+def test_builtin_discovery_loads_requested_tools_and_persists_until_compact(tmp_path):
+    from momoi.runtime.agent.tool_surface import DEFERRED_TOOLS
+    store = Store(tmp_path / 'db')
+    try:
+        current = surface({}, store=store)
+        groups = current.discovery_groups()
+        tools = current.conversation_specs()
+        assert not DEFERRED_TOOLS & {spec['name'] for spec in tools}
+        assert {'tool_search', 'tool_enable', 'reply', 'recall', 'episode_read'} <= {spec['name'] for spec in tools}
+        assert 'builtin_history' in current.tool_index() and 'builtin_files' in current.tool_index()
+        for name in sorted(DEFERRED_TOOLS):
+            result = search(name, groups, current)
+            assert result['tools'][0]['name'] == name
+        names = ['thinking_read', 'write_file', 'episode_relations']
+        result = enable_tools(ToolCall('enable', 'tool_enable', {'tools': names}),
+                              enable_tool_groups=groups, tools=tools, tool_surface=current)
+        assert result['newly_loaded_tools'] == names
+        assert current.conversation_specs() == tools
+        assert store.transcript_enabled_tools() == names
+        store.close()
+        store = Store(tmp_path / 'db')
+        reopened = surface({}, store=store)
+        assert reopened.conversation_specs() == tools
+        store.transcript_window_turn_limit(1, 3, force_compact=True)
+        assert not DEFERRED_TOOLS & {spec['name'] for spec in reopened.conversation_specs()}
+    finally:
+        store.close()

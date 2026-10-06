@@ -19,7 +19,7 @@ def tool_search_spec() -> dict[str, Any]:
 
 TOOL_ENABLE_SPEC = {
     "name": "tool_enable",
-    "description": "按精确工具名批量加载 MCP 工具的完整参数。可使用 tool_search 返回的名称或历史记录中已知的名称；重复加载去重。启用状态保留至共享 transcript 压缩，不解除当前阶段权限限制。",
+    "description": "按精确工具名批量加载内置或 MCP 工具的完整参数。可使用 tool_search 返回的名称或历史记录中已知的名称；重复加载去重。启用状态保留至共享 transcript 压缩，不解除当前阶段权限限制。",
     "input_schema": {
         "type": "object",
         "properties": {

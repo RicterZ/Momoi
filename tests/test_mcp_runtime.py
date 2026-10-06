@@ -146,7 +146,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.write({})
         await self.runtime.apply()
         empty = {spec["name"]: spec for spec in self.runtime.daemon.surface.conversation_specs()}
-        self.assertNotIn("tool_search", empty)
+        self.assertIn("tool_search", empty)
         self.assertNotIn("tool_groups", empty["heartbeat_begin"]["input_schema"]["properties"])
 
     async def test_invalid_file_preserves_runtime_and_connection_failure_allows_startup(self):

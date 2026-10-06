@@ -85,7 +85,7 @@ class AgentLoop:
         last_round_directives = ""
         llm_round = 0
         remind_owner_bubbles = False
-        enable_tool_groups = self.tool_surface.mcp_server_groups()
+        enable_tool_groups = self.tool_surface.discovery_groups()
         stage = execution.stage
         permitted_tools = execution.permitted_tools
         if workflow is not None and workflow.stage != stage:

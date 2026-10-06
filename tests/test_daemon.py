@@ -90,7 +90,7 @@ class DaemonTest(unittest.TestCase):
             )
             self.assertIn("# 可用能力使用指引", rendered_system)
             self.assertIn("### 外部 MCP 工具", rendered_system)
-            self.assertIn("可以选用上方列出的 `emotion://` 表情", rendered_system)
+            self.assertNotIn("可以选用上方列出的 `emotion://` 表情", rendered_system)
             self.assertNotIn("# Available capability guidance", rendered_system)
             heartbeat.unlink()
             self.assertNotIn("New heartbeat", daemon._heartbeat_system_prompt())
@@ -2085,6 +2085,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon = MomoiDaemon(config)
             install_scripted_replyer(daemon)
+            daemon.store.enable_transcript_tools(["write_file"])
 
             async def blocked_write(_: ToolCall) -> dict[str, object]:
                 await asyncio.sleep(30)
@@ -2206,6 +2207,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ],
                     }
                 )
+            if main_call == 3:
+                return web.json_response({"stop_reason": "tool_use", "content": [{
+                    "type": "tool_use", "id": "enable-memory", "name": "tool_enable",
+                    "input": {"tools": ["memory_search"]},
+                }]})
             if main_call <= 5:
                 return web.json_response(
                     {
@@ -2344,7 +2350,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("reply", final_tools)
         self.assertIn("end_turn", final_tools)
         self.assertIn("memory_search", final_tools)
-        self.assertEqual(final_tools, initial_tools)
+        self.assertEqual(set(final_tools) - set(initial_tools), {"memory_search"})
         # The application requires a tool response independently of wire protocol.
         self.assertNotIn("tool_choice", llm_requests[7])
         self.assertEqual(
@@ -2354,11 +2360,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         # closest to the conversation; capability guidance is appended last.
         self.assertNotIn("You are Momoi.", llm_requests[0]["system"][0]["text"])
         self.assertIn("You are Momoi.", llm_requests[0]["system"][1]["text"])
-        self.assertEqual(len(llm_requests[0]["system"]), 3)
+        self.assertEqual(len(llm_requests[0]["system"]), 4)
         self.assertNotIn("当前阶段：", str(llm_requests[0]["system"]))
         self.assertIn("当前阶段：owner", str(llm_requests[0]["messages"][-1]))
         self.assertNotIn("heartbeat_activity", llm_requests[0]["system"][2]["text"])
-        self.assertEqual(len(llm_requests[7]["system"]), 3)
+        self.assertEqual(len(llm_requests[7]["system"]), 4)
         self.assertEqual(llm_requests[0]["system"], llm_requests[7]["system"])
         self.assertEqual(
             llm_requests[1]["messages"][-1]["content"][0]["type"], "tool_result"

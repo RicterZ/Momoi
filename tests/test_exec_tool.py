@@ -64,7 +64,10 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
             surface = ToolSurface(mcp, {}, exec_enabled=enabled)
             expected = catalog - (replaced if enabled else {"exec"})
             visible = {spec["name"] for spec in surface.conversation_specs()}
-            self.assertEqual(visible & catalog, expected)
+            from momoi.runtime.agent.tool_surface import DEFERRED_TOOLS
+            self.assertEqual(visible & catalog, expected - DEFERRED_TOOLS)
+            discovered = {spec["name"] for specs in surface.discovery_groups().values() for spec in specs}
+            self.assertEqual((visible | discovered) & catalog, expected)
             for stage in ("owner", "heartbeat", "goal", "reply_followup"):
                 self.assertEqual(surface.permitted_names(stage) & catalog, expected)
             self.assertEqual(surface.permitted_names("webhook") & catalog, {"web_fetch"})
