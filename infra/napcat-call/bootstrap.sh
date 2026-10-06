@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 [[ ${QQ_CALL_ENABLED:-0} == 1 ]] || exit 0
+python3 /opt/qq-call/infra/allowlist.py
 runtime=${QQ_CALL_RUNTIME:-/app/qq-call}
 mkdir -p "$runtime"
 export MAIBOT_QQ_CALL_BRIDGE_DIR="$runtime"
