@@ -74,7 +74,22 @@ function Get-MicrosoftInstaller {
     param([string]$Provided, [string]$Url, [string]$Name)
     $Destination = Join-Path $Prerequisites $Name
     if ($Provided) { Copy-Item $Provided $Destination -Force }
-    elseif (-not (Test-Path $Destination)) { Invoke-WebRequest -Uri $Url -OutFile $Destination }
+    elseif (-not (Test-Path $Destination)) {
+        $Partial = "$Destination.partial"
+        for ($Attempt = 1; $Attempt -le 4; $Attempt++) {
+            try {
+                Invoke-WebRequest -Uri $Url -OutFile $Partial
+                Move-Item $Partial $Destination -Force
+                break
+            }
+            catch {
+                Remove-Item $Partial -Force -ErrorAction SilentlyContinue
+                if ($Attempt -eq 4) { throw }
+                Write-Warning "Download of $Name failed (attempt $Attempt/4); retrying: $($_.Exception.Message)"
+                Start-Sleep -Seconds (2 * $Attempt)
+            }
+        }
+    }
     $Signature = Get-AuthenticodeSignature $Destination
     if ($Signature.Status -ne 'Valid' -or $Signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
         throw "Microsoft installer signature verification failed: $Destination"
