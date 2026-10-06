@@ -376,7 +376,7 @@ class EpisodeConsolidationStore:
                         )
                     continue
                 topics = self._consolidation_strings(
-                    decision["topics"], "topics", 6, 24
+                    decision["topics"], "topics", 5, 24
                 )
                 entities = self._consolidation_strings(
                     decision["entities"], "entities", 20, 200
@@ -445,9 +445,8 @@ class EpisodeConsolidationStore:
                         ),
                     )
                 else:
-                    merged_topics = list(
-                        dict.fromkeys([*existing["topics"], *topics])
-                    )[:12]
+                    # Classifier selects the final whole-episode labels, not additions.
+                    selected_topics = list(dict.fromkeys(topics))
                     merged_entities = list(
                         dict.fromkeys([*existing["entities"], *entities])
                     )[:20]
@@ -458,7 +457,7 @@ class EpisodeConsolidationStore:
                                status=?, closed_at=NULL, updated_at=?
                            WHERE id=?""",
                         (
-                            json.dumps(merged_topics, ensure_ascii=False),
+                            json.dumps(selected_topics, ensure_ascii=False),
                             json.dumps(merged_entities, ensure_ascii=False),
                             json.dumps(loops, ensure_ascii=False),
                             status,

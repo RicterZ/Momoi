@@ -16,8 +16,9 @@ _TAGS_SCHEMA: dict[str, Any] = {
 }
 _TOPICS_SCHEMA: dict[str, Any] = {
     "type": "array",
-    "maxItems": 6,
-    "description": "简短的主题或检索关键词，不写事件经过、句子或摘要。",
+    "maxItems": 5,
+    "uniqueItems": True,
+    "description": "话题最终重点标签，最佳3个、最多5个；按重要性排序，合并同义标签，不凑数。continue时覆盖旧标签，须概括整个话题，不写句子或摘要。",
     "items": {"type": "string", "minLength": 1, "maxLength": 24},
 }
 _DEFER_SCHEMA: dict[str, Any] = {

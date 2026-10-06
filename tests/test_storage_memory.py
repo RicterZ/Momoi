@@ -715,13 +715,13 @@ class StorageMemoryTest(unittest.TestCase):
 
         schema = EPISODE_CLASSIFY_TURNS_SPEC["input_schema"]
         topic_schema = schema["properties"]["decisions"]["items"]["oneOf"][2]["properties"]["topics"]
-        self.assertEqual(topic_schema["maxItems"], 6)
+        self.assertEqual(topic_schema["maxItems"], 5)
         self.assertEqual(topic_schema["items"]["maxLength"], 24)
 
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             self.addCleanup(store.close)
-            store.create_episode("午餐记录", episode_id="lunch")
+            store.create_episode("午餐记录", episode_id="lunch", topics=["旧标签", "枝节标签"])
             store.commit_turn([], "食堂午餐", AgentReply([]), turn_id="lunch-turn")
             decision = {
                 "action": "continue", "episode_id": "lunch",
@@ -731,13 +731,28 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertTrue(Draft202012Validator(schema).is_valid(
                 {"decisions": [{**decision, "turn_ids": ["T-1"]}]}
             ))
+            selected = ["食堂午餐", "热量记录", "摄入目标"]
+            store.apply_episode_consolidation(["lunch-turn"], [{**decision, "topics": selected}], ["lunch"])
+            self.assertEqual(store.episode("lunch")["topics"], selected)
+            store.commit_turn([], "补充记录", AgentReply([]), turn_id="next-lunch-turn")
+            next_decision = {**decision, "turn_ids": ["next-lunch-turn"], "topics": ["食堂午餐", "摄入目标"]}
+            store.apply_episode_consolidation(["next-lunch-turn"], [next_decision], ["lunch"])
+            self.assertEqual(store.episode("lunch")["topics"], ["食堂午餐", "摄入目标"])
+            store.commit_turn([], "更多记录", AgentReply([]), turn_id="invalid-lunch-turn")
+            decision["turn_ids"] = ["invalid-lunch-turn"]
+            decision["topics"] = [f"标签{i}" for i in range(6)]
+            self.assertFalse(Draft202012Validator(schema).is_valid(
+                {"decisions": [{**decision, "turn_ids": ["T-1"]}]}
+            ))
+            with self.assertRaisesRegex(ValueError, "invalid consolidation topics"):
+                store.apply_episode_consolidation(["invalid-lunch-turn"], [decision], ["lunch"])
             long_topic = "我把午餐的每一道菜逐项估重并重新计算了全天剩余热量"
             decision["topics"] = [long_topic]
             self.assertFalse(Draft202012Validator(schema).is_valid(
                 {"decisions": [{**decision, "turn_ids": ["T-1"]}]}
             ))
             with self.assertRaisesRegex(ValueError, "invalid consolidation topics"):
-                store.apply_episode_consolidation(["lunch-turn"], [decision], ["lunch"])
+                store.apply_episode_consolidation(["invalid-lunch-turn"], [decision], ["lunch"])
 
     def test_episode_salience_migration_preserves_existing_topics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
