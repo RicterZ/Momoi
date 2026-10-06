@@ -1252,3 +1252,15 @@
     border-top: 2px solid var(--ink);
   }
 }
+
+.settings-qq-call-test-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+.settings-qq-call-test-row > .settings-button {
+  height: 44px;
+  margin: 0;
+  white-space: nowrap;
+}

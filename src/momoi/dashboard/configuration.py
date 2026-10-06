@@ -219,9 +219,7 @@ def register_configuration_routes(app, configuration, runtime):
         channel = configuration.read_app().get("channels", {}).get("enabled", {}).get("napcat", {})
         previous = channel.get("voice_call", {})
         try:
-            value = dict(value)
-            token = restore_secrets(value.pop("access_token", channel.get("access_token", "")), channel.get("access_token", ""))
-            config = QQCallConfig.from_mapping({**restore_secrets(value, previous), "enabled": True}, access_token=token)
+            config = QQCallConfig.from_mapping({**restore_secrets(value, previous), "enabled": True})
         except (ValueError, TypeError):
             return web.json_response({"ok": False, "error": "请填写有效的 Bridge 地址和认证 Token"}, status=400)
         return web.json_response(await probe(config))

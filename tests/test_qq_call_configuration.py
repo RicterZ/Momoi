@@ -32,17 +32,17 @@ def test_asr_registered_and_defaults():
     assert adapter.test is not None
 
 
-def test_phone_reuses_connection_token_without_storing_it_twice():
+def test_phone_requires_its_own_token_and_preserves_both_secrets():
     token = 'connection-secret-' * 3
     channel = {'url': 'ws://localhost', 'owner_qq': '123456', 'access_token': token,
                'voice_call': {'enabled': True, 'bridge_url': 'http://localhost:6112', 'bridge_token': ''}}
-    assert NapCatConfig.from_mapping(channel).voice_call.bridge_token == token
+    with pytest.raises(ValueError):
+        NapCatConfig.from_mapping(channel)
     channel['voice_call']['bridge_token'] = token
     masked = redact(channel)
-    assert masked['voice_call']['bridge_token'] == ''
-    restored = restore_secrets(masked, channel)
-    assert NapCatConfig.from_mapping(restored).voice_call.bridge_token == token
+    assert masked['access_token'] == {'$secret': 'keep'}
+    assert masked['voice_call']['bridge_token'] == {'$secret': 'keep'}
+    assert restore_secrets(masked, channel) == channel
     independent = 'independent-secret-' * 3
     channel['voice_call']['bridge_token'] = independent
-    assert redact(channel)['voice_call']['bridge_token'] == {'$secret': 'keep'}
     assert NapCatConfig.from_mapping(channel).voice_call.bridge_token == independent
