@@ -33,7 +33,7 @@ try {
     try {
         if (-not $QQ.WaitForExit(90000)) { throw 'Bundled QQ native startup timed out' }
         $Result = Join-Path $Data 'qq-smoke.json'
-        if (Test-Path $Result) { Copy-Item $Result (Join-Path $Evidence 'qq-smoke.json') }
+        if (Test-Path $Result) { Copy-Item $Result (Join-Path $Evidence 'qq-smoke.json'); Get-Content $Result -Raw -Encoding UTF8 }
         if ($QQ.ExitCode -ne 0 -or -not (Test-Path $Result)) { throw 'Bundled QQ native startup failed; inspect qq-smoke.json' }
         $State = Get-Content $Result -Raw | ConvertFrom-Json
         if (-not $State.ok -or -not $State.status.ready) { throw 'Bundled QQ login WebUI did not become ready' }

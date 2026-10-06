@@ -53,3 +53,10 @@ jobs:
             dist/windows/releases/runtime.json
             dist/windows/install-test/
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Momoi-Windows-diagnostics
+          path: dist/windows/install-test/
+          if-no-files-found: ignore
