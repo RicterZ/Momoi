@@ -126,9 +126,11 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         current = self.runtime.daemon
         specs = {spec["name"]: spec for spec in current.surface.conversation_specs()}
         index = specs["tool_search"]["description"]
-        for name in ("mcp__changed__work", "mcp__new_group__work", "mcp__stable__work"):
-            self.assertIn(name, index)
-        self.assertNotIn("mcp__removed__work", index)
+        for name in ("changed", "new group", "stable"):
+            self.assertIn(f"- {name}:", index)
+        self.assertIn("Updated description", index)
+        self.assertNotIn("- removed:", index)
+        self.assertNotIn("mcp__", index)
         self.assertEqual(current.mcp.configs["changed"]["description"], "Updated description")
         self.assertNotIn("mcp__removed__work", specs)
         changed = current.surface.mcp_server_groups()["changed"][0]

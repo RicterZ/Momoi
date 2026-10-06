@@ -122,7 +122,10 @@ class ToolSurface:
                 spec for specs in groups.values() for spec in specs
                 if spec.get("name") == "mcp__brave-search__brave_web_search"
             ],
-            *([tool_search_spec([spec for specs in groups.values() for spec in specs])] if groups else []),
+            *([tool_search_spec([
+                {"name": group, "description": self.mcp_group_description(group)}
+                for group in groups
+            ])] if groups else []),
             current_state_finish_spec(),
             copy.deepcopy(END_TURN_TOOL_SPEC),
         ]

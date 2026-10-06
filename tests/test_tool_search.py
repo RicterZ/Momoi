@@ -40,3 +40,17 @@ def test_matching_ranking_no_hits_and_invalid_limits_do_not_expand_surface():
     for query, limit in [('', 1), ('web', 0), ('web', True), ('web', 21)]:
         assert search(query, groups, tools, limit)['ok'] is False
     assert tools == before
+
+
+def test_discovery_uses_configured_service_description_without_tool_catalog():
+    from types import SimpleNamespace
+    from momoi.runtime.tool_contracts.runtime import tool_search_spec
+    catalog = [{"name": f"mcp__web__tool_{n}", "description": "冗长工具描述" * 100} for n in range(200)]
+    surface = ToolSurface(SimpleNamespace(configs={"web": {"description": "网页搜索与浏览"}}), {})
+    spec = tool_search_spec([{ "name": "web", "description": surface.mcp_group_description("web")}])
+    assert "网页搜索与浏览" in spec["description"]
+    assert "冗长工具描述" not in spec["description"]
+    assert "mcp__web__tool_" not in spec["description"]
+    assert len(spec["description"]) < 200
+    result = search("冗长工具描述", {"web": catalog}, [], limit=1)
+    assert len(result["matched_tools"]) == 1

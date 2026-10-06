@@ -1,16 +1,16 @@
 from typing import Any
 
 
-def tool_search_spec(catalog: list[dict[str, Any]]) -> dict[str, Any]:
+def tool_search_spec(services: list[dict[str, Any]]) -> dict[str, Any]:
     index = "\n".join(
         f"- {spec['name']}: {str(spec.get('description') or '').strip()}"
-        for spec in sorted(catalog, key=lambda item: item['name'])
+        for spec in sorted(services, key=lambda item: item['name'])
     )
     return {
         "name": "tool_search",
         "description": (
             "按工具名、前缀或描述关键词搜索 MCP 工具，只将命中的工具加载到本轮后续请求；"
-            "不执行业务，不解除阶段权限限制。新 turn 不保留发现状态。\n工具索引：\n" + index
+            "不执行业务，不解除阶段权限限制。新 turn 不保留发现状态。\n可搜索的服务：\n" + index
         ),
         "input_schema": {
             "type": "object",
