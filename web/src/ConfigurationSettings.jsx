@@ -1829,8 +1829,12 @@ function QQCallSettings({ value, disabled, onChange, onTest }) {
     finally { setTesting(false); }
   }
   function edit(key, next) { setTest(null); onChange({ ...value, [key]: next }); }
-  return <Disclosure className="settings-qq-call" title="语音电话">
-    <Toggle checked={Boolean(value.enabled)} disabled={disabled} onChange={v => edit("enabled", v)}>启用语音电话</Toggle>
+  return <section className="settings-disclosure settings-qq-call">
+    <header className="settings-qq-call-heading">
+      <strong>语音电话</strong>
+      <Toggle checked={Boolean(value.enabled)} disabled={disabled} hideLabel onChange={v => edit("enabled", v)}>启用语音电话</Toggle>
+    </header>
+    {value.enabled && <div className="settings-disclosure-body">
     <Fields as="div" disabled={disabled}>
       <OptionField name="bridge_url" spec={{ type: "string", label: "Bridge 地址", default: "" }} value={value.bridge_url} onChange={v => edit("bridge_url", v)} />
       <OptionField name="bridge_token" spec={{ type: "string", label: "认证 Token", secret: true }} value={value.bridge_token} onChange={v => edit("bridge_token", v)} />
@@ -1840,5 +1844,6 @@ function QQCallSettings({ value, disabled, onChange, onTest }) {
       </div>
     </Fields>
     {test && <p className="settings-channel-note" role="status">{test}</p>}
-  </Disclosure>;
+    </div>}
+  </section>;
 }
