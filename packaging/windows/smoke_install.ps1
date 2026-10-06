@@ -13,6 +13,31 @@ function Install-App {
 }
 try {
     Install-App (Join-Path $Evidence 'install.log')
+    # Record logical file sizes before startup creates user data and caches.
+    $Sizes = @{}
+    Get-ChildItem $Target -File -Recurse | ForEach-Object {
+        $Relative = $_.FullName.Substring($Target.Length + 1).Replace('\', '/')
+        $Group = if ($Relative.StartsWith('models/')) { 'BGE model' }
+        elseif ($Relative.StartsWith('runtime/python/')) { 'Python and dependencies' }
+        elseif ($Relative.StartsWith('runtime/napcat/')) { 'NapCat and QQ (including Node)' }
+        elseif ($Relative.StartsWith('runtime/node/')) { 'Node and npm' }
+        elseif ($Relative.StartsWith('runtime/uv/')) { 'uv' }
+        elseif ($Relative.StartsWith('runtime/mcp/')) { 'Brave MCP' }
+        elseif ($Relative.StartsWith('releases/')) { 'Application code and dashboard' }
+        elseif ($Relative.StartsWith('licenses/')) { 'Licenses' }
+        elseif ($Relative.StartsWith('runtime/')) { 'Runtime manifests' }
+        elseif ($Relative.StartsWith('unins')) { 'Uninstaller' }
+        else { '.NET shell and runtime' }
+        if (-not $Sizes.ContainsKey($Group)) { $Sizes[$Group] = [long]0 }
+        $Sizes[$Group] += $_.Length
+    }
+    $Report = [ordered]@{
+        installerBytes = (Get-Item $Installer).Length
+        components = $Sizes
+        napcatNodeBytes = (Get-Item (Join-Path $Target 'runtime/napcat/node.exe')).Length
+    }
+    $Report | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $Evidence 'component-sizes.json') -Encoding UTF8
+    $Report | ConvertTo-Json -Depth 4 | Write-Output
     $Data = Join-Path $Target 'data'
     if (-not (Test-Path $Data)) { throw 'Installer did not create data directory' }
     $Acl = Get-Acl $Data
