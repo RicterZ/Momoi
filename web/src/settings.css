@@ -589,8 +589,11 @@
   background: transparent;
   box-shadow: none;
 }
-.settings-persona .prompt-card + .prompt-card {
+.settings-persona .prompt-card:nth-child(even) {
   border-left: 2px solid var(--ink);
+}
+.settings-persona .prompt-card:nth-child(n + 3) {
+  border-top: 2px solid var(--ink);
 }
 .settings-persona .prompt-code {
   display: none;
