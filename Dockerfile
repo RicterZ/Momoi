@@ -54,7 +54,7 @@ LABEL org.opencontainers.image.title="Momoi" \
       org.opencontainers.image.version="${VERSION}"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates nodejs npm ripgrep tzdata \
+    && apt-get install -y --no-install-recommends ca-certificates ffmpeg nodejs npm ripgrep tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

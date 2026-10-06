@@ -55,6 +55,19 @@ SCHEMAS = {
         "timeout_seconds": field("number", 60),
         "max_audio_bytes": field("integer", 20971520),
     },
+    ("vocu", "tts"): {
+        "api_key": field(secret=True),
+        "voice_id": field(),
+        "base_url": field(default="https://v1.vocu.ai/api"),
+        "prompt_id": field(default="default"),
+        "preset": field(default="balance"),
+        "speech_rate": field("number", 1),
+        "language": field(default="auto"),
+        "flash": field("boolean", False),
+        "vivid": field("boolean", False),
+        "timeout_seconds": field("number", 60),
+        "max_audio_bytes": field("integer", 20971520),
+    },
     ("openai", "embedding"): {
         "endpoint": field(default="http://embedding:8002/v1/embeddings"),
         "api_key": field(secret=True),
@@ -93,6 +106,13 @@ def builtin_schema(name, capability):
         "accounting": "费用估算",
         "max_audio_bytes": "音频大小上限（字节）",
         "reference_id": "音色 ID",
+        "voice_id": "音色 ID",
+        "prompt_id": "音色风格 ID",
+        "preset": "合成预设",
+        "speech_rate": "语速",
+        "language": "语言",
+        "flash": "极速生成",
+        "vivid": "增强表现力",
         "format": "音频格式",
         "latency": "延迟模式",
         "dimensions": "向量维度",
@@ -105,7 +125,7 @@ def builtin_schema(name, capability):
     basic = {
         "llm": {"base_url", "api_key", "model"},
         "asr": {"secret_id", "secret_key"},
-        "tts": {"api_key", "reference_id", "model"},
+        "tts": {"api_key", "reference_id", "voice_id", "model"},
         "embedding": {"endpoint", "api_key", "model", "dimensions"},
         "balance": {"api_key", "base_url", "timeout_seconds", "accounting"},
     }
@@ -114,7 +134,7 @@ def builtin_schema(name, capability):
     required = {
         "llm": {"base_url", "model"},
         "asr": {"secret_id", "secret_key"},
-        "tts": {"api_key", "reference_id"},
+        "tts": {"api_key", "voice_id" if name == "vocu" else "reference_id"},
         "embedding": set(),
         "balance": {"api_key"},
     }
@@ -129,4 +149,13 @@ def builtin_schema(name, capability):
     if (name, capability) == ("fish", "tts"):
         fields["format"]["enum"] = ["mp3", "wav", "opus"]
         fields["latency"]["enum"] = ["normal", "balanced", "low"]
+    if (name, capability) == ("vocu", "tts"):
+        fields["voice_id"]["description"] = "悟声控制台中的语音角色 ID。"
+        fields["base_url"]["description"] = "API 根地址，包含 /api；自动追加 /tts/simple-generate。"
+        fields["prompt_id"]["description"] = "使用该音色的风格 ID，default 为默认风格。"
+        fields["timeout_seconds"]["minimum"] = 1
+        fields["max_audio_bytes"]["minimum"] = 1
+        fields["speech_rate"].update(minimum=0.5, maximum=2)
+        fields["speech_rate"]["description"] = "时长倍率，0.5–2；值越大，语速越慢。"
+        fields["preset"]["enum"] = ["creative", "balance", "stable"]
     return fields

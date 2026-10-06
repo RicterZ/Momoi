@@ -61,12 +61,13 @@ const adapterLabels = {
   deepseek: "DeepSeek",
   anthropic: "Anthropic",
   fish: "Fish Audio",
+  vocu: "悟声 Vocu",
   tencent: "腾讯云",
 };
 const primaryFields = {
   llm: ["base_url", "api_key", "model", "thinking"],
   asr: ["secret_id", "secret_key"],
-  tts: ["api_key", "reference_id", "model"],
+  tts: ["api_key", "reference_id", "voice_id", "model"],
   embedding: ["endpoint", "api_key", "model", "dimensions"],
   balance: ["base_url", "api_key", "timeout_seconds", "accounting"],
 };

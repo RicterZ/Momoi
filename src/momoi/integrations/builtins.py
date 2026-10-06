@@ -9,6 +9,7 @@ def register_builtins():
     from .registry import Adapter, register_adapter
     from .adapters.tencent import TencentASRProvider
     from .adapters.fish import FishAudioTTSProvider
+    from .adapters.vocu import VocuTTSProvider
     from .adapters.embedding import EmbeddingClient
     from .adapters.deepseek import DeepSeekBalanceProvider
     from .adapters.openai import OpenAIProvider
@@ -96,6 +97,16 @@ def register_builtins():
             schema=builtin_schema("fish", "tts"),
         )
     )
+
+    def validate_vocu(options):
+        fields(options, set(builtin_schema("vocu", "tts")))
+        VocuTTSProvider(**options)
+
+    register_adapter(Adapter(
+        "vocu", "tts",
+        lambda options, ctx: VocuTTSProvider(**options, transport=ctx.transport),
+        validate=validate_vocu, schema=builtin_schema("vocu", "tts"),
+    ))
 
     def validate_balance(options):
         fields(options, {"api_key", "base_url", "timeout_seconds", "accounting"})
