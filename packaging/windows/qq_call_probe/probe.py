@@ -46,12 +46,13 @@ def main():
     winmm = ctypes.WinDLL('winmm')
     result['wave_input_count'] = winmm.waveInGetNumDevs()
     result['wave_output_count'] = winmm.waveOutGetNumDevs()
+    probe_app = TARGET / 'probe-app'
+    probe_app.mkdir(exist_ok=True)
     for name in ('host.cjs', 'host.html'):
-        shutil.copy2(Path(__file__).parent / name, app / name)
+        shutil.copy2(Path(__file__).parent / name, probe_app / name)
     data = json.loads(package.read_text(encoding='utf-8'))
     result['original_main'] = data['main']
-    data['main'] = './host.cjs'
-    package.write_text(json.dumps(data), encoding='utf-8')
+    (probe_app / 'package.json').write_text(json.dumps({'name': 'momoi-call-probe', 'version': '1.0.0', 'main': './host.cjs'}), encoding='utf-8')
     profile = TARGET / 'isolated-profile'
     profile.mkdir(exist_ok=True)
     host_report = TARGET / 'host-report.json'
@@ -59,7 +60,7 @@ def main():
     env.pop('ELECTRON_RUN_AS_NODE', None)
     exe = extracted / 'Files/QQ.exe'
     with (TARGET / 'host.log').open('wb') as log:
-        process = subprocess.Popen([str(exe), '--no-sandbox', '--user-data-dir=' + str(profile)], cwd=exe.parent, env=env, stdout=log, stderr=log)
+        process = subprocess.Popen([str(exe), str(probe_app), '--no-sandbox', '--user-data-dir=' + str(profile)], cwd=exe.parent, env=env, stdout=log, stderr=log)
         try:
             deadline = time.monotonic() + 45
             while time.monotonic() < deadline and not host_report.exists():
@@ -82,4 +83,7 @@ except Exception as error:
     result['probe_error'] = repr(error)
 finally:
     REPORT.write_text(json.dumps(result, indent=2), encoding='utf-8')
-    print(json.dumps(result, indent=2))
+    print(json.dumps(result, indent=2), flush=True)
+    # The third-party DLL owns process teardown hooks; do not invoke its
+    # unsupported standalone shutdown while exiting this diagnostic process.
+    os._exit(0)
