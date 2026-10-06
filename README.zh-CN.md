@@ -18,9 +18,7 @@ Momoi 的重点不只是给 LLM 加一个角色。`SOUL.md` 定义 Momoi 是谁�
 
 - **跨时间、跨入口的同一个身份。** 主人消息、Goal、Heartbeat 和 Webhook 都进入同一
   运行时，共享历史、关系、状态与投递规则。
-- **由正在行动的 Momoi 选择上下文。** Planner 在当前上下文缺少历史依据时调用
-  `recall`，搜索或复用已覆盖需求的 scope；不再强制每轮开场检索。
-  Turn 的话题归属、摘要与话题关联由后台工作流分别处理。
+- **按需选择上下文。** Momoi 在需要时检索相关历史，并在后台整理话题摘要与关联。
 - **有来源、有权威差异的记忆。** 近期对话、主人确认的事实、共同 Episode 和低置信度
   的复盘学习拥有不同生命周期，不会被当成同一种证据。
 - **真正执行并明确投递。** Momoi 可以调用内置工具或 MCP、发送多条聊天气泡、汇报有
@@ -94,161 +92,23 @@ flowchart TB
   continuity -. "语义编码" .-> external
 ```
 
-Momoi 的三层共同构成持续运行的系统：当前 Turn 通过连续性服务按需取得过去，而不是把全部历史
-直接塞进提示词。Embedding 服务只是编码器，并不是
-第二个记忆数据库：权威文本和派生向量仍保存在 Momoi 的 SQLite 中，由进程内快照完成
-向量检索。
+对话、连续性服务与私有工作区共同维持长期上下文。历史、记忆与任务状态保存在本地 SQLite 中。
 
-### 一个 Owner Turn 怎样运行
+### 对话与行动
 
-1. 入站消息按时间线合并，保留消息与附件的对应关系。
-2. Planner 接收 SOUL、运行规则、记忆与状态，以及历史消息、工具调用和结果组成的共享原生 transcript。
-3. Planner 理解当前输入，按需 recall、发现工具并执行工作。普通 assistant text 记录当前判断，
-   不直接投递；即使包含 `<bubble>` 标签也不会发送。
-4. 需要发言时，Planner 调用 `reply`，传递回应意图、必要依据和 `mode=text` 或 `mode=voice`。
-   Replyer 结合 SOUL、表达规则、当前渠道真实对话和目标消息生成发言，不带工具。
-   发送层校验结果并持久化进入 outbox，再进行延迟和网络投递。
-5. Turn 提交对话、记忆操作请求、任务变更、情绪、工具证据和续话等待。
-   后台随后执行 Turn → Episode 归档、摘要以及可选的话题关联建设。
+Planner 理解当前对话、检索相关记忆，并调用工具完成工作。Replyer 根据回应意图、
+必要依据、SOUL 与近期对话，生成自然的发言。
 
-### 共享时间线与缓存复用
+聊天、定时任务、自主活动与外部事件共享连续的历史。新消息可以打断正在进行的工作，
+自主活动也可以安静结束。
 
-Owner、Goal、Heartbeat、Webhook、Plan 与当前状态维护复用 Planner transcript 和稳定的
-system/tools 前缀，由 harness 限制各阶段调用权限。原生 assistant/tool 往来保留真实操作；
-历史大结果裁剪为短片段、截断标记和读取引用，必要时可继续读取，recall 结果保留独立复用规则。
+## 记忆
 
-长期 `always` 记忆在一个 compact 周期内保持第一条 user 消息的基线稳定；新增、修改与删除
-先追加到 transcript，明确覆盖旧前缀中的事实，下一次 compact 再更新基线。
-领域记忆注入匹配工作流的最新输入，不进入全局记忆前缀，也不参加普通 recall。
+Momoi 区分近期上下文、主人确认的事实、共同话题与每日复盘。它通过关键词和可选的
+语义检索召回相关历史，并保留原始对话证据。
 
-Replyer 每个渠道使用持久化历史窗口：从最近 12 条开始，追加到 48 条后轮动回最近 12 条。
-文字和语音共用相同 system 与历史前缀，包括表情目录，仅最新请求指定输出模式。
-文字可选表情，语音只输出适合朗读的内容。
-
-主人新消息可以打断工作或投递，并取消等待中的 reply-followup。自主工作流可以安静结束；
-生成、提交发送和实际送达分别记录，不把工具接受当成已送达。
-
-## 记忆架构
-
-Momoi 不把所有内容塞进一个笼统的“记忆”桶。每一层回答不同问题，也拥有不同权威。
-
-| 层级 | 事实来源 | 怎样进入上下文 | 生命周期 |
-| --- | --- | --- | --- |
-| 工作上下文 | 共享对话、事件和执行记录时间线，当前输入、情绪、活动、进行中的 Goal 和未完成工作 | 按时间线与当前相关性直接带入 | 随正在进行的对话移动，不会自动晋升为长期事实 |
-| Confirmed memory | 来自已认证主人消息的事实、偏好、关系、习惯和可复用方法 | `always` 进入稳定前缀；`recall` 按话题检索；`scoped` 只进入对应领域 | 主人的新更正可以替换、收窄、过期或退役旧事实 |
-| Episode | 有原始 Turn 与消息作为证据的具体共同经历 | 压缩历史保留话题摘要；recall 返回相关摘要、原文及工具执行证据 | 开放对话按真实主题归组，随后归档，并在话题继续发展时更新 |
-| Reflection memory | 每日复盘产生的、带日期的体会、方法、工具经验和关系学习 | 独立召回，置信度更低，并明确提示可能过时 | 可以被修订或失去适用性，永远不能压过当前证据或 Confirmed memory |
-
-Confirmed memory 的 activation 决定事实放在哪里，而不是它有多重要：
-
-| Activation | 适合的内容 | 召回方式 |
-| --- | --- | --- |
-| `always` | 即使话题无关也应影响日常交流的长期关系偏好与约束 | 无需话题查询，持续带入 |
-| `scoped` | 特定 Goal、Heartbeat 或 Webhook 的专属事实与规则 | 仅注入匹配工作流，不参加普通 recall |
-| `recall` | 人物、设备操作手册、游戏规则、共同方法，以及只在相关话题回来时有用的事实 | 只有当前 Turn 需要相关历史时才检索 |
-
-Episode 是一次具体经历，而不是一个永久分类。它用紧凑摘要维持宽泛连续性，同时保留
-原始 Turn 和消息证据，以便找回准确措辞、更正、决定和未完成承诺。复盘学习始终是独立
-的低权威层，不会被静默晋升为主人确认的事实。
-
-### 记忆写入与整理
-
-前台统一调用 `memory_operation(type, content, evidence, target_id?)`，其中 `type` 是
-`add`、`replace` 或 `forget`。`evidence` 必须是当前已认证主人消息中的原话；`target_id`
-仅可引用本轮已展示的记忆 ID，不知道时可以省略。例如：
-
-```json
-{"type":"replace","content":"主人现在更喜欢喝茶","evidence":"以后我更喜欢喝茶了"}
-```
-
-工具成功表示请求已接收；源 Turn 成功提交后，请求才进入持久化队列，尚未成为有效记忆。
-前台不嵌套调用 LLM，也不用重复输出旧记忆或为了维护再检索一次。运行时自动附带本轮
-注入、`recall` 和 `memory_search` 展示的记忆快照、相关对话和主人证据。没有记忆操作
-的对话不会触发这项后台工作。
-
-Dispatcher 使用同一 agent worker，按提交顺序串行执行 `memory_operation` Turn，
-不等待每日 `/tidy`。它复用标准 Turn 的 LLM、工具循环和日志，采用独立系统提示词，
-只开放 `memory_operation_search` 和 `memory_operation_finish`。后台基于当前记录判断
-新增、替换/合并、删除、不变或证据不足；必要时查询其他 activation 的有效记忆。
-分类、activation 和适用领域由后台决定；临时状态另由状态维护工作流处理。
-
-`memory_operation_finish` 一次提交整批决定并结束 Turn；验证失败返回 tool error，模型
-可修正，数据库不会部分生效。`defer` 记录证据不足并结束本次审查，不自动重试相同证据。
-运行失败则保留队列，5 分钟后重试，后续记忆请求不能越过前项。每次尝试有独立 Turn ID。
-普通新消息等待正在执行的记忆 Turn 完成；`/stop`、停机取消或进程重启后可以恢复任务。
-提交前仍检查记忆快照，避免覆盖 Dashboard 等入口的并发编辑。
-
-`always` 基线在 compact 周期内稳定；已接受的记忆变动先进入 transcript，再于 compact 时
-重建基线。recall 记忆和领域记忆不走这一机制。`memory_search` 可以通过工具发现加载，
-每日 `/tidy` 继续负责全局维护。
-
-### 召回与可选语义检索
-
-需要历史依据时，Planner 调用 `recall`，把最小完整历史 scope 写成语义查询，
-并给出姓名、标题、ID 或准确短语等字面锚点；只有旧查询明确覆盖当前需求时才能复用。
-检索层随后分别评估两类证据。
-
-```mermaid
-flowchart TB
-  subgraph request["召回计划"]
-    direction LR
-    need["需要哪段历史"]
-    rewrite["语义改写"]
-    anchors["字面锚点"]
-    need --> rewrite
-    need --> anchors
-  end
-
-  subgraph retrieval["混合检索"]
-    direction LR
-    keyword["关键词匹配<br/>准确名称 · ID · 短语"]
-    vector["可选向量查询<br/>换种说法 · 相关含义"]
-    fusion["证据融合<br/>双路加权 + 纯向量严格门槛"]
-    ranking["按记忆池排序<br/>相关性 · 时间<br/>权威 · 置信度"]
-    keyword --> fusion
-    vector --> fusion --> ranking
-  end
-
-  subgraph pools["权威分离的记忆来源"]
-    direction LR
-    confirmed["Confirmed recall memory<br/>最高权威"]
-    episodes["已归档 Episode<br/>摘要 + Turn 证据"]
-    reflection["带日期的 Reflection memory<br/>较低权威"]
-  end
-
-  selected["提供给 Owner Agent 的有限证据"]
-  encoder["可选 Embedding 编码服务"]
-
-  anchors --> keyword
-  rewrite -.-> vector
-  pools <--> retrieval
-  encoder -.-> vector
-  ranking --> selected
-```
-
-两条检索通道负责不同的事情：
-
-- 关键词证据保护实体、标题、ID、日期、工具名和参数等精确信息。
-- 向量证据寻找措辞不同的同义表达与相关经历。
-- 同一个候选被关键词和向量独立命中时会得到加权；只有向量命中的候选必须跨过更严格、
-  按语料池校准的门槛。
-- Confirmed memory、Reflection memory 和 Episode 分开排序、分开限额；语义相似度不能
-  抹平权威差异。
-- 如果首轮上下文仍不够，行动中的 Agent 可以继续调用 `memory_search`、
-  `episode_search` 和 `episode_read`。
-
-语义检索是可选功能，默认关闭。未启用、Embedding 服务不可用或索引仍在构建时，Momoi
-继续使用关键词召回。向量始终是可重建的派生数据，不是事实来源。
-
-只有需要检索的长期材料会建立向量：
-
-- `activation: "recall"` 的有效 Confirmed memory；
-- Reflection memory；
-- 已完成归档的 Episode 摘要和 Episode 所属 Turn 分块。
-
-Always memory 与临时状态、正在进行的近期 Turn、Goal、情绪与活动、思考记录、artifact 和原始
-工具结果不会进入语义索引。源数据变化会先在事务中登记，再由后台以小批次物化和编码；
-新增或变化的材料会增量变得可检索，不阻塞主人对话。
+记忆变动在后台依据主人提供的证据进行审查。话题摘要与关联帮助维持长期连续性，
+领域记忆为定时任务和外部事件提供专属规则。复盘作为辅助参考，不覆盖已确认的事实。
 
 ## 当前能力
 
@@ -361,27 +221,14 @@ LLM、TTS、embedding 和账户余额通过能力接口、注册式适配器与�
 
 ### 工具
 
-在 workspace 的 `mcp.json` 配置 stdio 或远程 MCP Server，为服务填写准确的 `description`。
-稳定 system 索引只包含服务/能力组名称和描述，不展开所有工具参数。
+Momoi 提供内置工具，也支持在 workspace 的 `mcp.json` 中配置 stdio 或远程 MCP Server。
+工具按需发现和加载；为每个服务填写清晰的描述，方便 Momoi 找到适合的能力。
 
-1. `tool_search` 返回候选工具名称与描述。
-2. `tool_enable({"tools": ["exact_tool_name", "another_tool"]})` 批量加载完整 schema。
-3. 调用已加载工具，仍遵守当前阶段权限。
-
-低频内置工具采用同一流程：`thinking_search`、`thinking_read`、`episode_relations`、
-`episode_search`、`memory_search`，以及 `write_file`、`apply_patch`、`makedirs`、
-`move_file`、`delete_file`。可用文件工具受 Bash 开关影响。
-加载集合跨共享 Turn 和进程重启保留，手动或自动 compact 时回收。
-
-面向用户的发言统一通过 `reply`，模型不再看到 `send_bubbles` / `send_voice`。
-工具描述明确列出支持语音的渠道；文字 Replyer 从目录选择独立的 `emotion://slug` 气泡。
-图片、文件等通过 `reply.attachments` 原样投递；语音调用 TTS，不可用或失败时返回错误，
-供 Planner 决定改用文字。
+回复支持文字、语音、图片、文件和可选表情。语音需要配置 TTS 服务，并使用支持语音的渠道。
 
 ### Dashboard
 
-打开 `http://127.0.0.1:8788`。Dashboard 可以查看 Planner/Replyer 决策流、逐请求 token、缓存命中、延迟和费用估算，以及对话、每个 Turn 的召回 scope 与选中
-证据、复盘、记忆、Goal、图片反应、用量和思考记录，也可以编辑记忆、Goal、图片反应与提示词文件。
+打开 `http://127.0.0.1:8788`。Dashboard 可以查看 Planner/Replyer 决策流、逐请求 token、缓存命中、延迟和费用估算，以及对话、召回证据、复盘、记忆、Goal、图片反应、用量和思考记录，也可以编辑记忆、Goal、图片反应与提示词文件。
 首次使用启动输出中的口令登录，然后在设置页配置 Provider、启用消息渠道并完成微信扫码登录。
 保存配置会自动重建业务实例，dashboard 保持可用。纯后台运行使用 `momoi run --no-dashboard`。
 已有工作区需设置 `dashboard.token` 或 `MOMOI_DASHBOARD_TOKEN`。
@@ -402,31 +249,12 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
 Webhook Turn 与其他 Momoi 工作流共享同一份原生对话和记忆；如果事件没有增加有用信息，
 也可以安静结束。
 
-### Goal 如何收尾
-
-Goal 自主执行遵循「工作 → 可选 `reply` → `goal_review` → `end_turn({})`」。
-`goal_review` 记录结果及任务变更，Turn 成功结束后提交；`active`、`waiting`、`blocked`
-保留 Goal，`done`、`cancelled` 关闭 Goal。运行时提供当前 Goal ID。例如：
-
-```json
-{"status": "done", "result": "文件已下载并校验"}
-```
-
-继续执行需要 `next_action` 和未来的 `next_review_at`，周期 Goal 可沿用 schedule；
-等待需要 `waiting_for` 和未来检查时间，阻塞需要 `blocked_reason`。
-`reply` 立即进入发送流程，不等待 Goal 收尾；发送与结束可以同批调用，结束工具最后执行，
-发送失败不能报告成功。普通对话通过 `goal_update`、`goal_finish`、`goal_cancel` 管理任务。
-
-普通 assistant text 不会发送。对话阶段 `end_turn` 接收 `mood`、`reply_wait`；
-Goal 在 `goal_review` 后以 `{}` 结束。Heartbeat 先通过 `heartbeat_activity` 记录活动、结果与
-下次检查计划；发现具体内容后，在发送前成功 recall 该内容，核实是否已经分享过。
-
 ## 主人控制
 
 | 聊天命令 | 用途 |
 | --- | --- |
 | `/stop` | 取消当前任务 |
-| `/compact` | 压缩共享 transcript 窗口并回收已加载工具，保留数据库原始历史 |
+| `/compact` | 压缩当前对话上下文，保留原始历史 |
 | `/heartbeat` | 立即触发一次 Heartbeat |
 | `/reflect` | 复盘当前本地自然日 |
 | `/tidy` | 运行 Confirmed memory 维护 |
