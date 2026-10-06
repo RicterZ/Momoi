@@ -163,7 +163,7 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
     # Summary-only / semantic-only hits still offer recent execution context.
     if not candidates:
         candidates = list(turns.values())
-    candidates.sort(key=lambda t: (t['score'], t['ordinal']), reverse=True)
+    candidates.sort(key=lambda t: (t['id'] in message_turns, t['score'], t['ordinal']), reverse=True)
     chosen = sorted(candidates[:limit], key=lambda t: t['ordinal'])
     output = []
     for turn in chosen:

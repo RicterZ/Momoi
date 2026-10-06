@@ -186,3 +186,19 @@ def test_historical_metadata_cleanup_preserves_original_and_failures(tmp_path):
     original = store.turn_exchanges(['t'])['t'][0]
     assert json.loads(original['results'][0]['content']) == result
     store.close()
+
+
+def test_message_hit_survives_higher_scoring_execution_turns(tmp_path):
+    store = Store(tmp_path / 'db'); setup(store, 'matched', 1)
+    record(store, 'exec', turn='matched')
+    for index in range(2, 6):
+        turn = f't{index}'
+        setup(store, turn, index)
+        record(store, 'exec', text='needle evidence', turn=turn)
+    messages = [{'turn_id': 'matched', 'role': 'user', 'content': 'needle original message'}]
+    turns = execution_turns(store, 'e', ['needle'], selected_messages=messages)['turns']
+    assert len(turns) == 3
+    assert turns[0]['id'] == 'matched'
+    assert turns[0]['messages'][0]['text'] == 'needle original message'
+    assert 'execution' in turns[0]
+    store.close()
