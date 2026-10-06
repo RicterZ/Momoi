@@ -2,11 +2,12 @@
 
 from .validation import embedding_config, fields, llm_config, number, text, url
 from .schema import builtin_schema
-from .probes import model_probe, embedding_probe
+from .probes import model_probe, embedding_probe, asr_probe
 
 
 def register_builtins():
     from .registry import Adapter, register_adapter
+    from .adapters.tencent import TencentASRProvider
     from .adapters.fish import FishAudioTTSProvider
     from .adapters.embedding import EmbeddingClient
     from .adapters.deepseek import DeepSeekBalanceProvider
@@ -57,6 +58,16 @@ def register_builtins():
             test=embedding_probe,
         )
     )
+
+    def validate_asr(options):
+        fields(options, {"secret_id", "secret_key", "region", "engine", "timeout_seconds", "max_audio_bytes"})
+        number(options, "timeout_seconds", 30)
+        number(options, "max_audio_bytes", 3145728)
+        TencentASRProvider(**options)
+
+    register_adapter(Adapter("tencent", "asr",
+        lambda options, ctx: TencentASRProvider(**options, transport=ctx.transport),
+        validate=validate_asr, schema=builtin_schema("tencent", "asr"), test=asr_probe))
 
     def validate_tts(options):
         fields(

@@ -37,6 +37,14 @@ LLM = {
 SCHEMAS = {
     ("openai", "llm"): LLM,
     ("anthropic", "llm"): LLM,
+    ("tencent", "asr"): {
+        "secret_id": field(secret=True),
+        "secret_key": field(secret=True),
+        "region": field(default=""),
+        "engine": field(default="16k_zh"),
+        "timeout_seconds": field("number", 30),
+        "max_audio_bytes": field("integer", 3145728),
+    },
     ("fish", "tts"): {
         "api_key": field(secret=True),
         "reference_id": field(default="9bb8ad542dc44d148c21c73a0884e9ae"),
@@ -68,6 +76,10 @@ SCHEMAS = {
 def builtin_schema(name, capability):
     fields = copy.deepcopy(SCHEMAS.get((name, capability), {}))
     labels = {
+        "secret_id": "SecretId",
+        "secret_key": "SecretKey",
+        "region": "地域",
+        "engine": "识别引擎",
         "base_url": "服务地址",
         "endpoint": "Embedding 接口地址",
         "api_key": "API 密钥",
@@ -92,6 +104,7 @@ def builtin_schema(name, capability):
         spec["label"] = labels.get(key, key)
     basic = {
         "llm": {"base_url", "api_key", "model"},
+        "asr": {"secret_id", "secret_key"},
         "tts": {"api_key", "reference_id", "model"},
         "embedding": {"endpoint", "api_key", "model", "dimensions"},
         "balance": {"api_key", "base_url", "timeout_seconds", "accounting"},
@@ -100,6 +113,7 @@ def builtin_schema(name, capability):
         spec["advanced"] = key not in basic[capability]
     required = {
         "llm": {"base_url", "model"},
+        "asr": {"secret_id", "secret_key"},
         "tts": {"api_key", "reference_id"},
         "embedding": set(),
         "balance": {"api_key"},

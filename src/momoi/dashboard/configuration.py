@@ -211,6 +211,18 @@ def register_configuration_routes(app, configuration, runtime):
         await channel_login.close()
         return web.json_response(channel_login.state)
 
+    async def test_qq_call(request):
+        from ..channel.napcat.config import QQCallConfig
+        from ..config.manager import restore_secrets
+        from ..qq_call.client import probe
+        value = await body(request)
+        previous = configuration.read_app().get("channels", {}).get("enabled", {}).get("napcat", {}).get("voice_call", {})
+        try:
+            config = QQCallConfig.from_mapping({**restore_secrets(value, previous), "enabled": True})
+        except (ValueError, TypeError):
+            return web.json_response({"ok": False, "error": "请填写有效的 Bridge 地址和认证 Token"}, status=400)
+        return web.json_response(await probe(config))
+
     async def cleanup(app):
         await channel_login.close()
 
@@ -223,6 +235,7 @@ def register_configuration_routes(app, configuration, runtime):
     app.router.add_put("/api/settings/providers/{capability}", save)
     app.router.add_put("/api/settings/providers", save)
     app.router.add_patch("/api/settings/configuration/app", save)
+    app.router.add_post("/api/settings/channels/napcat/voice-call/test", test_qq_call)
     app.router.add_get("/api/settings/runtime", status)
     app.router.add_post("/api/settings/apply", apply)
     app.router.add_post("/api/settings/channels/weixin/login", start_login)

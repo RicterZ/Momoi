@@ -26,6 +26,7 @@ SECRET_NAMES = {
     "token",
     "password",
     "access_token",
+    "bridge_token",
 }
 # Host/auth/storage ownership belongs to the dashboard process and cannot hot reload.
 EDITABLE = {

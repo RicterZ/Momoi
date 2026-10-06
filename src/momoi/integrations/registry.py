@@ -11,6 +11,7 @@ from .contracts.balance import BalanceProvider
 from .contracts.embedding import Embedder
 from .contracts.llm import LanguageModel
 from .contracts.tts import TTSProvider
+from .contracts.asr import ASRProvider
 from .transport import HTTPTransport
 from .builtins import register_builtins
 from .fields import normalize_fields, validate_schema
@@ -50,7 +51,7 @@ _ADAPTERS: dict[tuple[str, str], Adapter] = {}
 def register_adapter(adapter: Adapter) -> None:
     """Register one complete adapter contract, including its configuration schema."""
     name, capability = adapter.name, adapter.capability
-    if not name or capability not in {"llm", "tts", "embedding", "balance"}:
+    if not name or capability not in {"llm", "asr", "tts", "embedding", "balance"}:
         raise ValueError("invalid adapter name or capability")
     if (name, capability) in _ADAPTERS:
         raise ValueError(f"adapter already registered: {name}/{capability}")
@@ -123,6 +124,7 @@ class ServiceRegistry:
         methods = {
             "llm": ("complete",),
             "tts": ("synthesize",),
+            "asr": ("transcribe",),
             "embedding": ("encode", "health", "close"),
             "balance": ("balance",),
         }[capability]
@@ -167,6 +169,10 @@ class ServiceRegistry:
     @property
     def llm(self) -> LanguageModel:
         return self.get("llm")
+
+    @property
+    def asr(self) -> ASRProvider | None:
+        return self.get("asr")
 
     @property
     def tts(self) -> TTSProvider | None:

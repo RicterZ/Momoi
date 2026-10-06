@@ -1,5 +1,36 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar
+from urllib.parse import urlsplit
+
+
+@dataclass(frozen=True)
+class QQCallConfig:
+    enabled: bool = False
+    bridge_url: str = ""
+    bridge_token: str = field(default="", repr=False)
+    request_timeout_seconds: float = 5
+
+    @classmethod
+    def from_mapping(cls, value):
+        if not isinstance(value, dict) or value.keys() - {"enabled", "bridge_url", "bridge_token", "request_timeout_seconds"}:
+            raise ValueError("invalid napcat voice_call configuration")
+        enabled = value.get("enabled", False)
+        if type(enabled) is not bool:
+            raise ValueError("voice_call.enabled must be boolean")
+        url = value.get("bridge_url", "")
+        token = value.get("bridge_token", "")
+        if not isinstance(url, str) or not isinstance(token, str):
+            raise ValueError("voice_call address and token must be strings")
+        url = url.rstrip("/")
+        parsed = urlsplit(url)
+        if url and (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment):
+            raise ValueError("voice_call.bridge_url must be an HTTP(S) service address")
+        if enabled and (not url or len(token.encode()) < 32):
+            raise ValueError("enabled voice_call requires bridge_url and a token of at least 32 bytes")
+        timeout = value.get("request_timeout_seconds", 5)
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 60:
+            raise ValueError("voice_call.request_timeout_seconds must be between 0 and 60")
+        return cls(enabled, url, token, float(timeout))
 
 
 @dataclass(frozen=True)
@@ -17,6 +48,7 @@ class NapCatConfig:
 
     access_token: str = ""
     bot_qq: str = ""
+    voice_call: QQCallConfig = QQCallConfig()
 
     @classmethod
     def from_mapping(cls, value: object) -> "NapCatConfig":
@@ -47,6 +79,7 @@ class NapCatConfig:
             url=url,
             access_token=str(value.get("access_token") or ""),
             bot_qq=bot_qq,
+            voice_call=QQCallConfig.from_mapping(value.get("voice_call", {})),
             owner_qq=owner_qq,
             quiet_seconds=positive("quiet_seconds", 1),
             max_batch_seconds=positive("max_batch_seconds", 60),

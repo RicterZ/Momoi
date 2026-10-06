@@ -45,6 +45,7 @@ class RuntimeSupervisor:
             "observed_revision": self.observed_revision,
             "saved_revision": self.configuration.revision(),
             "qq_connected": qq.connected if isinstance(qq, NapCatChannel) else False,
+            "qq_call": getattr(channels.get("qq_call"), "status", {"phase": "disabled"}),
         }
 
     def request_apply(self):

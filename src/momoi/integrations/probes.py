@@ -38,3 +38,20 @@ async def embedding_probe(provider):
             invalid("向量响应无效或维度与配置不一致。")
     return {"model": provider.space.model, "dimensions": provider.space.dimensions}
 
+
+
+async def asr_probe(provider):
+    # A short synthetic tone is a transport/credential test, not an accuracy test.
+    import io
+    import math
+    import struct
+    import wave
+    from .contracts.asr import AudioInput
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b"".join(struct.pack("<h", int(500 * math.sin(2 * math.pi * 440 * i / 16000))) for i in range(8000)))
+    await provider.transcribe(AudioInput(output.getvalue(), "wav"))
+    return {"engine": provider.engine, "note": "已验证请求与鉴权；未验证人声识别准确率。"}
