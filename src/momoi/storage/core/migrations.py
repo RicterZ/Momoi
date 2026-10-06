@@ -12,6 +12,7 @@ from ..episode.episode_claims import render_verified_claims
 
 
 from ..agenda.plans import PLAN_SCHEMA
+from ..conversation.replyer import REPLYER_HISTORY_SCHEMA
 
 
 def _add_task_plans(database):
@@ -664,6 +665,10 @@ def _add_scoped_memory_activation(database: sqlite3.Connection) -> None:
         database.execute(statement)
 
 
+def _add_replyer_history_windows(database: sqlite3.Connection) -> None:
+    database.execute(REPLYER_HISTORY_SCHEMA)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -694,6 +699,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _enable_episode_relations,
     _remove_episode_salience,
     _add_episode_relation_reviews,
+    _add_replyer_history_windows,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

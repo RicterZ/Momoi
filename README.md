@@ -400,7 +400,8 @@ Keyword recall remains available during indexing. See
 - Edit `~/.momoi/prompts/PLANNER.md` for the shared agent’s interpretation,
   recall, tool use and response intent. `{{SOUL}}` includes the current identity.
 - Edit `~/.momoi/prompts/REPLYER.md` for expression. Replyer receives SOUL,
-  recent delivered channel dialogue (up to 48 messages / 5,000 estimated tokens),
+  recent delivered channel dialogue (a persisted window starts with the latest
+  12 messages, appends until 48, then rotates back to the latest 12),
   the current input and Planner’s intent/reference; it has no tools. Its actual
   speech returns to Planner as the `reply` result and follows normal delivery.
   Replyer thinking defaults to `low` and is configurable in the dashboard.

@@ -22,7 +22,7 @@ class Replyer:
         soul = prompt_text(self.config, self.config.soul_prompt_path.name if self.config.soul_prompt_path else "SOUL.md", self.config.soul_prompt)
         guide = prompt_text(self.config, "REPLYER.md", files("momoi").joinpath("prompts/replyer.md").read_text(encoding="utf-8"))
         system = soul + "\n\n" + guide
-        rows = self.store.replyer_dialogue_rows(request.delivery_channel.name)
+        rows = self.store.replyer_history_rows(request.delivery_channel.name)
         messages = visible_dialogue(rows, timezone=self.config.timezone)
         target = "\n".join(event.text for event in request.current_events)
         tail = (

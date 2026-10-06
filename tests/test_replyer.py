@@ -29,6 +29,12 @@ def test_replyer_channel_history_uses_actual_delivery(tmp_path):
         assert [r['content'] for r in store.replyer_dialogue_rows('second')] == ['second input']
         assert store.committed_reply('first', 'first-send')['bubbles'] == ['first output']
         assert store.committed_reply('first', 'missing') is None
+        first = store.replyer_history_rows('first')
+        assert first == rows
+        assert [r['content'] for r in store.replyer_history_rows('second')] == ['second input']
+        store.close()
+        store = Store(tmp_path / 'db')
+        assert store.replyer_history_rows('first') == first
     finally:
         store.close()
 
@@ -38,7 +44,7 @@ def test_replyer_isolated_request_and_actual_speech(tmp_path):
     (tmp_path / 'REPLYER.md').write_text('测试表达')
     config = SimpleNamespace(soul_prompt_path=tmp_path / 'SOUL.md', soul_prompt='fallback',
                              timezone='UTC', thinking_stages={'replyer': 'low'})
-    store = SimpleNamespace(replyer_dialogue_rows=lambda channel: [], record_turn_usage=Mock())
+    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock())
     channel = SimpleNamespace(name='test', content_blocks=lambda segments: [{'type': 'image', 'source': {'type': 'url', 'url': 'https://example.invalid/image'}}])
     request = SimpleNamespace(turn_id='turn', round_number=2, delivery_channel=channel,
                              current_events=[IncomingMessage('e', 'e', '测试图片', 1, 1, ({'type': 'image'},))])
@@ -139,3 +145,19 @@ def test_thinking_trace_survives_reopen_and_old_records(tmp_path):
         assert calls['old']['trace'] == {}
     finally:
         reopened.close()
+
+
+def test_replyer_window_migrates_existing_database(tmp_path):
+    from momoi.storage.core.migrations import SCHEMA_VERSION
+    path = tmp_path / 'existing.db'
+    store = Store(path)
+    with store._db:
+        store._db.execute('DROP TABLE replyer_history_windows')
+        store._db.execute(f'PRAGMA user_version={SCHEMA_VERSION - 1}')
+    store.close()
+    store = Store(path)
+    try:
+        assert store.replyer_history_rows('test') == []
+        assert store._db.execute('PRAGMA user_version').fetchone()[0] == SCHEMA_VERSION
+    finally:
+        store.close()

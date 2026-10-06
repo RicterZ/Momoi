@@ -53,6 +53,7 @@ from .episode.episode_records import EpisodeRecordStore
 from .conversation.conversation_views import ConversationViewStore
 from .core.timestamps import context_timestamp
 from .conversation.transcripts import TranscriptStore
+from .conversation.replyer import ReplyerHistoryStore
 from .episode.episode_queries import EpisodeQueryStore
 from .episode.episode_index import EpisodeIndexStore
 from .agenda.notifications import NotificationStore
@@ -98,6 +99,7 @@ class Store(
     RuntimeArchiveStore,
     ConversationViewStore,
     TranscriptStore,
+    ReplyerHistoryStore,
     EpisodeQueryStore,
     EpisodeIndexStore,
     NotificationStore,
