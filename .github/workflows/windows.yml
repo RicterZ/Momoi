@@ -43,7 +43,7 @@ jobs:
       - name: Locked Python test environment
         run: uv sync --locked --python 3.12 --group test
       - name: Windows shell, process tree and workspace tests
-        run: uv run --locked --group test pytest -q -n 0 tests/test_platform.py tests/test_exec_tool.py tests/test_desktop.py tests/test_desktop_qq.py tests/test_desktop_emotions.py tests/test_qq_call_audio.py tests/test_qq_call_configuration.py tests/test_qq_call_streaming.py tests/test_qq_call_client.py tests/test_qq_call_packaging.py
+        run: uv run --locked --group test pytest -q -n 0 tests/test_platform.py tests/test_exec_tool.py tests/test_desktop.py tests/test_desktop_qq.py tests/test_desktop_emotions.py tests/test_qq_call_audio.py tests/test_qq_call_configuration.py tests/test_qq_call_streaming.py tests/test_qq_call_client.py tests/test_qq_call_packaging.py tests/test_windows_cos_publish.py
       - name: Update validation checks
         run: dotnet run --project desktop/Momoi.Update.Check -c Release
       - name: Native QQ library and isolated data smoke
