@@ -24,6 +24,16 @@ addition = '''    if (req.method === "POST" && url.pathname === "/v1/momoi/ready
     }
 '''
 s = s.replace(needle, addition + needle, 1)
+# Native command 20050 carries diagnostic text, including ordinary login logs.
+# Treating it as expiry repeatedly logs in and prevents invitation processing.
+needle = '(command === 20050 || command === 120043)'
+assert s.count(needle) == 1
+s = s.replace(needle, '(command === 120043)', 1)
+s = s.replace('    loginPosted: false,', '    loginPosted: false,\n    loginSucceeded: false,', 1)
+s = s.replace('    state.avHost.loginPosted = false;', '    state.avHost.loginPosted = false;\n    state.avHost.loginSucceeded = false;', 1)
+needle = '  state.avHost.lastOutputCommand = command;'
+assert needle in s
+s = s.replace(needle, needle + "\n  if (command === 1) state.avHost.loginSucceeded = Array.isArray(value) && value[0] === 0;", 1)
 # Keep only redacted summaries of native results for call diagnosis.
 needle = '  state.avHost.lastOutputCommand = command;'
 assert needle in s

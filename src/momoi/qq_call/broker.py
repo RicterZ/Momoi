@@ -64,7 +64,7 @@ class MediaBroker:
                 pulse = await asyncio.wait_for(process.wait(), 2) == 0
             finally:
                 await stop_process(process)
-            deps = {'bridge': bool(plugin.get('listenerRegistered')),
+            deps = {'bridge': bool(plugin.get('listenerRegistered') and plugin.get('avHost', {}).get('loginSucceeded')),
                     'av_host': bool(host.get('ready') and host.get('pluginFound')),
                     'audio': pulse and all(shutil.which(c) for c in ('parec', 'pacat', 'ffmpeg'))}
             return deps, plugin.get('call') or {}
