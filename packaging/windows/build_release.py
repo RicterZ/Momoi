@@ -41,9 +41,6 @@ def build_release(output: Path, version: str):
     runtime_id = hashlib.sha256(json.dumps(components, sort_keys=True).encode("utf-8")).hexdigest()[:24]
     payload = {}
     for path in sorted((ROOT / "src/momoi").rglob("*")):
-        # This worker is exclusively the Linux PulseAudio media broker.
-        if path.relative_to(ROOT / "src/momoi").as_posix() == "qq_call/broker.py":
-            continue
         if path.is_file() and "__pycache__" not in path.parts and path.suffix not in (".pyc", ".pyo"):
             payload["app/" + path.relative_to(ROOT / "src").as_posix()] = path.read_bytes()
     from prepare_qq_call import windows_code_files

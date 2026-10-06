@@ -63,9 +63,10 @@ def read_windows_bundle(archive):
         names = bundle.namelist()
         if len(names) != len(set(names)):
             raise ValueError('Duplicate QQ call bundle paths')
-        allowed = {'LICENSE', 'bundle.json', 'av-host/host.cjs', 'av-host/host.html',
+        allowed = {'LICENSE', 'bundle.json', 'av-host/host.cjs', 'av-host/host.html', 'av-host/commands.cjs',
                    'napcat-plugin/index.mjs', 'napcat-plugin/package.json',
-                   'windows/start-av-host.ps1', 'windows/components.json'}
+                   'windows/start-av-host.ps1', 'windows/components.json',
+                   'windows/virtual_audio.py', 'windows/audio_stream.py', 'windows/audio_backend.py'}
         if set(names) != allowed:
             raise ValueError('Unexpected platform/runtime files in Windows QQ call bundle')
         files = {name: bundle.read(name) for name in names}

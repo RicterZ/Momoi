@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import uuid
 import time
+import sys
 from collections import OrderedDict
 
 from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
@@ -26,11 +27,18 @@ async def stop_process(process):
 
 
 class MediaBroker:
-    def __init__(self, token, *, native_url='http://127.0.0.1:6110', host_url='http://127.0.0.1:6111'):
+    def __init__(self, token, *, native_url='http://127.0.0.1:6110', host_url='http://127.0.0.1:6111', audio=None):
         if len(token.encode()) < 32:
             raise ValueError('Bridge token must contain at least 32 bytes')
         self.token = token
         self.native_url, self.host_url = native_url, host_url
+        self.audio = audio
+        self.capture_command = audio.capture_command if audio else (
+            'parec', '--raw', '--device=maibot_qq_speaker.monitor',
+            '--format=s16le', '--rate=16000', '--channels=1')
+        self.playback_command = audio.playback_command if audio else (
+            'pacat', '--playback', '--raw', '--device=maibot_qq_mic',
+            '--format=s16le', '--rate=24000', '--channels=1', '--latency-msec=50')
         self.http = None
         self.ws = None
         self.owner = ''
@@ -61,15 +69,19 @@ class MediaBroker:
                     'Authorization': 'Bearer ' + self.token}) as response:
                 response.raise_for_status()
                 host = (await response.json())['data']
-            process = await asyncio.create_subprocess_exec('pactl', 'info',
-                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-            try:
-                pulse = await asyncio.wait_for(process.wait(), 2) == 0
-            finally:
-                await stop_process(process)
+            if self.audio is not None:
+                audio_ready = self.audio.ready
+            else:
+                process = await asyncio.create_subprocess_exec('pactl', 'info',
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                try:
+                    pulse = await asyncio.wait_for(process.wait(), 2) == 0
+                finally:
+                    await stop_process(process)
+                audio_ready = pulse and all(shutil.which(c) for c in ('parec', 'pacat', 'ffmpeg'))
             deps = {'bridge': bool(plugin.get('listenerRegistered') and plugin.get('avHost', {}).get('loginSucceeded')),
                     'av_host': bool(host.get('ready') and host.get('pluginFound')),
-                    'audio': pulse and all(shutil.which(c) for c in ('parec', 'pacat', 'ffmpeg'))}
+                    'audio': bool(audio_ready)}
             return deps, plugin.get('call') or {}
         except (OSError, ValueError, KeyError, asyncio.TimeoutError, __import__('aiohttp').ClientError):
             return {'bridge': False, 'av_host': False, 'audio': False}, {}
@@ -123,8 +135,7 @@ class MediaBroker:
     async def capture_audio(self, session_id):
         process = None
         try:
-            process = await asyncio.create_subprocess_exec('parec', '--raw',
-                '--device=maibot_qq_speaker.monitor', '--format=s16le', '--rate=16000', '--channels=1',
+            process = await asyncio.create_subprocess_exec(*self.capture_command,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
             self.capture = process
             while self.session_id == session_id and self.ws is not None and not self.ws.closed:
@@ -225,9 +236,7 @@ class MediaBroker:
                     if not self.valid(session_id, generation):
                         raise ConnectionError('Call superseded')
                     if process is None:
-                        process = await asyncio.create_subprocess_exec('pacat', '--playback', '--raw',
-                            '--device=maibot_qq_mic', '--format=s16le', '--rate=24000', '--channels=1',
-                            '--latency-msec=50', stdin=asyncio.subprocess.PIPE,
+                        process = await asyncio.create_subprocess_exec(*self.playback_command, stdin=asyncio.subprocess.PIPE,
                             stderr=asyncio.subprocess.DEVNULL)
                         self.play_process = process
                     process.stdin.write(frame)
@@ -315,9 +324,7 @@ class MediaBroker:
                 raise web.HTTPBadRequest(text='Audio decode failed or exceeds two minutes')
             if not self.valid(session_id, generation):
                 raise web.HTTPConflict(text='Call ended or utterance superseded')
-            process = await asyncio.create_subprocess_exec('pacat', '--playback', '--raw',
-                '--device=maibot_qq_mic', '--format=s16le', '--rate=24000', '--channels=1',
-                '--latency-msec=50', stdin=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            process = await asyncio.create_subprocess_exec(*self.playback_command, stdin=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
             self.play_process = process
             played = 0
             try:
@@ -350,7 +357,13 @@ class MediaBroker:
 
     async def startup(self, app):
         self.http = ClientSession(timeout=ClientTimeout(total=3))
-        self.poll_task = asyncio.create_task(self.poll())
+        try:
+            if self.audio is not None:
+                await self.audio.prepare(self.http, self.host_url, self.token)
+            self.poll_task = asyncio.create_task(self.poll())
+        except BaseException:
+            await self.http.close()
+            raise
 
     async def cleanup(self, app):
         self.armed = False
@@ -385,6 +398,14 @@ class MediaBroker:
         app.router.add_post('/v1/playback', self.play)
         app.router.add_post('/v1/playback/stream', self.play_stream)
         app.router.add_post('/v1/playback/stop', self.stop_playback)
+        if self.audio is not None:
+            async def shutdown(request):
+                def exit_server():
+                    raise web.GracefulExit()
+                asyncio.get_running_loop().call_later(0.1, exit_server)
+                return web.json_response({'ok': True})
+            app.router.add_post('/v1/shutdown', shutdown)
+
         app.on_startup.append(self.startup)
         app.on_cleanup.append(self.cleanup)
         return app
@@ -393,8 +414,22 @@ class MediaBroker:
 def main():
     runtime = Path(os.getenv('QQ_CALL_RUNTIME', '/app/qq-call'))
     token_path = Path(os.getenv('QQ_CALL_TOKEN_FILE', str(runtime / 'runtime/control.token')))
-    broker = MediaBroker(token_path.read_text().strip())
-    web.run_app(broker.app(), host='0.0.0.0', port=int(os.getenv('QQ_CALL_PORT', '6112')), access_log=None)
+    options = dict(native_url=os.getenv('QQ_CALL_NATIVE_URL', 'http://127.0.0.1:6110'),
+                   host_url=os.getenv('QQ_CALL_HOST_URL', 'http://127.0.0.1:6111'))
+    port = int(os.getenv('QQ_CALL_PORT', '6112'))
+    windows_bridge = os.getenv('QQ_CALL_WINDOWS_BRIDGE')
+    if sys.platform == 'win32':
+        if not windows_bridge:
+            raise RuntimeError('Windows QQ call audio adapter is not configured')
+        sys.path.insert(0, str(Path(windows_bridge).resolve() / 'windows'))
+        from audio_backend import WindowsAudioBackend
+        with WindowsAudioBackend(runtime) as audio:
+            broker = MediaBroker(token_path.read_text().strip(), audio=audio, **options)
+            web.run_app(broker.app(), host='127.0.0.1', port=port, access_log=None)
+    else:
+        broker = MediaBroker(token_path.read_text().strip(), **options)
+        web.run_app(broker.app(), host='0.0.0.0', port=port, access_log=None)
+
 
 
 if __name__ == '__main__':

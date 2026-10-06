@@ -13,9 +13,9 @@
   },
   "qq_call": {
     "source": {
-      "revision": "f0f86d49bc349c14cdd8f4326e340540ea1aadc2",
-      "url": "https://codeload.github.com/RicterZ/maibot-qq-voice-call/tar.gz/f0f86d49bc349c14cdd8f4326e340540ea1aadc2",
-      "sha256": "8525a0ca3cebd8e029fa9a584da4f9bcf06a60b70e987cb25a2edc38b2819c9a"
+      "revision": "2de7ec042ee23ef0f2e25705731aced5a9f51099",
+      "url": "https://codeload.github.com/RicterZ/maibot-qq-voice-call/tar.gz/2de7ec042ee23ef0f2e25705731aced5a9f51099",
+      "sha256": "f9db6fb968b08709517f069f47b28e8086eb8d3d598c99962317ea9fea380244"
     },
     "runtime": {
       "qq": {

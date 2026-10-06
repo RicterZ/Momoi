@@ -21,9 +21,10 @@ def load_script(name):
 
 
 def write_bundle(path, *, platform='windows', extra=None, corrupt=False):
-    files = {name: name.encode() for name in ('LICENSE', 'av-host/host.cjs', 'av-host/host.html',
+    files = {name: name.encode() for name in ('LICENSE', 'av-host/host.cjs', 'av-host/host.html', 'av-host/commands.cjs',
              'napcat-plugin/index.mjs', 'napcat-plugin/package.json',
-             'windows/start-av-host.ps1', 'windows/components.json')}
+             'windows/start-av-host.ps1', 'windows/components.json',
+             'windows/virtual_audio.py', 'windows/audio_stream.py', 'windows/audio_backend.py')}
     if extra:
         files[extra] = b'linux'
     manifest = {'platform': platform, 'files': {name: hashlib.sha256(data).hexdigest()
@@ -87,12 +88,12 @@ def test_rejects_unsafe_source_before_extraction(tmp_path, monkeypatch):
     assert not (tmp_path.parent / 'escape').exists()
 
 
-def test_code_zip_ships_windows_bridge_without_linux_media_worker(tmp_path, monkeypatch):
+def test_code_zip_ships_windows_bridge_and_portable_media_worker(tmp_path, monkeypatch):
     module = load_script('build_release')
     paths = {
         'src/momoi/dashboard/static/index.html': '<html></html>',
         'src/momoi/qq_call/audio.py': '# Shared PCM processing',
-        'src/momoi/qq_call/broker.py': '# Linux PulseAudio worker',
+        'src/momoi/qq_call/broker.py': '# Portable media worker',
         'packaging/windows/backend_entry.py': '# Backend entry',
         'packaging/windows/components.json': '{}',
     }
@@ -109,5 +110,5 @@ def test_code_zip_ships_windows_bridge_without_linux_media_worker(tmp_path, monk
     with zipfile.ZipFile(archive) as bundle:
         assert 'app/qq_call_bridge/windows/start-av-host.ps1' in bundle.namelist()
         assert 'app/momoi/qq_call/audio.py' in bundle.namelist()
-        assert 'app/momoi/qq_call/broker.py' not in bundle.namelist()
+        assert 'app/momoi/qq_call/broker.py' in bundle.namelist()
         assert set(manifest['files']) == set(bundle.namelist()) - {'release.json'}
