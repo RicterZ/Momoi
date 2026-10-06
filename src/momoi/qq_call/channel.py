@@ -10,6 +10,7 @@ import aiohttp
 
 from ..channel import SendInterrupted, SendRejected
 from ..integrations.contracts.asr import ASRError, AudioInput
+from ..integrations.contracts.tts import TTSError
 from ..models import IncomingMessage
 from ..observability.events import log_event
 from .audio import Segmenter, wav_bytes
@@ -187,18 +188,23 @@ class QQCallChannel:
             await self.pending_stop
         started = time.monotonic()
         first_ms = None
+        synthesis_error = None
         async def upload():
-            nonlocal first_ms
+            nonlocal first_ms, synthesis_error
             from contextlib import aclosing
-            async with aclosing(bubble_pcm(provider, text)) as stream:
-                async for chunk in stream:
-                    if not self.context_valid(context):
-                        raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
-                    if first_ms is None:
-                        first_ms = round((time.monotonic() - started) * 1000)
-                        log_event(logger, logging.INFO, 'qq_call_tts_first_audio', channel=self.name,
-                            session_id=self.session_id, utterance_id=utterance_id, elapsed_ms=first_ms)
-                    yield chunk
+            try:
+                async with aclosing(bubble_pcm(provider, text)) as stream:
+                    async for chunk in stream:
+                        if not self.context_valid(context):
+                            raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
+                        if first_ms is None:
+                            first_ms = round((time.monotonic() - started) * 1000)
+                            log_event(logger, logging.INFO, 'qq_call_tts_first_audio', channel=self.name,
+                                session_id=self.session_id, utterance_id=utterance_id, elapsed_ms=first_ms)
+                        yield chunk
+            except TTSError as error:
+                synthesis_error = error
+                raise
         async def request_playback():
             async with self.http.post(self.config.bridge_url + '/v1/playback/stream', data=upload(),
                 headers={**self.headers, 'Content-Type': 'application/octet-stream',
@@ -215,9 +221,13 @@ class QQCallChannel:
                 if not self.context_valid(context):
                     raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
             result = request.result()
+            if synthesis_error is not None:
+                raise SendRejected(f'Phone speech synthesis failed: {synthesis_error}')
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
             if not self.context_valid(context):
                 raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended') from error
+            if synthesis_error is not None:
+                raise SendRejected(f'Phone speech synthesis failed: {synthesis_error}') from error
             raise SendRejected('Streaming playback uncertain; do not retry') from error
         finally:
             request.cancel()

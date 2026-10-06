@@ -1,3 +1,4 @@
+import { switchProviderAdapter } from "./providerAdapter.js";
 import { hasModelApiKey, hasMessageChannel } from "./setupGuide.js";
 import {
   Children,
@@ -983,7 +984,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
                         labelAction={draft.enabled && name === testCapability ? testButton : undefined}
                         value={value.adapter}
                         onChange={(adapter) =>
-                          update({ ...value, adapter })
+                          update(switchProviderAdapter(name, value, adapter, adapters))
                         }
                         options={adapters.map((adapter) => ({
                           value: adapter.adapter,

@@ -159,3 +159,39 @@ def test_channel_sends_bubbles_as_one_ordered_playback_stream():
         assert uploads == [b'\x01\x00' * 480 + b'\x02\x00' * 480]
 
     asyncio.run(scenario())
+
+
+def test_channel_preserves_synthesis_error_in_streaming_failure():
+    async def scenario():
+        from momoi.qq_call.channel import QQCallChannel
+        from momoi.channel import SendRejected
+        from momoi.integrations.contracts.tts import TTSError
+
+        class Provider:
+            async def stream_pcm(self, text):
+                raise TTSError('Synthetic TTS returned HTTP 404')
+                yield bytes(960)
+
+        async def playback(request):
+            try:
+                await request.read()
+            except ConnectionResetError:
+                pass
+            return web.json_response({'ok': False})
+
+        app = web.Application()
+        app.router.add_post('/v1/playback/stream', playback)
+        async with TestServer(app) as server, ClientSession() as http:
+            channel = QQCallChannel(SimpleNamespace(bridge_url=str(server.make_url('')).rstrip('/'),
+                bridge_token='x' * 32), '123', object(), tts_enabled=True)
+            channel.http = http
+            channel.session_id = 'synthetic'
+            channel.status = {'phase': 'connected'}
+            try:
+                await channel.send_call_stream(Provider(), 'synthetic', channel.routing_context(), 'one')
+            except SendRejected as error:
+                assert 'Synthetic TTS returned HTTP 404' in str(error)
+            else:
+                assert False, 'Must preserve synthesis error'
+
+    asyncio.run(scenario())

@@ -1,6 +1,6 @@
 """Vocu / 悟声 synchronous TTS and streaming MP3-to-PCM conversion.
 
-Protocol: https://dev.vocu.ai/synchronous-real-time-voice-generation-api-373800503
+Protocol: https://dev.wusound.cn/同步实时生成语音-api-380467873
 """
 
 import asyncio
@@ -19,7 +19,7 @@ from ..validation import number, text as option_text, url
 class VocuTTSProvider(TTSProvider):
     def __init__(
         self, *, api_key: str, voice_id: str,
-        base_url: str = "https://v1.vocu.ai/api", prompt_id: str = "default",
+        base_url: str = "https://v1.wusound.cn/api", prompt_id: str = "default",
         preset: str = "balance", speech_rate: float = 1, language: str = "auto",
         flash: bool = False, vivid: bool = False, timeout_seconds: float = 60,
         max_audio_bytes: int = 20 * 1024 * 1024,

@@ -58,7 +58,7 @@ SCHEMAS = {
     ("vocu", "tts"): {
         "api_key": field(secret=True),
         "voice_id": field(),
-        "base_url": field(default="https://v1.vocu.ai/api"),
+        "base_url": field(default="https://v1.wusound.cn/api"),
         "prompt_id": field(default="default"),
         "preset": field(default="balance"),
         "speech_rate": field("number", 1),
