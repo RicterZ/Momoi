@@ -1,30 +1,30 @@
-"""Initialize bundled Brave over stdio without making a paid search request."""
+"""Verify bundled MCP toolchains without shipping a default MCP server."""
 import argparse
-import asyncio
-import os
+import json
+import subprocess
 from pathlib import Path
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
 
-
-async def check(node: Path, entry: Path):
-    parameters = StdioServerParameters(
-        command=str(node.absolute()), args=[str(entry.resolve()), "--transport", "stdio"],
-        env={**os.environ, "BRAVE_API_KEY": "momoi-packaging-initialization-check"},
+def check(node: Path, uv: Path):
+    node = node.resolve()
+    result = subprocess.check_output(
+        [str(node), "-e", "console.log(JSON.stringify({version:process.version,arch:process.arch}))"],
+        text=True, timeout=30,
     )
-    async with asyncio.timeout(30):
-        async with stdio_client(parameters) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                names = {tool.name for tool in (await session.list_tools()).tools}
-                assert {"brave_web_search", "brave_local_search"} <= names, names
-    print("Bundled Brave MCP stdio initialization and tool discovery passed")
+    info = json.loads(result)
+    assert info["arch"] == "x64", info
+    npm = node.parent / "node_modules/npm/bin/npm-cli.js"
+    assert npm.is_file(), npm
+    version = subprocess.check_output([str(node), str(npm), "--version"], text=True, timeout=30)
+    assert version.strip(), version
+    version = subprocess.check_output([str(uv.resolve()), "--version"], text=True, timeout=30)
+    assert version.startswith("uv "), version
+    print("Bundled Node/npm and uv MCP toolchains passed")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--node", type=Path, required=True)
-    parser.add_argument("--entry", type=Path, required=True)
+    parser.add_argument("--uv", type=Path, required=True)
     args = parser.parse_args()
-    asyncio.run(check(args.node, args.entry))
+    check(args.node, args.uv)

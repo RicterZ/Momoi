@@ -23,7 +23,6 @@ try {
         elseif ($Relative.StartsWith('runtime/napcat/')) { 'NapCat and QQ (including Node)' }
         elseif ($Relative.StartsWith('runtime/node/')) { 'Node and npm' }
         elseif ($Relative.StartsWith('runtime/uv/')) { 'uv' }
-        elseif ($Relative.StartsWith('runtime/mcp/')) { 'Brave MCP' }
         elseif ($Relative.StartsWith('releases/')) { 'Application code and dashboard' }
         elseif ($Relative.StartsWith('licenses/')) { 'Licenses' }
         elseif ($Relative.StartsWith('runtime/')) { 'Runtime manifests' }
@@ -52,7 +51,7 @@ try {
     # Exercise the installed interpreter, model and authenticated dashboard.
     & uv run --no-sync python (Join-Path $PSScriptRoot 'smoke_backend.py') --python (Join-Path $Target 'runtime/python/python.exe') --entry (Join-Path $Target 'releases/bundled/app/backend_entry.py') --model-path (Join-Path $Target 'models/bge-small-zh-v1.5')
     if ($LASTEXITCODE -ne 0) { throw 'Installed backend smoke failed' }
-    & uv run --no-sync python (Join-Path $PSScriptRoot 'smoke_mcp.py') --node (Join-Path $Target 'runtime/node/node.exe') --entry (Join-Path $Target 'runtime/mcp/node_modules/@brave/brave-search-mcp-server/dist/index.js')
+    & uv run --no-sync python (Join-Path $PSScriptRoot 'smoke_mcp.py') --node (Join-Path $Target 'runtime/node/node.exe') --uv (Join-Path $Target 'runtime/uv/uv.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Installed MCP smoke failed' }
     # Exercise the real bundled Node/native QQ library and .NET ownership before logging in.
     $QQ = Start-Process -FilePath (Join-Path $Target 'Momoi.exe') -ArgumentList '--qq-smoke' -PassThru

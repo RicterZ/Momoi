@@ -60,9 +60,8 @@ async def serve(args):
         return
     prepare_workspace(workspace, f"http://127.0.0.1:{args.embedding_port}/v1/embeddings")
     if args.install_dir is not None:
-        from .mcp_runtime import prepare_mcp_environment, seed_brave_config
+        from .mcp_runtime import prepare_mcp_environment
         prepare_mcp_environment(args.install_dir.resolve(), workspace)
-        seed_brave_config(workspace)
 
     class EmbeddedServer(Server):
         def capture_signals(self):

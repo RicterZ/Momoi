@@ -28,7 +28,6 @@ def build_release(output: Path, version: str):
     components = {
         "requirements": requirements, "python_abi": "cp312-win_amd64", "model_revision": MODEL_REVISION,
         "mcp": json.loads((ROOT / "packaging/windows/components.json").read_text()),
-        "mcp_lock": hashlib.sha256((ROOT / "packaging/windows/mcp/package-lock.json").read_bytes()).hexdigest(),
     }
     runtime_id = hashlib.sha256(json.dumps(components, sort_keys=True).encode("utf-8")).hexdigest()[:24]
     payload = {}

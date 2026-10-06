@@ -1,9 +1,0 @@
-{
-  "name": "momoi-bundled-mcp",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Pinned MCP servers installed with the Windows runtime",
-  "dependencies": {
-    "@brave/brave-search-mcp-server": "2.1.4"
-  }
-}

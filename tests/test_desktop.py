@@ -79,7 +79,7 @@ def test_snapshot_handles_database_created_by_failed_start(tmp_path):
 
 
 def test_mcp_runtime_uses_writable_user_caches_and_private_toolchain(tmp_path):
-    from momoi.desktop.mcp_runtime import prepare_mcp_environment, seed_brave_config
+    from momoi.desktop.mcp_runtime import prepare_mcp_environment
     install, workspace = tmp_path / "Program Files" / "Momoi", tmp_path / "user" / "Momoi"
     env = {"PATH": "existing"}
     prepare_mcp_environment(install, workspace, env)
@@ -90,18 +90,14 @@ def test_mcp_runtime_uses_writable_user_caches_and_private_toolchain(tmp_path):
         assert Path(env[name]).is_dir()
         assert Path(env[name]).is_relative_to(workspace)
     bootstrap(workspace / "config.json")
-    seed_brave_config(workspace)
     path = workspace / "mcp.json"
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    brave = raw["mcpServers"]["brave-search"]
-    assert brave["disabled"] is True
-    assert brave["command"] == "${MOMOI_NODE}"
-    assert brave["env"]["BRAVE_API_KEY"] == ""
-    brave["env"]["BRAVE_API_KEY"] = "user-owned-key"
-    atomic_write(path, json.dumps(raw))
+    assert json.loads(path.read_text(encoding="utf-8")) == {"mcpServers": {}}
+    custom = {"mcpServers": {"custom": {"command": "user-owned-command"}}}
+    atomic_write(path, json.dumps(custom))
     before = path.read_bytes()
-    seed_brave_config(workspace)
+    prepare_mcp_environment(install, workspace, env)
     assert path.read_bytes() == before
+    assert "MOMOI_BRAVE_MCP" not in env
 
 
 def test_desktop_prompt_defaults_match_examples(tmp_path):

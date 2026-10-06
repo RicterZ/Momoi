@@ -39,23 +39,5 @@ foreach ($Name in @("uv.exe", "uvx.exe")) {
     if ($Candidates.Count -ne 1) { throw "Missing $Name" }
     if ($Candidates[0].FullName -ne (Join-Path $UvTarget $Name)) { Copy-Item $Candidates[0].FullName (Join-Path $UvTarget $Name) }
 }
-$McpTarget = Join-Path $Stage "runtime/mcp"
-New-Item -ItemType Directory -Path $McpTarget -Force | Out-Null
-Copy-Item (Join-Path $PSScriptRoot "mcp/package*.json") $McpTarget
-$Node = Join-Path $NodeTarget "node.exe"
-$Npm = Join-Path $NodeTarget "node_modules/npm/bin/npm-cli.js"
-& $Node $Npm ci --omit=dev --ignore-scripts --prefix $McpTarget
-if ($LASTEXITCODE -ne 0) { throw "Bundled MCP dependency installation failed" }
-& $Node -e "const p=require(process.argv[1]); if(p.version!==process.argv[2]) process.exit(1)" (Join-Path $McpTarget "node_modules/@brave/brave-search-mcp-server/package.json") $Versions.brave
-if ($LASTEXITCODE -ne 0) { throw "Brave MCP version mismatch" }
 Copy-Item (Join-Path $PSScriptRoot "components.json") (Join-Path $Stage "runtime/components.json")
-$Notices = Join-Path $Stage "licenses/mcp"
-New-Item -ItemType Directory -Path $Notices -Force | Out-Null
-Get-ChildItem $McpTarget -File -Recurse | Where-Object { $_.Name -match '^(LICENSE|NOTICE|COPYING)' } | ForEach-Object {
-    $Relative = $_.FullName.Substring($McpTarget.Length + 1)
-    $Notice = Join-Path $Notices $Relative
-    New-Item -ItemType Directory -Path (Split-Path $Notice) -Force | Out-Null
-    Copy-Item $_.FullName $Notice
-}
 Copy-Item (Join-Path $NodeTarget "LICENSE") (Join-Path $Stage "licenses/Node-LICENSE")
-Copy-Item (Join-Path $McpTarget "package-lock.json") (Join-Path $Stage "licenses/mcp-package-lock.json")
