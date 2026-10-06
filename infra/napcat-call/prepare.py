@@ -24,6 +24,10 @@ addition = '''    if (req.method === "POST" && url.pathname === "/v1/momoi/ready
     }
 '''
 s = s.replace(needle, addition + needle, 1)
+# Keep only redacted summaries of native results for call diagnosis.
+needle = '  state.avHost.lastOutputCommand = command;'
+assert needle in s
+s = s.replace(needle, needle + "\n  state.avHost.outputCommands ??= {};\n  state.avHost.outputCommands[command] = (state.avHost.outputCommands[command] || 0) + 1;\n  if ([1, 55, 20050, 120043, 20006].includes(command)) {\n    state.avHost.outputResults ??= {};\n    state.avHost.outputResults[command] = summarizeValue(value);\n  }", 1)
 plugin.write_text(s)
 entry = Path('/app/entrypoint.sh')
 s = entry.read_text()
