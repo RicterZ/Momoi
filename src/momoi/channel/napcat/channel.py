@@ -61,10 +61,12 @@ class NapCatChannel:
                 inbound_tasks: set[asyncio.Task[None]] = set()
                 try:
                     async with session.ws_connect(
-                        self.config.url, heartbeat=self.config.heartbeat_seconds
+                        self.config.url, heartbeat=self.config.heartbeat_seconds,
+                        headers={"Authorization": f"Bearer {self.config.access_token}"} if self.config.access_token else None
                     ) as ws:
                         self._ws = ws
-                        self._ready.set()
+                        if not self.config.bot_qq:
+                            self._ready.set()
                         delay = 1.0
                         log_event(
                             logger,
@@ -88,6 +90,12 @@ class NapCatChannel:
                             if frame.type == aiohttp.WSMsgType.TEXT:
                                 payload = self._decode_frame(frame.data)
                                 if payload is None:
+                                    continue
+                                if self.config.bot_qq and payload.get("self_id") is not None:
+                                    if str(payload["self_id"]) != self.config.bot_qq:
+                                        raise aiohttp.ClientError("NapCat logged in with an unexpected QQ account")
+                                    self._ready.set()
+                                if self.config.bot_qq and not self._ready.is_set():
                                     continue
                                 if self._resolve_response(payload):
                                     continue

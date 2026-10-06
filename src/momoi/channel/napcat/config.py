@@ -15,6 +15,9 @@ class NapCatConfig:
     media_max_bytes: int = 20 * 1024 * 1024
     media_download_timeout_seconds: float = 60
 
+    access_token: str = ""
+    bot_qq: str = ""
+
     @classmethod
     def from_mapping(cls, value: object) -> "NapCatConfig":
         if not isinstance(value, dict):
@@ -22,6 +25,10 @@ class NapCatConfig:
         owner_qq = str(value.get("owner_qq") or "")
         if not owner_qq.isdigit():
             raise ValueError("channel.settings.owner_qq must contain digits only")
+
+        bot_qq = str(value.get("bot_qq") or "")
+        if bot_qq and (not bot_qq.isascii() or not bot_qq.isdigit()):
+            raise ValueError("channel.settings.bot_qq must contain ASCII digits only")
 
         def positive(name: str, default: float) -> float:
             number = float(value.get(name, default))
@@ -38,6 +45,8 @@ class NapCatConfig:
             raise ValueError("channel.settings.url is required")
         return cls(
             url=url,
+            access_token=str(value.get("access_token") or ""),
+            bot_qq=bot_qq,
             owner_qq=owner_qq,
             quiet_seconds=positive("quiet_seconds", 1),
             max_batch_seconds=positive("max_batch_seconds", 60),

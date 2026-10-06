@@ -1,5 +1,10 @@
 {
   "node": "24.21.0",
   "uv": "0.12.23",
-  "brave": "2.1.4"
+  "brave": "2.1.4",
+  "napcat": {
+    "version": "v4.18.30",
+    "url": "https://github.com/NapNeko/NapCatQQ/releases/download/v4.18.30/NapCat.Shell.Windows.Node.zip",
+    "sha256": "f41fc5880a4abbf83c380e2b85fd15289319dc6ee17cc06da56c0edc8396158b"
+  }
 }

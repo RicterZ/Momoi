@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import Loading from "./Loading.jsx";
+import DesktopQQ from "./DesktopQQ.jsx";
 import { waitForConfiguration } from "./configurationRuntime.js";
 import { testProviderConnection } from "./providerConnectionTest.js";
 import { runtimeFieldValue, runtimeFieldChanges } from "./runtimeFields.js";
@@ -25,7 +26,7 @@ const modules = [
     id: "channel",
     label: "消息渠道",
     icon: "chat",
-    tip: "主渠道负责收发消息，不能停用。微信需要完成扫码登录；QQ 需要连接已运行的 NapCat。",
+    tip: "主渠道负责收发消息，不能停用。微信需要完成扫码登录；Windows 桌面版可启动内置 QQ，其他部署连接已运行的 NapCat。",
   },
   {
     id: "voice",
@@ -1293,6 +1294,15 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
       setStatus(result.applyStatus);
     } catch (error) { setStatus({ text: error.message, error: true }); }
   }
+  async function connectDesktopQQ(connection) {
+    const nextChannels = { ...channels, enabled: { ...channels.enabled, napcat: { ...channels.enabled.napcat, url: connection.url, access_token: connection.access_token } } };
+    change(nextChannels);
+    const result = await save("/api/settings/configuration/app", { channels: nextChannels }, "PATCH");
+    setChannels(result.app.channels);
+    setSaved(result.app.channels);
+    cached.current = { ...cached.current, ...result.app.channels.enabled };
+    setStatus(result.applyStatus);
+  }
   async function loginAction(path, body, method) {
     if (busy) return;
     setLoginPending(true);
@@ -1346,10 +1356,15 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                     </div>
                   </div>
                 ) : name === "napcat" ? (
+                  <div>
                   <Fields disabled={busy || loginActive}>
+                    <OptionField name="bot_qq" spec={{ type: "string", label: "机器人 QQ", description: "内置客户端登录的 QQ 号码，与主人 QQ 区分；外部 NapCat 可留空。" }} value={options.bot_qq} onChange={value => edit(name, { ...options, bot_qq: value })} />
                     <OptionField name="url" spec={{ type: "string", label: "NapCat WebSocket 地址" }} value={options.url} onChange={value => edit(name, { ...options, url: value })} />
+                    <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "内置组件自动生成；外部 NapCat 填写其 WebSocket 令牌。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
                     <OptionField name="owner_qq" spec={{ type: "string", label: "主人 QQ" }} value={options.owner_qq} onChange={value => edit(name, { ...options, owner_qq: value })} />
                   </Fields>
+                  <DesktopQQ botQQ={options.bot_qq} ownerQQ={options.owner_qq} disabled={busy || loginActive} onConnection={connectDesktopQQ} />
+                  </div>
                 ) : name === "weixin" ? (
                   <div className="settings-channel-login">
                     <button type="button" className="quiet-button settings-button" disabled={busy || dirty || !saved.enabled.weixin} onClick={startLogin}>

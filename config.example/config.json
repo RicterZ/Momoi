@@ -15,6 +15,8 @@
       "napcat": {
         "url": "ws://127.0.0.1:3001",
         "owner_qq": "123456789",
+        "bot_qq": "",
+        "access_token": "",
         "quiet_seconds": 6,
         "max_batch_seconds": 60,
         "heartbeat_seconds": 30,

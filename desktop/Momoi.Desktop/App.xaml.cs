@@ -32,6 +32,8 @@ public partial class App : Application
     private Forms.NotifyIcon? tray;
     private Drawing.Icon? trayImage;
     private BackendHost? backend;
+    private NapCatHost? napcat;
+    private Window? qqPanel;
     private WebView2? browser;
     private Task? startup;
     private Task? pipeListener;
@@ -73,6 +75,25 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        napcat = new NapCatHost(workspace);
+        if (Array.IndexOf(e.Args, "--qq-smoke") >= 0)
+        {
+            try
+            {
+                string entry = Path.Combine(AppContext.BaseDirectory, "releases", "bundled", "app", "momoi", "desktop", "napcat_entry.cjs");
+                await napcat.StartAsync("10000", entry, lifetime.Token);
+                File.WriteAllText(Path.Combine(workspace, "qq-smoke.json"), JsonSerializer.Serialize(new { ok = true, status = napcat.Status }));
+                await napcat.DisposeAsync();
+                Shutdown(0);
+            }
+            catch (Exception error)
+            {
+                File.WriteAllText(Path.Combine(workspace, "qq-smoke.json"), JsonSerializer.Serialize(new { ok = false, error = error.ToString() }));
+                await napcat.DisposeAsync();
+                Shutdown(1);
+            }
+            return;
+        }
         var resource = GetResourceStream(new Uri("pack://application:,,,/Assets/momoi.ico"))!;
         trayImage = new Drawing.Icon(resource.Stream);
         var menu = new Forms.ContextMenuStrip();
@@ -81,6 +102,11 @@ public partial class App : Application
         {
             Directory.CreateDirectory(workspace);
             Process.Start(new ProcessStartInfo(workspace) { UseShellExecute = true });
+        }));
+        menu.Items.Add("QQ 登录", null, (_, _) => Dispatcher.BeginInvoke(async () =>
+        {
+            try { await OpenQQLoginAsync(); }
+            catch (Exception error) { MessageBox.Show(error.Message, "Momoi QQ", MessageBoxButton.OK, MessageBoxImage.Information); }
         }));
         updateMenu = menu.Items.Add("检查更新", null, (_, _) => Dispatcher.BeginInvoke(() => updateTask = UpdateAsync()));
         menu.Items.Add("退出程序", null, (_, _) => Dispatcher.BeginInvoke(() => _ = ExitAsync()));
@@ -132,6 +158,13 @@ public partial class App : Application
             if (exiting) return;
             await LoadDashboardAsync(ready);
             _ = WatchBackendAsync(backend);
+            try
+            {
+                if (napcat!.ShouldAutoStart(out string botQQ))
+                    await napcat.StartAsync(botQQ, QQEntry(), lifetime.Token);
+            }
+            catch (OperationCanceledException) when (exiting) { }
+            catch (Exception error) { if (!exiting) MessageBox.Show($"内置 QQ 未能启动：{error.Message}\n可在消息渠道设置中重试。", "Momoi QQ", MessageBoxButton.OK, MessageBoxImage.Warning); }
             updateTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
             updateTimer.Tick += (_, _) => { updateTimer.Stop(); updateTask = UpdateAsync(quiet: true); };
             updateTimer.Start();
@@ -157,7 +190,8 @@ public partial class App : Application
             var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(workspace, "webview"));
             await browser.EnsureCoreWebView2Async(environment);
             browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
-            browser.CoreWebView2.Settings.IsWebMessageEnabled = false;
+            browser.CoreWebView2.Settings.IsWebMessageEnabled = true;
+            browser.CoreWebView2.WebMessageReceived += HandleQQMessage;
             browser.CoreWebView2.NavigationStarting += (_, args) =>
             {
                 if (args.Uri == "about:blank") return;
@@ -243,6 +277,68 @@ public partial class App : Application
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 
+    private string QQEntry() => Path.Combine(currentRelease!.Directory, "app", "momoi", "desktop", "napcat_entry.cjs");
+
+    private async void HandleQQMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
+    {
+        if (exiting || switching || !Uri.TryCreate(args.Source, UriKind.Absolute, out var source) || source.GetLeftPart(UriPartial.Authority) != dashboardUrl) return;
+        string? id = null;
+        try
+        {
+            if (args.WebMessageAsJson.Length > 4096) return;
+            using var document = JsonDocument.Parse(args.WebMessageAsJson);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("type", out var type) || type.GetString() != "momoi-qq") return;
+            id = root.GetProperty("id").GetString();
+            if (string.IsNullOrEmpty(id) || id.Length > 64) return;
+            object result;
+            switch (root.GetProperty("action").GetString())
+            {
+                case "status": result = napcat!.Status; break;
+                case "start":
+                    result = await napcat!.StartAsync(root.GetProperty("bot_qq").GetString() ?? "", QQEntry(), lifetime.Token);
+                    break;
+                case "stop": await napcat!.StopAsync(); qqPanel?.Close(); result = napcat.Status; break;
+                case "login": await OpenQQLoginAsync(); result = napcat!.Status; break;
+                default: throw new ArgumentException("未知 QQ 操作。");
+            }
+            browser?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "momoi-qq", id, result }));
+        }
+        catch (Exception error)
+        {
+            if (id is not null && !exiting)
+                browser?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "momoi-qq", id, error = error.Message }));
+        }
+    }
+
+    private async Task OpenQQLoginAsync()
+    {
+        string url = napcat!.LoginUrl;
+        if (qqPanel is not null) { qqPanel.Show(); qqPanel.Activate(); return; }
+        var view = new WebView2();
+        var window = new Window { Title = "Momoi — QQ 登录", Width = 900, Height = 760, Content = view,
+            Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")) };
+        qqPanel = window;
+        window.Closed += (_, _) => { view.Dispose(); if (qqPanel == window) qqPanel = null; };
+        window.Show();
+        try
+        {
+            var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(workspace, "webview"));
+            await view.EnsureCoreWebView2Async(environment);
+            view.CoreWebView2.Settings.IsWebMessageEnabled = false;
+            view.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            string origin = new Uri(url).GetLeftPart(UriPartial.Authority);
+            view.CoreWebView2.NavigationStarting += (_, args) =>
+            {
+                if (!Uri.TryCreate(args.Uri, UriKind.Absolute, out var uri) || uri.GetLeftPart(UriPartial.Authority) != origin)
+                { args.Cancel = true; OpenExternal(args.Uri); }
+            };
+            view.CoreWebView2.NewWindowRequested += (_, args) => { args.Handled = true; OpenExternal(args.Uri); };
+            view.Source = new Uri(url);
+        }
+        catch { window.Close(); throw; }
+    }
+
     private async Task WatchBackendAsync(BackendHost watched)
     {
         await watched.Completion;
@@ -277,10 +373,12 @@ public partial class App : Application
         {
             if (startup is not null) await startup;
             if (updateTask is not null) await updateTask;
+            if (napcat is not null) await napcat.DisposeAsync();
             if (backend is not null) await backend.DisposeAsync();
         }
         finally
         {
+            qqPanel?.Close();
             browser?.Dispose();
             tray?.Dispose();
             trayImage?.Dispose();

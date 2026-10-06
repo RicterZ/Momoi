@@ -28,6 +28,23 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Installed backend smoke failed' }
     & uv run --no-sync python (Join-Path $PSScriptRoot 'smoke_mcp.py') --node (Join-Path $Target 'runtime/node/node.exe') --entry (Join-Path $Target 'runtime/mcp/node_modules/@brave/brave-search-mcp-server/dist/index.js')
     if ($LASTEXITCODE -ne 0) { throw 'Installed MCP smoke failed' }
+    # Exercise the real bundled Node/native QQ library and .NET ownership before logging in.
+    $QQ = Start-Process -FilePath (Join-Path $Target 'Momoi.exe') -ArgumentList '--qq-smoke' -PassThru
+    try {
+        if (-not $QQ.WaitForExit(90000)) { throw 'Bundled QQ native startup timed out' }
+        $Result = Join-Path $Data 'qq-smoke.json'
+        if (Test-Path $Result) { Copy-Item $Result (Join-Path $Evidence 'qq-smoke.json') }
+        if ($QQ.ExitCode -ne 0 -or -not (Test-Path $Result)) { throw 'Bundled QQ native startup failed; inspect qq-smoke.json' }
+        $State = Get-Content $Result -Raw | ConvertFrom-Json
+        if (-not $State.ok -or -not $State.status.ready) { throw 'Bundled QQ login WebUI did not become ready' }
+        $Orphans = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq (Join-Path $Target 'runtime/napcat/node.exe') })
+        if ($Orphans.Count -gt 0) { throw 'QQ native runtime left orphaned child processes' }
+        if (-not (Test-Path (Join-Path $Data 'napcat/qq/.native-data-ready'))) { throw 'QQ account data was not isolated inside the installation data directory' }
+    }
+    finally {
+        $QQ.Refresh()
+        if (-not $QQ.HasExited) { Stop-Process -Id $QQ.Id -Force }
+    }
     # Start the installed native shell and verify WebView2/backend initialization.
     $Shell = Start-Process -FilePath (Join-Path $Target 'Momoi.exe') -PassThru
     try {
@@ -63,7 +80,7 @@ try {
     if ($Uninstall.ExitCode -ne 0) { throw "Uninstaller failed: $($Uninstall.ExitCode)" }
     if (Test-Path (Join-Path $Target 'Momoi.exe')) { throw 'Uninstall left the native application installed' }
     if ((Get-FileHash $Sentinel).Hash -ne $Expected) { throw 'Uninstall removed user data' }
-    'PASS: real silent installation, Users data ACL, installed backend/BGE/MCP, native shell window/startup/shutdown, reinstall and uninstall data retention.' | Set-Content (Join-Path $Evidence 'result.txt')
+    'PASS: real silent installation, Users data ACL, installed backend/BGE/MCP, native QQ/WebUI startup and child cleanup, native shell window/startup/shutdown, reinstall and uninstall data retention.' | Set-Content (Join-Path $Evidence 'result.txt')
 }
 finally {
     if (Test-Path (Join-Path $Target 'data/logs')) {
