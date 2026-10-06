@@ -418,8 +418,9 @@ separately. Running turns refresh automatically; missing historical fields stay
 marked as unavailable. These records never enter the model transcript.
 
 Full request/response dumps require `logging.level=TRACE`. Each dump includes
-stage, turn/request IDs and parent dispatch context; the detail page loads it
-only when requested. Decision records remain available at other log levels.
+stage, turn/request IDs and parent dispatch context. Dumps stay on disk for
+offline debugging; the dashboard displays reasoning and decisions, without
+loading full requests or responses. Decision records remain available at other log levels.
 
 ### External API services
 

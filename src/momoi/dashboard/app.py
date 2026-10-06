@@ -396,18 +396,6 @@ def create_dashboard_app(
         store.enrich_thinking_calls(calls)
         return web.json_response({"ok": True, "item": calls[0]})
 
-    async def thinking_dump(request: web.Request) -> web.Response:
-        found = store.read_thinking("", request.match_info["call_id"])
-        calls = found.get("calls") or []
-        filename = (calls[0].get("trace") or {}).get("dump_file", "") if calls else ""
-        if not filename or Path(filename).name != filename:
-            raise web.HTTPNotFound(text="此请求没有完整 dump；记录完整请求需启用 TRACE 日志。")
-        directory = (workspace / "llm-dumps").resolve()
-        path = (directory / filename).resolve()
-        if path.parent != directory or not path.is_file():
-            raise web.HTTPNotFound(text="此请求的 dump 文件已不存在。")
-        return web.json_response(json.loads(path.read_text(encoding="utf-8")))
-
     async def conversations(request: web.Request) -> web.Response:
         limit = _bounded_int(request, "limit", 64, 1, 200)
         return web.json_response({"items": store.list_dashboard_conversations(limit)})
@@ -698,7 +686,6 @@ def create_dashboard_app(
     app.router.add_get("/api/usage", usage)
     app.router.add_get("/api/metrics/requests", request_metrics)
     app.router.add_get("/api/thinking", thinking)
-    app.router.add_get("/api/thinking/calls/{call_id}/dump", thinking_dump)
     app.router.add_get("/api/thinking/calls/{call_id}", thinking_call)
     app.router.add_get("/api/thinking/{turn_id}", thinking_turn)
     app.router.add_get("/api/conversations", conversations)

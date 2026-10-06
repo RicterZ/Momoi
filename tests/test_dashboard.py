@@ -621,23 +621,6 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         detail = await (await self.client.get("/api/thinking/flow-owner", headers=self._auth())).json()
         self.assertEqual(detail["flow"]["deliveries"][0]["state"], "sent")
 
-    async def test_thinking_dump_is_authenticated_and_confined_to_dump_directory(self):
-        directory = self.root / "llm-dumps"
-        directory.mkdir()
-        (directory / "test.json").write_text('{"context":{"stage":"replyer"},"payload":{"tools":[]}}')
-        self.store.record_thinking_call(created_at=time.time(), turn_id="dump-turn", call_id="dump-call", stage="replyer", trace={"dump_file": "test.json"})
-        response = await self.client.get("/api/thinking/calls/dump-call/dump", headers=self._auth())
-        self.assertEqual(response.status, 200)
-        self.assertEqual((await response.json())["context"]["stage"], "replyer")
-        response = await self.client.get("/api/thinking/calls/dump-call/dump")
-        self.assertEqual(response.status, 401)
-        self.store.record_thinking_call(created_at=time.time(), turn_id="dump-turn", call_id="dump-call", stage="replyer", trace={"dump_file": "../config.json"})
-        response = await self.client.get("/api/thinking/calls/dump-call/dump", headers=self._auth())
-        self.assertEqual(response.status, 404)
-        self.store.record_thinking_call(created_at=time.time(), turn_id="dump-turn", call_id="dump-call", stage="replyer")
-        response = await self.client.get("/api/thinking/calls/dump-call/dump", headers=self._auth())
-        self.assertEqual(response.status, 404)
-
     async def test_thinking_endpoint_lists_and_reads_calls(self) -> None:
         now = time.time()
         self.store.record_thinking_call(

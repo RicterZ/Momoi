@@ -2282,7 +2282,6 @@ function ThinkingLayout({
             calls={detail.data.items || (detail.data.item ? [detail.data.item] : [])}
             recall={detail.data.recall}
             flowData={detail.data.flow || {}}
-            token={token}
           />
         )}
       </div>
@@ -2506,27 +2505,7 @@ function RecallDetail({ recall }) {
 
 const plannerStages = new Set(["owner", "heartbeat", "webhook", "goal", "plan_step", "reply_followup"]);
 
-function ThinkingDump({ call, token }) {
-  const [value, setValue] = useState(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const filename = call.trace?.dump_file;
-  if (!filename) return <p className="flow-dump-note">未记录完整 dump（需启用 TRACE）；下面的决策与执行记录独立保存。</p>;
-  return <div className="flow-dump">
-    <button className="quiet-button" disabled={loading} onClick={async () => {
-      if (value) { setValue(null); return; }
-      setLoading(true); setError("");
-      try { setValue(await api(`/api/thinking/calls/${encodeURIComponent(call.call_id)}/dump`, { token })); }
-      catch (e) { setError(e.message); }
-      finally { setLoading(false); }
-    }}>{loading ? "读取中…" : value ? "收起请求与响应" : "查看完整请求与响应"}</button>
-    <span className="flow-request-id">{filename}</span>
-    {error && <p className="flow-dump-note">{error}</p>}
-    {value && <pre className="flow-json flow-dump-json">{JSON.stringify(value, null, 2)}</pre>}
-  </div>;
-}
-
-function ThinkingCall({ call, children = [], token, nested = false }) {
+function ThinkingCall({ call, children = [], nested = false }) {
   const replyer = call.stage === "replyer";
   const planner = plannerStages.has(call.stage);
   const metrics = call.request_metrics;
@@ -2559,16 +2538,15 @@ function ThinkingCall({ call, children = [], token, nested = false }) {
         <dt>必要参考</dt><dd>{action.arguments?.reference || "无额外参考"}</dd>
         {action.arguments?.mode === "voice" && <><dt>发言方式</dt><dd>语音</dd></>}
       </dl> : <details className="flow-action-data"><summary>决策参数</summary><pre className="flow-json">{JSON.stringify(action.arguments || {}, null, 2)}</pre></details>}
-      {children.filter(child => child.trace?.tool_call_id === action.id).map(child => <ThinkingCall key={child.call_id} call={child} token={token} nested />)}
+      {children.filter(child => child.trace?.tool_call_id === action.id).map(child => <ThinkingCall key={child.call_id} call={child} nested />)}
       {action.result && <details className="flow-action-data"><summary>工具结果{action.result.error ? ` · ${action.result.error}` : ""}</summary><pre className="flow-json">{JSON.stringify(action.result, null, 2)}</pre></details>}
     </section>)}
-    {!call.actions?.length && call.tools?.length > 0 && <p className="flow-dump-note">旧记录仅保存工具名称：{call.tools.join(" / ")}；没有可核对的参数与结果。</p>}
-    {children.filter(child => !(call.actions || []).some(action => action.id === child.trace?.tool_call_id)).map(child => <ThinkingCall key={child.call_id} call={child} token={token} nested />)}
-    <ThinkingDump call={call} token={token} />
+    {!call.actions?.length && call.tools?.length > 0 && <p className="flow-note">旧记录仅保存工具名称：{call.tools.join(" / ")}；没有可核对的参数与结果。</p>}
+    {children.filter(child => !(call.actions || []).some(action => action.id === child.trace?.tool_call_id)).map(child => <ThinkingCall key={child.call_id} call={child} nested />)}
   </article>;
 }
 
-function ThinkingDetail({ item, calls, recall, flowData = {}, token }) {
+function ThinkingDetail({ item, calls, recall, flowData = {} }) {
   const flow = [...calls].sort((left, right) => {
     const time = Number(left.created_at || 0) - Number(right.created_at || 0);
     return time !== 0 ? time : Number(left.round || 0) - Number(right.round || 0);
@@ -2620,11 +2598,11 @@ function ThinkingDetail({ item, calls, recall, flowData = {}, token }) {
         {!!flowData.inputs?.length && <section className="flow-input"><h3>本轮输入</h3>{flowData.inputs.map(input => <div key={input.id}><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></div>)}</section>}
         {roots.map(call => <Fragment key={call.call_id}>
           {call.plan_step_id && <div className="plan-step-marker"><span>STEP {call.plan_step_id}</span><strong>{call.plan_step_task || "执行计划步骤"}</strong></div>}
-          <ThinkingCall call={call} children={childrenFor(call)} token={token} />
+          <ThinkingCall call={call} children={childrenFor(call)} />
           {recall && recallHasEvidence && ["topic_selection", "episode_cue_admit"].includes(call.stage) && flow.indexOf(call) === lastCuesIndex ? <RecallDetail recall={recall} /> : null}
         </Fragment>)}
         {recall && recallHasEvidence && lastCuesIndex < 0 ? <RecallDetail recall={recall} /> : null}
-        {!!flowData.deliveries?.length && <section className="flow-deliveries"><h3>实际投递</h3><p className="flow-dump-note">生成内容、提交发送和已送达是不同状态；以下直接读取 outbox。</p>{flowData.deliveries.map(delivery => <div className="flow-delivery" key={delivery.id}><span className={`flow-result-state ${["failed", "cancelled"].includes(delivery.state) ? "is-error" : ""}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"失败",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span><span>{delivery.target_channel} · {delivery.kind}</span><p className="message-content">{delivery.text}</p>{delivery.last_error && <p className="flow-dump-note">{delivery.last_error}</p>}</div>)}</section>}
+        {!!flowData.deliveries?.length && <section className="flow-deliveries"><h3>实际投递</h3><p className="flow-note">生成内容、提交发送和已送达是不同状态；以下直接读取 outbox。</p>{flowData.deliveries.map(delivery => <div className="flow-delivery" key={delivery.id}><span className={`flow-result-state ${["failed", "cancelled"].includes(delivery.state) ? "is-error" : ""}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"失败",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span><span>{delivery.target_channel} · {delivery.kind}</span><p className="message-content">{delivery.text}</p>{delivery.last_error && <p className="flow-note">{delivery.last_error}</p>}</div>)}</section>}
       </div>
     </>
   );
