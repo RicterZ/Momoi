@@ -126,3 +126,44 @@ def test_runtime_reports_actual_qq_connection(tmp_path):
     assert supervisor.status()["qq_connected"] is True
     channel._ws.closed = True
     assert supervisor.status()["qq_connected"] is False
+
+
+def test_managed_call_loader_preserves_native_module_location(tmp_path):
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node is not installed')
+    runtime = tmp_path / 'runtime'
+    (runtime / 'napcat').mkdir(parents=True)
+    data = tmp_path / 'data'
+    plugin = tmp_path / 'plugin.mjs'
+    plugin.write_text('export async function plugin_init(ctx) { console.log("PLUGIN",ctx.core.id); }')
+    target = runtime / 'napcat/napcat.mjs'
+    target.write_text('''
+const a = false;
+const V = {core:{id:42},async InitNapCat(){console.log("INIT");}};
+const e = {log:console.log,logWarn:console.warn,logError:console.error};
+for (let i=0;i<2;i++) {
+a && (V.core.dbPassphrase = a), await V.InitNapCat();
+}
+console.log("LOCATION", import.meta.url);
+''')
+    script = '''
+process.env.MOMOI_NAPCAT_RUNTIME=process.argv[1];
+process.env.MOMOI_QQ_DATA=process.argv[2];
+process.env.MOMOI_QQ_CALL_PLUGIN=process.argv[3];
+require(process.argv[4]);
+import(require('node:url').pathToFileURL(require('node:path').join(process.argv[1],'napcat','napcat.mjs')).href);
+'''
+    linked = tmp_path / 'linked-runtime'
+    try:
+        linked.symlink_to(runtime, target_is_directory=True)
+    except OSError:
+        # Windows runners may not grant symlink creation; still exercise the loader.
+        linked = runtime
+    result = subprocess.run([node, '-e', script, str(linked), str(data), str(plugin),
+                             str(ROOT / 'src/momoi/desktop/napcat_entry.cjs')],
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.index('INIT') < result.stdout.index('PLUGIN 42')
+    assert result.stdout.count('PLUGIN 42') == 1
+    assert target.as_uri() in result.stdout
+    assert 'PLUGIN' not in target.read_text()

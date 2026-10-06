@@ -228,6 +228,8 @@ public partial class App : Application
             CodeRelease previous = currentRelease;
             string snapshot = Path.Combine(workspace, "update-backups", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
             browser?.CoreWebView2.Navigate("about:blank");
+            await napcat!.StopAsync();
+            qqPanel?.Close();
             await backend.DisposeAsync();
             backend = null;
             try
@@ -237,6 +239,8 @@ public partial class App : Application
                 backend = new BackendHost(workspace);
                 var ready = await backend.StartAsync(workspace, next, lifetime.Token);
                 currentRelease = next;
+                if (napcat!.ShouldAutoStart(out string botQQ))
+                    await napcat.StartAsync(botQQ, QQEntry(), lifetime.Token);
                 await LoadDashboardAsync(ready);
                 _ = WatchBackendAsync(backend);
                 ShowPanel();
@@ -244,6 +248,7 @@ public partial class App : Application
             }
             catch (Exception updateError)
             {
+                await napcat!.StopAsync();
                 if (backend is not null) { await backend.DisposeAsync(); backend = null; }
                 // Restore data as well as code: startup may have run SQLite migrations.
                 if (File.Exists(Path.Combine(snapshot, "snapshot.json")))
@@ -254,6 +259,8 @@ public partial class App : Application
                 {
                     backend = new BackendHost(workspace);
                     var ready = await backend.StartAsync(workspace, previous, lifetime.Token);
+                    if (napcat!.ShouldAutoStart(out string botQQ))
+                        await napcat.StartAsync(botQQ, QQEntry(), lifetime.Token);
                     await LoadDashboardAsync(ready);
                     _ = WatchBackendAsync(backend);
                     MessageBox.Show($"更新未能启动，已恢复原版本与数据。\n{updateError.Message}", "Momoi", MessageBoxButton.OK, MessageBoxImage.Warning);

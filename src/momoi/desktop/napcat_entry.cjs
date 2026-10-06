@@ -30,3 +30,19 @@ process.dlopen = function (module, filename, ...args) {
   }
   return result;
 };
+
+// Optional managed voice plugin. Native bootstrap runs in the main thread above;
+// only the ESM NapCat source is transformed by the isolated loader thread.
+if (process.env.MOMOI_QQ_CALL_PLUGIN) {
+  const { register } = require('node:module');
+  const { pathToFileURL } = require('node:url');
+  const plugin = process.env.MOMOI_QQ_CALL_PLUGIN;
+  if (!fs.existsSync(plugin)) throw new Error('Missing managed QQ call plugin');
+  register(pathToFileURL(path.join(__dirname, 'napcat_call_loader.mjs')), {
+    parentURL: pathToFileURL(__filename),
+    data: {
+      target: pathToFileURL(fs.realpathSync(path.join(runtime, 'napcat', 'napcat.mjs'))).href,
+      plugin: pathToFileURL(plugin).href,
+    },
+  });
+}

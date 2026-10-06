@@ -226,7 +226,18 @@ def register_configuration_routes(app, configuration, runtime):
             config = QQCallConfig.from_mapping({**options, "enabled": True})
         except (ValueError, TypeError):
             return web.json_response({"ok": False, "error": "请填写有效的 Bridge 地址和认证 Token"}, status=400)
-        return web.json_response(await probe(config))
+        result = await probe(config)
+        if not result['ok'] and os.environ.get('MOMOI_QQ_CALL_MANAGED'):
+            from pathlib import Path
+            try:
+                status_path = Path(os.environ['MOMOI_QQ_CALL_MANAGED']).with_name('status.json')
+                import json
+                status = json.loads(status_path.read_text(encoding='utf-8'))
+                if status.get('error'):
+                    result['error'] = status['error']
+            except (OSError, ValueError):
+                pass
+        return web.json_response(result)
 
     async def cleanup(app):
         await channel_login.close()

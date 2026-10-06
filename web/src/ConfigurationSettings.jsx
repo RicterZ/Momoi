@@ -1817,7 +1817,7 @@ export default function ConfigurationSettings({
 }
 
 
-function QQCallSettings({ value, managed, disabled, onChange, onTest }) {
+function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) {
   const [test, setTest] = useState(null);
   const [testing, setTesting] = useState(false);
   async function probe() {
@@ -1845,6 +1845,7 @@ function QQCallSettings({ value, managed, disabled, onChange, onTest }) {
         <button type="button" className="quiet-button settings-button" disabled={disabled || testing} onClick={probe}>{testing ? "测试中…" : "测试连接"}</button>
       </div>
     </Fields>
+    {managed && status?.desktop_service && <p className="settings-channel-note" role="status">{status.desktop_service.phase === "ready" ? "本机语音服务已就绪" : status.desktop_service.error || "语音服务未启动"}</p>}
     {test && <p className="settings-channel-note" role="status">{test}</p>}
     </div>}
   </section>;

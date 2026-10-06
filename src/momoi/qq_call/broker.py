@@ -48,6 +48,8 @@ class MediaBroker:
         self.generation = 0
         self.status = {'protocol_version': 1, 'ready': False, 'phase': 'unavailable', 'error': 'Starting'}
         self.capture = self.capture_task = self.play_process = self.poll_task = None
+        self.audio_error = ""
+        self.audio_retry_at = 0.0
         self.play_lock = asyncio.Lock()
         self.receipts = OrderedDict()
 
@@ -109,6 +111,16 @@ class MediaBroker:
     async def poll(self):
         while True:
             deps, call = await self.dependencies()
+            if self.audio is not None and not self.audio.ready and deps['av_host'] and time.monotonic() >= self.audio_retry_at:
+                try:
+                    await self.audio.prepare(self.http, self.host_url, self.token)
+                    self.capture_command = self.audio.capture_command
+                    self.playback_command = self.audio.playback_command
+                    self.audio_error = ''
+                except Exception as error:
+                    self.audio_error = '虚拟音频设备未就绪：' + str(error)
+                self.audio_retry_at = time.monotonic() + 5
+                deps, call = await self.dependencies()
             ready = all(deps.values())
             enabled = bool(ready and self.armed and self.ws is not None and not self.ws.closed)
             if self.owner:
@@ -126,7 +138,9 @@ class MediaBroker:
                 self.generation = 0
             self.status = {'protocol_version': 1, 'ready': ready, 'dependencies': deps,
                 'phase': phase, 'client_connected': self.ws is not None and not self.ws.closed,
-                'auto_answer_ready': enabled, 'error': '' if ready else 'Bridge、AV Host 或音频设备未就绪'}
+                'auto_answer_ready': enabled, 'error': '' if ready else (self.audio_error or
+                    ('等待 QQ 登录及通话插件就绪' if not deps['bridge'] else
+                     ('等待 AVSDK 宿主就绪' if not deps['av_host'] else '虚拟音频设备未就绪')))}
             await self.send_status()
             if connected and (self.capture_task is None or self.capture_task.done()):
                 self.capture_task = asyncio.create_task(self.capture_audio(self.session_id))
@@ -358,8 +372,6 @@ class MediaBroker:
     async def startup(self, app):
         self.http = ClientSession(timeout=ClientTimeout(total=3))
         try:
-            if self.audio is not None:
-                await self.audio.prepare(self.http, self.host_url, self.token)
             self.poll_task = asyncio.create_task(self.poll())
         except BaseException:
             await self.http.close()
@@ -378,6 +390,8 @@ class MediaBroker:
             await asyncio.gather(self.poll_task, return_exceptions=True)
         if self.http:
             await self.http.close()
+        if self.audio is not None and hasattr(self.audio, "close"):
+            self.audio.close()
 
     def app(self):
         @web.middleware
@@ -422,10 +436,13 @@ def main():
         if not windows_bridge:
             raise RuntimeError('Windows QQ call audio adapter is not configured')
         sys.path.insert(0, str(Path(windows_bridge).resolve() / 'windows'))
-        from audio_backend import WindowsAudioBackend
-        with WindowsAudioBackend(runtime) as audio:
+        from .windows_audio import DeferredWindowsAudio
+        audio = DeferredWindowsAudio(runtime, windows_bridge)
+        try:
             broker = MediaBroker(token_path.read_text().strip(), audio=audio, **options)
             web.run_app(broker.app(), host='127.0.0.1', port=port, access_log=None)
+        finally:
+            audio.close()
     else:
         broker = MediaBroker(token_path.read_text().strip(), **options)
         web.run_app(broker.app(), host='0.0.0.0', port=port, access_log=None)

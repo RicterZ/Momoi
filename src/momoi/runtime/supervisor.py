@@ -45,8 +45,22 @@ class RuntimeSupervisor:
             "observed_revision": self.observed_revision,
             "saved_revision": self.configuration.revision(),
             "qq_connected": qq.connected if isinstance(qq, NapCatChannel) else False,
-            "qq_call": getattr(channels.get("qq_call"), "status", {"phase": "disabled"}),
+            "qq_call": self.voice_status(channels),
         }
+
+    def voice_status(self, channels):
+        status = getattr(channels.get("qq_call"), "status", {"phase": "disabled"})
+        import os
+        from pathlib import Path
+        import json
+        reference = os.environ.get("MOMOI_QQ_CALL_MANAGED")
+        if reference:
+            try:
+                host = json.loads(Path(reference).with_name("status.json").read_text(encoding="utf-8"))
+                return {**status, "desktop_service": host}
+            except (OSError, ValueError):
+                pass
+        return status
 
     def request_apply(self):
         self.changed.set()

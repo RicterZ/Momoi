@@ -24,6 +24,7 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
     private ProcessJob? job;
     private Task? stdout, stderr;
     private NapCatSettings? settings;
+    private QQCallHost? call;
     private bool webReady;
     private readonly object logGate = new();
     private string Data => Path.Combine(workspace, "napcat");
@@ -132,6 +133,8 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
                 RedirectStandardOutput = true, RedirectStandardError = true,
                 StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
             };
+            call = new QQCallHost(workspace, entry);
+            call.ConfigureNapCat(info);
             info.ArgumentList.Add("--require");
             info.ArgumentList.Add(entry);
             info.ArgumentList.Add(Path.Combine(runtime, "index.js"));
@@ -161,7 +164,12 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
                 try
                 {
                     using var response = await client.GetAsync($"http://127.0.0.1:{settings.WebPort}/", cancellationToken);
-                    if (response.IsSuccessStatusCode && File.Exists(nativeMarker)) { webReady = true; return Connection(); }
+                    if (response.IsSuccessStatusCode && File.Exists(nativeMarker))
+                    {
+                        webReady = true;
+                        call.StartMonitoring(() => Running);
+                        return Connection();
+                    }
                 }
                 catch (Exception error) when (error is HttpRequestException || error is TaskCanceledException && !cancellationToken.IsCancellationRequested) { }
                 await Task.Delay(250, cancellationToken);
@@ -188,6 +196,7 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
     private async Task StopCoreAsync()
     {
         webReady = false;
+        if (call is not null) { await call.DisposeAsync(); call = null; }
         if (Running) process!.Kill(entireProcessTree: true);
         job?.Dispose(); job = null;
         if (process is not null) { await process.WaitForExitAsync(); process.Dispose(); process = null; }
