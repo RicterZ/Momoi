@@ -251,14 +251,32 @@ def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
 
 
 @pytest.mark.parametrize("mode", ["text", "voice"])
-def test_emotion_catalog_belongs_to_replyer_text_only(mode):
+def test_emotion_catalog_stays_in_shared_replyer_prefix(mode):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
     store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
                             emotion_context=lambda: "emotion://happy 开心时使用")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[], turn_id="t", round_number=1)
     async def complete(system, messages, tools):
-        assert ("<emotion_catalog>" in system) == (mode == "text")
+        assert "<emotion_catalog>" in system
         return ProviderResponse([{"type": "text", "text": "开心！\n\nemotion://happy\n\n下一句" if mode == "text" else "开心！"}], [])
     actual = asyncio.run(Replyer(config, store, SimpleNamespace(complete=complete)).generate(
         ToolCall("c", "reply", {"intent": "回应", "reference": "", "mode": mode}), request))
     assert actual == (["开心！", "emotion://happy", "下一句"] if mode == "text" else ["开心！"])
+
+
+def test_replyer_text_and_voice_have_identical_system_and_history():
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
+    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
+                            emotion_context=lambda: "emotion://happy 开心时使用")
+    request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[], turn_id="t", round_number=1)
+    requests = []
+    async def complete(system, messages, tools):
+        requests.append((system, messages, tools))
+        return ProviderResponse([{"type": "text", "text": "实际发言"}], [])
+    replyer = Replyer(config, store, SimpleNamespace(complete=complete))
+    for mode in ("text", "voice"):
+        asyncio.run(replyer.generate(ToolCall("c", "reply", {"intent": "回应", "reference": "", "mode": mode}), request))
+    assert requests[0][0] == requests[1][0]
+    assert requests[0][1][:-1] == requests[1][1][:-1]
+    assert requests[0][2] == requests[1][2] == []
+    assert requests[0][1][-1] != requests[1][1][-1]

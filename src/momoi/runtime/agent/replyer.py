@@ -29,11 +29,10 @@ class Replyer:
         mode = call.arguments.get("mode", "text")
         if mode not in {"text", "voice"}:
             raise ValueError("invalid reply mode")
-        if mode == "text":
-            emotions = self.store.emotion_context()
-            if emotions.strip():
-                system += "\n\n<emotion_catalog>\n" + emotions + "\n</emotion_catalog>\n" + EMOTION_REACTION_POLICY
-                system += "\n选用表情时，将 emotion:// 标识单独作为一个气泡，用空行与文字分隔；只能使用目录中的标识。"
+        emotions = self.store.emotion_context()
+        if emotions.strip():
+            system += "\n\n<emotion_catalog>\n" + emotions + "\n</emotion_catalog>\n" + EMOTION_REACTION_POLICY
+            system += "\n文字模式选用表情时，将 emotion:// 标识单独作为一个气泡，用空行与文字分隔；只能使用目录中的标识。语音模式只生成朗读文本，不输出表情。"
         expression = (
             "只输出适合朗读的一段实际发言；使用自然口语，不包含 Markdown、颜文字、表情标记、媒体路径或气泡分隔。"
             if mode == "voice" else "只输出实际发言，用空行分隔气泡。"
