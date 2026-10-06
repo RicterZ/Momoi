@@ -24,11 +24,11 @@ const pages = {
 const navItems = [
   ["overview", "01", "主页"],
   ["conversations", "02", "话题"],
-  ["reflections", "03", "复盘"],
-  ["memories", "04", "记忆"],
-  ["emotions", "05", "表情"],
-  ["goals", "06", "任务"],
-  ["thinking", "07", "思考"],
+  ["thinking", "03", "思考"],
+  ["reflections", "04", "复盘"],
+  ["memories", "05", "记忆"],
+  ["emotions", "06", "表情"],
+  ["goals", "07", "任务"],
   ["metrics", "08", "监控"],
   ["settings", "09", "设置"],
 ];
@@ -941,7 +941,7 @@ function Conversations({ refreshKey, token, routeParam }) {
   return (
     <DataView path="/api/conversations?limit=100" refreshKey={refreshKey} token={token}>
       {(data) => {
-        const items = data.items || [];
+        const items = [...(data.items || [])].reverse();
         const activeRecord =
           selected ||
           (items[0]
@@ -1078,7 +1078,7 @@ function SortArrow({ down }) {
 }
 
 function ConversationDetail({ item }) {
-  const [newestFirst, setNewestFirst] = useState(true);
+  const [newestFirst, setNewestFirst] = useState(false);
   const messages = [...(item.messages || [])].sort((left, right) =>
     compareMessages(left, right, newestFirst),
   );
