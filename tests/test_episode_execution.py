@@ -36,7 +36,7 @@ def test_execution_only_keyword_admits_topic_and_returns_paired_evidence(tmp_pat
     assert call['arguments']['path'] == '/diet.md'
     assert call['arguments_truncated']
     assert call['result']['result_ref'] == 'tr_x'
-    assert call['call_id'] == 'c'
+    assert 'call_id' not in call
     assert '热量账' in records[0]['turns'][0]['execution'][0]['assistant_text']
     assert store.search_topic_queries([EpisodeRecallQuery('热量账')], 5, minimum_confidence=0)
     store.close()
@@ -69,7 +69,7 @@ def test_deep_read_pages_execution_and_preserves_source(tmp_path):
     assert len(first['execution']) == 12
     second = execution_turns(store, 'e', turn_id='t', after_sequence=first['next_after_sequence'], tool_limit=12)['turns'][0]
     assert len(second['execution']) == 3
-    assert second['execution'][0]['tools'][0]['call_id'] == '12'
+    assert second['execution'][0]['tools'][0]['arguments']['command'] == 'command12'
     assert len(store.turn_exchanges(['t'])['t']) == 15
     assert 'turns' in store.conversation_episode('e')
     store.close()
@@ -92,12 +92,12 @@ def test_deep_read_keeps_batched_calls_together_at_page_boundary(tmp_path):
     for i in range(11):
         record(store, 'exec', identifier=str(i))
     store.append_turn_journal('t', 'assistant_exchange', {
-        'content': [{'type': 'tool_use', 'id': str(i), 'name': 'exec', 'input': {}} for i in range(11, 14)],
+        'content': [{'type': 'tool_use', 'id': str(i), 'name': 'exec', 'input': {'index': i}} for i in range(11, 14)],
         'results': []}, visibility='internal', trust='runtime')
     first = execution_turns(store, 'e', turn_id='t', tool_limit=12)['turns'][0]
     second = execution_turns(store, 'e', turn_id='t', after_sequence=first['next_after_sequence'])['turns'][0]
     assert len(first['execution']) == 11
-    assert [c['call_id'] for c in second['execution'][0]['tools']] == ['11', '12', '13']
+    assert [c['arguments']['index'] for c in second['execution'][0]['tools']] == [11, 12, 13]
     assert all(c['result']['error'] == 'result_not_recorded' for c in second['execution'][0]['tools'])
     store.close()
 
@@ -142,7 +142,7 @@ def test_legacy_evidence_search_pairing_filtering_and_pagination(tmp_path):
     assert store.search_topic_queries([EpisodeRecallQuery('玉米库存扣减')], 5, minimum_confidence=0)
     assert not store.search_topic_queries([EpisodeRecallQuery('排除的检索内容')], 5, minimum_confidence=0)
     recalled = episode_recall_records(store, [{'episode_id': 'e', 'matched_keywords': ['玉米']}], 3000)
-    assert recalled[0]['turns'][0]['execution'][0]['tools'][0]['call_id'] == 'a'
+    assert recalled[0]['turns'][0]['execution'][0]['tools'][0]['name'] == 'mcp__wms__record_issue'
     assert not store.turn_exchanges(['t'])
     store.close()
 
@@ -170,4 +170,19 @@ def test_legacy_missing_result_and_cross_turn_ids(tmp_path):
     turns = execution_turns(store, 'e')['turns']
     assert turns[0]['execution'][0]['tools'][0]['result'] == {'error': 'result_not_recorded', 'ambiguous': True}
     assert turns[1]['execution'][0]['tools'][0]['result'] == {'ok': False, 'error': 'permission_denied', 'content': 'denied'}
+    store.close()
+
+
+def test_historical_metadata_cleanup_preserves_original_and_failures(tmp_path):
+    store = Store(tmp_path / 'db'); setup(store)
+    result = {'ok': True, 'error': None, 'stderr_tail': '', 'truncated': True,
+              'result_ref': 'tr_source', 'content': 'actual evidence', 'format': 'json',
+              'sha256': 'hash', 'original_chars': 9000, 'chunk_start': 0,
+              'chunk_end': 1000, 'next_cursor': 'old_cursor', 'has_more': True}
+    record(store, 'read_tool_result', result=result)
+    tool = execution_turns(store, 'e')['turns'][0]['execution'][0]['tools'][0]
+    assert tool['result'] == {'ok': True, 'truncated': True, 'result_ref': 'tr_source',
+                              'content': 'actual evidence'}
+    original = store.turn_exchanges(['t'])['t'][0]
+    assert json.loads(original['results'][0]['content']) == result
     store.close()

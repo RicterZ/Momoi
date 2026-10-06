@@ -60,6 +60,22 @@ def eligible(exchange):
     return {**({'assistant_text': text} if text else {}), **({'tools': tools} if tools else {})}
 
 
+def historical_result(value):
+    """Remove transport metadata only from the historical presentation."""
+    if not isinstance(value, dict):
+        return value
+    value = {k: v for k, v in value.items() if k != 'provenance'}
+    if value.get('error', '') is None:
+        value.pop('error', None)
+    if value.get('stderr_tail') == '':
+        value.pop('stderr_tail')
+    if value.get('result_ref') and 'chunk_start' in value and 'content' in value:
+        for key in ('format', 'sha256', 'original_chars', 'chunk_start', 'chunk_end',
+                    'next_cursor', 'has_more'):
+            value.pop(key, None)
+    return value
+
+
 def journal_rows(db, episode_id=None, after=None, before=None, before_ordinal=None):
     rows = db.execute('''SELECT et.episode_id, et.turn_id, et.ordinal, t.started_at,
         j.sequence, j.payload_json, j.item_type FROM episode_turns et JOIN turns t ON t.id=et.turn_id
@@ -170,10 +186,12 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
                     -sum(term in json.dumps(pair[1], ensure_ascii=False).casefold() for term in terms), pair[0]))
                 batch = [call for _, call in sorted(ranked[:remaining])]
             for call in batch:
-                reduced = {**call, 'arguments': bounded(call['arguments'], terms=terms), 'result': bounded(call['result'], terms=terms)}
+                result = historical_result(call['result'])
+                reduced = {'name': call['name'], 'arguments': bounded(call['arguments'], terms=terms),
+                           'result': bounded(result, terms=terms)}
                 if reduced['arguments'] != call['arguments']:
                     reduced['arguments_truncated'] = True
-                if reduced['result'] != call['result']:
+                if reduced['result'] != result:
                     if not isinstance(reduced['result'], dict):
                         reduced['result'] = {'content': reduced['result']}
                     reduced['result']['truncated'] = True
