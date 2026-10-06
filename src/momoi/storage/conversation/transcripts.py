@@ -213,6 +213,16 @@ class TranscriptStore:
             )
         return current
 
+    def replyer_dialogue_rows(self, channel: str, *, limit: int = 96):
+        """Actual messages, including the active turn; never journal/tool text."""
+        rows = self._db.execute("""SELECT m.id, m.role, m.content, m.created_at,
+                    m.delivery_state, m.turn_id FROM messages m
+                    JOIN turns t ON t.id=m.turn_id
+                    WHERE t.channel=? AND (m.role='user' OR
+                        (m.role='assistant' AND m.delivery_state='delivered'))
+                    ORDER BY m.id DESC LIMIT ?""", (channel, limit)).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
     def recent_conversation_messages(
         self,
         turn_limit: int,
