@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import RequestMetrics from "./RequestMetrics.jsx";
 import Loading from "./Loading.jsx";
+import EmotionContent from "./EmotionContent.jsx";
 import ConfigurationSettings, { ApplyDialog, SaveBar } from "./ConfigurationSettings.jsx";
 
 const TOKEN_KEY = "momoi-dashboard-token";
@@ -1118,7 +1119,7 @@ function ConversationDetail({ item }) {
                 {message.role === "user" ? "OWNER" : "MOMOI"}
               </div>
               <div className="message-body">
-                <p className="message-content">{message.content}</p>
+                <EmotionContent text={message.content} />
                 <div className="message-meta">
                   <time>{formatDate(message.created_at)}</time>
                   {message.role === "assistant" && (
@@ -2527,7 +2528,7 @@ function ThinkingCall({ call, children = [], nested = false }) {
       </section> : <p className="thinking-empty">接口未返回可见推理；可以从实际工具调用查看决策。</p>}
       {call.assistant_text && <section className="thinking-part assistant-part">
         <h4>{replyer ? "生成的发言" : "内部正文"}<span>{replyer ? "是否送达以投递记录为准" : "assistant text，不等于对用户发言"}</span></h4>
-        <p className="message-content thinking-body">{call.assistant_text}</p>
+        <EmotionContent className="message-content thinking-body" text={call.assistant_text} />
       </section>}
     </div>
     {(call.actions || []).map((action, index) => <section className="flow-action" key={action.id || index}>
@@ -2603,7 +2604,7 @@ function ThinkingDetail({ item, calls, recall, flowData = {} }) {
           {recall && recallHasEvidence && ["topic_selection", "episode_cue_admit"].includes(call.stage) && flow.indexOf(call) === lastCuesIndex ? <RecallDetail recall={recall} /> : null}
         </Fragment>)}
         {recall && recallHasEvidence && lastCuesIndex < 0 ? <RecallDetail recall={recall} /> : null}
-        {!!flowData.deliveries?.length && <section className="flow-deliveries"><h3>实际投递</h3><p className="flow-note">生成内容、提交发送和已送达是不同状态；以下直接读取 outbox。</p>{flowData.deliveries.map(delivery => <div className="flow-delivery" key={delivery.id}><span className={`flow-result-state ${["failed", "cancelled"].includes(delivery.state) ? "is-error" : ""}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"失败",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span><span>{delivery.target_channel} · {delivery.kind}</span><p className="message-content">{delivery.text}</p>{delivery.last_error && <p className="flow-note">{delivery.last_error}</p>}</div>)}</section>}
+        {!!flowData.deliveries?.length && <section className="flow-deliveries"><h3>实际投递</h3><p className="flow-note">生成内容、提交发送和已送达是不同状态；以下直接读取 outbox。</p>{flowData.deliveries.map(delivery => <div className="flow-delivery" key={delivery.id}><span className={`flow-result-state ${["failed", "cancelled"].includes(delivery.state) ? "is-error" : ""}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"失败",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span><span>{delivery.target_channel} · {delivery.kind}</span><EmotionContent text={delivery.text} />{delivery.last_error && <p className="flow-note">{delivery.last_error}</p>}</div>)}</section>}
       </div>
     </>
   );
