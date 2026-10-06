@@ -86,6 +86,13 @@ finally {
     if (Test-Path (Join-Path $Target 'data/logs')) {
         Get-ChildItem (Join-Path $Target 'data/logs') -File | Copy-Item -Destination $Evidence -Force
     }
+    if (Test-Path (Join-Path $Target 'data/napcat/logs')) {
+        $QQLogs = Join-Path $Evidence 'napcat-logs'
+        New-Item -ItemType Directory -Path $QQLogs -Force | Out-Null
+        Get-ChildItem (Join-Path $Target 'data/napcat/logs') -File | Copy-Item -Destination $QQLogs -Force
+        $NativeLog = Join-Path $QQLogs 'native-startup.log'
+        if (Test-Path $NativeLog) { Get-Content $NativeLog -Encoding UTF8 -Tail 80 }
+    }
     Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-15)} -ErrorAction SilentlyContinue |
         Where-Object { $_.ProviderName -in @('.NET Runtime', 'Application Error', 'Windows Error Reporting') } |
         Select-Object TimeCreated, ProviderName, Id, Message | Format-List | Out-String |

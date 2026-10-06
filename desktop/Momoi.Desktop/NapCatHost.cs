@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -24,6 +25,7 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
     private Task? stdout, stderr;
     private NapCatSettings? settings;
     private bool webReady;
+    private readonly object logGate = new();
     private string Data => Path.Combine(workspace, "napcat");
     private string SettingsPath => Path.Combine(Data, "managed.json");
     public bool Running => process is not null && !process.HasExited;
@@ -128,6 +130,7 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
             var info = new ProcessStartInfo(Path.Combine(runtime, "node.exe")) {
                 UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Data,
                 RedirectStandardOutput = true, RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
             };
             info.ArgumentList.Add("--require");
             info.ArgumentList.Add(entry);
@@ -146,7 +149,7 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
             job = new ProcessJob();
             process = Process.Start(info) ?? throw new InvalidOperationException("无法启动内置 QQ 客户端。");
             job.Assign(process);
-            // NapCat writes its own logs in data/napcat/logs. Avoid duplicating QR codes/tokens.
+            // Capture early native failures too; redact tokens and login URLs.
             stdout = DrainAsync(process.StandardOutput);
             stderr = DrainAsync(process.StandardError);
             using var client = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(2) };
@@ -154,7 +157,7 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
             while (DateTime.UtcNow < deadline)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!Running) throw new IOException($"QQ 客户端启动失败，请查看 {Path.Combine(Data, "logs")}。");
+                if (!Running) throw new IOException($"QQ 客户端启动失败（退出码 {process!.ExitCode}），请查看 {Path.Combine(Data, "logs")}。");
                 try
                 {
                     using var response = await client.GetAsync($"http://127.0.0.1:{settings.WebPort}/", cancellationToken);
@@ -170,7 +173,18 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
     }
 
     private object Connection() => new { running = Running, ready = webReady, url = $"ws://127.0.0.1:{settings!.SocketPort}", access_token = settings.AccessToken };
-    private static async Task DrainAsync(StreamReader reader) { while (await reader.ReadLineAsync() is not null) { } }
+    private async Task DrainAsync(StreamReader reader)
+    {
+        string logs = Path.Combine(Data, "logs");
+        Directory.CreateDirectory(logs);
+        while (await reader.ReadLineAsync() is { } line)
+        {
+            if (settings is not null)
+                line = line.Replace(settings.AccessToken, "[redacted]").Replace(settings.WebToken, "[redacted]");
+            line = Regex.Replace(line, @"https?://\S+", "[url redacted]");
+            lock (logGate) File.AppendAllText(Path.Combine(logs, "native-startup.log"), line + Environment.NewLine, Encoding.UTF8);
+        }
+    }
     private async Task StopCoreAsync()
     {
         webReady = false;
