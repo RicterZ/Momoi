@@ -84,7 +84,11 @@ def test_asr_result_is_discarded_when_owner_interrupts():
 
 def test_broker_requires_live_matching_session_and_generation():
     broker = MediaBroker('x' * 32)
-    broker.ws = SimpleNamespace(closed=False)
+    class ConnectedSocket:
+        closed = False
+        def __bool__(self):
+            return False  # aiohttp 3.8 StreamResponse is an empty mapping.
+    broker.ws = ConnectedSocket()
     broker.armed = True
     broker.status = {'phase': 'connected'}
     broker.session_id = 'first'
@@ -130,4 +134,20 @@ def test_bridge_authentication_and_single_client_readiness():
         finally:
             await runner.cleanup()
         assert not broker.armed and not broker.session_id
+    asyncio.run(scenario())
+
+
+def test_status_reaches_connected_socket_even_when_socket_is_falsey():
+    async def scenario():
+        class Socket:
+            closed = False
+            def __bool__(self):
+                return False
+            async def send_json(self, value):
+                self.received = value
+        broker = MediaBroker('x' * 32)
+        socket = Socket()
+        broker.ws = socket
+        await broker.send_status()
+        assert socket.received['type'] == 'status'
     asyncio.run(scenario())

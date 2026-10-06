@@ -41,7 +41,7 @@ class MediaBroker:
         self.receipts = OrderedDict()
 
     def valid(self, session_id, generation):
-        return bool(self.ws and not self.ws.closed and self.armed and self.session_id
+        return bool(self.ws is not None and not self.ws.closed and self.armed and self.session_id
                     and self.status.get('phase') == 'connected'
                     and session_id == self.session_id and generation == self.generation)
 
@@ -82,7 +82,7 @@ class MediaBroker:
         self.session_id = ''
 
     async def send_status(self):
-        if self.ws and not self.ws.closed:
+        if self.ws is not None and not self.ws.closed:
             try:
                 await asyncio.wait_for(self.ws.send_json({'type': 'status', **self.status,
                     'session_id': self.session_id, 'generation': self.generation}), 2)
@@ -93,7 +93,7 @@ class MediaBroker:
         while True:
             deps, call = await self.dependencies()
             ready = all(deps.values())
-            enabled = bool(ready and self.armed and self.ws and not self.ws.closed)
+            enabled = bool(ready and self.armed and self.ws is not None and not self.ws.closed)
             if self.owner:
                 with contextlib.suppress(Exception):
                     await self.native('POST', '/v1/momoi/ready', json={
@@ -108,7 +108,8 @@ class MediaBroker:
                 self.session_id = uuid.uuid4().hex
                 self.generation = 0
             self.status = {'protocol_version': 1, 'ready': ready, 'dependencies': deps,
-                'phase': phase, 'error': '' if ready else 'Bridge、AV Host 或音频设备未就绪'}
+                'phase': phase, 'client_connected': self.ws is not None and not self.ws.closed,
+                'auto_answer_ready': enabled, 'error': '' if ready else 'Bridge、AV Host 或音频设备未就绪'}
             await self.send_status()
             if connected and (self.capture_task is None or self.capture_task.done()):
                 self.capture_task = asyncio.create_task(self.capture_audio(self.session_id))
@@ -119,7 +120,7 @@ class MediaBroker:
             self.capture = await asyncio.create_subprocess_exec('parec', '--raw',
                 '--device=maibot_qq_speaker.monitor', '--format=s16le', '--rate=16000', '--channels=1',
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-            while self.session_id == session_id and self.ws and not self.ws.closed:
+            while self.session_id == session_id and self.ws is not None and not self.ws.closed:
                 frame = await self.capture.stdout.readexactly(640)
                 await asyncio.wait_for(self.ws.send_bytes(frame), 2)
         except (OSError, ConnectionError, asyncio.IncompleteReadError, asyncio.TimeoutError):
@@ -128,7 +129,7 @@ class MediaBroker:
             await stop_process(self.capture)
 
     async def socket(self, request):
-        if self.ws and not self.ws.closed:
+        if self.ws is not None and not self.ws.closed:
             raise web.HTTPConflict(text='A Momoi session is already connected')
         ws = web.WebSocketResponse(heartbeat=5, max_msg_size=4096)
         await ws.prepare(request)
@@ -265,7 +266,7 @@ class MediaBroker:
         if self.owner:
             with contextlib.suppress(Exception):
                 await self.native('POST', '/v1/momoi/ready', json={'ownerUin': self.owner, 'ready': False})
-        if self.ws:
+        if self.ws is not None:
             await self.ws.close()
         await self.invalidate()
         if self.poll_task:
