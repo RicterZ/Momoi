@@ -19,6 +19,8 @@ const wrapper = { exports: {} };
 process.dlopen(wrapper, process.env.NAPCAT_WRAPPER_PATH);
 assert.equal(wrapper.exports.NodeQQNTWrapperUtil.getNTUserDataInfoConfig(), process.env.MOMOI_QQ_DATA);
 console.log('PASS: real QQ native library loaded and data isolated');
+// Loading the native QQ library creates persistent handles even without login.
+process.exit(0);
 '''
         if os.name == 'nt':
             # Check Windows loader availability, including server Media Foundation.
