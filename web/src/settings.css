@@ -589,10 +589,10 @@
   background: transparent;
   box-shadow: none;
 }
-.settings-persona .prompt-card:nth-child(even) {
+.settings-persona .prompt-grid > .prompt-card:nth-child(even) {
   border-left: 2px solid var(--ink);
 }
-.settings-persona .prompt-card:nth-child(n + 3) {
+.settings-persona .prompt-grid > .prompt-card:nth-child(n + 3) {
   border-top: 2px solid var(--ink);
 }
 .settings-persona .prompt-code {
@@ -879,11 +879,11 @@
   .settings-persona .prompt-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .settings-persona .prompt-card + .prompt-card {
+  .settings-persona .prompt-grid > .prompt-card + .prompt-card {
     border-left: 0;
     border-top: 2px solid var(--ink);
   }
-  .settings-persona .prompt-card:nth-child(even) {
+  .settings-persona .prompt-grid > .prompt-card:nth-child(even) {
     --control-accent: var(--pink);
     --control-focus: var(--blue);
   }
