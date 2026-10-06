@@ -32,6 +32,10 @@ class RuntimeSupervisor:
         self.last_config = None
 
     def status(self):
+        from ..channel.napcat import NapCatChannel
+
+        channels = getattr(self.daemon, "channels", {})
+        qq = channels.get("napcat")
         return {
             "state": self.state,
             "error": self.error,
@@ -40,6 +44,7 @@ class RuntimeSupervisor:
             "applied_revision": self.applied_revision,
             "observed_revision": self.observed_revision,
             "saved_revision": self.configuration.revision(),
+            "qq_connected": qq.connected if isinstance(qq, NapCatChannel) else False,
         }
 
     def request_apply(self):

@@ -83,6 +83,7 @@ def test_qq_websocket_auth_and_account_identity(tmp_path, access_token, bot_qq, 
                     break
                 await asyncio.sleep(.01)
             assert channel._ready.is_set() is ready
+            assert channel.connected is ready
             assert headers[0] == (f'Bearer {access_token}' if access_token else None)
         finally:
             stop.set()
@@ -106,3 +107,19 @@ def test_qq_config_validates_bot_identity_and_masks_token(tmp_path):
     assert parsed.bot_qq == '12345' and parsed.access_token == 'secret'
     with pytest.raises(ValueError, match='bot_qq'):
         NapCatConfig.from_mapping({'owner_qq': '54321', 'url': 'ws://localhost', 'bot_qq': '１２３４５'})
+
+
+def test_runtime_reports_actual_qq_connection(tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from momoi.runtime.supervisor import RuntimeSupervisor
+    supervisor = RuntimeSupervisor(SimpleNamespace(revision=lambda: "saved"), factory=lambda _: None)
+    assert supervisor.status()["qq_connected"] is False
+    channel = NapCatChannel(NapCatConfig("ws://localhost", "12345", 1, 60, 30, 30, 1))
+    supervisor.daemon = SimpleNamespace(channels={"napcat": channel})
+    assert supervisor.status()["qq_connected"] is False
+    channel._ws = Mock(closed=False)
+    channel._ready.set()
+    assert supervisor.status()["qq_connected"] is True
+    channel._ws.closed = True
+    assert supervisor.status()["qq_connected"] is False

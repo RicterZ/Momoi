@@ -1251,7 +1251,7 @@ const channelOptions = [
 ];
 const channelDefaults = (name) =>
   name === "napcat" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : {};
-function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous }) {
+function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, qqConnected }) {
   const [channels, setChannels] = useState(data.app.channels || { primary: "", enabled: {} });
   const [saved, setSaved] = useState(channels);
   const [status, setStatus] = useState(null);
@@ -1363,7 +1363,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                     <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "内置组件自动生成；外部 NapCat 填写其 WebSocket 令牌。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
                     <OptionField name="owner_qq" spec={{ type: "string", label: "主人 QQ" }} value={options.owner_qq} onChange={value => edit(name, { ...options, owner_qq: value })} />
                   </Fields>
-                  <DesktopQQ botQQ={options.bot_qq} ownerQQ={options.owner_qq} disabled={busy || loginActive} onConnection={connectDesktopQQ} />
+                  <DesktopQQ botQQ={options.bot_qq} ownerQQ={options.owner_qq} connected={qqConnected} disabled={busy || loginActive} onConnection={connectDesktopQQ} />
                   </div>
                 ) : name === "weixin" ? (
                   <div className="settings-channel-login">
@@ -1716,6 +1716,7 @@ export default function ConfigurationSettings({
                       data={data}
                       save={save}
                       login={runtime?.weixin_login}
+                      qqConnected={runtime?.qq_connected}
                       action={action}
                       saving={saving || loading}
                       actionBusy={actionBusy}

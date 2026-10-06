@@ -48,6 +48,10 @@ class NapCatChannel:
         self._send_lock = asyncio.Lock()
         self._inbound_lock = asyncio.Lock()
 
+    @property
+    def connected(self) -> bool:
+        return self._ready.is_set() and self._ws is not None and not self._ws.closed
+
     async def run(
         self,
         on_event: Callable[[IncomingMessage | OwnerInputStatus], Awaitable[None]],
