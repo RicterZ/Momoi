@@ -60,6 +60,35 @@ def eligible(exchange):
     return {**({'assistant_text': text} if text else {}), **({'tools': tools} if tools else {})}
 
 
+def bounded_result(value, terms=(), budget=800):
+    """Bound the complete presentation while preserving outcome and read-back data."""
+    reduced = bounded(value, terms=terms)
+    encode = lambda item: json.dumps(item, ensure_ascii=False, separators=(',', ':'))
+    if isinstance(value, dict) and value.get('result_ref'):
+        if not isinstance(reduced, dict):
+            reduced = {'content': reduced}
+        reduced['result_ref'] = value['result_ref']
+    if len(encode(reduced)) <= budget:
+        return reduced
+    essential = ('ok', 'state', 'error', 'exit_code', 'ambiguous', 'image_id', 'result_ref')
+    result = {key: reduced[key] for key in essential if isinstance(reduced, dict) and key in reduced}
+    result['truncated'] = True
+    body = encode({k: v for k, v in value.items() if k not in essential and k != 'truncated'}) if isinstance(value, dict) else encode(value)
+    # Account for JSON escaping as well as the excerpt itself.
+    low, high = 40, budget
+    best = ''
+    while low <= high:
+        width = (low + high) // 2
+        excerpt = clip(body, width, terms)
+        if len(encode({**result, 'content': excerpt})) <= budget:
+            best = excerpt
+            low = width + 1
+        else:
+            high = width - 1
+    result['content'] = best
+    return result
+
+
 def historical_result(value):
     """Remove transport metadata only from the historical presentation."""
     if not isinstance(value, dict):
@@ -188,7 +217,7 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
             for call in batch:
                 result = historical_result(call['result'])
                 reduced = {'name': call['name'], 'arguments': bounded(call['arguments'], terms=terms),
-                           'result': bounded(result, terms=terms)}
+                           'result': bounded_result(result, terms=terms)}
                 if reduced['arguments'] != call['arguments']:
                     reduced['arguments_truncated'] = True
                 if reduced['result'] != result:

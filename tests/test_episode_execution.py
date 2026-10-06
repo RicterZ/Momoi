@@ -202,3 +202,21 @@ def test_message_hit_survives_higher_scoring_execution_turns(tmp_path):
     assert turns[0]['messages'][0]['text'] == 'needle original message'
     assert 'execution' in turns[0]
     store.close()
+
+
+def test_result_has_whole_object_budget_and_keeps_outcome_and_reference(tmp_path):
+    store = Store(tmp_path / 'db'); setup(store)
+    result = {'ok': False, 'error': 'command_failed', 'exit_code': 2,
+              'result_ref': 'tr_original',
+              **{f'field{i}': {'nested': 'prefix ' * 100 + 'needle evidence' + ' suffix' * 100}
+                 for i in range(20)}}
+    record(store, 'exec', result=result)
+    reduced = execution_turns(store, 'e', ['needle'])['turns'][0]['execution'][0]['tools'][0]['result']
+    assert len(json.dumps(reduced, ensure_ascii=False, separators=(',', ':'))) <= 800
+    assert reduced['ok'] is False and reduced['exit_code'] == 2
+    assert reduced['error'] == 'command_failed'
+    assert reduced['result_ref'] == 'tr_original' and reduced['truncated'] is True
+    assert 'needle evidence' in reduced['content']
+    assert '[...truncated...]' in reduced['content']
+    assert json.loads(store.turn_exchanges(['t'])['t'][0]['results'][0]['content']) == result
+    store.close()
