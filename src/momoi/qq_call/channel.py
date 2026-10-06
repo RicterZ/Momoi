@@ -13,6 +13,7 @@ from ..integrations.contracts.asr import ASRError, AudioInput
 from ..models import IncomingMessage
 from ..observability.events import log_event
 from .audio import Segmenter, wav_bytes
+from .speech import bubble_pcm
 
 logger = logging.getLogger('momoi.qq_call')
 
@@ -189,7 +190,7 @@ class QQCallChannel:
         async def upload():
             nonlocal first_ms
             from contextlib import aclosing
-            async with aclosing(provider.stream_pcm(text)) as stream:
+            async with aclosing(bubble_pcm(provider, text)) as stream:
                 async for chunk in stream:
                     if not self.context_valid(context):
                         raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')

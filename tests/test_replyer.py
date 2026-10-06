@@ -164,7 +164,7 @@ def test_replyer_window_migrates_existing_database(tmp_path):
 
 
 @pytest.mark.parametrize("mode", ["text", "voice"])
-def test_replyer_receives_mode_and_voice_is_one_utterance(mode):
+def test_replyer_receives_mode_and_splits_bubbles(mode):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
     store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), emotion_context=lambda: "")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[],
@@ -173,7 +173,7 @@ def test_replyer_receives_mode_and_voice_is_one_utterance(mode):
     async def complete(system, messages, tools):
         tail = messages[-1]["content"][0]["text"]
         assert f"发送形式：{'语音' if mode == 'voice' else '文字'}" in tail
-        assert ("只输出适合朗读的一段实际发言" in tail) == (mode == "voice")
+        assert ("只输出适合朗读的实际发言" in tail) == (mode == "voice")
         assert ("只输出实际发言，用空行分隔气泡" in tail) == (mode == "text")
         assert tools == []
         return ProviderResponse([{"type": "text", "text": "第一句\n\n第二句"}], [])
@@ -181,7 +181,7 @@ def test_replyer_receives_mode_and_voice_is_one_utterance(mode):
     replyer = Replyer(config, store, SimpleNamespace(complete=complete))
     call = ToolCall("dispatch", "reply", {"intent": "回应", "reference": "", "mode": mode})
     actual = asyncio.run(replyer.generate(call, request))
-    assert actual == (["第一句\n\n第二句"] if mode == "voice" else ["第一句", "第二句"])
+    assert actual == ["第一句", "第二句"]
 
 
 def test_reply_attachments_schema_preserves_media_but_rejects_voice_and_plain_strings():

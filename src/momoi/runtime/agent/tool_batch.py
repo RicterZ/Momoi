@@ -419,7 +419,7 @@ class ToolBatchExecutor:
                         if mode == "text":
                             bubbles = [*bubbles, *copy.deepcopy(call.arguments.get("attachments", []))]
                         delivery_call = ToolCall(call.id, "send_voice" if mode == "voice" else "send_bubbles",
-                                                 {"text": "\n".join(bubbles)} if mode == "voice" else {"bubbles": bubbles})
+                                                 {"text": "\n\n".join(bubbles)} if mode == "voice" else {"bubbles": bubbles})
                         dispatch = self.bubble_delivery.dispatch_voice if mode == "voice" else self.bubble_delivery.dispatch
                         call_context = next((event.delivery_context for event in reversed(request.current_events)
                             if event.channel == target.name and event.delivery_context), {})
