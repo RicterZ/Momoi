@@ -123,11 +123,26 @@ if (-not $IsccPath) {
 }
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_qq_pair.py", "--stage", $Stage, "--output", "build/windows-qq-pin.iss")
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_installer_files.py", "--stage", $Stage, "--component", "qq", "--output", "build/windows-qq-files.iss")
-Invoke-Checked $IsccPath @("packaging/windows/qq_components.iss")
 $Pair = Get-Content (Join-Path $Stage "runtime/qq-pair/components.json") -Raw | ConvertFrom-Json
-$QQInstallers = @(Get-ChildItem "dist/windows/Momoi-QQ-Components-$($Pair.version)-*-x64.exe" | Sort-Object LastWriteTime -Descending)
-$QQInstaller = $QQInstallers[0].FullName
-Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_qq_pair.py", "--stage", $Stage, "--output", "build/windows-qq-pin.iss", "--archive", $QQInstaller)
+$PairCache = Join-Path $Root "build/windows-qq-cache"
+New-Item -ItemType Directory -Path $PairCache -Force | Out-Null
+$CachedPairs = @(Get-ChildItem $PairCache -Filter "Momoi-QQ-Components-$($Pair.version)-*-x64.exe")
+if ($CachedPairs.Count -eq 1) {
+    # Verify lock, filename, full hash and metadata before reusing the compressed pair.
+    $CachedPair = $CachedPairs[0].FullName
+    Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_qq_pair.py", "--stage", $Stage, "--output", "build/windows-qq-pin.iss", "--archive", $CachedPair)
+    Copy-Item $CachedPair "dist/windows/" -Force
+    Copy-Item ([System.IO.Path]::ChangeExtension($CachedPair, ".json")) "dist/windows/" -Force
+    Write-Output "Reused verified locked QQ component: $CachedPair"
+}
+else {
+    Invoke-Checked $IsccPath @("packaging/windows/qq_components.iss")
+    $QQInstallers = @(Get-ChildItem "dist/windows/Momoi-QQ-Components-$($Pair.version)-*-x64.exe" | Sort-Object LastWriteTime -Descending)
+    $QQInstaller = $QQInstallers[0].FullName
+    Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_qq_pair.py", "--stage", $Stage, "--output", "build/windows-qq-pin.iss", "--archive", $QQInstaller)
+    Copy-Item "dist/windows/Momoi-QQ-Components-*.exe" $PairCache -Force
+    Copy-Item "dist/windows/Momoi-QQ-Components-*.json" $PairCache -Force
+}
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_installer_files.py", "--stage", $Stage, "--component", "main", "--output", "build/windows-installer-files.iss")
 Invoke-Checked $IsccPath @("/DAppVersion=$Version", "packaging/windows/installer.iss")
 $Installer = Join-Path $Root "dist/windows/Momoi-Setup-$Version-x64.exe"

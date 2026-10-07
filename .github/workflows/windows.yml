@@ -9,6 +9,10 @@ on:
         description: "Build version (default: project version)"
         default: ""
         required: false
+      qq_components_run:
+        description: "Seed locked QQ component cache from an existing build run"
+        default: ""
+        required: false
       installer_run:
         description: "Reuse an existing Windows installer artifact for installation diagnostics"
         default: ""
@@ -48,6 +52,31 @@ jobs:
             if ($env:BUILD_VERSION -notmatch '^\d+\.\d+\.\d+(?:[.-][A-Za-z0-9.-]+)?$') { throw "Invalid build version" }
             "value=$env:BUILD_VERSION" >> $env:GITHUB_OUTPUT
           }
+      - uses: actions/cache@v4
+        with:
+          path: |
+            build/windows-downloads
+            build/windows-model
+          key: windows-inputs-v1-${{ hashFiles('packaging/windows/components.json', 'packaging/windows/qq-pair.lock.json', 'packaging/windows/prepare_model.py', 'momoi/desktop/embedding.py') }}
+      - uses: actions/cache@v4
+        id: qq-cache
+        with:
+          path: build/windows-qq-cache
+          key: windows-qq-pair-v1-${{ hashFiles('packaging/windows/qq-pair.lock.json', 'packaging/windows/qq_components.iss', 'packaging/windows/prepare_installer_files.py', 'packaging/windows/prepare_napcat.py', 'packaging/windows/prepare_qq_call.py', 'packaging/windows/prepare_qq_pair.py', 'LICENSE') }}
+      - uses: actions/download-artifact@v4
+        if: inputs.qq_components_run != '' && steps.qq-cache.outputs.cache-hit != 'true'
+        with:
+          name: Momoi-Windows-x64
+          path: build/qq-component-seed
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.qq_components_run }}
+      - name: Seed locked component cache
+        if: inputs.qq_components_run != '' && steps.qq-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path build/windows-qq-cache -Force | Out-Null
+          Copy-Item build/qq-component-seed/components/Momoi-QQ-Components-*.exe build/windows-qq-cache/
+          Copy-Item build/qq-component-seed/components/Momoi-QQ-Components-*.json build/windows-qq-cache/
       - uses: astral-sh/setup-uv@v6
       - uses: actions/setup-node@v4
         with:

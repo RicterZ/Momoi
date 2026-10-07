@@ -83,3 +83,26 @@ def test_component_installer_hash_is_pinned_in_main_include(tmp_path):
     assert (tmp_path / final['QQPackageName']).read_bytes() == b'component installer bytes'
     assert final['QQPackageURL'].endswith(final['QQPackageName'])
     assert digest in include.read_text()
+
+
+def test_cached_pair_reuse_checks_lock_and_content(tmp_path):
+    import json
+    import pytest
+    spec = importlib.util.spec_from_file_location('qq_pair_cache', Path(__file__).resolve().parents[1] / 'packaging/windows/prepare_qq_pair.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    stage, include = tmp_path / 'app', tmp_path / 'pin.iss'
+    initial = module.prepare(stage, include)
+    archive = tmp_path / initial['QQPackageName']
+    archive.write_bytes(b'locked component installer')
+    built = module.prepare(stage, include, archive)
+    cached = tmp_path / built['QQPackageName']
+    assert module.prepare(stage, include, cached) == built
+    metadata = json.loads(cached.with_suffix('.json').read_text())
+    metadata['qq_call'] = {'version': 'unexpected'}
+    cached.with_suffix('.json').write_text(json.dumps(metadata))
+    with pytest.raises(ValueError, match='metadata'):
+        module.prepare(stage, include, cached)
+    cached.write_bytes(b'corrupt installer')
+    with pytest.raises(ValueError, match='checksum'):
+        module.prepare(stage, include, cached)

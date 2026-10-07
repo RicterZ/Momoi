@@ -23,10 +23,18 @@ def prepare(stage, output, archive=None):
     (marker / 'components.json').write_text(json.dumps(pair, indent=2), encoding='utf-8')
     sha = ''
     if archive:
-        if archive.name != name + '.exe':
-            raise ValueError('QQ component filename differs from frozen pair')
         with archive.open('rb') as stream:
             sha = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if archive.name != name + '.exe':
+            expected_name = name.removesuffix('-x64') + '-' + sha[:16] + '-x64.exe'
+            if archive.name != expected_name:
+                raise ValueError('QQ component filename differs from frozen pair or checksum')
+            metadata = json.loads(archive.with_suffix('.json').read_text())
+            expected = {**pair, 'pair_id': pair_id, 'filename': expected_name,
+                        'sha256': sha, 'bytes': archive.stat().st_size,
+                        'url': 'https://momoi-1253047877.cos.ap-guangzhou.myqcloud.com/windows/components/' + expected_name}
+            if metadata != expected:
+                raise ValueError('Cached QQ component metadata differs from frozen pair or checksum')
     package_name = name + '.exe'
     if archive:
         package_name = name.removesuffix('-x64') + '-' + sha[:16] + '-x64.exe'
