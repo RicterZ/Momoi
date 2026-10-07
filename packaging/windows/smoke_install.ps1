@@ -39,6 +39,13 @@ try {
     }
     $Report | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $Evidence 'component-sizes.json') -Encoding UTF8
     $Report | ConvertTo-Json -Depth 4 | Write-Output
+    $QQApp = Join-Path $Target 'runtime/qq-call/qq/Files/versions/9.9.31-49738/resources/app'
+    foreach ($Name in @('wmpfsdk', 'miniapp', 'QQScreenShot', 'major.node', 'wrapper.node', 'application.asar')) {
+        if (Test-Path (Join-Path $QQApp $Name)) { throw "Unused QQ voice component was packaged: $Name" }
+    }
+    foreach ($Path in @('runtime/napcat/wrapper.node', 'runtime/qq-call/qq/Files/QQ.exe', 'runtime/qq-call/qq/Files/versions/9.9.31-49738/QQNT.dll', 'runtime/qq-call/qq/Files/versions/9.9.31-49738/resources/app/avsdk/AVSDKPlugin.dll')) {
+        if (-not (Test-Path (Join-Path $Target $Path) -PathType Leaf)) { throw "Required QQ component missing: $Path" }
+    }
     $Data = Join-Path $Target 'data'
     if (-not (Test-Path $Data)) { throw 'Installer did not create data directory' }
     $Acl = Get-Acl $Data
@@ -100,7 +107,9 @@ try {
     $Sentinel = Join-Path $Data 'preserve-check.txt'
     Set-Content $Sentinel 'Momoi user data survives upgrades and uninstall'
     $Expected = (Get-FileHash $Sentinel).Hash
+    Set-Content (Join-Path $QQApp 'major.node') 'obsolete-native-module'
     Install-App (Join-Path $Evidence 'reinstall.log')
+    if (Test-Path (Join-Path $QQApp 'major.node')) { throw 'Upgrade did not remove obsolete QQ voice module' }
     if ((Get-FileHash $Sentinel).Hash -ne $Expected) { throw 'Reinstall changed user data' }
     $Uninstall = Start-Process -FilePath (Join-Path $Target 'unins000.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$(Join-Path $Evidence 'uninstall.log')`"") -PassThru -Wait
     if ($Uninstall.ExitCode -ne 0) { throw "Uninstaller failed: $($Uninstall.ExitCode)" }
