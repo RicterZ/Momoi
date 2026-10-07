@@ -1,6 +1,5 @@
 """Retry unavailable virtual devices without replacing them with physical audio."""
 import asyncio
-import contextlib
 import json
 import logging
 import subprocess
@@ -114,28 +113,24 @@ async def _read_audio_probe(bridge, expression):
         "import json,sys; sys.path.insert(0,sys.argv[1]); import virtual_audio; "
         "print(json.dumps(" + expression + "))"
     )
-    process = await asyncio.create_subprocess_exec(
-        sys.executable, "-I", "-B", "-X", "utf8", "-c", script,
-        str(Path(bridge).resolve() / "windows"),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
-    try:
-        output, diagnostic = await asyncio.wait_for(process.communicate(), 3)
-        if process.returncode:
-            detail = diagnostic.decode("utf-8", errors="replace").strip()[-8192:]
+    def run():
+        try:
+            result = subprocess.run(
+                [sys.executable, "-I", "-B", "-X", "utf8", "-c", script,
+                 str(Path(bridge).resolve() / "windows")],
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NO_WINDOW, timeout=3, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("音频设备响应超时，请稍后刷新") from None
+        if result.returncode:
+            detail = result.stderr.decode("utf-8", errors="replace").strip()[-8192:]
             logging.getLogger(__name__).warning("event=qq_call_device_probe_failed exit_code=%s detail=%s",
-                                              process.returncode, detail)
-            reason = detail.splitlines()[-1][:300] if detail else f"探测进程退出码 {process.returncode}"
+                                              result.returncode, detail)
+            reason = detail.splitlines()[-1][:300] if detail else f"探测进程退出码 {result.returncode}"
             raise RuntimeError("暂时无法读取音频设备：" + reason)
         try:
-            return json.loads(output)
+            return json.loads(result.stdout)
         except ValueError:
             raise RuntimeError("音频设备探测返回了无效数据，请稍后刷新") from None
-    except asyncio.TimeoutError:
-        raise RuntimeError("音频设备响应超时，请稍后刷新") from None
-    finally:
-        if process.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
-                process.kill()
-            await process.wait()
+    return await asyncio.to_thread(run)
