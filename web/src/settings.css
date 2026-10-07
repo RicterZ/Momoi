@@ -1261,7 +1261,8 @@
 
 .settings-qq-call-test-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, calc((100% - 20px) / 2)) auto;
+  justify-content: start;
   align-items: end;
   gap: 12px;
 }
@@ -1300,3 +1301,19 @@
 }
 .settings-voice-call-section > .settings-channel-note { margin: 16px 0 0; }
 .settings-voice-call-section > .settings-qq-call { margin: 0; }
+
+.settings-qq-call-connection-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px 20px;
+  min-width: 0;
+}
+.settings-qq-call .settings-disclosure-body > .settings-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+@media (max-width: 650px) {
+  .settings-qq-call-connection-row { grid-template-columns: minmax(0, 1fr); }
+  .settings-qq-call-test-row { grid-template-columns: minmax(0, 1fr) auto; }
+}
