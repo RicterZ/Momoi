@@ -19,6 +19,10 @@ function Invoke-Checked {
     if ($LASTEXITCODE -ne 0) { throw "$File failed with exit code $LASTEXITCODE" }
 }
 Invoke-Checked "uv" @("sync", "--locked", "--python", "3.12", "--extra", "desktop", "--group", "windows-build", "--group", "test")
+if (-not $SkipInstaller) {
+    if (-not $IsccPath) { $IsccPath = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6/ISCC.exe" }
+    Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/smoke_installer_scripts.py", "--compiler", $IsccPath)
+}
 Invoke-Checked "uv" @("run", "--no-sync", "python", "-c", "import platform,struct; assert platform.machine() in ('AMD64','x86_64') and struct.calcsize('P')==8, 'Use x64 Python'")
 if (-not $Version) {
     $Version = (& uv run --no-sync python -c "import importlib.metadata; print(importlib.metadata.version('momoi'))").Trim()
