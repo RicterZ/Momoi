@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import sys
 
 import aiohttp
 
@@ -14,7 +15,7 @@ class HTTPTransport:
         self._session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self):
-        self._session = aiohttp.ClientSession()
+        self._session = aiohttp.ClientSession(trust_env=sys.platform == "win32")
         return self
 
     async def __aexit__(self, *_exc):
@@ -28,6 +29,7 @@ class HTTPTransport:
             yield self._session
         else:
             async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=timeout_seconds)
+                timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+                trust_env=sys.platform == "win32"
             ) as session:
                 yield session

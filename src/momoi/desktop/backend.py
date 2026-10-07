@@ -111,6 +111,9 @@ async def serve(args):
 
 
 def main():
+    if sys.platform == "win32":
+        from .proxy import prepare_proxy_environment
+        prepare_proxy_environment()
     os.environ["NO_COLOR"] = "1"
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
