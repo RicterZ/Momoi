@@ -356,8 +356,8 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.client.session.headers["Authorization"] = self.auth
         managed = self.path.parent / "managed.json"
         managed.write_text(json.dumps({"bridge_url": "http://127.0.0.1:43210", "bridge_token": "a" * 64}))
-        catalog = {"inputs": [{"id": "mic", "name": "Virtual mic"}],
-                   "outputs": [{"id": "speaker", "name": "Virtual speaker"}], "errors": []}
+        catalog = {"inputs": [{"id": "mic", "name": "USB Microphone"}],
+                   "outputs": [{"id": "speaker", "name": "EDIFIER Speakers"}], "errors": []}
         endpoint = "/api/settings/channels/napcat/voice-call/devices"
         revision = self.manager.revision()
         with patch.dict(os.environ, {"MOMOI_QQ_CALL_MANAGED": str(managed)}), patch("momoi.qq_call.windows_audio.device_catalog", return_value=catalog):
@@ -371,7 +371,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
             response = await self.client.put(endpoint, json={"revision": revision, "input_device": "", "output_device": ""})
             self.assertEqual(response.status, 409)
             self.assertEqual(self.path.read_bytes(), before)
-            response = await self.client.put(endpoint, json={"revision": self.manager.revision(), "input_device": "physical-device", "output_device": "speaker"})
+            response = await self.client.put(endpoint, json={"revision": self.manager.revision(), "input_device": "missing-device", "output_device": "speaker"})
             self.assertEqual(response.status, 400)
             self.assertEqual(self.path.read_bytes(), before)
         with patch.dict(os.environ):

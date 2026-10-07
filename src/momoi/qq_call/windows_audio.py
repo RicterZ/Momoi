@@ -70,5 +70,5 @@ def device_catalog(bridge):
     if sys.platform != "win32":
         return {"inputs": [], "outputs": [], "errors": ["设备选择仅适用于 Windows 桌面客户端"]}
     sys.path.insert(0, str(Path(bridge).resolve() / "windows"))
-    from virtual_audio import virtual_device_catalog
-    return virtual_device_catalog()
+    from virtual_audio import audio_device_catalog
+    return audio_device_catalog()

@@ -38,7 +38,7 @@ internal sealed class AudioDeviceWindow : Window
         Background = (Brush)Application.Current.FindResource("Canvas"); Foreground = (Brush)Application.Current.FindResource("Ink");
         var layout = new StackPanel { Margin = new Thickness(26) };
         layout.Children.Add(new TextBlock { Text = "电话音频设备", FontSize = 21, FontWeight = FontWeights.Bold });
-        layout.Children.Add(new TextBlock { Text = "为内置 QQ 选择虚拟音频线路，系统默认设备保持不变。", Foreground = (Brush)Application.Current.FindResource("Muted"), Margin = new Thickness(0, 8, 0, 22), TextWrapping = TextWrapping.Wrap });
+        layout.Children.Add(new TextBlock { Text = "为内置 QQ 选择输入与输出设备，系统默认设备保持不变。", Foreground = (Brush)Application.Current.FindResource("Muted"), Margin = new Thickness(0, 8, 0, 22), TextWrapping = TextWrapping.Wrap });
         AddChoice(layout, "QQ 输入 · 麦克风", "Momoi 的语音从这里发给 QQ。", input);
         AddChoice(layout, "QQ 输出 · 扬声器", "QQ 对端的语音从这里交给 Momoi 识别。", output);
         status.Foreground = (Brush)Application.Current.FindResource("Muted"); layout.Children.Add(status);
@@ -95,13 +95,13 @@ internal sealed class AudioDeviceWindow : Window
             using var settings = JsonDocument.Parse(await client.GetStringAsync("/api/settings/configuration"));
             using var response = await client.GetAsync("/api/settings/channels/napcat/voice-call/devices");
             string body = await response.Content.ReadAsStringAsync();
-            if (!response.IsSuccessStatusCode) throw new InvalidOperationException("暂时无法读取虚拟设备，请检查驱动并刷新。");
+            if (!response.IsSuccessStatusCode) throw new InvalidOperationException("暂时无法读取音频设备，请刷新设备列表。");
             using var catalog = JsonDocument.Parse(body);
             revision = settings.RootElement.GetProperty("revision").GetString()!;
             var app = settings.RootElement.GetProperty("app");
             Fill(input, inputs, catalog.RootElement, "inputs", Selected(app, "input_device"));
             Fill(output, outputs, catalog.RootElement, "outputs", Selected(app, "output_device"));
-            status.Text = "支持 Steam 虚拟音频设备。应用后重新拨打电话；不会更改普通 QQ 客户端。";
+            status.Text = "已列出所有可用音频设备。推荐 Steam 虚拟线路；选择实体设备会使用其收音或外放。应用后重新拨打电话。";
         }
         catch (Exception error) { status.Text = error.Message; }
         finally { SetBusy(false); }
@@ -114,9 +114,9 @@ internal sealed class AudioDeviceWindow : Window
         {
             var selectedInput = input.SelectedItem as AudioChoice ?? throw new InvalidOperationException("请选择输入设备。");
             var selectedOutput = output.SelectedItem as AudioChoice ?? throw new InvalidOperationException("请选择输出设备。");
-            var effectiveInput = selectedInput.Id == "" ? inputs.FirstOrDefault() : inputs.FirstOrDefault(item => item.Id == selectedInput.Id);
-            var effectiveOutput = selectedOutput.Id == "" ? outputs.FirstOrDefault() : outputs.FirstOrDefault(item => item.Id == selectedOutput.Id);
-            if (effectiveInput is null || effectiveOutput is null) throw new InvalidOperationException("虚拟音频设备不可用，请检查驱动并刷新。");
+            var effectiveInput = selectedInput.Id == "" ? inputs.FirstOrDefault(item => item.Name.Contains("Steam Streaming Microphone", StringComparison.OrdinalIgnoreCase)) : inputs.FirstOrDefault(item => item.Id == selectedInput.Id);
+            var effectiveOutput = selectedOutput.Id == "" ? outputs.FirstOrDefault(item => item.Name.Contains("Steam Streaming Speakers", StringComparison.OrdinalIgnoreCase)) : outputs.FirstOrDefault(item => item.Id == selectedOutput.Id);
+            if (effectiveInput is null || effectiveOutput is null) throw new InvalidOperationException("所选音频设备不可用；自动选择需要 Steam 虚拟设备，请手动选择或刷新。");
             using var client = Client();
             string payload = JsonSerializer.Serialize(new { input_device = selectedInput.Id, output_device = selectedOutput.Id, revision });
             using var response = await client.PutAsync("/api/settings/channels/napcat/voice-call/devices", new StringContent(payload, Encoding.UTF8, "application/json"));

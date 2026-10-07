@@ -220,7 +220,7 @@ def register_configuration_routes(app, configuration, runtime):
         try:
             return web.json_response(device_catalog(Path(__file__).resolve().parents[2] / "qq_call_bridge"))
         except (OSError, ImportError, RuntimeError):
-            return web.json_response({"inputs": [], "outputs": [], "errors": ["暂时无法读取虚拟音频设备，请检查驱动安装后刷新"]}, status=503)
+            return web.json_response({"inputs": [], "outputs": [], "errors": ["暂时无法读取音频设备，请刷新设备列表"]}, status=503)
 
     async def save_qq_call_devices(request):
         if not os.environ.get("MOMOI_QQ_CALL_MANAGED"):
@@ -234,7 +234,7 @@ def register_configuration_routes(app, configuration, runtime):
         catalog = device_catalog(Path(__file__).resolve().parents[2] / "qq_call_bridge")
         for key, group in (("input_device", "inputs"), ("output_device", "outputs")):
             if selected[key] and selected[key] not in {item["id"] for item in catalog[group]}:
-                raise web.HTTPBadRequest(text="所选虚拟音频设备不可用，请刷新设备列表")
+                raise web.HTTPBadRequest(text="所选音频设备不可用，请刷新设备列表")
         current = configuration.read_app()
         channel = current.get("channels", {}).get("enabled", {}).get("napcat")
         if not isinstance(channel, dict):

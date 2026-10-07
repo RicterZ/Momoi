@@ -73,7 +73,7 @@ internal sealed class ApplicationAudioRoute
         string desiredInput = inputDevice.GetProperty("id").GetString() ?? "";
         string desiredOutput = outputDevice.GetProperty("id").GetString() ?? "";
         if (!desiredInput.StartsWith("{0.0.1.00000000}.") || !desiredOutput.StartsWith("{0.0.0.00000000}."))
-            throw new IOException("虚拟音频端点方向无效。");
+            throw new IOException("音频端点方向无效。");
         var pids = processes.EnumerateArray().Select(item => item.GetProperty("pid").GetInt32()).ToArray();
         if (pids.Contains(routedPid) && input == desiredInput && output == desiredOutput)
         {
