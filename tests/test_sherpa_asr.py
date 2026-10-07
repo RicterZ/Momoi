@@ -119,3 +119,14 @@ def test_dashboard_switches_asr_without_cloud_credentials(tmp_path):
     manager.save_bindings({'asr': disabled}, manager.revision())
     assert ServiceRegistry(manager.validate().providers).asr is None
 
+
+def test_windows_optional_component_defaults_without_loading(monkeypatch, tmp_path):
+    monkeypatch.setenv('MOMOI_INSTALL_DIR', str(tmp_path))
+    provider = SherpaASRProvider()
+    assert provider.endpoint == ''
+    assert provider.model_path == str(tmp_path / 'models' / 'asr')
+    assert provider._engine is None
+    remote = SherpaASRProvider(endpoint='http://asr:8003')
+    assert remote.model_path == ''
+    with pytest.raises(ValueError):
+        SherpaASRProvider(endpoint='http://asr:8003', model_path='/models')

@@ -19,6 +19,7 @@ public partial class App : Application
     private TextBlock message = null!;
     private Button installButton = null!, chooseButton = null!, cancelButton = null!;
     private StartupView? loading;
+    private CheckBox localASR = new();
     private CheckBox cable = null!;
     private CancellationTokenSource? operation;
     private bool installing, installed;
@@ -82,6 +83,8 @@ public partial class App : Application
         content.Children.Add(message);
         cable = new CheckBox { Content = "安装 VB-CABLE（语音通话组件；已有 Steam 音频设备可跳过）", IsChecked = false, Margin = new Thickness(0, 0, 0, 8) };
         content.Children.Add(cable);
+        localASR = new CheckBox { Content = "安装本地语音识别（可选，使用 CPU，无需云端 ASR）", IsChecked = false, Margin = new Thickness(0, 8, 0, 8) };
+        content.Children.Add(localASR);
         content.Children.Add(new TextBlock { Text = "VB-Audio · www.vb-cable.com · Donationware，欢迎捐赠支持。", Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 8) });
         var audioList = new TextBlock { Text = string.Join("\n", AudioDevicePreference.Installed()), TextWrapping = TextWrapping.Wrap };
         content.Children.Add(new ScrollViewer { Content = audioList, Height = 90, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 0, 0, 16) });
@@ -104,7 +107,7 @@ public partial class App : Application
     private void Log(string value) => File.AppendAllText(log, $"{DateTimeOffset.Now:O} {value}{Environment.NewLine}");
     private void SetBusy(bool busy)
     {
-        installButton.IsEnabled = chooseButton.IsEnabled = directory.IsEnabled = !busy;
+        installButton.IsEnabled = chooseButton.IsEnabled = directory.IsEnabled = cable.IsEnabled = localASR.IsEnabled = !busy;
         cancelButton.Content = busy ? "取消下载" : "关闭";
         if (busy)
         {
@@ -150,6 +153,13 @@ public partial class App : Application
             string components = Path.Combine(Path.GetDirectoryName(core)!, "components");
             Directory.CreateDirectory(components);
             string pair = Path.Combine(components, Path.GetFileName(qq)); File.Copy(qq, pair, true);
+            if (localASR.IsChecked == true)
+            {
+                if (catalog.ASR is null) throw new InvalidDataException("当前安装清单尚未提供本地 ASR 组件。");
+                component = "本地 ASR 组件";
+                string asr = await downloader.DownloadAsync(catalog.ASR, cache, local, progress, operation.Token);
+                File.Copy(asr, Path.Combine(components, Path.GetFileName(asr)), true);
+            }
             // Keep Microsoft files from an offline distribution available to the native installer.
             string prerequisites = Path.Combine(selfDirectory, "components", "prerequisites");
             if (Directory.Exists(prerequisites))
@@ -161,7 +171,7 @@ public partial class App : Application
             operation.Token.ThrowIfCancellationRequested();
             installing = true; System.Windows.Input.CommandManager.InvalidateRequerySuggested(); loading?.SetDetail("安装中 · 请确认 Windows 管理员授权");
             string nativeLog = Path.Combine(cache, "native-install-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
-            var start = new ProcessStartInfo(core) { UseShellExecute = true, Verb = "runas", Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS=\"{(cable.IsChecked == true ? "desktopicon,vbcable" : "desktopicon")}\" /DIR=\"{destination}\" /LOG=\"{nativeLog}\"" };
+            var start = new ProcessStartInfo(core) { UseShellExecute = true, Verb = "runas", Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS=\"{("desktopicon" + (cable.IsChecked == true ? ",vbcable" : "") + (localASR.IsChecked == true ? ",localasr" : ""))}\" /DIR=\"{destination}\" /LOG=\"{nativeLog}\"" };
             Log("Requesting elevated native installer launch: " + core);
             using var child = Process.Start(start) ?? throw new IOException("无法启动安装程序。");
             Log($"Native installer started PID={child.Id}; log={nativeLog}");
@@ -171,6 +181,7 @@ public partial class App : Application
             if (child.ExitCode is not (0 or 3010)) throw new IOException($"安装未完成（退出码 {child.ExitCode}）。日志：{nativeLog}");
             using var runtime = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(destination, "runtime", "runtime.json")));
             if (runtime.RootElement.GetProperty("runtime_id").GetString() != catalog.RuntimeId || File.ReadAllText(Path.Combine(destination, "runtime", "qq-pair", "pair-id.txt")).Trim() != catalog.QQPairId || !File.Exists(Path.Combine(destination, "Momoi.exe"))) throw new IOException("安装后的运行组件版本不匹配，请重试。");
+            if (localASR.IsChecked == true && (catalog.ASR is null || File.ReadAllText(Path.Combine(destination, "runtime", "asr", "component-id.txt")).Trim() != catalog.ASR.Id)) throw new IOException("本地 ASR 组件安装校验失败。");
             installed = true; installButton.Content = "打开 Momoi";
             message.Text = child.ExitCode == 3010 ? "Momoi 已安装。Windows 前置组件需要重启系统，请重启后打开 Momoi。" : "Momoi 已安装，可以打开并完成首次设置。之后从应用内检查更新即可。";
             Log("Installation verified");

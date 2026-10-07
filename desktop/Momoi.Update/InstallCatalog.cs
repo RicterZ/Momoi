@@ -12,7 +12,8 @@ public sealed record InstallCatalog(
     [property: JsonPropertyName("runtime_id")] string RuntimeId,
     [property: JsonPropertyName("qq_pair_id")] string QQPairId,
     [property: JsonPropertyName("core")] UpdateArtifact Core,
-    [property: JsonPropertyName("napcat")] UpdateArtifact NapCat)
+    [property: JsonPropertyName("napcat")] UpdateArtifact NapCat,
+    [property: JsonPropertyName("asr")] UpdateArtifact? ASR = null)
 {
     public const string Url = "https://momoi-1253047877.cos.ap-guangzhou.myqcloud.com/windows/install.json";
 
@@ -25,6 +26,7 @@ public sealed record InstallCatalog(
             throw new InvalidDataException("不支持的安装清单。");
         ValidateArtifact(value.Core, "core-installer");
         ValidateArtifact(value.NapCat, "napcat-installer");
+        if (value.ASR is not null) ValidateArtifact(value.ASR, "asr-installer");
         if (value.Core.Version != value.Version || value.NapCat.Id != value.QQPairId)
             throw new InvalidDataException("安装组件版本不一致。");
         return value;
@@ -32,7 +34,7 @@ public sealed record InstallCatalog(
 
     public static void ValidateArtifact(UpdateArtifact? artifact, string? expectedKind = null)
     {
-        if (artifact is null || (artifact.Kind != "core-installer" && artifact.Kind != "napcat-installer") ||
+        if (artifact is null || (artifact.Kind != "core-installer" && artifact.Kind != "napcat-installer" && artifact.Kind != "asr-installer") ||
             (expectedKind is not null && artifact.Kind != expectedKind) ||
             artifact.Size is < 1 or > 2L * 1024 * 1024 * 1024 ||
             !Regex.IsMatch(artifact.Id ?? "", @"^[A-Za-z0-9][A-Za-z0-9.-]{0,100}$") ||
@@ -42,6 +44,7 @@ public sealed record InstallCatalog(
             uri.Host != new Uri(Url).Host || !uri.IsDefaultPort || uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
             !Regex.IsMatch(uri.AbsolutePath, artifact.Kind == "core-installer"
                 ? @"^/windows/installers/Momoi-Setup-[A-Za-z0-9.-]+-x64\.exe$"
+                : artifact.Kind == "asr-installer" ? @"^/windows/components/Momoi-ASR-Components-[A-Za-z0-9.-]+-x64\.exe$"
                 : @"^/windows/components/Momoi-QQ-Components-[A-Za-z0-9.-]+-x64\.exe$"))
             throw new InvalidDataException("无效安装组件信息。");
     }

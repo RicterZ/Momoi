@@ -96,14 +96,17 @@ try
     }
     var shellArtifact = new UpdateArtifact("1.1.3", "1.1.3", UpdateCatalog.Url.Replace("catalog.json", "shell/test.zip"), new string('a', 64), 100, "shell-zip");
     var pairArtifact = new UpdateArtifact("pair", "1.1.2", UpdateCatalog.Url.Replace("catalog.json", "components/test.exe"), new string('b', 64), 200, "napcat-installer");
-    var catalog = new UpdateCatalog(1, "1.1.3", shellArtifact, pairArtifact);
+    var asrArtifact = new UpdateArtifact("asr-test", "1.1.3", UpdateCatalog.Url.Replace("catalog.json", "components/asr.exe"), new string('c', 64), 300, "asr-installer");
+    var catalog = new UpdateCatalog(1, "1.1.3", shellArtifact, pairArtifact, asrArtifact);
     if (UpdateCatalog.Verify(SignCatalog(catalog), publicKey).Shell.Id != "1.1.3") throw new Exception("Catalog verification failed");
     foreach (var invalid in new[] {
         catalog with { FormatVersion = 2 },
         catalog with { Shell = shellArtifact with { Url = "https://untrusted.example/shell.zip" } },
         catalog with { Shell = shellArtifact with { Kind = "napcat-installer" } },
         catalog with { NapCat = pairArtifact with { Size = 0 } },
-        catalog with { NapCat = pairArtifact with { Sha256 = "bad" } } })
+        catalog with { NapCat = pairArtifact with { Sha256 = "bad" } },
+        catalog with { ASR = asrArtifact with { Kind = "napcat-installer" } },
+        catalog with { ASR = asrArtifact with { Size = 0 } } })
     {
         bool rejected = false;
         try { UpdateCatalog.Verify(SignCatalog(invalid), publicKey); }

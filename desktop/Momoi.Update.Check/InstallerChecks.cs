@@ -14,7 +14,8 @@ internal static class InstallerChecks
         string hash = Convert.ToHexStringLower(SHA256.HashData(data));
         var core = new UpdateArtifact("1.1.3-test", "1.1.3", "https://momoi-1253047877.cos.ap-guangzhou.myqcloud.com/windows/installers/Momoi-Setup-1.1.3-test-x64.exe", hash, data.Length, "core-installer");
         var qq = new UpdateArtifact("0123456789abcdef", "1.1.2", "https://momoi-1253047877.cos.ap-guangzhou.myqcloud.com/windows/components/Momoi-QQ-Components-1.1.2-test-x64.exe", hash, data.Length, "napcat-installer");
-        var catalog = new InstallCatalog(1, "1.1.3", new string('a', 24), qq.Id, core, qq);
+        var asr = new UpdateArtifact("asr-test", "1.1.3", "https://momoi-1253047877.cos.ap-guangzhou.myqcloud.com/windows/components/Momoi-ASR-Components-1.1.3-test-x64.exe", hash, data.Length, "asr-installer");
+        var catalog = new InstallCatalog(1, "1.1.3", new string('a', 24), qq.Id, core, qq, asr);
         var key = new Ed25519PrivateKeyParameters(RandomNumberGenerator.GetBytes(32), 0);
         byte[] Envelope(InstallCatalog value)
         {
@@ -31,7 +32,9 @@ internal static class InstallerChecks
             catalog with { Core = core with { Version = "1.1.4" } },
             catalog with { Core = core with { Size = long.MaxValue } },
             catalog with { QQPairId = new string('b', 16) },
-            catalog with { RuntimeId = "unknown" }
+            catalog with { RuntimeId = "unknown" },
+            catalog with { ASR = asr with { Url = "https://example.com/asr.exe" } },
+            catalog with { ASR = asr with { Kind = "core-installer" } }
         })
         {
             bool rejected = false; try { InstallCatalog.Verify(Envelope(invalid), publicKey); } catch (InvalidDataException) { rejected = true; }

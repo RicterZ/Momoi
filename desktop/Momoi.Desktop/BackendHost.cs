@@ -60,6 +60,7 @@ internal sealed class BackendHost : IAsyncDisposable
         foreach (string argument in new[] { "-I", "-u", "-B", "-X", "utf8", entry, "--install-dir", AppContext.BaseDirectory, "--workspace", workspace, "--model-path", model,
             "--dashboard-port", dashboardPort.ToString(), "--embedding-port", embeddingPort.ToString() })
             info.ArgumentList.Add(argument);
+        info.Environment["MOMOI_INSTALL_DIR"] = AppContext.BaseDirectory;
         info.Environment["MOMOI_QQ_CALL_MANAGED"] = QQCallSettings.Prepare(workspace);
         if (TimeZoneInfo.TryConvertWindowsIdToIanaId(TimeZoneInfo.Local.Id, out string? localZone))
             info.Environment["MOMOI_DESKTOP_TIMEZONE"] = localZone;

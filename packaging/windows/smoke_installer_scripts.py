@@ -15,7 +15,7 @@ def check(compiler):
         scripts.mkdir(parents=True)
         build = root / 'build'
         build.mkdir()
-        for name in ('installer.iss', 'qq_components.iss'):
+        for name in ('installer.iss', 'qq_components.iss', 'asr_components.iss'):
             shutil.copy2(ROOT / 'packaging/windows' / name, scripts / name)
         shutil.copy2(ROOT / 'LICENSE', root / 'LICENSE')
         assets = root / 'desktop/Momoi.Desktop/Assets'
@@ -24,11 +24,13 @@ def check(compiler):
         fixture = root / 'fixture.txt'
         fixture.write_text('syntax check only', encoding='ascii')
         entry = f'Source: "{fixture}"; DestDir: "{{app}}"; Flags: ignoreversion\n'
-        for name in ('windows-installer-files.iss', 'windows-qq-files.iss'):
+        for name in ('windows-installer-files.iss', 'windows-qq-files.iss', 'windows-asr-files.iss'):
             (build / name).write_text(entry, encoding='utf-8')
         defines = {'QQPairVersion': '1.1.2', 'QQPairId': 'syntax-check', 'QQPackageBase': 'QQ-syntax-check',
                    'QQPackageName': 'QQ-syntax-check.exe', 'QQPackageSHA256': '0' * 64,
                    'QQPackageURL': 'https://example.invalid/qq.exe'}
+        asr = {'ASRPackageName': 'ASR-syntax-check.exe', 'ASRComponentId': 'syntax-check', 'ASRPackageSHA256': '0' * 64, 'ASRPackageURL': 'https://example.invalid/asr.exe'}
+        (build / 'windows-asr-pin.iss').write_text('\n'.join(f'#define {key} "{value}"' for key, value in asr.items()))
         (build / 'windows-qq-pin.iss').write_text('\n'.join(f'#define {key} "{value}"' for key, value in defines.items()), encoding='utf-8')
         (build / 'windows-prerequisite-pin.iss').write_text('\n'.join(f'#define {key}{suffix} "{value}"' for key in ('VC', 'WebView') for suffix, value in [('Name', 'fixture.exe'), ('URL', 'https://example.invalid/fixture.exe'), ('SHA256', '0' * 64)]), encoding='utf-8')
         prerequisites = build / 'windows-prerequisites'
@@ -38,7 +40,7 @@ def check(compiler):
         cable = root / 'dist/windows/components/prerequisites/vbcable'
         cable.mkdir(parents=True)
         shutil.copy2(fixture, cable / 'VBCABLE_Setup_x64.exe')
-        for name in ('qq_components.iss', 'installer.iss'):
+        for name in ('qq_components.iss', 'asr_components.iss', 'installer.iss'):
             subprocess.run([str(compiler), '/Q', str(scripts / name)], check=True)
     print('PASS: both split installer scripts compiled against isolated tiny fixtures')
 

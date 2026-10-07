@@ -8,7 +8,7 @@ $Evidence = Join-Path $Root 'dist/windows/install-test'
 New-Item -ItemType Directory -Path $Evidence -Force | Out-Null
 function Install-App {
     param([string]$Log)
-    $Extra = @()
+    $Extra = @('/TASKS="desktopicon,localasr"')
     if ($DownloadPrerequisites) { $Extra += '/forceprerequisites=1' }
     $OfflinePrerequisites = Join-Path (Split-Path $Installer) 'components/prerequisites'
     $HiddenPrerequisites = $OfflinePrerequisites + '.download-check'
@@ -88,6 +88,8 @@ try {
     # Exercise the installed interpreter, model and authenticated dashboard.
     & uv run --no-sync python (Join-Path $PSScriptRoot 'smoke_backend.py') --python (Join-Path $Target 'runtime/python/python.exe') --entry (Join-Path $Target 'releases/bundled/app/backend_entry.py') --model-path (Join-Path $Target 'models/bge-small-zh-v1.5')
     if ($LASTEXITCODE -ne 0) { throw 'Installed backend smoke failed' }
+    & (Join-Path $Target 'runtime/python/python.exe') -I -X utf8 (Join-Path $PSScriptRoot 'smoke_asr.py') --install $Target --source $Root --archive (Join-Path $Root 'build/local-asr/model.tar.bz2') --evidence (Join-Path $Evidence 'asr-installed.json')
+    if ($LASTEXITCODE -ne 0) { throw 'Installed optional ASR smoke failed' }
     & uv run --no-sync python (Join-Path $PSScriptRoot 'smoke_mcp.py') --node (Join-Path $Target 'runtime/node/node.exe') --uv (Join-Path $Target 'runtime/uv/uv.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Installed MCP smoke failed' }
     # Exercise the real bundled Node/native QQ library and .NET ownership before logging in.
@@ -152,6 +154,8 @@ try {
     if ((Get-FileHash $Sentinel).Hash -ne $Expected) { throw 'Reusing components changed user data' }
     $Uninstall = Start-Process -FilePath (Join-Path $Target 'unins000.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$(Join-Path $Evidence 'uninstall.log')`"") -PassThru -Wait
     if ($Uninstall.ExitCode -ne 0) { throw "Uninstaller failed: $($Uninstall.ExitCode)" }
+    if (Test-Path (Join-Path $Target 'runtime/asr')) { throw 'Uninstall left optional ASR runtime' }
+    if (Test-Path (Join-Path $Target 'models/asr')) { throw 'Uninstall left optional ASR models' }
     if (Test-Path (Join-Path $Target 'runtime/napcat')) { throw 'Uninstall left QQ components' }
     if (Test-Path (Join-Path $Target 'runtime/qq-call')) { throw 'Uninstall left voice components' }
     if (Test-Path (Join-Path $Target 'Momoi.exe')) { throw 'Uninstall left the native application installed' }

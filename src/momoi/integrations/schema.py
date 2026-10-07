@@ -147,9 +147,9 @@ def builtin_schema(name, capability):
         fields[key]["required"] = True
     if (name, capability) == ("sherpa", "asr"):
         fields["endpoint"].update(label="本地 ASR 服务地址", advanced=False,
-            description="Docker 填写 http://asr:8003；与模型目录二选一。")
+            description="Docker 填写 http://asr:8003；Windows 安装本地 ASR 组件后留空即可。")
         fields["model_path"].update(label="本地 ASR 模型目录", advanced=True,
-            description="Windows 本地组件的模型目录；使用容器时留空。")
+            description="Windows 自动使用安装目录中的模型；仅自定义模型时填写，使用容器时留空。")
         fields["num_threads"]["label"] = "CPU 推理线程数"
         fields["trailing_silence"]["label"] = "断句静音（秒）"
     if (name, capability) == ("deepseek", "balance"):

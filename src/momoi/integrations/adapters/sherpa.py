@@ -2,6 +2,8 @@
 import asyncio
 import io
 import json
+import os
+import sys
 from pathlib import Path
 import threading
 import wave
@@ -94,6 +96,8 @@ class SherpaASRProvider(ASRProvider):
 
     def __init__(self, *, endpoint='', model_path='', num_threads=2,
                  trailing_silence=0.8, timeout_seconds=30):
+        if not endpoint and not model_path and os.environ.get('MOMOI_INSTALL_DIR'):
+            model_path = str(Path(os.environ['MOMOI_INSTALL_DIR']) / 'models' / 'asr')
         if bool(endpoint) == bool(model_path):
             raise ValueError('本地 ASR 必须填写 endpoint 或 model_path，二选一')
         from ..validation import url, number
@@ -116,6 +120,11 @@ class SherpaASRProvider(ASRProvider):
         async with self._load_lock:
             if self._engine is None:
                 try:
+                    root = os.environ.get('MOMOI_INSTALL_DIR')
+                    if root:
+                        libraries = Path(root) / 'runtime' / 'asr' / 'site-packages'
+                        if libraries.is_dir() and str(libraries) not in sys.path:
+                            sys.path.insert(0, str(libraries))
                         dlls = libraries / "sherpa_onnx" / "lib"
                         if os.name == "nt" and dlls.is_dir() and self._dll_directory is None:
                             self._dll_directory = os.add_dll_directory(str(dlls))

@@ -57,6 +57,8 @@ jobs:
           path: |
             build/windows-downloads
             build/windows-model
+            build/local-asr/model.tar.bz2
+            build/windows-asr-wheels
           key: windows-inputs-v1-${{ hashFiles('packaging/windows/components.json', 'packaging/windows/qq-pair.lock.json', 'packaging/windows/prepare_model.py', 'momoi/desktop/embedding.py') }}
       - uses: actions/cache@v4
         id: qq-cache
@@ -88,7 +90,7 @@ jobs:
       - name: Locked Python test environment
         run: uv sync --locked --python 3.12 --group test
       - name: Windows shell, process tree and workspace tests
-        run: uv run --locked --group test pytest -q -n 0 tests/test_platform.py tests/test_exec_tool.py tests/test_desktop.py tests/test_desktop_qq.py tests/test_desktop_emotions.py tests/test_windows_media_lifecycle.py tests/test_desktop_qq_call_settings.py tests/test_qq_call_audio.py tests/test_qq_call_configuration.py tests/test_qq_call_streaming.py tests/test_qq_call_client.py tests/test_qq_call_packaging.py tests/test_windows_cos_publish.py tests/test_windows_installer_files.py tests/test_windows_installer_package.py tests/test_windows_python_trim.py
+        run: uv run --locked --group test pytest -q -n 0 tests/test_platform.py tests/test_exec_tool.py tests/test_desktop.py tests/test_desktop_qq.py tests/test_desktop_emotions.py tests/test_windows_media_lifecycle.py tests/test_desktop_qq_call_settings.py tests/test_qq_call_audio.py tests/test_qq_call_configuration.py tests/test_qq_call_streaming.py tests/test_qq_call_client.py tests/test_qq_call_packaging.py tests/test_sherpa_asr.py tests/test_windows_cos_publish.py tests/test_windows_installer_files.py tests/test_windows_installer_package.py tests/test_windows_python_trim.py
       - name: Update validation checks
         run: dotnet run --project desktop/Momoi.Update.Check -c Release
       - name: Native QQ library and isolated data smoke
@@ -154,6 +156,8 @@ jobs:
             dist/windows/Momoi-Setup-*-x64.exe
             dist/windows/Momoi-Online-Setup-*-x64.exe
             dist/windows/Momoi-Online-Setup-*-x64.json
+            dist/windows/components/Momoi-ASR-Components-*-x64.exe
+            dist/windows/components/Momoi-ASR-Components-*-x64.json
             dist/windows/components/Momoi-QQ-Components-*-x64.exe
             dist/windows/components/Momoi-QQ-Components-*-x64.json
             dist/windows/Momoi-Windows-*-x64.zip

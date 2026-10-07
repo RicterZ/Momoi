@@ -17,7 +17,8 @@ public sealed record UpdateCatalog(
     [property: JsonPropertyName("format_version")] int FormatVersion,
     [property: JsonPropertyName("version")] string Version,
     [property: JsonPropertyName("shell")] UpdateArtifact Shell,
-    [property: JsonPropertyName("napcat")] UpdateArtifact NapCat)
+    [property: JsonPropertyName("napcat")] UpdateArtifact NapCat,
+    [property: JsonPropertyName("asr")] UpdateArtifact? ASR = null)
 {
     public const string Url = "https://momoi-1253047877.cos.ap-guangzhou.myqcloud.com/windows/catalog.json";
 
@@ -29,6 +30,7 @@ public sealed record UpdateCatalog(
             throw new InvalidDataException("不支持的更新清单。");
         Validate(catalog.Shell, "shell-zip");
         Validate(catalog.NapCat, "napcat-installer");
+        if (catalog.ASR is not null) Validate(catalog.ASR, "asr-installer");
         return catalog;
     }
 
@@ -66,7 +68,8 @@ public sealed record UpdateCatalog(
 
     public static async Task<string> DownloadAsync(UpdateArtifact artifact, string directory, IProgress<UpdateProgress> progress, CancellationToken token)
     {
-        Validate(artifact, artifact.Kind == "shell-zip" ? "shell-zip" : "napcat-installer");
+        if (artifact.Kind is not ("shell-zip" or "napcat-installer" or "asr-installer")) throw new InvalidDataException("未知组件。");
+        Validate(artifact, artifact.Kind);
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, artifact.Id + (artifact.Kind == "shell-zip" ? ".zip" : ".exe"));
         string partial = path + ".partial";

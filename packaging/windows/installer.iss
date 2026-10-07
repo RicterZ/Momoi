@@ -1,3 +1,4 @@
+#include "..\..\build\windows-asr-pin.iss"
 #ifndef AppVersion
   #define AppVersion "1.1.3"
 #endif
@@ -35,6 +36,7 @@ LicenseFile={#Root}\LICENSE
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
+Name: "localasr"; Description: "Install local CPU speech recognition (optional, no cloud ASR charges)"; Flags: unchecked
 Name: "vbcable"; Description: "Install VB-CABLE for voice calls (optional; skip if Steam audio devices are available)"; Flags: unchecked
 Name: "desktopicon"; Description: "Create a desktop shortcut"
 
@@ -62,6 +64,8 @@ Name: "{autodesktop}\Momoi"; Filename: "{app}\Momoi.exe"; Tasks: desktopicon
 Filename: "{app}\Momoi.exe"; Description: "Launch Momoi"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallDelete]
+Type: filesandordirs; Name: "{app}\runtime\asr"
+Type: filesandordirs; Name: "{app}\models\asr"
 Type: filesandordirs; Name: "{app}\runtime\napcat"
 Type: filesandordirs; Name: "{app}\runtime\qq-call"
 Type: filesandordirs; Name: "{app}\runtime\qq-pair"
@@ -248,8 +252,30 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  PackagePath: String;
+  Marker: AnsiString;
+  Code: Integer;
 begin
   if CurStep = ssInstall then StopMomoi;
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('localasr') then begin
+    PackagePath := ExpandConstant('{src}\components\{#ASRPackageName}');
+    if not FileExists(PackagePath) then begin
+      QQDownloadPage.Clear;
+      QQDownloadPage.Add('{#ASRPackageURL}', '{#ASRPackageName}', '{#ASRPackageSHA256}');
+      QQDownloadPage.Show;
+      try QQDownloadPage.Download; finally QQDownloadPage.Hide; end;
+      PackagePath := ExpandConstant('{tmp}\{#ASRPackageName}');
+    end;
+    if CompareText(GetSHA256OfFile(PackagePath), '{#ASRPackageSHA256}') <> 0 then
+      RaiseException('Local ASR component checksum mismatch.');
+    if not Exec(PackagePath, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="' + ExpandConstant('{app}') + '"', '', SW_HIDE, ewWaitUntilTerminated, Code) then
+      RaiseException('Could not start local ASR installer.');
+    if Code <> 0 then RaiseException('Local ASR installation failed.');
+    if not LoadStringFromFile(ExpandConstant('{app}\runtime\asr\component-id.txt'), Marker) then
+      RaiseException('Local ASR component marker missing.');
+    if Trim(Marker) <> '{#ASRComponentId}' then RaiseException('Local ASR component version mismatch.');
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

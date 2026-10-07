@@ -30,7 +30,14 @@ def sign(payload):
     return {'signed': base64.b64encode(raw).decode(), 'signature': base64.b64encode(private.sign(raw)).decode()}
 
 
-def publish(shell, napcat, version):
+def asr_artifact(path):
+    meta = json.loads(path.with_suffix(".json").read_text())
+    if meta["filename"] != path.name or meta["sha256"] != hashlib.sha256(path.read_bytes()).hexdigest() or meta["bytes"] != path.stat().st_size:
+        raise ValueError("ASR component checksum mismatch")
+    return artifact(path, meta["version"], meta["id"], "windows/components/" + path.name, "asr-installer")
+
+
+def publish(shell, napcat, version, asr=None):
     with zipfile.ZipFile(shell) as bundle:
         manifest = json.loads(bundle.read('shell-manifest.json'))
         if manifest['version'] != version or set(bundle.namelist()) != {'shell-manifest.json', *('payload/' + name for name in manifest['files'])}:
@@ -46,6 +53,8 @@ def publish(shell, napcat, version):
     payload = {'format_version': 1, 'version': version,
                'shell': artifact(shell, version, version + '-' + manifest['commit'][:7], shell_key, 'shell-zip'),
                'napcat': artifact(napcat, pair['version'], pair['pair_id'], pair_key, 'napcat-installer')}
+    if asr is not None:
+        payload["asr"] = asr_artifact(asr)
     with tempfile.TemporaryDirectory() as directory:
         catalog = Path(directory) / 'catalog.json'
         catalog.write_text(json.dumps(sign(payload), indent=2) + '\n')
@@ -53,6 +62,9 @@ def publish(shell, napcat, version):
             for local, key in [(shell, shell_key), (napcat, pair_key), (napcat.with_suffix('.json'), pair_key[:-4] + '.json')]:
                 upload(local, key)
                 verify_remote(client, key, local)
+            if asr is not None:
+                upload(asr, "windows/components/" + asr.name)
+                verify_remote(client, "windows/components/" + asr.name, asr)
             upload(catalog, 'windows/catalog.json', mutable=True)
             verify_remote(client, 'windows/catalog.json', catalog)
     print(json.dumps(payload, indent=2))
@@ -63,5 +75,6 @@ if __name__ == '__main__':
     parser.add_argument('--shell', type=Path, required=True)
     parser.add_argument('--napcat', type=Path, required=True)
     parser.add_argument('--version', required=True)
+    parser.add_argument("--asr", type=Path)
     args = parser.parse_args()
-    publish(args.shell, args.napcat, args.version)
+    publish(args.shell, args.napcat, args.version, args.asr)

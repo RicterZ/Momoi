@@ -46,7 +46,7 @@ internal static class ComponentUpdateWorker
             var request = JsonSerializer.Deserialize<ComponentUpdateRequest>(File.ReadAllText(requestPath)) ?? throw new InvalidDataException("无效更新请求。");
             install = Path.GetFullPath(request.InstallDirectory);
             var catalog = UpdateCatalog.Verify(File.ReadAllBytes(request.Catalog), SignedLatest.EmbeddedPublicKey());
-            var artifact = request.Kind == "shell-zip" ? catalog.Shell : request.Kind == "napcat-installer" ? catalog.NapCat : throw new InvalidDataException("未知组件。");
+            var artifact = request.Kind == "shell-zip" ? catalog.Shell : request.Kind == "napcat-installer" ? catalog.NapCat : request.Kind == "asr-installer" && catalog.ASR is not null ? catalog.ASR : throw new InvalidDataException("未知组件。");
             view.SetDetail("校验中");
             using (var stream = File.OpenRead(request.Archive))
                 if (stream.Length != artifact.Size || Convert.ToHexStringLower(SHA256.HashData(stream)) != artifact.Sha256)
@@ -70,11 +70,11 @@ internal static class ComponentUpdateWorker
             }
             else
             {
-                view.SetDetail("安装 NapCat / QQ 组件中");
+                view.SetDetail(request.Kind == "asr-installer" ? "安装本地 ASR 组件中" : "安装 NapCat / QQ 组件中");
                 await RunElevatedAsync(requestPath);
-                string pair = File.ReadAllText(Path.Combine(install, "runtime", "qq-pair", "pair-id.txt")).Trim();
+                string pair = File.ReadAllText(Path.Combine(install, "runtime", request.Kind == "asr-installer" ? "asr" : "qq-pair", request.Kind == "asr-installer" ? "component-id.txt" : "pair-id.txt")).Trim();
                 if (pair != artifact.Id) throw new IOException("已安装组件与签名锁定版本不符。");
-                string marker = Path.Combine(install, "data", "updates", "napcat-installed-id.txt");
+                string marker = Path.Combine(install, "data", "updates", request.Kind == "asr-installer" ? "asr-installed-id.txt" : "napcat-installed-id.txt");
                 File.WriteAllText(marker, artifact.Id);
             }
             view.SetDetail("启动中");
@@ -188,7 +188,7 @@ internal static class ComponentUpdateWorker
             var request = JsonSerializer.Deserialize<ComponentUpdateRequest>(File.ReadAllText(requestPath)) ?? throw new InvalidDataException("无效更新请求。");
             string install = Path.GetFullPath(request.InstallDirectory);
             var catalog = UpdateCatalog.Verify(File.ReadAllBytes(request.Catalog), SignedLatest.EmbeddedPublicKey());
-            var artifact = request.Kind == "shell-zip" ? catalog.Shell : request.Kind == "napcat-installer" ? catalog.NapCat : throw new InvalidDataException("未知组件。");
+            var artifact = request.Kind == "shell-zip" ? catalog.Shell : request.Kind == "napcat-installer" ? catalog.NapCat : request.Kind == "asr-installer" && catalog.ASR is not null ? catalog.ASR : throw new InvalidDataException("未知组件。");
             using (var stream = File.OpenRead(request.Archive))
                 if (stream.Length != artifact.Size || Convert.ToHexStringLower(SHA256.HashData(stream)) != artifact.Sha256) throw new InvalidDataException("更新文件校验失败。");
             if (request.Kind == "shell-zip")
@@ -204,7 +204,7 @@ internal static class ComponentUpdateWorker
                 using var child = Process.Start(start) ?? throw new IOException("无法启动 QQ 组件安装程序。");
                 await child.WaitForExitAsync();
                 if (child.ExitCode != 0) throw new IOException("QQ 组件安装失败，退出码 " + child.ExitCode);
-                if (File.ReadAllText(Path.Combine(install, "runtime", "qq-pair", "pair-id.txt")).Trim() != artifact.Id) throw new IOException("已安装 QQ 组件与签名锁定版本不符。");
+                if (File.ReadAllText(Path.Combine(install, "runtime", request.Kind == "asr-installer" ? "asr" : "qq-pair", request.Kind == "asr-installer" ? "component-id.txt" : "pair-id.txt")).Trim() != artifact.Id) throw new IOException("已安装 QQ 组件与签名锁定版本不符。");
             }
             return 0;
         }

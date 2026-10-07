@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -11,7 +13,7 @@ using Momoi.Update;
 
 namespace Momoi.Desktop;
 
-internal sealed record PendingUpdates(string Catalog, string? ShellArchive, string? NapCatArchive, string? CodeReleaseId);
+internal sealed record PendingUpdates(string Catalog, string? ShellArchive, string? NapCatArchive, string? CodeReleaseId, string? ASRArchive = null);
 
 public partial class App
 {
@@ -32,6 +34,18 @@ public partial class App
         if (value.Total > 0) detail += $" · {Math.Clamp(value.Completed * 100 / value.Total, 0, 100)}%";
         loadingView?.SetDetail(detail);
     });
+
+    private async Task<bool> LocalASRSelectedAsync(CancellationToken token)
+    {
+        if (panelConnection is null) return false;
+        using var client = new HttpClient(new HttpClientHandler { UseProxy = false }) { BaseAddress = new Uri(panelConnection.Url), Timeout = TimeSpan.FromSeconds(5) };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", panelConnection.Token);
+        using var snapshot = JsonDocument.Parse(await client.GetStringAsync("/api/settings/configuration", token));
+        if (!snapshot.RootElement.TryGetProperty("capabilities", out var capabilities) || !capabilities.TryGetProperty("asr", out var asr)) return false;
+        if (!asr.TryGetProperty("adapter", out var adapter) || adapter.GetString() != "sherpa" ||
+            (asr.TryGetProperty("enabled", out var enabled) && enabled.ValueKind == JsonValueKind.False)) return false;
+        return !asr.TryGetProperty("options", out var options) || !options.TryGetProperty("endpoint", out var endpoint) || string.IsNullOrWhiteSpace(endpoint.GetString());
+    }
 
     private async Task CheckAllUpdatesAsync(bool quiet = false)
     {
@@ -66,13 +80,17 @@ public partial class App
             string marker = Path.Combine(workspace, "updates", "napcat-installed-id.txt");
             string pair = File.Exists(marker) ? File.ReadAllText(marker).Trim() : File.Exists(pairPath) ? File.ReadAllText(pairPath).Trim() : "";
             bool napcatUpdate = pair != catalog.NapCat.Id;
+            string asrMarker = Path.Combine(AppContext.BaseDirectory, "runtime", "asr", "component-id.txt");
+            bool asrWanted = File.Exists(asrMarker) || await LocalASRSelectedAsync(checkDeadline.Token);
+            bool asrUpdate = catalog.ASR is not null && asrWanted && (!File.Exists(asrMarker) || File.ReadAllText(asrMarker).Trim() != catalog.ASR.Id);
             LatestRelease? code = await SignedLatest.FetchAsync(checkDeadline.Token);
             if (code is not null && code.Version != catalog.Version) throw new InvalidDataException("发布正在切换，请稍后重新检查更新。");
             bool codeUpdate = code is not null && code.ReleaseId != currentRelease.Manifest.ReleaseId;
-            if (!shell && !napcatUpdate && !codeUpdate) { if (!quiet) await ShowUpdatePromptAsync("已是最新版本", "外壳、QQ 组件和主体程序均已是最新版本。"); return; }
+            if (!shell && !napcatUpdate && !codeUpdate && !asrUpdate) { if (!quiet) await ShowUpdatePromptAsync("已是最新版本", "外壳、QQ 组件和主体程序均已是最新版本。"); return; }
             var names = new List<string>();
             if (shell) names.Add("外壳 " + catalog.Shell.Version);
             if (napcatUpdate) names.Add("NapCat / QQ 组件 " + catalog.NapCat.Version);
+            if (asrUpdate) names.Add("本地 ASR 组件 " + catalog.ASR!.Version);
             if (codeUpdate) names.Add("主体程序包 " + code!.Version);
             LiveLog.Write("update", "stdout", "Updates available: " + string.Join(", ", names));
             if (!await ShowUpdatePromptAsync("发现可用更新", "将按顺序更新：\n" + string.Join("\n", names) + "\n\n安装期间 Momoi 会重启，配置和数据将保留。", "安装并重启", "稍后再说")) return;
@@ -84,8 +102,9 @@ public partial class App
             // Stage and verify every download before replacing anything.
             string? shellArchive = shell ? await UpdateCatalog.DownloadAsync(catalog.Shell, directory, UpdateProgressView(), lifetime.Token) : null;
             string? napcatArchive = napcatUpdate ? await UpdateCatalog.DownloadAsync(catalog.NapCat, directory, UpdateProgressView(), lifetime.Token) : null;
+            string? asrArchive = asrUpdate ? await UpdateCatalog.DownloadAsync(catalog.ASR!, directory, UpdateProgressView(), lifetime.Token) : null;
             CodeRelease? staged = codeUpdate ? await releases.DownloadAsync(code!, lifetime.Token, UpdateProgressView()) : null;
-            var plan = new PendingUpdates(catalogPath, shellArchive, napcatArchive, staged?.Manifest.ReleaseId);
+            var plan = new PendingUpdates(catalogPath, shellArchive, napcatArchive, staged?.Manifest.ReleaseId, asrArchive);
             File.WriteAllText(UpdatePlanPath + ".tmp", JsonSerializer.Serialize(plan));
             File.Move(UpdatePlanPath + ".tmp", UpdatePlanPath, true);
         }
@@ -124,11 +143,13 @@ public partial class App
                 (Version.Parse(shellVersion) == Version.Parse(catalog.Shell.Version) && ShellIdentity() != catalog.Shell.Id));
             string marker = Path.Combine(workspace, "updates", "napcat-installed-id.txt");
             bool napcatPending = plan.NapCatArchive is not null && (!File.Exists(marker) || File.ReadAllText(marker).Trim() != catalog.NapCat.Id);
-            if (shellPending || napcatPending)
+            string asrMarker = Path.Combine(AppContext.BaseDirectory, "runtime", "asr", "component-id.txt");
+            bool asrPending = plan.ASRArchive is not null && catalog.ASR is not null && (!File.Exists(asrMarker) || File.ReadAllText(asrMarker).Trim() != catalog.ASR.Id);
+            if (shellPending || napcatPending || asrPending)
             {
                 ShowLoading("正在更新…");
-                loadingView?.SetDetail(shellPending ? "安装外壳中" : "安装 NapCat / QQ 组件中");
-                ComponentUpdateWorker.Launch(AppContext.BaseDirectory, shellPending ? plan.ShellArchive! : plan.NapCatArchive!, shellPending ? "shell-zip" : "napcat-installer", plan.Catalog);
+                loadingView?.SetDetail(shellPending ? "安装外壳中" : napcatPending ? "安装 NapCat / QQ 组件中" : "安装本地 ASR 组件中");
+                ComponentUpdateWorker.Launch(AppContext.BaseDirectory, shellPending ? plan.ShellArchive! : napcatPending ? plan.NapCatArchive! : plan.ASRArchive!, shellPending ? "shell-zip" : napcatPending ? "napcat-installer" : "asr-installer", plan.Catalog);
                 // Do not await ExitAsync here: it normally waits for updateTask itself.
                 updateTask = null;
                 _ = ExitAsync();

@@ -8,10 +8,10 @@ import tempfile
 
 import httpx
 from publish_cos import ORIGIN, upload, verify_remote
-from publish_catalog import artifact, sign
+from publish_catalog import artifact, sign, asr_artifact
 
 
-def publish(installer, napcat, runtime, version, online=None):
+def publish(installer, napcat, runtime, version, online=None, asr=None):
     if not re.fullmatch(r'\d+\.\d+\.\d+', version):
         raise ValueError('Invalid installer version')
     if installer.name != f'Momoi-Setup-{version}-x64.exe':
@@ -31,6 +31,8 @@ def publish(installer, napcat, runtime, version, online=None):
     payload = {'format_version': 1, 'version': version, 'runtime_id': runtime_id, 'qq_pair_id': pair['pair_id'],
                'core': artifact(installer, version, version + '-' + core_digest[:16], core_key, 'core-installer'),
                'napcat': artifact(napcat, pair['version'], pair['pair_id'], pair_key, 'napcat-installer')}
+    if asr is not None:
+        payload["asr"] = asr_artifact(asr)
     with tempfile.TemporaryDirectory() as temporary:
         catalog = Path(temporary) / 'install.json'
         catalog.write_text(json.dumps(sign(payload), indent=2) + '\n')
@@ -38,6 +40,9 @@ def publish(installer, napcat, runtime, version, online=None):
             for path, key in [(installer, core_key), (napcat, pair_key)]:
                 upload(path, key)
                 verify_remote(client, key, path)
+            if asr is not None:
+                upload(asr, "windows/components/" + asr.name)
+                verify_remote(client, "windows/components/" + asr.name, asr)
             if online:
                 if online.name != f'Momoi-Online-Setup-{version}-x64.exe':
                     raise ValueError('Online installer version/name mismatch')
@@ -60,5 +65,6 @@ if __name__ == '__main__':
     parser.add_argument('--runtime', required=True, type=Path)
     parser.add_argument('--version', required=True)
     parser.add_argument('--online', type=Path)
+    parser.add_argument("--asr", type=Path)
     args = parser.parse_args()
-    publish(args.installer, args.napcat, args.runtime, args.version, args.online)
+    publish(args.installer, args.napcat, args.runtime, args.version, args.online, args.asr)
