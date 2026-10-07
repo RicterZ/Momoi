@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using System.Diagnostics;
+using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -31,18 +34,32 @@ internal static class QQCallSettings
                 throw new InvalidDataException("语音电话认证文件损坏，请检查 data/qq-call/managed.json。");
         }
         else token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        var ports = new System.Collections.Generic.HashSet<int>();
+        var ports = new HashSet<int>();
+        var excluded = new List<(int Start, int End)>();
+        foreach (string family in new[] { "ipv4", "ipv6" })
+        {
+            var info = new ProcessStartInfo("netsh.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+            foreach (string argument in new[] { "interface", family, "show", "excludedportrange", "protocol=tcp" }) info.ArgumentList.Add(argument);
+            using var process = Process.Start(info) ?? throw new IOException("无法检查系统保留端口。");
+            var output = process.StandardOutput.ReadToEndAsync();
+            if (!process.WaitForExit(5000)) { process.Kill(); throw new IOException("系统保留端口检查超时，请重试。"); }
+            if (process.ExitCode != 0) throw new IOException("无法检查系统保留端口，请检查网络配置。");
+            foreach (Match match in Regex.Matches(output.GetAwaiter().GetResult(), @"(?m)^\s*(\d+)\s+(\d+)\s*\*?\s*$"))
+                excluded.Add((int.Parse(match.Groups[1].Value), int.Parse(match.Groups[2].Value)));
+        }
         int Allocate()
         {
-            int port;
-            do
+            for (int attempt = 0; attempt < 256; attempt++)
             {
-                var listener = new TcpListener(IPAddress.Loopback, 0);
-                listener.Start();
-                try { port = ((IPEndPoint)listener.LocalEndpoint).Port; }
+                int port = RandomNumberGenerator.GetInt32(49152, 65536);
+                if (ports.Contains(port) || excluded.Exists(range => port >= range.Start && port <= range.End)) continue;
+                var listener = new TcpListener(IPAddress.Loopback, port);
+                listener.Server.ExclusiveAddressUse = true;
+                try { listener.Start(); ports.Add(port); return port; }
+                catch (SocketException) { }
                 finally { listener.Stop(); }
-            } while (!ports.Add(port));
-            return port;
+            }
+            throw new IOException("无法分配语音服务端口，请检查系统网络限制。");
         }
         int mediaPort = Allocate(), nativePort = Allocate(), hostPort = Allocate();
         string tokenFile = Path.Combine(directory, "control.token");

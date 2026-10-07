@@ -16,7 +16,7 @@ internal sealed class QQCallHost : IAsyncDisposable
 {
     private readonly string workspace, app, bridge, data, token, tokenFile, nativeUrl, hostUrl, mediaUrl;
     private readonly CancellationTokenSource stop = new();
-    private readonly HttpClient http = new(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(2) };
+    private readonly HttpClient http = new(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(8) };
     private readonly List<Process> children = new();
     private readonly List<Task> readers = new();
     private readonly object logGate = new();
@@ -26,6 +26,7 @@ internal sealed class QQCallHost : IAsyncDisposable
     private string phase = "disabled", error = "";
     private DateTime nextAttempt;
     private bool loginRequested;
+    private int transientFailures;
     public QQCallHost(string workspace, string napcatEntry)
     {
         this.workspace = workspace;
@@ -94,6 +95,7 @@ internal sealed class QQCallHost : IAsyncDisposable
                                 loginRequested = relogin.IsSuccessStatusCode;
                             }
                             catch (HttpRequestException) { }
+                            catch (TaskCanceledException) when (!stop.IsCancellationRequested) { }
                         }
                         using var response = await http.GetAsync(mediaUrl + "/v1/status", stop.Token);
                         response.EnsureSuccessStatusCode();
@@ -103,14 +105,28 @@ internal sealed class QQCallHost : IAsyncDisposable
                         // Detect a lost AVSDK child even if the media endpoint is still alive.
                         using var host = await http.GetAsync(hostUrl + "/v1/status", stop.Token);
                         host.EnsureSuccessStatusCode();
+                        transientFailures = 0;
                     }
                 }
                 catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
                 catch (Exception failure)
                 {
-                    await StopChildrenAsync();
-                    Status("failed", failure.Message.Replace(token, "[redacted]"));
-                    nextAttempt = DateTime.UtcNow.AddSeconds(10);
+                    string directory = Path.Combine(data, "logs");
+                    Directory.CreateDirectory(directory);
+                    lock (logGate) File.AppendAllText(Path.Combine(directory, "service.log"),
+                        $"{DateTimeOffset.Now:O} {failure.GetType().Name}: {failure.Message.Replace(token, "[redacted]")}{Environment.NewLine}", Encoding.UTF8);
+                    bool transient = failure is HttpRequestException or TaskCanceledException;
+                    if (transient && job is not null && media is not null && !media.HasExited && ++transientFailures < 3)
+                    {
+                        Status("waiting", "语音服务暂未响应，正在重试连接…");
+                    }
+                    else
+                    {
+                        await StopChildrenAsync();
+                        transientFailures = 0;
+                        Status("failed", transient ? "语音服务连接失败，请查看 data/qq-call/logs 中的启动日志。" : failure.Message.Replace(token, "[redacted]"));
+                        nextAttempt = DateTime.UtcNow.AddSeconds(10);
+                    }
                 }
                 await Task.Delay(1000, stop.Token);
             }

@@ -1829,6 +1829,9 @@ function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) 
     finally { setTesting(false); }
   }
   function edit(key, next) { setTest(null); onChange({ ...value, [key]: next }); }
+  const serviceMessage = managed && status?.desktop_service
+    ? status.desktop_service.phase === "ready" ? "本机语音服务已就绪" : status.desktop_service.error || "语音服务未启动"
+    : null;
   return <section className={`settings-disclosure settings-qq-call${managed ? " is-managed" : ""}`}>
     <header className="settings-qq-call-heading">
       <strong>语音电话</strong>
@@ -1846,8 +1849,8 @@ function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) 
         <button type="button" className="quiet-button settings-button" disabled={disabled || testing} onClick={probe}>{testing ? "测试中…" : "测试连接"}</button>
       </div>
     </Fields>
-    {managed && status?.desktop_service && <p className="settings-channel-note" role="status">{status.desktop_service.phase === "ready" ? "本机语音服务已就绪" : status.desktop_service.error || "语音服务未启动"}</p>}
-    {test && <p className="settings-channel-note" role="status">{test}</p>}
+    {serviceMessage && <p className="settings-channel-note" role="status">{serviceMessage}</p>}
+    {test && test !== serviceMessage && <p className="settings-channel-note" role="status">{test}</p>}
     </div>}
   </section>;
 }
