@@ -13,6 +13,10 @@ on:
         description: "Verify downloading the pinned QQ components from COS instead of using the sibling EXE"
         type: boolean
         default: false
+      download_prerequisites:
+        description: "Force verifying the pinned VC++ download and installation path"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -75,7 +79,8 @@ jobs:
         run: |
           $Installer = (Get-ChildItem dist/windows/Momoi-Setup-*-x64.exe | Select-Object -First 1).FullName
           $DownloadQQ = '${{ inputs.download_qq }}' -eq 'true'
-          ./packaging/windows/smoke_install.ps1 -Installer $Installer -DownloadQQComponents:$DownloadQQ
+          $DownloadPrerequisites = '${{ inputs.download_prerequisites }}' -eq 'true'
+          ./packaging/windows/smoke_install.ps1 -Installer $Installer -DownloadQQComponents:$DownloadQQ -DownloadPrerequisites:$DownloadPrerequisites
       - uses: actions/upload-artifact@v4
         if: always()
         with:

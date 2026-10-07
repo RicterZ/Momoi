@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory = $true)][string]$Installer, [switch]$DownloadQQComponents)
+param([Parameter(Mandatory = $true)][string]$Installer, [switch]$DownloadQQComponents, [switch]$DownloadPrerequisites)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -8,7 +8,9 @@ $Evidence = Join-Path $Root 'dist/windows/install-test'
 New-Item -ItemType Directory -Path $Evidence -Force | Out-Null
 function Install-App {
     param([string]$Log)
-    $Setup = Start-Process -FilePath (Resolve-Path $Installer).Path -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$Target`"", "/LOG=`"$Log`"") -PassThru -Wait
+    $Extra = @()
+    if ($DownloadPrerequisites) { $Extra += '/forceprerequisites=1' }
+    $Setup = Start-Process -FilePath (Resolve-Path $Installer).Path -ArgumentList (@('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$Target`"", "/LOG=`"$Log`"") + $Extra) -PassThru -Wait
     if ($Setup.ExitCode -ne 0) { throw "Installer failed: $($Setup.ExitCode)" }
 }
 try {
@@ -26,6 +28,9 @@ try {
         }
     } else {
         Install-App (Join-Path $Evidence 'install.log')
+    }
+    foreach ($Removed in @('Lib/site-packages/pip', 'Lib/ensurepip', 'Lib/idlelib', 'Lib/pydoc_data')) {
+        if (Test-Path (Join-Path $Target ('runtime/python/' + $Removed))) { throw "Python developer tooling shipped: $Removed" }
     }
     $InstalledPair = (Get-Content (Join-Path $Target 'runtime/qq-pair/pair-id.txt') -Raw).Trim()
     if ($InstalledPair -ne $ComponentMetadata.pair_id) { throw 'Installed QQ pair differs from lock' }
