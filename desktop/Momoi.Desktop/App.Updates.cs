@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Threading;
 using System.Windows;
 using Momoi.Update;
 
@@ -34,12 +35,20 @@ public partial class App
 
     private async Task CheckAllUpdatesAsync(bool quiet = false)
     {
-        if (updateBusy || exiting || releases is null || currentRelease is null) return;
+        if (updateBusy)
+        {
+            if (!quiet) MessageBox.Show("正在检查或处理更新，请稍候。", "Momoi 更新");
+            return;
+        }
+        if (exiting || releases is null || currentRelease is null) return;
         updateBusy = true;
         try
         {
             SetUpdateMenus(false);
-            byte[] envelope = await UpdateCatalog.FetchEnvelopeAsync(lifetime.Token);
+            LiveLog.Write("update", "stdout", "Checking signed update catalog…");
+            using var checkDeadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            checkDeadline.CancelAfter(TimeSpan.FromSeconds(20));
+            byte[] envelope = await UpdateCatalog.FetchEnvelopeAsync(checkDeadline.Token);
             var catalog = UpdateCatalog.Verify(envelope, SignedLatest.EmbeddedPublicKey());
             string shellVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
             bool shell = Version.Parse(catalog.Shell.Version) > Version.Parse(shellVersion) ||
@@ -48,7 +57,7 @@ public partial class App
             string marker = Path.Combine(workspace, "updates", "napcat-installed-id.txt");
             string pair = File.Exists(marker) ? File.ReadAllText(marker).Trim() : File.Exists(pairPath) ? File.ReadAllText(pairPath).Trim() : "";
             bool napcatUpdate = pair != catalog.NapCat.Id;
-            LatestRelease? code = await SignedLatest.FetchAsync(lifetime.Token);
+            LatestRelease? code = await SignedLatest.FetchAsync(checkDeadline.Token);
             if (code is not null && code.Version != catalog.Version) throw new InvalidDataException("发布正在切换，请稍后重新检查更新。");
             bool codeUpdate = code is not null && code.ReleaseId != currentRelease.Manifest.ReleaseId;
             if (!shell && !napcatUpdate && !codeUpdate) { if (!quiet) MessageBox.Show("当前已是最新版本。", "Momoi 更新"); return; }
@@ -56,7 +65,13 @@ public partial class App
             if (shell) names.Add("外壳 " + catalog.Shell.Version);
             if (napcatUpdate) names.Add("NapCat / QQ 组件 " + catalog.NapCat.Version);
             if (codeUpdate) names.Add("主体程序包 " + code!.Version);
-            if (MessageBox.Show("将按以下顺序更新：\n" + string.Join("\n", names) + "\n\n更新时 Momoi 会重启；配置与数据保留。是否安装？", "Momoi 更新", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+            if (quiet)
+            {
+                LiveLog.Write("update", "stdout", "Updates available: " + string.Join(", ", names));
+                tray?.ShowBalloonTip(6000, "Momoi 有可用更新", "点击顶部「检查更新」下载安装。", System.Windows.Forms.ToolTipIcon.Info);
+                return;
+            }
+            if (MessageBox.Show(panel!, "将按以下顺序更新：\n" + string.Join("\n", names) + "\n\n更新时 Momoi 会重启；配置与数据保留。是否安装？", "Momoi 更新", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
             ShowLoading("正在更新…");
             string directory = Path.Combine(workspace, "updates", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
@@ -72,7 +87,8 @@ public partial class App
         }
         catch (Exception error)
         {
-            if (!exiting && !quiet) MessageBox.Show("检查或下载更新失败：" + error.Message, "Momoi 更新", MessageBoxButton.OK, MessageBoxImage.Error);
+            LiveLog.Write("update", "stderr", error.ToString());
+            if (!exiting && !quiet) MessageBox.Show(panel!, "检查或下载更新失败：" + (error is OperationCanceledException ? "请求超时，请检查网络后重试。" : error.Message), "Momoi 更新", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
         finally
@@ -86,8 +102,10 @@ public partial class App
 
     private void SetUpdateMenus(bool enabled)
     {
-        if (updateMenu is not null) updateMenu.Enabled = enabled;
-        if (windowUpdateMenu is not null) windowUpdateMenu.IsEnabled = enabled;
+        // Keep the command reachable while a background check is running.
+        string label = enabled ? "检查更新" : "正在检查 / 更新…";
+        if (updateMenu is not null) { updateMenu.Enabled = true; updateMenu.Text = label; }
+        if (windowUpdateMenu is not null) { windowUpdateMenu.IsEnabled = true; windowUpdateMenu.Header = label; }
     }
 
     private async Task ResumeUpdatesAsync()

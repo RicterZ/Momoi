@@ -372,8 +372,7 @@ public partial class App : Application
         if (updateBusy || exiting || releases is null || currentRelease is null || backend is null) return;
         updateBusy = true;
         bool installationRequested = false;
-        if (updateMenu is not null) updateMenu.Enabled = false;
-        if (windowUpdateMenu is not null) windowUpdateMenu.IsEnabled = false;
+        SetUpdateMenus(false);
         try
         {
             tray!.Text = "Momoi — 正在检查更新";
@@ -455,8 +454,7 @@ public partial class App : Application
             if (!exiting) ShowDashboard();
             switching = false;
             updateBusy = false;
-            if (updateMenu is not null) updateMenu.Enabled = true;
-            if (windowUpdateMenu is not null) windowUpdateMenu.IsEnabled = true;
+            SetUpdateMenus(true);
             if (tray is not null && !exiting) tray.Text = "Momoi";
         }
     }

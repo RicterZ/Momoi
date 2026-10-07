@@ -35,6 +35,9 @@ public static class SignedLatest
 
     public static async Task<LatestRelease> FetchAsync(CancellationToken cancellationToken)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(15));
+        cancellationToken = deadline.Token;
         if (!Uri.TryCreate(UpdateSource.LatestManifestUrl, UriKind.Absolute, out var uri) || uri.Scheme != "https")
             throw new InvalidOperationException("此构建尚未内置 COS 发布地址，需要在发布前补齐外壳地址常量。");
         using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(30) };

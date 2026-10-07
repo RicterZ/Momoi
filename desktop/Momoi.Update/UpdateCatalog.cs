@@ -45,7 +45,10 @@ public sealed record UpdateCatalog(
 
     public static async Task<byte[]> FetchEnvelopeAsync(CancellationToken token)
     {
-        using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(30) };
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(15));
+        token = deadline.Token;
+        using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(15) };
         using var response = await client.GetAsync(Url + "?t=" + DateTimeOffset.UtcNow.ToUnixTimeSeconds(), HttpCompletionOption.ResponseHeadersRead, token);
         response.EnsureSuccessStatusCode();
         using var stream = await response.Content.ReadAsStreamAsync(token);
