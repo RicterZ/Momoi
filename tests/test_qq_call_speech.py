@@ -74,3 +74,31 @@ def test_prefetch_failure_is_raised_in_playback_order():
                 assert False, 'Must surface synthesis failure'
 
     asyncio.run(scenario())
+
+
+def test_ready_bubble_pause_and_slow_bubble_no_extra_pause(monkeypatch):
+    async def scenario(wait_seconds):
+        clock = [0.0]
+        monkeypatch.setattr('momoi.qq_call.speech.monotonic', lambda: clock[0])
+        release = asyncio.Event()
+
+        class Provider:
+            async def stream_pcm(self, text):
+                if text == 'second':
+                    await release.wait()
+                yield b'\x01\x00' * 480
+
+        async with aclosing(bubble_pcm(Provider(), 'first\n\nsecond', pause_seconds=.25)) as stream:
+            first = await anext(stream)
+            clock[0] = .02 + wait_seconds
+            release.set()
+            rest = [chunk async for chunk in stream]
+        assert first == b'\x01\x00' * 480
+        if wait_seconds >= .25:
+            assert rest == [b'\x01\x00' * 480]
+        else:
+            assert rest[-1] == b'\x01\x00' * 480
+            assert rest[0] == bytes(round((.25 - wait_seconds) * 24000) * 2)
+
+    for wait in (0, .1, .25, .4):
+        asyncio.run(scenario(wait))

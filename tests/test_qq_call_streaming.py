@@ -156,7 +156,11 @@ def test_channel_sends_bubbles_as_one_ordered_playback_stream():
             channel.status = {'phase': 'connected'}
             await channel.send_call_stream(Provider(), 'first\n\nsecond', channel.routing_context(), 'one')
         assert calls == ['first', 'second']
-        assert uploads == [b'\x01\x00' * 480 + b'\x02\x00' * 480]
+        assert len(uploads) == 1
+        assert uploads[0].startswith(b'\x01\x00' * 480)
+        assert uploads[0].endswith(b'\x02\x00' * 480)
+        silence = uploads[0][960:-960]
+        assert 10000 <= len(silence) <= 12000 and not any(silence)
 
     asyncio.run(scenario())
 
