@@ -49,7 +49,7 @@ class Segmenter:
             self.frames.append(frame)
             self.voiced += int(voice)
         self.silence = 0 if voice else self.silence + 1
-        if self.silence >= 35 or len(self.frames) >= 750:
+        if self.silence >= 50 or len(self.frames) >= 750:
             result = b''.join(self.frames) if self.voiced >= 6 else None
             self.reset()
             return started, result

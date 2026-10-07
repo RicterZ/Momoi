@@ -22,8 +22,9 @@ def test_segment_retains_preroll_and_finishes_after_silence():
     starts = [vad.feed(VOICE)[0] for _ in range(8)]
     assert starts.count(True) == 1
     result = None
-    for _ in range(35):
-        _, result = vad.feed(SILENCE)
+    for _ in range(49):
+        assert vad.feed(SILENCE)[1] is None
+    _, result = vad.feed(SILENCE)
     assert result and VOICE in result
     with wave.open(io.BytesIO(wav_bytes(result))) as wav:
         assert (wav.getframerate(), wav.getnchannels(), wav.getsampwidth()) == (16000, 1, 2)
@@ -299,7 +300,7 @@ def test_speech_detection_only_queues_audio_until_recognition():
         class Socket:
             def __aiter__(self):
                 async def messages():
-                    for frame in [VOICE] * 8 + [SILENCE] * 35:
+                    for frame in [VOICE] * 8 + [SILENCE] * 50:
                         yield WSMessage(WSMsgType.BINARY, frame, '')
                 return messages()
         interruptions = []
