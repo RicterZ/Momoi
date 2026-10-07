@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS events (
     payload_json TEXT NOT NULL DEFAULT '',
     processed INTEGER NOT NULL DEFAULT 0 CHECK (processed IN (0, 1))
 );
+CREATE INDEX IF NOT EXISTS events_native_message ON events(kind, message_id);
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     turn_id TEXT NOT NULL DEFAULT '',

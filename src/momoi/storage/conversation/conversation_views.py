@@ -440,4 +440,9 @@ class ConversationViewStore:
                 size = sum(estimate_tokens(str(item["content"])) for item in group)
             selected.append(group)
             used += size
-        return [item for group in reversed(selected) for item in group]
+        result = [item for group in reversed(selected) for item in group]
+        for item in result:
+            targets = self.message_quote_targets(item["id"])
+            if targets:
+                item["quote_targets"] = targets
+        return result

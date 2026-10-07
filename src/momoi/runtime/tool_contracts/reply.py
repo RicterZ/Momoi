@@ -23,7 +23,7 @@ REPLY_TOOL_SPEC = {
             "mode": {"type": "string", "enum": ["text", "voice"], "default": "text",
                      "description": "发送形式：text 为文字气泡，voice 为语音；可用能力见工具描述。"},
             "reply_to_message_id": {"type": "string", "minLength": 1,
-                "description": "可选，仅 QQ 文字回应：需要突出回应当前批次中的某条消息时，填写其 message_id；普通回应省略。只引用第一个文字气泡，不引用整批消息。"},
+                "description": "可选，仅 QQ 文字回应：需要突出回应某条消息时，填写当前输入或 recall、episode_read 原文 quote_targets 中的 QQ message_id（不是数据库记录 id）；普通回应省略。支持历史原文，只引用第一个文字气泡。"},
             "attachments": {
                 "type": "array", "minItems": 1,
                 "description": "随文字回应发送的媒体或附件，原样交给发送层；不放普通发言文本，仅用于 mode=text。",

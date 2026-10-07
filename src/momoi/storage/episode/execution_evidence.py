@@ -233,7 +233,8 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
             remaining -= max(1, len(calls))
             selected.append((sequence, value))
         item = {'id': turn['id'], 'time': turn['time']}
-        msgs = [{'role': 'owner' if m['role'] == 'user' else m['role'], 'text': clip(m['content'])}
+        msgs = [{'role': 'owner' if m['role'] == 'user' else m['role'], 'text': clip(m['content']),
+                 **({'quote_targets': targets} if (targets := store.message_quote_targets(m.get('id'))) else {})}
                 for m in selected_messages if str(m['turn_id']) == turn['id']][:3]
         if msgs:
             item['messages'] = msgs

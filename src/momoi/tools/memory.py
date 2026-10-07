@@ -340,7 +340,7 @@ class MemoryTools:
                                 "delivery_state",
                                 "timestamp",
                             )
-                        }
+                        } | ({"quote_targets": match["quote_targets"]} if match.get("quote_targets") else {})
                         for match in episode.get("matches", [])
                         if isinstance(match, dict)
                     ],

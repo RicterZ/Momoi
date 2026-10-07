@@ -286,6 +286,10 @@ class EpisodeQueryStore:
                 | {"content": truncate_tokens(match.content, 500)}
                 for match in hit.matches
             ]
+            for match in episode["matches"]:
+                targets = self.message_quote_targets(match["id"])
+                if targets:
+                    match["quote_targets"] = targets
             episode["execution_evidence"] = execution_turns(
                 self, hit.episode_id, hit.matched_keywords, limit=1, tool_limit=1,
                 after=after, before=before)
@@ -360,6 +364,9 @@ class EpisodeQueryStore:
             row.update(content=content[start:end], original_chars=len(content),
                        excerpt_start=start, excerpt_end=end,
                        timestamp=self.context_timestamp(row["created_at"]))
+            targets = self.message_quote_targets(row["id"])
+            if targets:
+                row["quote_targets"] = targets
             matches.append(row)
         return {"matches": matches, "matched_message_count": len(hits),
                 "matched_message_chars": sum(len(row["content"]) for row, _ in hits)}
@@ -470,6 +477,7 @@ class EpisodeQueryStore:
                     "delivery_state",
                 )
             },
+            **({"quote_targets": targets} if (targets := self.message_quote_targets(row["id"])) else {}),
             "timestamp": self.context_timestamp(row["created_at"]),
             "content": content,
             "content_offset": content_offset,

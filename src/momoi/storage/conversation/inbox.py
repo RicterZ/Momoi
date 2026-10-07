@@ -48,6 +48,42 @@ class InboxStore:
              "target": notice.target},
         )
 
+    def qq_quote_target_available(self, message_id: str) -> bool:
+        """Only received private-chat messages with preserved native IDs are quotable."""
+        known = self._db.execute(
+            "SELECT 1 FROM events WHERE kind='napcat.message' AND message_id=? LIMIT 1",
+            (message_id,),
+        ).fetchone()
+        if not known:
+            known = self._db.execute(
+                """SELECT 1 FROM outbox WHERE target_channel='napcat' AND state='sent'
+                   AND CAST(json_extract(payload_json, '$._delivery_receipt.message_id') AS TEXT)=? LIMIT 1""",
+                (message_id,),
+            ).fetchone()
+        return bool(known) and not self.message_recall_recorded("napcat", message_id)
+
+    def message_quote_targets(self, message_id: int) -> list[dict[str, str]]:
+        """Resolve each original input behind a possibly merged dialogue row."""
+        rows = self._db.execute(
+            """SELECT DISTINCT e.id, e.message_id, e.content, e.received_at
+               FROM messages m JOIN json_each(m.source_event_ids_json) source
+               JOIN events e ON e.id=source.value
+               WHERE m.id=? AND m.role='user' AND e.kind='napcat.message'
+               ORDER BY e.received_at, e.id""", (message_id,),
+        ).fetchall()
+        from ..episode.execution_evidence import clip
+        own = self._db.execute(
+            """SELECT m.content, json_extract(o.payload_json, '$._delivery_receipt.message_id') native_id
+               FROM messages m JOIN outbox o ON o.id=m.outbox_id
+               WHERE m.id=? AND m.role='assistant' AND o.target_channel='napcat' AND o.state='sent'""",
+            (message_id,),
+        ).fetchone()
+        if own and own["native_id"] and not self.message_recall_recorded("napcat", str(own["native_id"])):
+            return [{"channel": "napcat", "message_id": str(own["native_id"]), "text": clip(own["content"])}]
+        return [{"channel": "napcat", "message_id": row["message_id"],
+                 "text": clip(row["content"])}
+                for row in rows if row["message_id"] and not self.message_recalled("napcat", row["message_id"])]
+
     def message_recall_recorded(self, channel: str, message_id: str) -> bool:
         return self._db.execute("SELECT 1 FROM events WHERE kind=? AND message_id=? LIMIT 1",
                                 (f"{channel}.recall", message_id)).fetchone() is not None

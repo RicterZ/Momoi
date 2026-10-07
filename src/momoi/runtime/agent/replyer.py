@@ -37,11 +37,13 @@ class Replyer:
         if quote_id is not None:
             if mode != "text" or request.delivery_channel.name != "napcat":
                 raise ValueError("quote replies require QQ text mode")
-            if not any(event.message_id == quote_id and event.channel == "napcat"
+            current_target = any(event.message_id == quote_id and event.channel == "napcat"
                        and not event.delivery_context.get("channel_notice")
                        and request.delivery_channel.message_current(event)
-                       for event in request.current_events):
-                raise ValueError("quote target must be a current, unrecalled QQ message")
+                       for event in request.current_events)
+            historical_target = getattr(request.delivery_channel, "is_quote_target", lambda _: False)(quote_id)
+            if not (current_target or historical_target):
+                raise ValueError("quote target must be a known, unrecalled QQ message")
         emotions = self.store.emotion_context()
         if emotions.strip():
             system += "\n\n<emotion_catalog>\n" + emotions + "\n</emotion_catalog>\n" + EMOTION_REACTION_POLICY

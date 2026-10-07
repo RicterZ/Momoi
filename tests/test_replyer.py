@@ -357,6 +357,9 @@ def test_optional_qq_quote_targets_selected_message_and_keeps_other_bubbles_plai
                                    {'type': 'text', 'data': {'text': '重点回应'}}]}, '后续补充']
     with pytest.raises(ValueError, match='quote target'):
         asyncio.run(replyer.generate(ToolCall('bad', 'reply', {**args, 'reply_to_message_id': '999'}), request))
+    channel.is_quote_target = lambda message_id: message_id == '777'
+    old = asyncio.run(replyer.generate(ToolCall('historical', 'reply', {**args, 'reply_to_message_id': '777'}), request))
+    assert old[0]['segments'][0] == {'type': 'reply', 'data': {'id': '777'}}
     channel.is_message_recalled = lambda channel, message_id: message_id == '101'
     with pytest.raises(ValueError, match='quote target'):
         asyncio.run(replyer.generate(ToolCall('recalled', 'reply', args), request))

@@ -220,3 +220,36 @@ def test_result_has_whole_object_budget_and_keeps_outcome_and_reference(tmp_path
     assert '[...truncated...]' in reduced['content']
     assert json.loads(store.turn_exchanges(['t'])['t'][0]['results'][0]['content']) == result
     store.close()
+
+
+def test_old_batched_qq_evidence_retains_native_quote_targets_without_new_column(tmp_path):
+    from momoi.models import IncomingMessage, AgentReply, MessageRecalled
+    path = tmp_path / 'quotes.sqlite3'
+    store = Store(path)
+    events = [IncomingMessage('old-one', '101', 'synthetic alpha', 1, 1, channel='napcat'),
+              IncomingMessage('old-two', '102', 'synthetic beta', 2, 2, channel='napcat')]
+    for event in events:
+        store.add_event(event)
+    store.commit_turn(events, 'synthetic alpha\nsynthetic beta', AgentReply([]), turn_id='old-turn')
+    setup(store, 'old-turn')
+    identifier = store._db.execute("SELECT id FROM messages WHERE turn_id='old-turn' AND role='user'").fetchone()[0]
+    store.close()
+    store = Store(path)
+    try:
+        expected = [{'channel': 'napcat', 'message_id': '101', 'text': 'synthetic alpha'},
+                    {'channel': 'napcat', 'message_id': '102', 'text': 'synthetic beta'}]
+        assert store.qq_quote_target_available('101')
+        assert not store.qq_quote_target_available('unknown')
+        assert store.message_quote_targets(identifier) == expected
+        assert store.conversation_message('e', identifier)['quote_targets'] == expected
+        assert store.episode_messages('e', 1000)[0]['quote_targets'] == expected
+        hits = store.episode_keyword_evidence('e', ['alpha'])
+        assert hits['matches'][0]['quote_targets'] == expected
+        records = episode_recall_records(store, [{'episode_id': 'e', 'matched_keywords': ['alpha'],
+            'matches': [{'id': identifier, 'turn_id': 'old-turn', 'role': 'user', 'content': 'synthetic alpha'}]}], 3000)
+        assert records[0]['turns'][0]['messages'][0]['quote_targets'] == expected
+        store.record_message_recall(MessageRecalled('recall-old', '101', 3, 'napcat'))
+        assert not store.qq_quote_target_available('101')
+        assert store.message_quote_targets(identifier) == expected[1:]
+    finally:
+        store.close()
