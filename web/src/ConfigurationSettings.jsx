@@ -1866,7 +1866,6 @@ function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) 
     {value.enabled && <div className="settings-disclosure-body">
     {managed && <p className="settings-channel-note settings-qq-call-managed-note">连接地址和认证信息由桌面程序自动管理，无需填写。</p>}
     <Fields as="div" disabled={disabled}>
-      {managed && <p className="settings-channel-note">输入与输出设备请在桌面顶部的「音频 → 音频设备」中设置。</p>}
       {!managed && <div className="settings-qq-call-connection-row">
       <OptionField name="bridge_url" spec={{ type: "string", label: "Bridge 地址", default: "" }} value={value.bridge_url} onChange={v => edit("bridge_url", v)} />
       <OptionField name="bridge_token" spec={{ type: "string", label: "认证 Token", secret: true }} value={value.bridge_token} onChange={v => edit("bridge_token", v)} />
