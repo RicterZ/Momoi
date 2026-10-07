@@ -160,7 +160,7 @@ def test_channel_sends_bubbles_as_one_ordered_playback_stream():
         assert uploads[0].startswith(b'\x01\x00' * 480)
         assert uploads[0].endswith(b'\x02\x00' * 480)
         silence = uploads[0][960:-960]
-        assert 10000 <= len(silence) <= 12000 and not any(silence)
+        assert 22000 <= len(silence) <= 24000 and not any(silence)
 
     asyncio.run(scenario())
 

@@ -195,7 +195,7 @@ class QQCallChannel:
             nonlocal first_ms, synthesis_error
             from contextlib import aclosing
             try:
-                async with aclosing(bubble_pcm(provider, text, pause_seconds=.25, paced=True)) as stream:
+                async with aclosing(bubble_pcm(provider, text, pause_seconds=.5, paced=True)) as stream:
                     async for chunk in stream:
                         if not self.context_valid(context):
                             raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
