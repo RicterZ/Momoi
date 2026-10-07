@@ -2,7 +2,7 @@ import json
 import sqlite3
 import time
 
-from ...models import IncomingMessage, MessageRecalled
+from ...models import IncomingMessage, MessageRecalled, MessagePoked
 from ..episode.episode_sql import runtime_archive_kind_sql
 from ..core.integrity import decode_stored_json
 from ..core.turn_workflow import turn_workflow_kind_sql
@@ -10,6 +10,43 @@ from ..core.turn_workflow import turn_workflow_kind_sql
 
 class InboxStore:
     """Owner event ingestion, pending inbox, and reply-wait cancellation."""
+
+    def _record_channel_notice(self, event_id, message_id, channel, occurred_at, text, payload):
+        now = time.time()
+        with self._db:
+            cursor = self._db.execute(
+                """INSERT OR IGNORE INTO events
+                   (id, message_id, kind, content, occurred_at, received_at, payload_json, processed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+                (event_id, message_id, f"{channel}.{payload['notice_type']}", text,
+                 occurred_at, now, json.dumps(payload)),
+            )
+            if cursor.rowcount == 0:
+                return None
+            self._archive_channel_notice(event_id, text, now)
+        return IncomingMessage(event_id, message_id, text, occurred_at, now, channel=channel,
+                               delivery_context={"channel_notice": payload['notice_type']})
+
+    def _archive_channel_notice(self, event_id, text, received_at):
+        self.begin_turn(event_id, "channel_event", [event_id])
+        self._db.execute(
+            """INSERT INTO messages (turn_id, role, content, created_at, source_event_ids_json)
+               VALUES (?, 'event', ?, ?, ?)""", (event_id, text, received_at, json.dumps([event_id])),
+        )
+        self.complete_background_turn(event_id)
+
+    def record_message_poke(self, notice: MessagePoked) -> IncomingMessage | None:
+        names = {"owner": "用户", "assistant": "机器人"}
+        if notice.author not in names or notice.target not in names:
+            raise ValueError("invalid poke participant")
+        subject = names[notice.author]
+        target = "自己" if notice.author == notice.target else names[notice.target]
+        text = f"【QQ 戳一戳】\n{subject}戳了{target}一下。"
+        return self._record_channel_notice(
+            notice.event_id, notice.event_id, notice.channel, notice.occurred_at, text,
+            {"channel": notice.channel, "notice_type": "poke", "author": notice.author,
+             "target": notice.target},
+        )
 
     def message_recall_recorded(self, channel: str, message_id: str) -> bool:
         return self._db.execute("SELECT 1 FROM events WHERE kind=? AND message_id=? LIMIT 1",
@@ -50,13 +87,7 @@ class InboxStore:
             if notice.author == "owner":
                 self._db.execute("UPDATE events SET processed=1 WHERE kind=? AND message_id=?",
                                  (f"{notice.channel}.message", notice.message_id))
-            self.begin_turn(notice.event_id, "channel_event", [notice.event_id])
-            self._db.execute(
-                """INSERT INTO messages (turn_id, role, content, created_at, source_event_ids_json)
-                   VALUES (?, 'event', ?, ?, ?)""",
-                (notice.event_id, text, now, json.dumps([notice.event_id])),
-            )
-            self.complete_background_turn(notice.event_id)
+            self._archive_channel_notice(notice.event_id, text, now)
         return IncomingMessage(notice.event_id, notice.message_id, text, notice.occurred_at, now,
                                channel=notice.channel, delivery_context={"channel_notice": "message_recall"})
 

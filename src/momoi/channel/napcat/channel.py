@@ -20,7 +20,7 @@ from .. import (
     SendRejected,
 )
 from ...observability.events import log_event
-from ...models import IncomingMessage, OwnerInputStatus, MessageRecalled
+from ...models import IncomingMessage, OwnerInputStatus, MessageRecalled, MessagePoked
 from .favorites import FavoriteStickers
 from .config import NapCatConfig
 from .parsing import (
@@ -67,6 +67,9 @@ class NapCatChannel:
         if self.favorites is not None:
             self.favorites.notify()
 
+    async def poke_owner(self):
+        await self._request_action('friend_poke', {'user_id': self.config.owner_qq})
+
     async def recall_message(self, message_id: str):
         await self._request_action('delete_msg', {'message_id': int(message_id)})
 
@@ -88,7 +91,7 @@ class NapCatChannel:
 
     async def run(
         self,
-        on_event: Callable[[IncomingMessage | OwnerInputStatus | MessageRecalled], Awaitable[None]],
+        on_event: Callable[[IncomingMessage | OwnerInputStatus | MessageRecalled | MessagePoked], Awaitable[None]],
         stop: asyncio.Event,
     ) -> None:
         timeout = aiohttp.ClientTimeout(total=None, connect=20)
@@ -206,8 +209,25 @@ class NapCatChannel:
     async def _handle_payload(
         self,
         payload: dict[str, Any],
-        on_event: Callable[[IncomingMessage | OwnerInputStatus | MessageRecalled], Awaitable[None]],
+        on_event: Callable[[IncomingMessage | OwnerInputStatus | MessageRecalled | MessagePoked], Awaitable[None]],
     ) -> None:
+        if (payload.get("post_type") == "notice" and payload.get("notice_type") == "notify"
+                and payload.get("sub_type") == "poke"):
+            if payload.get("group_id"):
+                return
+            bot_id = self.config.bot_qq or str(payload.get("self_id", ""))
+            sender = str(payload.get("sender_id", payload.get("user_id", "")))
+            target = str(payload.get("target_id", ""))
+            peers = {self.config.owner_qq, bot_id}
+            if not bot_id or sender not in peers or target not in peers:
+                return
+            await on_event(MessagePoked(
+                f"napcat:{bot_id}:poke:{uuid.uuid4().hex}",
+                float(payload.get("time") or time.time()), self.name,
+                "owner" if sender == self.config.owner_qq else "assistant",
+                "owner" if target == self.config.owner_qq else "assistant",
+            ))
+            return
         if payload.get("post_type") == "notice" and payload.get("notice_type") == "friend_recall":
             user_id = str(payload.get("user_id", ""))
             bot_id = self.config.bot_qq or str(payload.get("self_id", ""))

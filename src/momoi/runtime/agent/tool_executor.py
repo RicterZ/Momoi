@@ -77,6 +77,7 @@ class ToolExecutor:
             "goal_review",
             "qq_call_status",
             "qq_recall_message",
+            "qq_poke",
             "plan_create", "plan_submit", "plan_start", "plan_get", "plan_update", "plan_cancel", "plan_resume",
         }:
             return "runtime"

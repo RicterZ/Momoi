@@ -303,7 +303,12 @@ class TranscriptStore:
                        m.delivery_state,
                        CASE WHEN m.role='event'
                             THEN CASE WHEN t.workflow_kind='channel_event'
-                                      THEN 'napcat:message_recall'
+                                      THEN COALESCE((
+                                          SELECT json_extract(e.payload_json, '$.channel') || ':' ||
+                                                 json_extract(e.payload_json, '$.notice_type')
+                                          FROM json_each(m.source_event_ids_json) src
+                                          JOIN events e ON e.id=src.value LIMIT 1
+                                      ), 'channel:notice')
                                       ELSE 'webhook:' || COALESCE(wr.workflow_id, 'unknown') END
                             ELSE '' END AS event_source
                 FROM messages AS m

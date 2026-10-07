@@ -25,7 +25,7 @@ from ..tool_contracts.plan import PLAN_TOOLS, PLAN_STEP_FINISH
 from .progress import public_tool_spec
 from ..tool_contracts.reply import REPLY_TOOL_SPEC
 from ..tool_contracts.qq_call import QQ_CALL_STATUS_SPEC
-from ..tool_contracts.qq_message import QQ_RECALL_MESSAGE_SPEC
+from ..tool_contracts.qq_message import QQ_RECALL_MESSAGE_SPEC, QQ_POKE_SPEC
 
 logger = logging.getLogger("momoi.runtime.turns")
 
@@ -36,7 +36,7 @@ DEFERRED_TOOLS = frozenset({
 BUILTIN_GROUP_DESCRIPTIONS = {
     "builtin_history": "查询记忆、历史话题与关联话题，查看过去的思考记录。",
     "builtin_files": "写入、修改、移动、删除文件和创建目录。",
-    "builtin_qq_messages": "撤回机器人已经发送到 QQ 私聊的消息。",
+    "builtin_qq_messages": "QQ 私聊互动：戳一戳用户、撤回机器人已发送的消息。",
     "builtin_calls": "查询 QQ 语音电话的当前状态和基础服务是否就绪。",
 }
 
@@ -81,7 +81,7 @@ class ToolSurface:
             spec for spec in self.builtin_specs if spec["name"] in DEFERRED_TOOLS
         ])
         if "napcat" in self.channel_names:
-            groups["builtin_qq_messages"] = self.public_specs([QQ_RECALL_MESSAGE_SPEC])
+            groups["builtin_qq_messages"] = self.public_specs([QQ_RECALL_MESSAGE_SPEC, QQ_POKE_SPEC])
         if "qq_call" in self.channel_names:
             groups["builtin_calls"] = self.public_specs([QQ_CALL_STATUS_SPEC])
         return groups

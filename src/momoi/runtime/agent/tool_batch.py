@@ -442,6 +442,21 @@ class ToolBatchExecutor:
                     except Exception as error:
                         logger.exception("reply_generation_failed")
                         result = {"ok": False, "error": "reply_generation_failed", "message": type(error).__name__}
+            elif call.name == "qq_poke":
+                result = self.store.begin_tool_call(request.turn_id, call.id, call.name,
+                                                    call.arguments, "external_effect")
+                if result is None:
+                    try:
+                        if request.delivery_channel.name != "napcat":
+                            raise ValueError("此工具仅适用于当前 QQ 私聊")
+                        await request.delivery_channel.poke_owner()
+                        result = {"ok": True, "poked": True, "target": "user"}
+                        external_effect = True
+                    except Exception as error:
+                        result = {"ok": False, "error": "qq_poke_failed", "message": str(error)}
+                    self.store.complete_tool_call(request.turn_id, call.id, result)
+                if result.get("ok"):
+                    visible = True
             elif call.name == "qq_recall_message":
                 result = self.store.begin_tool_call(request.turn_id, call.id, call.name,
                                                     call.arguments, "external_effect")

@@ -215,3 +215,57 @@ def test_old_database_migrates_channel_events_without_losing_turns(tmp_path):
         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
     finally:
         db.close()
+
+
+def test_private_poke_filters_group_and_unrelated_participants_and_keeps_direction():
+    from momoi.models import MessagePoked
+    async def scenario():
+        item = channel()
+        receive = AsyncMock()
+        base = {'post_type': 'notice', 'notice_type': 'notify', 'sub_type': 'poke',
+                'self_id': 30000, 'user_id': 20000, 'sender_id': 20000, 'target_id': 30000, 'time': 10}
+        for extra in ({'group_id': 50000}, {'sender_id': 40000}, {'target_id': 40000}):
+            await item._handle_payload({**base, **extra}, receive)
+        receive.assert_not_awaited()
+        await item._handle_payload(base, receive)
+        first = receive.await_args.args[0]
+        assert isinstance(first, MessagePoked)
+        assert (first.author, first.target) == ('owner', 'assistant')
+        await item._handle_payload(base, receive)
+        assert receive.await_args.args[0].event_id != first.event_id
+        # user_id is the private-chat peer, not the actual sender.
+        await item._handle_payload({**base, 'sender_id': 30000, 'target_id': 20000}, receive)
+        echo = receive.await_args.args[0]
+        assert (echo.author, echo.target) == ('assistant', 'owner')
+    asyncio.run(scenario())
+
+
+def test_poke_is_archived_and_rendered_as_event_without_forcing_a_reply(tmp_path):
+    from momoi.models import MessagePoked
+    store = Store(tmp_path / 'store.sqlite3', workspace=tmp_path)
+    try:
+        notice = MessagePoked('poke-1', 3, 'napcat', 'owner', 'assistant')
+        update = store.record_message_poke(notice)
+        assert update.text == '【QQ 戳一戳】\n用户戳了机器人一下。'
+        assert store.record_message_poke(notice) is None
+        blocks = owner_content_blocks([update], lambda _: [], ZoneInfo('UTC'))
+        text = ''.join(b['text'] for b in blocks)
+        assert '<event source="napcat:poke">' in text
+        assert '<message ' not in text
+        rows = store.recent_conversation_messages(10, 10000)
+        assert len(rows) == 1 and rows[0]['role'] == 'event'
+        assert rows[0]['event_source'] == 'napcat:poke'
+        assert store.pending_events() == []
+        self_poke = store.record_message_poke(MessagePoked('poke-2', 4, 'napcat', 'owner', 'owner'))
+        assert self_poke.text == '【QQ 戳一戳】\n用户戳了自己一下。'
+    finally:
+        store.close()
+
+
+def test_active_poke_calls_private_api_with_configured_owner_only():
+    async def scenario():
+        item = channel()
+        item._request_action = AsyncMock(return_value={'status': 'ok', 'retcode': 0})
+        await item.poke_owner()
+        item._request_action.assert_awaited_once_with('friend_poke', {'user_id': '20000'})
+    asyncio.run(scenario())
