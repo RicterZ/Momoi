@@ -9,6 +9,10 @@ on:
         description: "Reuse an existing Windows installer artifact for installation diagnostics"
         default: ""
         required: false
+      download_qq:
+        description: "Verify downloading the pinned QQ components from COS instead of using the sibling EXE"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -70,7 +74,8 @@ jobs:
         shell: pwsh
         run: |
           $Installer = (Get-ChildItem dist/windows/Momoi-Setup-*-x64.exe | Select-Object -First 1).FullName
-          ./packaging/windows/smoke_install.ps1 -Installer $Installer
+          $DownloadQQ = '${{ inputs.download_qq }}' -eq 'true'
+          ./packaging/windows/smoke_install.ps1 -Installer $Installer -DownloadQQComponents:$DownloadQQ
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory = $true)][string]$Installer)
+param([Parameter(Mandatory = $true)][string]$Installer, [switch]$DownloadQQComponents)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -16,7 +16,17 @@ try {
     if ($ComponentPackages.Count -ne 1) { throw 'Expected one frozen QQ component package beside main installer' }
     $ComponentMetadata = Get-Content ([IO.Path]::ChangeExtension($ComponentPackages[0].FullName, '.json')) -Raw | ConvertFrom-Json
     if ((Get-FileHash $ComponentPackages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ComponentMetadata.sha256) { throw 'Component artifact hash mismatch' }
-    Install-App (Join-Path $Evidence 'install.log')
+    if ($DownloadQQComponents) {
+        $DownloadHiddenPackage = $ComponentPackages[0].FullName + '.download-check'
+        Move-Item $ComponentPackages[0].FullName $DownloadHiddenPackage
+        try {
+            Install-App (Join-Path $Evidence 'install.log')
+        } finally {
+            Move-Item $DownloadHiddenPackage $ComponentPackages[0].FullName
+        }
+    } else {
+        Install-App (Join-Path $Evidence 'install.log')
+    }
     $InstalledPair = (Get-Content (Join-Path $Target 'runtime/qq-pair/pair-id.txt') -Raw).Trim()
     if ($InstalledPair -ne $ComponentMetadata.pair_id) { throw 'Installed QQ pair differs from lock' }
     # Record logical file sizes before startup creates user data and caches.

@@ -78,7 +78,9 @@ begin
   if LoadStringFromFile(ExpandConstant('{app}\runtime\qq-pair\pair-id.txt'), Marker) then
     if (Trim(Marker) = '{#QQPairId}') and
        FileExists(ExpandConstant('{app}\runtime\napcat\wrapper.node')) and
-       FileExists(ExpandConstant('{app}\runtime\qq-call\qq\Files\QQ.exe')) then exit;
+       FileExists(ExpandConstant('{app}\runtime\qq-call\qq\Files\QQ.exe')) and
+       FileExists(ExpandConstant('{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\QQNT.dll')) and
+       FileExists(ExpandConstant('{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\avsdk\AVSDKPlugin.dll')) then exit;
   try
     PackagePath := ExpandConstant('{src}\{#QQPackageName}');
     if not FileExists(PackagePath) then begin
