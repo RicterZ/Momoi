@@ -67,17 +67,18 @@ class TurnCommitStore:
                 raw_text,
                 keep_open=reply.should_schedule_reply_wait,
             )
-            self._db.execute(
-                """INSERT INTO messages
-                   (turn_id, role, content, created_at, source_event_ids_json)
-                   VALUES (?, 'user', ?, ?, ?)""",
-                (
-                    turn_id,
-                    user_text,
-                    user_created_at,
-                    source_json,
-                ),
-            )
+            if user_text.strip():
+                self._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json)
+                       VALUES (?, 'user', ?, ?, ?)""",
+                    (
+                        turn_id,
+                        user_text,
+                        user_created_at,
+                        source_json,
+                    ),
+                )
             self._archive_progress_messages(turn_id, source_json)
             for index, (assistant_text, kind, path, payload) in enumerate(
                 normalized_messages

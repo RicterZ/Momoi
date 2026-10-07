@@ -144,6 +144,9 @@ def test_recall_is_durable_event_without_rewriting_owner_text(tmp_path):
         assert rows[-1]['role'] == 'event'
         assert rows[-1]['event_source'] == 'napcat:message_recall'
         assert 'synthetic request' not in rows[-1]['content']
+        assert '用户撤回了消息' in rows[-1]['content']
+        assert '老师' not in rows[-1]['content']
+        assert '无需回复' not in rows[-1]['content']
         assert store.pending_events() == []
         blocks = owner_content_blocks([update], lambda _: [], ZoneInfo('UTC'))
         text = ''.join(block['text'] for block in blocks)

@@ -35,11 +35,10 @@ class CommandRouter:
                          source_message_id=event.message_id) if event.author == "owner" else 0)
             if cancelled:
                 self.outbox_changed.set()
-            if (self._active_turn is not None and not self._active_turn.done()
-                    and self._active_turn_stage == "owner"
-                    and self._active_turn_channel == event.channel):
+            if event.author == "owner":
                 await self.incoming.put(message)
                 self._owner_message_changed.set()
+                self._owner_activity_changed.set()
             return
         if isinstance(event, OwnerInputStatus):
             channel = self._channel_for(event.channel)

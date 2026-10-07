@@ -32,12 +32,13 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.store.close)
         self.message = IncomingMessage("new-message", "1", "等一下", 1, 1)
 
-    async def test_idle_recall_is_saved_without_starting_reply(self):
+    async def test_idle_recall_is_offered_to_planner_as_runtime_event(self):
         message = IncomingMessage("recall-source", "1", "synthetic request", 1, 1, channel="napcat")
         await self.daemon._receive(message)
         self.daemon.incoming.get_nowait()
         await self.daemon._receive(MessageRecalled("recall-new", "1", 2, "napcat"))
-        self.assertTrue(self.daemon.incoming.empty())
+        update = self.daemon.incoming.get_nowait()
+        self.assertEqual(update.delivery_context["channel_notice"], "message_recall")
         self.assertFalse(self.daemon._message_current(message))
         self.assertTrue(self.store.message_recalled("napcat", "1"))
         self.assertEqual(self.store.pending_events(), [])

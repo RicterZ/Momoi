@@ -28,13 +28,13 @@ class InboxStore:
             "SELECT occurred_at FROM events WHERE kind=? AND message_id=? ORDER BY received_at LIMIT 1",
             (f"{notice.channel}.message", notice.message_id),
         ).fetchone()
-        speaker = "老师" if notice.author == "owner" else "机器人"
+        speaker = "用户" if notice.author == "owner" else "机器人"
         text = f"【QQ 消息撤回】\n{speaker}撤回了消息 message_id={notice.message_id}。"
         if original is not None:
             text += f"原消息发送时间：{self.context_timestamp(original['occurred_at'])}。"
         elif notice.author == "owner":
             text += "原消息未收到，内容未知。"
-        text += "\n这条消息已撤回，不再作为当前请求或待执行指令；已执行的操作不代表已经回滚。撤回事件本身无需回复。"
+        text += "\n这条消息已撤回，不再作为当前请求或待执行指令；已执行的操作不代表已经回滚。"
         now = time.time()
         payload = {"channel": notice.channel, "notice_type": "message_recall", "author": notice.author}
         with self._db:
