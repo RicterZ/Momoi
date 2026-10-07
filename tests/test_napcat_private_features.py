@@ -269,3 +269,42 @@ def test_active_poke_calls_private_api_with_configured_owner_only():
         await item.poke_owner()
         item._request_action.assert_awaited_once_with('friend_poke', {'user_id': '20000'})
     asyncio.run(scenario())
+
+
+def test_received_file_downloads_to_workspace_and_renders_local_path(tmp_path):
+    from aiohttp import web, ClientSession
+    from pathlib import Path
+    from momoi.channel.napcat import load_config, render_segments
+
+    async def scenario():
+        app = web.Application()
+        async def asset(request):
+            return web.Response(body=b'synthetic text')
+        app.router.add_get('/asset', asset)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '127.0.0.1', 0)
+        await site.start()
+        port = site._server.sockets[0].getsockname()[1]
+        try:
+            config = load_config({'url': 'ws://localhost', 'owner_qq': '20000'}, tmp_path)
+            item = NapCatChannel(config)
+            item._request_action = AsyncMock(return_value={'data': {'url': f'http://127.0.0.1:{port}/asset'}})
+            async with ClientSession() as session:
+                item._session = session
+                segments = await item._enrich_segments(({'type': 'file', 'data': {
+                    'file': '../../sample.txt', 'file_id': 'synthetic-id'}},))
+                path = Path(segments[0]['data']['file'])
+                assert path.read_bytes() == b'synthetic text'
+                assert path.name == 'sample.txt'
+                assert path.is_relative_to(tmp_path / 'channel/napcat/files')
+                assert str(path) in render_segments(segments)
+                item._request_action.assert_awaited_once_with('get_private_file_url', {'file_id': 'synthetic-id'})
+                object.__setattr__(config, 'media_max_bytes', 2)
+                failed = await item._enrich_segments(({'type': 'file', 'data': {
+                    'file': 'large.txt', 'url': f'http://127.0.0.1:{port}/asset'}},))
+                assert 'source=unavailable' in render_segments(failed)
+                assert len(list((tmp_path / 'channel/napcat/files').glob('*/*'))) == 1
+        finally:
+            await runner.cleanup()
+    asyncio.run(scenario())

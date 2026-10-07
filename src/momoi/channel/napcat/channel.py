@@ -364,6 +364,9 @@ class NapCatChannel:
                             node.get("segments"), list
                         ):
                             await self._materialize_images(node["segments"])
+            if segment.get("type") in {"file", "video"}:
+                await self._materialize_file(segment)
+                continue
             if not is_visual_image(segment):
                 continue
             source = data.get("url") or data.get("file")
@@ -385,35 +388,70 @@ class NapCatChannel:
             data["url"] = "base64://" + encoded
             data["media_type"] = media_type
 
+    async def _materialize_file(self, segment: dict[str, Any]) -> None:
+        data = segment["data"]
+        try:
+            source = data.get("url")
+            if not isinstance(source, str) or not source.startswith(("http://", "https://")):
+                file_id = data.get("file_id") or data.get("file")
+                if not file_id:
+                    raise ValueError("missing file identifier")
+                response = await self._request_action("get_private_file_url", {"file_id": file_id})
+                source = (response.get("data") or {}).get("url")
+            if not isinstance(source, str) or not source.startswith(("http://", "https://")):
+                raise ValueError("no downloadable file URL")
+            directory = self.config.attachment_directory
+            if directory is None:
+                raise ValueError("attachment directory is not configured")
+            name = media_display_name(str(data.get("name") or data.get("file") or "attachment")) or "attachment"
+            # Isolate every transfer; preserve the filename without trusting its directories.
+            destination = directory / uuid.uuid4().hex / name
+            content, _ = await self._download_media(source)
+            def save() -> None:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(content)
+            await asyncio.to_thread(save)
+            data["name"] = name
+            data["file"] = str(destination.resolve())
+            data.pop("url", None)
+            log_event(logger, logging.DEBUG, "channel_file_received", channel=self.name,
+                      media_type=segment["type"], received_bytes=len(content), path=str(destination))
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, OSError, ChannelError) as error:
+            data.pop("url", None)
+            data["_media_unavailable"] = True
+            log_event(logger, logging.WARNING, "channel_file_failure", channel=self.name,
+                      media_type=segment["type"], error_type=type(error).__name__)
+
+    async def _download_media(self, source: str, progress: dict[str, Any] | None = None) -> tuple[bytes, str]:
+        if self._session is None:
+            raise ValueError("download session unavailable")
+        progress = progress if progress is not None else {}
+        timeout = aiohttp.ClientTimeout(total=self.config.media_download_timeout_seconds)
+        async with self._session.get(source, timeout=timeout) as response:
+            if response.status >= 400:
+                raise ValueError(f"HTTP {response.status}")
+            progress.update(phase="body", declared=response.content_length)
+            if response.content_length is not None and response.content_length > self.config.media_max_bytes:
+                raise ValueError("content too large")
+            content = bytearray()
+            async for chunk in response.content.iter_chunked(64 * 1024):
+                content.extend(chunk)
+                progress["received"] = len(content)
+                if len(content) > self.config.media_max_bytes:
+                    raise ValueError("content too large")
+            return bytes(content), response.headers.get("Content-Type", "").split(";", 1)[0]
+
     async def _download_image(self, source: str) -> tuple[str, str] | None:
         session = self._session
         if session is None:
             return None
         started = time.monotonic()
-        declared = None
-        received = 0
-        phase = "connect_or_headers"
+        progress = {"declared": None, "received": 0, "phase": "connect_or_headers"}
         try:
-            timeout = aiohttp.ClientTimeout(
-                total=self.config.media_download_timeout_seconds
-            )
-            async with session.get(source, timeout=timeout) as response:
-                if response.status >= 400:
-                    raise ValueError(f"HTTP {response.status}")
-                phase = "body"
-                declared = response.content_length
-                if declared is not None and declared > self.config.media_max_bytes:
-                    raise ValueError("content too large")
-                content = bytearray()
-                async for chunk in response.content.iter_chunked(64 * 1024):
-                    content.extend(chunk)
-                    received = len(content)
-                    if len(content) > self.config.media_max_bytes:
-                        raise ValueError("content too large")
-                content_type = response.headers.get("Content-Type", "").split(";", 1)[0]
-                if not content_type.startswith("image/"):
-                    content_type = "image/jpeg"
-                return base64.b64encode(content).decode("ascii"), content_type
+            content, content_type = await self._download_media(source, progress)
+            if not content_type.startswith("image/"):
+                content_type = "image/jpeg"
+            return base64.b64encode(content).decode("ascii"), content_type
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
             log_event(
                 logger,
@@ -422,11 +460,11 @@ class NapCatChannel:
                 channel="napcat",
                 media_type="image",
                 error_type=type(error).__name__,
-                phase=phase,
+                phase=progress["phase"],
                 duration_ms=int((time.monotonic() - started) * 1000),
                 timeout_seconds=self.config.media_download_timeout_seconds,
-                declared_bytes=declared,
-                received_bytes=received,
+                declared_bytes=progress["declared"],
+                received_bytes=progress["received"],
                 max_bytes=self.config.media_max_bytes,
                 reason="timeout" if isinstance(error, asyncio.TimeoutError) else str(error) if isinstance(error, ValueError) else type(error).__name__,
             )

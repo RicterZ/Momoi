@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import ClassVar
+from pathlib import Path
 from urllib.parse import urlsplit
 
 
@@ -51,6 +52,7 @@ class NapCatConfig:
     media_max_bytes: int = 20 * 1024 * 1024
     media_download_timeout_seconds: float = 60
 
+    attachment_directory: Path | None = None
     access_token: str = ""
     bot_qq: str = ""
     voice_call: QQCallConfig = QQCallConfig()
