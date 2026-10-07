@@ -148,7 +148,6 @@ def builtin_schema(name, capability):
         fields["format"]["enum"] = ["mp3", "wav", "opus"]
         fields["latency"]["enum"] = ["normal", "balanced", "low"]
     if (name, capability) == ("vocu", "tts"):
-        fields["voice_id"]["description"] = "悟声控制台中的语音角色 ID。"
         fields["prompt_id"]["description"] = "使用该音色的风格 ID，default 为默认风格。"
         fields["timeout_seconds"]["minimum"] = 1
         fields["max_audio_bytes"]["minimum"] = 1
