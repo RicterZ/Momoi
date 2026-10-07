@@ -116,7 +116,7 @@ public partial class App : Application
         {
             Title = "Momoi", Width = 1240, Height = 850, MinWidth = 800, MinHeight = 600,
             Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")),
-            Content = new TextBlock { Text = "正在启动 Momoi 与本地 BGE 编码器…", Margin = new Thickness(32), FontSize = 18 },
+            Content = new StartupView(),
         };
         MainWindow = panel;
         panel.Closing += HideOnClose;
