@@ -67,11 +67,19 @@ jobs:
             dist/windows/Momoi-Online-Setup-*-x64.json
             build/online-preview/
           if-no-files-found: error
+      - name: Collect installer diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          $Diagnostics = Join-Path $env:GITHUB_WORKSPACE 'build/online-diagnostics'
+          New-Item -ItemType Directory -Path $Diagnostics -Force | Out-Null
+          $Logs = Join-Path $env:LOCALAPPDATA 'Momoi/Installer'
+          if (Test-Path $Logs) { Get-ChildItem $Logs -Filter '*.log' | Copy-Item -Destination $Diagnostics }
+          $Result = Join-Path $env:GITHUB_WORKSPACE 'build/在线 安装 Momoi/online-install-check.json'
+          if (Test-Path $Result) { Copy-Item $Result -Destination $Diagnostics }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Momoi-Windows-online-diagnostics
-          path: |
-            ~/AppData/Local/Momoi/Installer/*.log
-            build/在线 安装 Momoi/online-install-check.json
+          path: build/online-diagnostics/
           if-no-files-found: ignore
