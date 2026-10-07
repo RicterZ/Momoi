@@ -115,6 +115,7 @@ internal sealed class QQCallHost : IAsyncDisposable
                     Directory.CreateDirectory(directory);
                     lock (logGate) File.AppendAllText(Path.Combine(directory, "service.log"),
                         $"{DateTimeOffset.Now:O} {failure.GetType().Name}: {failure.Message.Replace(token, "[redacted]")}{Environment.NewLine}", Encoding.UTF8);
+                    LiveLog.Write("voice-service", "stderr", failure.GetType().Name + ": " + failure.Message.Replace(token, "[redacted]"));
                     bool transient = failure is HttpRequestException or TaskCanceledException;
                     if (transient && job is not null && media is not null && !media.HasExited && ++transientFailures < 3)
                     {
@@ -143,17 +144,18 @@ internal sealed class QQCallHost : IAsyncDisposable
         var process = Process.Start(info) ?? throw new IOException("无法启动 " + name);
         children.Add(process);
         job!.Assign(process);
-        readers.Add(DrainAsync(process.StandardOutput, name));
-        readers.Add(DrainAsync(process.StandardError, name));
+        readers.Add(DrainAsync(process.StandardOutput, name, "stdout"));
+        readers.Add(DrainAsync(process.StandardError, name, "stderr"));
         return process;
     }
-    private async Task DrainAsync(StreamReader reader, string name)
+    private async Task DrainAsync(StreamReader reader, string name, string stream)
     {
         string directory = Path.Combine(data, "logs"); Directory.CreateDirectory(directory);
         while (await reader.ReadLineAsync() is { } line)
         {
             line = line.Replace(token, "[redacted]");
             lock (logGate) File.AppendAllText(Path.Combine(directory, name + ".log"), line + Environment.NewLine, Encoding.UTF8);
+            LiveLog.Write(name, stream, line);
         }
     }
     private async Task StartChildrenAsync(CancellationToken cancellationToken)
@@ -189,7 +191,7 @@ internal sealed class QQCallHost : IAsyncDisposable
         }
         if (!hostReady) throw new TimeoutException("AVSDK 宿主启动超时，请查看 qq-call/logs/av-host.log。");
         var mediaInfo = new ProcessStartInfo(python);
-        foreach (string argument in new[] { "-I", "-B", "-X", "utf8", mediaEntry }) mediaInfo.ArgumentList.Add(argument);
+        foreach (string argument in new[] { "-I", "-u", "-B", "-X", "utf8", mediaEntry }) mediaInfo.ArgumentList.Add(argument);
         mediaInfo.Environment["QQ_CALL_RUNTIME"] = data;
         mediaInfo.Environment["QQ_CALL_TOKEN_FILE"] = tokenFile;
         mediaInfo.Environment["QQ_CALL_WINDOWS_BRIDGE"] = bridge;

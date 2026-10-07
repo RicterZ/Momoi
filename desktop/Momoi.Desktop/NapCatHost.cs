@@ -153,8 +153,8 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
             process = Process.Start(info) ?? throw new InvalidOperationException("无法启动内置 QQ 客户端。");
             job.Assign(process);
             // Capture early native failures too; redact tokens and login URLs.
-            stdout = DrainAsync(process.StandardOutput);
-            stderr = DrainAsync(process.StandardError);
+            stdout = DrainAsync(process.StandardOutput, "stdout");
+            stderr = DrainAsync(process.StandardError, "stderr");
             using var client = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(2) };
             var deadline = DateTime.UtcNow.AddSeconds(60);
             while (DateTime.UtcNow < deadline)
@@ -181,7 +181,7 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
     }
 
     private object Connection() => new { running = Running, ready = webReady, url = $"ws://127.0.0.1:{settings!.SocketPort}", access_token = settings.AccessToken };
-    private async Task DrainAsync(StreamReader reader)
+    private async Task DrainAsync(StreamReader reader, string stream)
     {
         string logs = Path.Combine(Data, "logs");
         Directory.CreateDirectory(logs);
@@ -191,6 +191,7 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
                 line = line.Replace(settings.AccessToken, "[redacted]").Replace(settings.WebToken, "[redacted]");
             line = Regex.Replace(line, @"https?://\S+", "[url redacted]");
             lock (logGate) File.AppendAllText(Path.Combine(logs, "native-startup.log"), line + Environment.NewLine, Encoding.UTF8);
+            LiveLog.Write("QQ", stream, line);
         }
     }
     private async Task StopCoreAsync()

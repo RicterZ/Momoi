@@ -56,7 +56,7 @@ internal sealed class BackendHost : IAsyncDisposable
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
             WorkingDirectory = workspace,
         };
-        foreach (string argument in new[] { "-I", "-B", "-X", "utf8", entry, "--install-dir", AppContext.BaseDirectory, "--workspace", workspace, "--model-path", model,
+        foreach (string argument in new[] { "-I", "-u", "-B", "-X", "utf8", entry, "--install-dir", AppContext.BaseDirectory, "--workspace", workspace, "--model-path", model,
             "--dashboard-port", dashboardPort.ToString(), "--embedding-port", embeddingPort.ToString() })
             info.ArgumentList.Add(argument);
         info.Environment["MOMOI_QQ_CALL_MANAGED"] = QQCallSettings.Prepare(workspace);
@@ -98,13 +98,13 @@ internal sealed class BackendHost : IAsyncDisposable
                 }
             }
             catch (JsonException) { }
-            Log(line);
+            Log(line, "stdout");
         }
     }
 
     private async Task ReadErrorsAsync(StreamReader stream)
     {
-        while (await stream.ReadLineAsync() is { } line) Log(line);
+        while (await stream.ReadLineAsync() is { } line) Log(line, "stderr");
     }
 
     private async Task WatchExitAsync()
@@ -113,9 +113,10 @@ internal sealed class BackendHost : IAsyncDisposable
         ready.TrySetException(new InvalidOperationException($"后台启动失败（退出码 {process.ExitCode}），请查看日志：{logPath}"));
     }
 
-    private void Log(string line)
+    private void Log(string line, string stream)
     {
         lock (logGate) File.AppendAllText(logPath, line + Environment.NewLine, Encoding.UTF8);
+        LiveLog.Write("backend", stream, line);
     }
 
     public static async Task MaintenanceAsync(string workspace, CodeRelease release, string snapshot, bool restore)

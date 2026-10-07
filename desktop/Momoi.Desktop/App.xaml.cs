@@ -37,6 +37,7 @@ public partial class App : Application
     private BackendHost? backend;
     private NapCatHost? napcat;
     private Window? qqPanel;
+    private LogWindow? logWindow;
     private WebView2? browser;
     private Task? startup;
     private Task? pipeListener;
@@ -105,6 +106,17 @@ public partial class App : Application
         {
             Directory.CreateDirectory(workspace);
             Process.Start(new ProcessStartInfo(workspace) { UseShellExecute = true });
+        }));
+        menu.Items.Add("查看日志", null, (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            if (logWindow is null)
+            {
+                logWindow = new LogWindow(workspace);
+                logWindow.Closed += (_, _) => logWindow = null;
+            }
+            logWindow.Show();
+            if (logWindow.WindowState == WindowState.Minimized) logWindow.WindowState = WindowState.Normal;
+            logWindow.Activate();
         }));
         menu.Items.Add("QQ 登录", null, (_, _) => Dispatcher.BeginInvoke(async () =>
         {
@@ -456,7 +468,8 @@ public partial class App : Application
         {
             qqPanel?.Close();
             browser?.Dispose();
-            tray?.Dispose();
+            logWindow?.Close();
+        tray?.Dispose();
             trayImage?.Dispose();
             panel?.Close();
             Shutdown();
@@ -472,6 +485,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        logWindow?.Close();
         tray?.Dispose();
         if (ownsInstance) instance?.ReleaseMutex();
         instance?.Dispose();
