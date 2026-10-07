@@ -162,7 +162,10 @@ public partial class App : Application
             installing = true; System.Windows.Input.CommandManager.InvalidateRequerySuggested(); loading?.SetDetail("安装中 · 请确认 Windows 管理员授权");
             string nativeLog = Path.Combine(cache, "native-install-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
             var start = new ProcessStartInfo(core) { UseShellExecute = true, Verb = "runas", Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS=\"{(cable.IsChecked == true ? "vbcable" : "")}\" /DIR=\"{destination}\" /LOG=\"{nativeLog}\"" };
+            Log("Requesting elevated native installer launch: " + core);
             using var child = Process.Start(start) ?? throw new IOException("无法启动安装程序。");
+            Log($"Native installer started PID={child.Id}; log={nativeLog}");
+            loading?.SetDetail("安装中 · 正在安装运行组件（无需再次授权）");
             await child.WaitForExitAsync();
             Log("Native installer exit code " + child.ExitCode);
             if (child.ExitCode is not (0 or 3010)) throw new IOException($"安装未完成（退出码 {child.ExitCode}）。日志：{nativeLog}");
