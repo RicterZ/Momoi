@@ -175,7 +175,7 @@ def test_vocu_stream_cancellation_closes_decoder(monkeypatch):
     asyncio.run(scenario())
 
 
-def test_vocu_debug_reports_audio_stages_without_signed_urls(caplog):
+def test_vocu_debug_reports_download_url_without_api_credentials(caplog):
     import logging
     async def scenario():
         async def generate(request):
@@ -197,5 +197,6 @@ def test_vocu_debug_reports_audio_stages_without_signed_urls(caplog):
     for event in ('vocu_tts_request', 'vocu_tts_api_response', 'vocu_audio_download_started',
                   'vocu_audio_response', 'vocu_audio_first_chunk', 'vocu_audio_download_finished'):
         assert event in records
-    for secret in ('private-api-key', 'private-input-text', 'private-signed-token'):
+    assert '/audio?signature=private-signed-token' in records
+    for secret in ('private-api-key', 'private-input-text'):
         assert secret not in records

@@ -97,7 +97,8 @@ class VocuTTSProvider(TTSProvider):
                             or not parsed.hostname or parsed.username or parsed.password or parsed.fragment):
                         raise self._error("Vocu TTS returned an invalid audio URL")
                 # Signed CDN URLs supply their own authorization. Never send the API key here.
-                logger.debug("event=vocu_audio_download_started diagnostic_id=%s audio_host=%s", diagnostic_id, parsed.hostname)
+                logger.debug("event=vocu_audio_download_started diagnostic_id=%s audio_host=%s audio_url=%s",
+                             diagnostic_id, parsed.hostname, audio_url)
                 async with session.get(audio_url, timeout=timeout) as response:
                     logger.debug("event=vocu_audio_response diagnostic_id=%s status=%s content_type=%s content_length=%s",
                                  diagnostic_id, response.status, response.content_type, response.content_length)
