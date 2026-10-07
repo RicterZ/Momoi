@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Momoi.Update/Momoi.Update.csproj" GlobalPropertiesToRemove="PublishSingleFile;IncludeNativeLibrariesForSelfExtract;EnableCompressionInSingleFile" />
+    <Compile Include="../Momoi.Desktop/AudioDevicePreference.cs" Link="AudioDevicePreference.cs" />
     <Compile Include="../Momoi.Desktop/StartupView.cs" Link="StartupView.cs" />
     <Page Include="../Momoi.Desktop/Themes/Momoi.xaml" Link="Themes/Momoi.xaml" />
     <Resource Include="../Momoi.Desktop/Assets/momoi.png" Link="Assets/momoi.png" />

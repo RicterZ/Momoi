@@ -35,6 +35,7 @@ LicenseFile={#Root}\LICENSE
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
+Name: "vbcable"; Description: "Install VB-CABLE for voice calls (optional; skip if Steam audio devices are available)"; Flags: unchecked
 Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Dirs]
@@ -42,6 +43,7 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 Name: "{app}\data"; Permissions: users-modify; Flags: uninsneveruninstall
 
 [Files]
+Source: "{#Root}\dist\windows\components\prerequisites\vbcable\*"; DestDir: "{tmp}\vbcable"; Flags: dontcopy
 #include "..\..\build\windows-installer-files.iss"
 
 [InstallDelete]
@@ -67,9 +69,35 @@ Type: filesandordirs; Name: "{app}\runtime\qq-pair"
 [Code]
 var
   QQDownloadPage: TDownloadWizardPage;
+  CablePage: TWizardPage;
+  CableDevices: TNewMemo;
+
+procedure ListAudioDevices(Flow: String);
+var Keys: TArrayOfString; I: Integer; LabelText: String; Base: String; State: Cardinal;
+begin
+  Base := 'SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\' + Flow;
+  if RegGetSubkeyNames(HKLM64, Base, Keys) then
+    for I := 0 to GetArrayLength(Keys) - 1 do
+      if RegQueryDWordValue(HKLM64, Base + '\' + Keys[I], 'DeviceState', State) then
+        if (State and 15) = 1 then
+          if RegQueryStringValue(HKLM64, Base + '\' + Keys[I] + '\Properties', '{a45c254e-df1c-4efd-8020-67d146a850e0},14', LabelText) then
+            CableDevices.Lines.Add(Flow + ': ' + LabelText);
+end;
 
 procedure InitializeWizard;
 begin
+  CablePage := CreateCustomPage(wpSelectTasks, 'Voice call audio components', 'VB-CABLE is optional. Steam audio devices can also be used.');
+  CableDevices := TNewMemo.Create(CablePage);
+  CableDevices.Parent := CablePage.Surface;
+  CableDevices.Width := CablePage.SurfaceWidth;
+  CableDevices.Height := CablePage.SurfaceHeight;
+  CableDevices.ReadOnly := True;
+  CableDevices.ScrollBars := ssVertical;
+  CableDevices.Lines.Add('VB-CABLE by VB-Audio: www.vb-cable.com');
+  CableDevices.Lines.Add('Donationware; donations / license payments are welcome.');
+  CableDevices.Lines.Add('Installation may require a restart. Installed audio devices:');
+  ListAudioDevices('Capture');
+  ListAudioDevices('Render');
   QQDownloadPage := CreateDownloadPage('Installing QQ components', 'Downloading the version locked to this Momoi installer.', nil);
 end;
 
@@ -170,7 +198,19 @@ begin
     ErrorMessage := 'Could not install ' + Name + ' (code ' + IntToStr(ResultCode) + ').';
 end;
 
+function DefaultCableInstalled: Boolean;
+var Keys: TArrayOfString; I: Integer; LabelText, Base: String;
+begin
+  Result := False;
+  Base := 'SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture';
+  if RegGetSubkeyNames(HKLM64, Base, Keys) then
+    for I := 0 to GetArrayLength(Keys) - 1 do
+      if RegQueryStringValue(HKLM64, Base + '\' + Keys[I] + '\Properties', '{a45c254e-df1c-4efd-8020-67d146a850e0},14', LabelText) then
+        if Pos('CABLE Output (VB-Audio', LabelText) > 0 then Result := True;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var CableResultCode: Integer;
 begin
   Result := '';
   StopMomoi;
@@ -182,6 +222,18 @@ begin
       Result := 'WebView2 Runtime installation could not be verified.';
       exit;
     end;
+  end;
+  if WizardIsTaskSelected('vbcable') and (not DefaultCableInstalled) then begin
+    ExtractTemporaryFiles('{tmp}\vbcable\*');
+    if not Exec(ExpandConstant('{tmp}\vbcable\VBCABLE_Setup_x64.exe'), '', ExpandConstant('{tmp}\vbcable'), SW_SHOW, ewWaitUntilTerminated, CableResultCode) then begin
+      Result := 'Could not launch the official VB-CABLE installer.';
+      exit;
+    end;
+    if CableResultCode <> 0 then begin
+      Result := 'VB-CABLE installer returned code ' + IntToStr(CableResultCode) + '.';
+      exit;
+    end;
+    NeedsRestart := True;
   end;
   Result := InstallQQPair;
 end;

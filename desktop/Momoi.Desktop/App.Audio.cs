@@ -41,16 +41,16 @@ public partial class App
             using var response = await client.GetAsync("/api/settings/channels/napcat/voice-call/devices", lifetime.Token);
             if (!response.IsSuccessStatusCode) return;
             using var catalog = JsonDocument.Parse(await response.Content.ReadAsStringAsync(lifetime.Token));
-            string Select(string role, string group, string automatic)
+            string Select(string role, string group, bool input)
             {
                 string selected = voice.TryGetProperty(role, out var value) ? value.GetString() ?? "" : "";
-                var matches = catalog.RootElement.GetProperty(group).EnumerateArray().Where(item => selected.Length > 0
-                    ? item.GetProperty("id").GetString() == selected
-                    : (item.GetProperty("name").GetString() ?? "").Contains(automatic, StringComparison.OrdinalIgnoreCase)).ToArray();
-                return matches.Length == 1 ? matches[0].GetProperty("id").GetString()! : "";
+                var matches = catalog.RootElement.GetProperty(group).EnumerateArray()
+                    .Where(item => selected.Length == 0 || item.GetProperty("id").GetString() == selected)
+                    .OrderBy(item => AudioDevicePreference.Rank(item.GetProperty("name").GetString() ?? "", input)).ToArray();
+                return matches.Length > 0 ? matches[0].GetProperty("id").GetString()! : "";
             }
-            string input = Select("input_device", "inputs", "Steam Streaming Microphone");
-            string output = Select("output_device", "outputs", "Steam Streaming Speakers");
+            string input = Select("input_device", "inputs", true);
+            string output = Select("output_device", "outputs", false);
             if (input.Length == 0 || output.Length == 0) return;
             var processes = new List<object>();
             foreach (var process in Process.GetProcessesByName("QQ")) using (process)

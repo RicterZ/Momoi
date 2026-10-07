@@ -77,7 +77,7 @@ internal sealed class AudioDeviceWindow : Window
     private static void Fill(ComboBox box, List<AudioChoice> devices, JsonElement catalog, string group, string selected)
     {
         devices.Clear(); box.Items.Clear();
-        box.Items.Add(new AudioChoice("", "自动选择 Steam 虚拟设备"));
+        box.Items.Add(new AudioChoice("", "自动选择：CABLE → Steam → 其他设备"));
         foreach (var item in catalog.GetProperty(group).EnumerateArray())
         {
             var choice = new AudioChoice(item.GetProperty("id").GetString()!, item.GetProperty("name").GetString()!);
@@ -107,7 +107,7 @@ internal sealed class AudioDeviceWindow : Window
             var app = settings.RootElement.GetProperty("app");
             Fill(input, inputs, catalog.RootElement, "inputs", Selected(app, "input_device"));
             Fill(output, outputs, catalog.RootElement, "outputs", Selected(app, "output_device"));
-            status.Text = "已列出所有可用音频设备。推荐 Steam 虚拟线路；实体设备可能收音、外放或回声，仍可自行选择。应用后重新拨打电话。";
+            status.Text = "已列出所有可用音频设备。优先 CABLE，其次 Steam 虚拟线路；实体设备可能收音、外放或回声，仍可自行选择。应用后重新拨打电话。";
         }
         catch (Exception error) { status.Text = error.Message; }
         finally { SetBusy(false); }
@@ -120,9 +120,9 @@ internal sealed class AudioDeviceWindow : Window
         {
             var selectedInput = input.SelectedItem as AudioChoice ?? throw new InvalidOperationException("请选择输入设备。");
             var selectedOutput = output.SelectedItem as AudioChoice ?? throw new InvalidOperationException("请选择输出设备。");
-            var effectiveInput = selectedInput.Id == "" ? inputs.FirstOrDefault(item => item.Name.Contains("Steam Streaming Microphone", StringComparison.OrdinalIgnoreCase)) : inputs.FirstOrDefault(item => item.Id == selectedInput.Id);
-            var effectiveOutput = selectedOutput.Id == "" ? outputs.FirstOrDefault(item => item.Name.Contains("Steam Streaming Speakers", StringComparison.OrdinalIgnoreCase)) : outputs.FirstOrDefault(item => item.Id == selectedOutput.Id);
-            if (effectiveInput is null || effectiveOutput is null) throw new InvalidOperationException("所选音频设备不可用；自动选择需要 Steam 虚拟设备，请手动选择或刷新。");
+            var effectiveInput = selectedInput.Id == "" ? inputs.OrderBy(item => AudioDevicePreference.Rank(item.Name, true)).FirstOrDefault() : inputs.FirstOrDefault(item => item.Id == selectedInput.Id);
+            var effectiveOutput = selectedOutput.Id == "" ? outputs.OrderBy(item => AudioDevicePreference.Rank(item.Name, false)).FirstOrDefault() : outputs.FirstOrDefault(item => item.Id == selectedOutput.Id);
+            if (effectiveInput is null || effectiveOutput is null) throw new InvalidOperationException("所选音频设备不可用；请手动选择或刷新。");
             using var client = Client();
             string payload = JsonSerializer.Serialize(new { input_device = selectedInput.Id, output_device = selectedOutput.Id, revision });
             using var response = await client.PutAsync("/api/settings/channels/napcat/voice-call/devices", new StringContent(payload, Encoding.UTF8, "application/json"));

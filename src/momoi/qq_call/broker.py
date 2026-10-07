@@ -4,6 +4,7 @@ import array
 import contextlib
 import hmac
 import json
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -270,6 +271,9 @@ class MediaBroker:
             started = time.monotonic()
             first_ms = None
             played = 0
+            pcm_peak = 0
+            logging.getLogger(__name__).debug("event=qq_call_bridge_playback_started session_id=%s utterance_id=%s devices=%s half_duplex=%s",
+                session_id, utterance, getattr(self.audio, 'device_selection', {}), getattr(self.audio, 'half_duplex', False))
             pending = b''
             process = None
             complete = False
@@ -294,13 +298,15 @@ class MediaBroker:
                         process.stdin.close()
                         await asyncio.wait_for(process.wait(), 3)
                 async def write_frame(frame):
-                    nonlocal process, played, first_ms
+                    nonlocal process, played, first_ms, pcm_peak
                     if not self.valid(session_id, generation):
                         raise ConnectionError('Call superseded')
                     if process is None:
                         process = await asyncio.create_subprocess_exec(*self.playback_command, stdin=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.DEVNULL)
+                            stderr=None)
                         self.play_process = process
+                    samples = array.array('h', frame)
+                    pcm_peak = max(pcm_peak, max((abs(value) for value in samples), default=0))
                     process.stdin.write(frame)
                     await process.stdin.drain()
                     if first_ms is None:
@@ -317,6 +323,8 @@ class MediaBroker:
                 await stop_process(process)
                 if self.play_process is process:
                     self.play_process = None
+            logging.getLogger(__name__).debug("event=qq_call_bridge_playback_finished session_id=%s utterance_id=%s pcm_bytes=%s peak=%s exit_code=%s complete=%s",
+                session_id, utterance, played, pcm_peak, getattr(process, 'returncode', None), complete)
             result = {'ok': complete, 'state': 'played' if complete else 'interrupted',
                 'played_ms': round(played / 48), 'first_frame_ms': first_ms,
                 'elapsed_ms': round((time.monotonic() - started) * 1000),
@@ -474,6 +482,7 @@ class MediaBroker:
 
 
 def main():
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     runtime = Path(os.getenv('QQ_CALL_RUNTIME', '/app/qq-call'))
     token_path = Path(os.getenv('QQ_CALL_TOKEN_FILE', str(runtime / 'runtime/control.token')))
     options = dict(native_url=os.getenv('QQ_CALL_NATIVE_URL', 'http://127.0.0.1:6110'),

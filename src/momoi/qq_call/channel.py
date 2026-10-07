@@ -191,8 +191,12 @@ class QQCallChannel:
         started = time.monotonic()
         first_ms = None
         synthesis_error = None
+        pcm_bytes = 0
+        pcm_peak = 0
+        log_event(logger, logging.DEBUG, 'qq_call_send_started', session_id=self.session_id,
+                  utterance_id=utterance_id, provider=type(provider).__name__, text_chars=len(text))
         async def upload():
-            nonlocal first_ms, synthesis_error
+            nonlocal first_ms, synthesis_error, pcm_bytes, pcm_peak
             from contextlib import aclosing
             try:
                 async with aclosing(bubble_pcm(provider, text, pause_seconds=.5, paced=True)) as stream:
@@ -203,7 +207,13 @@ class QQCallChannel:
                             first_ms = round((time.monotonic() - started) * 1000)
                             log_event(logger, logging.INFO, 'qq_call_tts_first_audio', channel=self.name,
                                 session_id=self.session_id, utterance_id=utterance_id, elapsed_ms=first_ms)
+                        import array
+                        pcm_bytes += len(chunk)
+                        samples = array.array('h', chunk[:len(chunk)//2*2])
+                        pcm_peak = max(pcm_peak, max((abs(value) for value in samples), default=0))
                         yield chunk
+                log_event(logger, logging.DEBUG, 'qq_call_pcm_uploaded', session_id=self.session_id,
+                          utterance_id=utterance_id, pcm_bytes=pcm_bytes, peak=pcm_peak)
             except TTSError as error:
                 synthesis_error = error
                 raise
@@ -213,6 +223,8 @@ class QQCallChannel:
                     'X-Call-Session': context['call_session_id'],
                     'X-Call-Generation': str(context['call_generation']),
                     'X-Call-Utterance': utterance_id}, timeout=aiohttp.ClientTimeout(total=160)) as response:
+                log_event(logger, logging.DEBUG, 'qq_call_bridge_response', session_id=self.session_id,
+                          utterance_id=utterance_id, status=response.status, pcm_bytes=pcm_bytes, peak=pcm_peak)
                 if response.status != 200:
                     raise SendRejected('Streaming phone playback rejected')
                 return await response.json()

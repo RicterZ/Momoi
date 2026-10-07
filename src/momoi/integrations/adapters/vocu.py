@@ -4,6 +4,10 @@ Protocol: https://dev.wusound.cn/同步实时生成语音-api-380467873
 """
 
 import asyncio
+import array
+import logging
+import time
+import uuid
 import json
 from contextlib import aclosing
 from urllib.parse import urlsplit
@@ -14,6 +18,8 @@ from ..contracts.tts import AudioOutput, TTSError, TTSProvider
 from ..errors import ErrorCategory, error_category, http_category
 from ..transport import HTTPTransport
 from ..validation import number, text as option_text, url
+
+logger = logging.getLogger(__name__)
 
 
 class VocuTTSProvider(TTSProvider):
@@ -54,6 +60,10 @@ class VocuTTSProvider(TTSProvider):
             "language": self.language, "flash": self.flash, "vivid": self.vivid,
             "stream": streaming, "srt": False,
         }
+        diagnostic_id = uuid.uuid4().hex[:12]
+        started = time.monotonic()
+        logger.debug("event=vocu_tts_request diagnostic_id=%s api_host=%s streaming=%s text_chars=%s",
+                     diagnostic_id, urlsplit(self.base_url).hostname, streaming, len(text))
         try:
             async with self.transport.session(timeout_seconds=self.timeout_seconds) as session:
                 timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
@@ -62,6 +72,8 @@ class VocuTTSProvider(TTSProvider):
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     allow_redirects=False, timeout=timeout,
                 ) as response:
+                    logger.debug("event=vocu_tts_api_response diagnostic_id=%s status=%s elapsed_ms=%s",
+                                 diagnostic_id, response.status, round((time.monotonic()-started)*1000))
                     if response.status != 200:
                         raise self._error(f"Vocu TTS returned HTTP {response.status}",
                                           category=http_category(response.status))
@@ -85,7 +97,10 @@ class VocuTTSProvider(TTSProvider):
                             or not parsed.hostname or parsed.username or parsed.password or parsed.fragment):
                         raise self._error("Vocu TTS returned an invalid audio URL")
                 # Signed CDN URLs supply their own authorization. Never send the API key here.
+                logger.debug("event=vocu_audio_download_started diagnostic_id=%s audio_host=%s", diagnostic_id, parsed.hostname)
                 async with session.get(audio_url, timeout=timeout) as response:
+                    logger.debug("event=vocu_audio_response diagnostic_id=%s status=%s content_type=%s content_length=%s",
+                                 diagnostic_id, response.status, response.content_type, response.content_length)
                     if response.status != 200:
                         raise self._error(f"Vocu audio download returned HTTP {response.status}",
                                           category=http_category(response.status))
@@ -96,10 +111,15 @@ class VocuTTSProvider(TTSProvider):
                         raise self._error("Vocu audio exceeds max_audio_bytes")
                     total = 0
                     async for chunk in response.content.iter_chunked(4096):
+                        if total == 0:
+                            logger.debug("event=vocu_audio_first_chunk diagnostic_id=%s bytes=%s elapsed_ms=%s",
+                                         diagnostic_id, len(chunk), round((time.monotonic()-started)*1000))
                         total += len(chunk)
                         if total > self.max_audio_bytes:
                             raise self._error("Vocu audio exceeds max_audio_bytes")
                         yield chunk
+                    logger.debug("event=vocu_audio_download_finished diagnostic_id=%s bytes=%s elapsed_ms=%s",
+                                 diagnostic_id, total, round((time.monotonic()-started)*1000))
                     if not total:
                         raise self._error("Vocu TTS returned empty audio")
         except aiohttp.ClientConnectorCertificateError as error:
@@ -124,6 +144,7 @@ class VocuTTSProvider(TTSProvider):
         """Decode streamed MP3 into 24kHz mono s16le; no synthesis retries."""
         process = None
         writer = None
+        decoder_log = None
         try:
             from ...desktop.media_runtime import ffmpeg_executable
             decoder = await asyncio.to_thread(ffmpeg_executable)
@@ -134,8 +155,15 @@ class VocuTTSProvider(TTSProvider):
                     "-f", "mp3", "-i", "pipe:0", "-f", "s16le",
                     "-ar", "24000", "-ac", "1", "pipe:1",
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
                 )
+                async def read_decoder_log():
+                    diagnostic = bytearray()
+                    while chunk := await process.stderr.read(4096):
+                        diagnostic.extend(chunk)
+                        del diagnostic[:-8192]
+                    return diagnostic.decode("utf-8", errors="replace")
+                decoder_log = asyncio.create_task(read_decoder_log())
 
                 async def feed():
                     try:
@@ -148,7 +176,9 @@ class VocuTTSProvider(TTSProvider):
 
                 writer = asyncio.create_task(feed())
                 total = 0
+                peak = 0
                 pending = b""
+                logger.debug("event=vocu_decoder_started pid=%s sample_rate=24000 channels=1 format=s16le", getattr(process, "pid", None))
                 while chunk := await process.stdout.read(4096):
                     total += len(chunk)
                     if total > min(self.max_audio_bytes, 48000 * 120):
@@ -156,10 +186,19 @@ class VocuTTSProvider(TTSProvider):
                     pending += chunk
                     size = len(pending) // 2 * 2
                     if size:
+                        samples = array.array("h", pending[:size])
+                        peak = max(peak, max((abs(value) for value in samples), default=0))
+                        if total == len(chunk):
+                            logger.debug("event=vocu_pcm_first_chunk bytes=%s peak=%s", size, peak)
                         yield pending[:size]
                         pending = pending[size:]
                 await writer
-                if await process.wait() != 0 or not total or pending:
+                returncode = await process.wait()
+                logger.debug("event=vocu_decoder_finished pid=%s exit_code=%s pcm_bytes=%s pcm_ms=%s peak=%s",
+                             getattr(process, "pid", None), returncode, total, round(total / 48), peak)
+                detail = await decoder_log
+                if returncode != 0 or not total or pending:
+                    logger.debug("event=vocu_decoder_failed exit_code=%s detail=%s", returncode, detail)
                     raise self._error("Vocu MP3 decoding failed or returned empty PCM")
         except FileNotFoundError:
             raise self._error("Vocu telephone streaming requires ffmpeg on PATH",
@@ -174,3 +213,6 @@ class VocuTTSProvider(TTSProvider):
             if process is not None and process.returncode is None:
                 process.kill()
                 await process.wait()
+            if decoder_log is not None:
+                decoder_log.cancel()
+                await asyncio.gather(decoder_log, return_exceptions=True)

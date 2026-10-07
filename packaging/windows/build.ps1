@@ -116,6 +116,7 @@ function Get-MicrosoftInstaller {
 Get-MicrosoftInstaller $WebViewInstaller "https://go.microsoft.com/fwlink/?linkid=2124701" "WebView2RuntimeInstallerX64.exe" | Out-Null
 Get-MicrosoftInstaller $VcInstaller "https://aka.ms/vs/17/release/vc_redist.x64.exe" "vc_redist.x64.exe" | Out-Null
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_prerequisites.py", "--source", $Prerequisites, "--destination", "dist/windows/components/prerequisites", "--include", "build/windows-prerequisite-pin.iss")
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_vbcable.py", "--destination", "dist/windows/components/prerequisites")
 Get-ChildItem $Prerequisites -Filter *.exe | Get-FileHash -Algorithm SHA256 | Format-Table | Out-String | Set-Content (Join-Path $Prerequisites "SHA256SUMS.txt")
 if (-not $IsccPath) {
     $IsccPath = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6/ISCC.exe"

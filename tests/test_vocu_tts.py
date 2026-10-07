@@ -173,3 +173,29 @@ def test_vocu_stream_cancellation_closes_decoder(monkeypatch):
                 await asyncio.gather(task, return_exceptions=True)
                 await stream.aclose()
     asyncio.run(scenario())
+
+
+def test_vocu_debug_reports_audio_stages_without_signed_urls(caplog):
+    import logging
+    async def scenario():
+        async def generate(request):
+            return web.json_response({'status': 200, 'data': {
+                'audio': str(server.make_url('/audio?signature=private-signed-token'))}})
+        async def audio(request):
+            return web.Response(body=b'mp3-test', content_type='audio/mpeg')
+        app = web.Application()
+        app.router.add_post('/api/tts/simple-generate', generate)
+        app.router.add_get('/audio', audio)
+        async with TestServer(app) as server:
+            provider = VocuTTSProvider(api_key='private-api-key', voice_id='voice-test',
+                base_url=str(server.make_url('/api')))
+            await provider.synthesize('private-input-text')
+    with caplog.at_level(logging.DEBUG, logger='momoi.integrations.adapters.vocu'):
+        asyncio.run(scenario())
+    records = '\n'.join(record.getMessage() for record in caplog.records
+                        if record.name == 'momoi.integrations.adapters.vocu')
+    for event in ('vocu_tts_request', 'vocu_tts_api_response', 'vocu_audio_download_started',
+                  'vocu_audio_response', 'vocu_audio_first_chunk', 'vocu_audio_download_finished'):
+        assert event in records
+    for secret in ('private-api-key', 'private-input-text', 'private-signed-token'):
+        assert secret not in records

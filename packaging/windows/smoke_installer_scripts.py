@@ -35,6 +35,9 @@ def check(compiler):
         prerequisites.mkdir()
         for name in ('WebView2RuntimeInstallerX64.exe', 'vc_redist.x64.exe'):
             shutil.copy2(fixture, prerequisites / name)
+        cable = root / 'dist/windows/components/prerequisites/vbcable'
+        cable.mkdir(parents=True)
+        shutil.copy2(fixture, cable / 'VBCABLE_Setup_x64.exe')
         for name in ('qq_components.iss', 'installer.iss'):
             subprocess.run([str(compiler), '/Q', str(scripts / name)], check=True)
     print('PASS: both split installer scripts compiled against isolated tiny fixtures')

@@ -19,6 +19,7 @@ public partial class App : Application
     private TextBlock message = null!;
     private Button installButton = null!, chooseButton = null!, cancelButton = null!;
     private StartupView? loading;
+    private CheckBox cable = null!;
     private CancellationTokenSource? operation;
     private bool installing, installed;
     private readonly string cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Momoi", "Installer");
@@ -79,6 +80,11 @@ public partial class App : Application
         row.Children.Add(directory); row.Children.Add(chooseButton); content.Children.Add(row);
         message = new TextBlock { Text = "安装期间需要联网，并可能请求管理员授权。配置和用户数据保存在安装目录的 data 文件夹。", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 16, 0, 22), LineHeight = 22 };
         content.Children.Add(message);
+        cable = new CheckBox { Content = "安装 VB-CABLE（语音通话组件；已有 Steam 音频设备可跳过）", IsChecked = false, Margin = new Thickness(0, 0, 0, 8) };
+        content.Children.Add(cable);
+        content.Children.Add(new TextBlock { Text = "VB-Audio · www.vb-cable.com · Donationware，欢迎捐赠支持。", Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 8) });
+        var audioList = new TextBlock { Text = string.Join("\n", AudioDevicePreference.Installed()), TextWrapping = TextWrapping.Wrap };
+        content.Children.Add(new ScrollViewer { Content = audioList, Height = 90, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 0, 0, 16) });
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         cancelButton = Button("关闭", false); cancelButton.Margin = new Thickness(0, 0, 12, 0);
         installButton = Button("安装", true);
@@ -86,7 +92,7 @@ public partial class App : Application
         installButton.Click += async (_, _) => { if (installed) { if (LaunchInstalled()) Shutdown(); } else await InstallAsync(); };
         buttons.Children.Add(cancelButton); buttons.Children.Add(installButton); content.Children.Add(buttons);
         surface.Children.Add(content);
-        window = new Window { Title = "Momoi 在线安装", Width = 640, Height = 520, ResizeMode = ResizeMode.NoResize, Content = surface, WindowStartupLocation = WindowStartupLocation.CenterScreen, FontFamily = new FontFamily("Segoe UI Variable, Segoe UI, DengXian"), FontSize = 13, Foreground = (Brush)FindResource("Ink"), Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")) };
+        window = new Window { Title = "Momoi 在线安装", Width = 640, Height = 690, ResizeMode = ResizeMode.NoResize, Content = surface, WindowStartupLocation = WindowStartupLocation.CenterScreen, FontFamily = new FontFamily("Segoe UI Variable, Segoe UI, DengXian"), FontSize = 13, Foreground = (Brush)FindResource("Ink"), Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")) };
         window.Closing += (_, e) => { if (operation is not null) { e.Cancel = true; if (!installing) operation.Cancel(); } else Shutdown(); };
     }
     private Button Button(string label, bool primary)
@@ -155,7 +161,7 @@ public partial class App : Application
             operation.Token.ThrowIfCancellationRequested();
             installing = true; System.Windows.Input.CommandManager.InvalidateRequerySuggested(); loading?.SetDetail("安装中 · 请确认 Windows 管理员授权");
             string nativeLog = Path.Combine(cache, "native-install-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
-            var start = new ProcessStartInfo(core) { UseShellExecute = true, Verb = "runas", Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=\"{destination}\" /LOG=\"{nativeLog}\"" };
+            var start = new ProcessStartInfo(core) { UseShellExecute = true, Verb = "runas", Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS=\"{(cable.IsChecked == true ? "vbcable" : "")}\" /DIR=\"{destination}\" /LOG=\"{nativeLog}\"" };
             using var child = Process.Start(start) ?? throw new IOException("无法启动安装程序。");
             await child.WaitForExitAsync();
             Log("Native installer exit code " + child.ExitCode);
