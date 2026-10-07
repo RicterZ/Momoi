@@ -20,6 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+asr = ["sherpa-onnx==1.13.8", "sherpa-onnx-core==1.13.8"]
 desktop = [
     "sounddevice==0.5.3; sys_platform == 'win32'",
     "fastapi==0.135.1",

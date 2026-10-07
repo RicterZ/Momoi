@@ -38,3 +38,25 @@ test('LLM protocol switch without supplier defaults retains relay endpoint', () 
   const value = { adapter: 'openai', options: { base_url: 'https://relay.example', api_key: 'key', model: 'model' } };
   assert.deepEqual(switchProviderAdapter('llm', value, 'anthropic', protocols).options, value.options);
 });
+
+test('ASR switches between Tencent credentials and local endpoint without leaking options', () => {
+  const adapters = [
+    { capability: 'asr', adapter: 'tencent', fields: {
+      secret_id: { secret: true }, secret_key: { secret: true }, timeout_seconds: { default: 30 },
+    } },
+    { capability: 'asr', adapter: 'sherpa', fields: {
+      endpoint: { default: '' }, model_path: { default: '' }, timeout_seconds: { default: 30 },
+    } },
+  ];
+  const local = switchProviderAdapter('asr', {
+    adapter: 'tencent', enabled: true, options: { secret_id: 'test-id', secret_key: 'test-key' },
+  }, 'sherpa', adapters);
+  assert.equal(local.adapter, 'sherpa');
+  assert.equal(local.enabled, true);
+  assert.equal(local.options.secret_id, undefined);
+  assert.equal(local.options.secret_key, undefined);
+  local.options.endpoint = 'http://asr:8003';
+  const cloud = switchProviderAdapter('asr', local, 'tencent', adapters);
+  assert.equal(cloud.options.endpoint, undefined);
+  assert.equal(cloud.options.model_path, undefined);
+});

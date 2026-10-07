@@ -1,0 +1,5 @@
+{
+  "name": "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30",
+  "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2",
+  "sha256": "5a2832047ea1f97dd0dc595b816c230c4bafad65cfc0341fa57517cadc50afd0"
+}

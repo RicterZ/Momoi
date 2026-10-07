@@ -54,4 +54,4 @@ async def asr_probe(provider):
         wav.setframerate(16000)
         wav.writeframes(b"".join(struct.pack("<h", int(500 * math.sin(2 * math.pi * 440 * i / 16000))) for i in range(8000)))
     await provider.transcribe(AudioInput(output.getvalue(), "wav"))
-    return {"engine": provider.engine, "note": "已验证请求与鉴权；未验证人声识别准确率。"}
+    return {"engine": provider.engine, "note": "已验证识别请求；未验证人声识别准确率。"}

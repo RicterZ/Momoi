@@ -37,6 +37,13 @@ LLM = {
 SCHEMAS = {
     ("openai", "llm"): LLM,
     ("anthropic", "llm"): LLM,
+    ("sherpa", "asr"): {
+        "endpoint": field(default=""),
+        "model_path": field(default=""),
+        "num_threads": field("integer", 2),
+        "trailing_silence": field("number", 1.2),
+        "timeout_seconds": field("number", 30),
+    },
     ("tencent", "asr"): {
         "secret_id": field(secret=True),
         "secret_key": field(secret=True),
@@ -131,13 +138,20 @@ def builtin_schema(name, capability):
         spec["advanced"] = key not in basic[capability]
     required = {
         "llm": {"base_url", "model"},
-        "asr": {"secret_id", "secret_key"},
+        "asr": {"secret_id", "secret_key"} if name == "tencent" else set(),
         "tts": {"api_key", "voice_id" if name == "vocu" else "reference_id"},
         "embedding": set(),
         "balance": {"api_key"},
     }
     for key in required[capability]:
         fields[key]["required"] = True
+    if (name, capability) == ("sherpa", "asr"):
+        fields["endpoint"].update(label="本地 ASR 服务地址", advanced=False,
+            description="Docker 填写 http://asr:8003；与模型目录二选一。")
+        fields["model_path"].update(label="本地 ASR 模型目录", advanced=True,
+            description="Windows 本地组件的模型目录；使用容器时留空。")
+        fields["num_threads"]["label"] = "CPU 推理线程数（本地加载）"
+        fields["trailing_silence"]["label"] = "断句静音（秒，本地加载）"
     if (name, capability) == ("deepseek", "balance"):
         fields["accounting"]["description"] = "按 DeepSeek 用量和官方价格估算模型费用；模型使用其他服务商时请关闭。关闭后仍可查询余额并记录通用 Token 用量。"
     if (name, capability) == ("openai", "embedding"):

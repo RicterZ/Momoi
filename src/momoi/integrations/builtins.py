@@ -70,6 +70,16 @@ def register_builtins():
         lambda options, ctx: TencentASRProvider(**options, transport=ctx.transport),
         validate=validate_asr, schema=builtin_schema("tencent", "asr"), test=asr_probe))
 
+    from .adapters.sherpa import SherpaASRProvider
+
+    def validate_sherpa(options):
+        fields(options, set(builtin_schema("sherpa", "asr")))
+        SherpaASRProvider(**options)
+
+    register_adapter(Adapter("sherpa", "asr",
+        lambda options, ctx: SherpaASRProvider(**options),
+        validate=validate_sherpa, schema=builtin_schema("sherpa", "asr"), test=asr_probe))
+
     def validate_tts(options):
         fields(options, set(builtin_schema("fish", "tts")))
         FishAudioTTSProvider(**options)

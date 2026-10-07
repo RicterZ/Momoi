@@ -36,7 +36,7 @@ const modules = [
     icon: "voice",
     names: ["tts", "asr"],
     optional: true,
-    tip: "语音识别与合成分别启用。腾讯 ASR 用于 QQ 电话；普通 QQ 语音消息仍使用原生转写。",
+    tip: "语音识别与合成分别启用。QQ 电话可选择腾讯云或本地 Sherpa ASR；普通 QQ 语音消息仍使用原生转写。",
   },
   {
     id: "memory",
@@ -64,10 +64,11 @@ const adapterLabels = {
   fish: "Fish Audio",
   vocu: "悟声 Vocu",
   tencent: "腾讯云",
+  sherpa: "本地 Sherpa ASR",
 };
 const primaryFields = {
   llm: ["base_url", "api_key", "model", "thinking"],
-  asr: ["secret_id", "secret_key"],
+  asr: ["secret_id", "secret_key", "endpoint"],
   tts: ["api_key", "reference_id", "voice_id", "model"],
   embedding: ["endpoint", "api_key", "model", "dimensions"],
   balance: ["base_url", "api_key", "timeout_seconds", "accounting"],
@@ -450,7 +451,9 @@ function SecretField({ label, value, onChange }) {
 
 function OptionField({ name, spec, value, onChange }) {
   const id = useId();
-  const hint = ["base_url", "endpoint"].includes(name)
+  const hint = spec.label === "本地 ASR 服务地址"
+    ? spec.description
+    : ["base_url", "endpoint"].includes(name)
     ? undefined
     : spec.description || fieldHints[name];
   const label =

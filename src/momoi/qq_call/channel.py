@@ -36,6 +36,9 @@ class QQCallChannel:
         self.segmenter = Segmenter()
         self.http = self.ws = None
         self.queue = asyncio.Queue(maxsize=8)
+        self.asr_stream = None
+        self.asr_frames = 0
+        self.asr_compute_ms = 0.0
         self.pending_stop = None
         self.sent = OrderedDict()
 
@@ -57,6 +60,12 @@ class QQCallChannel:
         self.session_id = ''
         self.generation += 1
         self.segmenter.reset()
+        self.asr_frames = 0
+        self.asr_compute_ms = 0.0
+        if self.asr_stream is not None:
+            with contextlib.suppress(Exception):
+                await self.asr_stream.close()
+            self.asr_stream = None
         if old:
             log_event(logger, logging.INFO, 'qq_call_session_ended', channel=self.name, session_id=old)
             if self.interrupt:
@@ -93,6 +102,34 @@ class QQCallChannel:
                     self.generation = int(value.get('generation') or 0)
                 self.status = {k: value[k] for k in ('phase', 'ready', 'error', 'dependencies') if k in value}
             elif message.type == aiohttp.WSMsgType.BINARY and self.session_id:
+                if callable(getattr(self.asr, 'create_stream', None)):
+                    try:
+                        if self.asr_stream is None:
+                            self.asr_stream = await self.asr.create_stream()
+                            log_event(logger, logging.DEBUG, 'qq_call_local_asr_stream_started',
+                                      session_id=self.session_id, provider=type(self.asr).__name__)
+                        started = time.monotonic()
+                        result = await self.asr_stream.feed(message.data)
+                        self.asr_frames += 1
+                        self.asr_compute_ms += (time.monotonic() - started) * 1000
+                    except (ASRError, ValueError, RuntimeError) as error:
+                        log_event(logger, logging.ERROR, 'qq_call_local_asr_failed',
+                                  session_id=self.session_id, error_type=type(error).__name__)
+                        self.status = {'phase': 'error', 'error': '本地 ASR 不可用，请检查组件或容器'}
+                        await self.ws.close()
+                        return
+                    if result['final']:
+                        log_event(logger, logging.DEBUG, 'qq_call_local_asr_endpoint',
+                                  session_id=self.session_id, frames=self.asr_frames,
+                                  compute_ms=round(self.asr_compute_ms), recognized=bool(result['text']))
+                        self.asr_frames = 0
+                        self.asr_compute_ms = 0.0
+                    if result['final'] and result['text']:
+                        context = {**self.routing_context(), 'segment_finished_at': time.time()}
+                        if self.queue.full():
+                            self.queue.get_nowait()
+                        self.queue.put_nowait((context, result['text']))
+                    continue
                 _, pcm = self.segmenter.feed(message.data)
                 if pcm:
                     context = {**self.routing_context(), 'segment_finished_at': time.time()}
@@ -115,7 +152,7 @@ class QQCallChannel:
             context = {**context, **self.routing_context()}
             started = time.monotonic()
             try:
-                text = await self.asr.transcribe(AudioInput(audio, 'wav'))
+                text = audio if isinstance(audio, str) else await self.asr.transcribe(AudioInput(audio, 'wav'))
                 if text == '嗯。':
                     text = ''
             except ASRError:
