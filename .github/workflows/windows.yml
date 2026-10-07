@@ -10,7 +10,7 @@ on:
         default: ""
         required: false
       download_qq:
-        description: "Verify downloading the pinned QQ components from COS instead of using the sibling EXE"
+        description: "Verify downloading the pinned QQ components from COS instead of using components/"
         type: boolean
         default: false
       download_prerequisites:
@@ -51,7 +51,7 @@ jobs:
       - name: Locked Python test environment
         run: uv sync --locked --python 3.12 --group test
       - name: Windows shell, process tree and workspace tests
-        run: uv run --locked --group test pytest -q -n 0 tests/test_platform.py tests/test_exec_tool.py tests/test_desktop.py tests/test_desktop_qq.py tests/test_desktop_emotions.py tests/test_windows_media_lifecycle.py tests/test_desktop_qq_call_settings.py tests/test_qq_call_audio.py tests/test_qq_call_configuration.py tests/test_qq_call_streaming.py tests/test_qq_call_client.py tests/test_qq_call_packaging.py tests/test_windows_cos_publish.py tests/test_windows_installer_files.py
+        run: uv run --locked --group test pytest -q -n 0 tests/test_platform.py tests/test_exec_tool.py tests/test_desktop.py tests/test_desktop_qq.py tests/test_desktop_emotions.py tests/test_windows_media_lifecycle.py tests/test_desktop_qq_call_settings.py tests/test_qq_call_audio.py tests/test_qq_call_configuration.py tests/test_qq_call_streaming.py tests/test_qq_call_client.py tests/test_qq_call_packaging.py tests/test_windows_cos_publish.py tests/test_windows_installer_files.py tests/test_windows_installer_package.py tests/test_windows_python_trim.py
       - name: Update validation checks
         run: dotnet run --project desktop/Momoi.Update.Check -c Release
       - name: Native QQ library and isolated data smoke
@@ -87,11 +87,12 @@ jobs:
           name: Momoi-Windows-x64
           path: |
             dist/windows/Momoi-Setup-*-x64.exe
-            dist/windows/Momoi-QQ-Components-*-x64.exe
-            dist/windows/Momoi-QQ-Components-*-x64.json
+            dist/windows/components/Momoi-QQ-Components-*-x64.exe
+            dist/windows/components/Momoi-QQ-Components-*-x64.json
+            dist/windows/Momoi-Windows-*-x64.zip
             dist/windows/releases/Momoi-Code-*.zip
             dist/windows/releases/runtime.json
-            dist/windows/prerequisites/
+            dist/windows/components/prerequisites/
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
@@ -112,6 +113,7 @@ jobs:
       contents: write
       actions: read
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: Momoi-Windows-x64
@@ -130,4 +132,5 @@ jobs:
             echo "Expected exactly one tested Windows installer" >&2
             exit 1
           fi
-          gh release upload "$RELEASE_TAG" "${installers[0]}" dist/windows/Momoi-QQ-Components-*-x64.exe dist/windows/Momoi-QQ-Components-*-x64.json dist/windows/prerequisites/* --clobber
+          python packaging/windows/package_installer.py --directory dist/windows --version "${RELEASE_TAG#v}"
+          gh release upload "$RELEASE_TAG" "dist/windows/Momoi-Windows-${RELEASE_TAG#v}-x64.zip" --clobber

@@ -114,7 +114,7 @@ function Get-MicrosoftInstaller {
 }
 Get-MicrosoftInstaller $WebViewInstaller "https://go.microsoft.com/fwlink/?linkid=2124701" "WebView2RuntimeInstallerX64.exe" | Out-Null
 Get-MicrosoftInstaller $VcInstaller "https://aka.ms/vs/17/release/vc_redist.x64.exe" "vc_redist.x64.exe" | Out-Null
-Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_prerequisites.py", "--source", $Prerequisites, "--destination", "dist/windows/prerequisites", "--include", "build/windows-prerequisite-pin.iss")
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_prerequisites.py", "--source", $Prerequisites, "--destination", "dist/windows/components/prerequisites", "--include", "build/windows-prerequisite-pin.iss")
 Get-ChildItem $Prerequisites -Filter *.exe | Get-FileHash -Algorithm SHA256 | Format-Table | Out-String | Set-Content (Join-Path $Prerequisites "SHA256SUMS.txt")
 if (-not $IsccPath) {
     $IsccPath = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6/ISCC.exe"
@@ -131,3 +131,9 @@ Invoke-Checked $IsccPath @("/DAppVersion=$Version", "packaging/windows/installer
 $Installer = Join-Path $Root "dist/windows/Momoi-Setup-$Version-x64.exe"
 Get-FileHash $Installer -Algorithm SHA256 | Format-List
 Write-Output "Installer ready: $Installer"
+
+$Components = Join-Path $Root "dist/windows/components"
+New-Item -ItemType Directory -Path $Components -Force | Out-Null
+Move-Item "dist/windows/Momoi-QQ-Components-*-x64.exe" $Components -Force
+Move-Item "dist/windows/Momoi-QQ-Components-*-x64.json" $Components -Force
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/package_installer.py", "--directory", "dist/windows", "--version", $Version)

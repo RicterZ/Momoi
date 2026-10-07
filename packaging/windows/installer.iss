@@ -90,7 +90,7 @@ begin
        FileExists(ExpandConstant('{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\QQNT.dll')) and
        FileExists(ExpandConstant('{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\avsdk\AVSDKPlugin.dll')) then exit;
   try
-    PackagePath := ExpandConstant('{src}\{#QQPackageName}');
+    PackagePath := ExpandConstant('{src}\components\{#QQPackageName}');
     if not FileExists(PackagePath) then begin
       QQDownloadPage.Clear;
       QQDownloadPage.Add('{#QQPackageURL}', '{#QQPackageName}', '{#QQPackageSHA256}');
@@ -145,8 +145,7 @@ begin
   ResultCode := -1;
   Result := False;
   try
-    PackagePath := ExpandConstant('{src}\prerequisites\') + Name;
-    if not FileExists(PackagePath) then PackagePath := ExpandConstant('{src}\') + Name;
+    PackagePath := ExpandConstant('{src}\components\prerequisites\') + Name;
     if not FileExists(PackagePath) then begin
       QQDownloadPage.Clear;
       QQDownloadPage.Add(URL, Name, SHA256);

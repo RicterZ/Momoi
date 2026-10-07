@@ -10,7 +10,7 @@ function Install-App {
     param([string]$Log)
     $Extra = @()
     if ($DownloadPrerequisites) { $Extra += '/forceprerequisites=1' }
-    $OfflinePrerequisites = Join-Path (Split-Path $Installer) 'prerequisites'
+    $OfflinePrerequisites = Join-Path (Split-Path $Installer) 'components/prerequisites'
     $HiddenPrerequisites = $OfflinePrerequisites + '.download-check'
     $HidePrerequisites = $DownloadPrerequisites -and (Test-Path $OfflinePrerequisites)
     if ($HidePrerequisites) { Move-Item $OfflinePrerequisites $HiddenPrerequisites }
@@ -22,8 +22,8 @@ function Install-App {
     }
 }
 try {
-    $ComponentPackages = @(Get-ChildItem (Split-Path $Installer) -Filter 'Momoi-QQ-Components-*-x64.exe')
-    if ($ComponentPackages.Count -ne 1) { throw 'Expected one frozen QQ component package beside main installer' }
+    $ComponentPackages = @(Get-ChildItem (Join-Path (Split-Path $Installer) 'components') -Filter 'Momoi-QQ-Components-*-x64.exe')
+    if ($ComponentPackages.Count -ne 1) { throw 'Expected one frozen QQ component package in components directory' }
     $ComponentMetadata = Get-Content ([IO.Path]::ChangeExtension($ComponentPackages[0].FullName, '.json')) -Raw | ConvertFrom-Json
     if ((Get-FileHash $ComponentPackages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ComponentMetadata.sha256) { throw 'Component artifact hash mismatch' }
     if ($DownloadQQComponents) {
