@@ -42,7 +42,15 @@ internal static class QQCallSettings
             foreach (string argument in new[] { "interface", family, "show", "excludedportrange", "protocol=tcp" }) info.ArgumentList.Add(argument);
             using var process = Process.Start(info) ?? throw new IOException("无法检查系统保留端口。");
             var output = process.StandardOutput.ReadToEndAsync();
-            if (!process.WaitForExit(5000)) { process.Kill(); throw new IOException("系统保留端口检查超时，请重试。"); }
+            // A cold Windows runner can take longer than five seconds to load netsh.
+            // Keep checking excluded ranges: a successful .NET bind alone does not
+            // establish that the later native listener can use a reserved port.
+            if (!process.WaitForExit(30000))
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit();
+                throw new IOException($"系统保留端口检查超时（netsh {family}，30 秒），请重试。");
+            }
             if (process.ExitCode != 0) throw new IOException("无法检查系统保留端口，请检查网络配置。");
             foreach (Match match in Regex.Matches(output.GetAwaiter().GetResult(), @"(?m)^\s*(\d+)\s+(\d+)\s*\*?\s*$"))
                 excluded.Add((int.Parse(match.Groups[1].Value), int.Parse(match.Groups[2].Value)));
