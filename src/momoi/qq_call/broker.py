@@ -1,5 +1,6 @@
 """NapCat-side media service. No model, ASR credentials, or private memories."""
 import asyncio
+import array
 import contextlib
 import hmac
 import json
@@ -48,6 +49,7 @@ class MediaBroker:
         self.generation = 0
         self.status = {'protocol_version': 1, 'ready': False, 'phase': 'unavailable', 'error': 'Starting'}
         self.capture = self.capture_task = self.play_process = self.poll_task = None
+        self.capture_stats = {}
         self.audio_error = ""
         self.audio_retry_at = 0.0
         self.play_lock = asyncio.Lock()
@@ -135,10 +137,11 @@ class MediaBroker:
             if connected and not self.session_id:
                 self.invite = invite
                 self.session_id = uuid.uuid4().hex
+                self.capture_stats = {'frames': 0, 'bytes': 0, 'peak': 0}
                 self.generation = 0
             self.status = {'protocol_version': 1, 'ready': ready, 'dependencies': deps,
                 'phase': phase, 'client_connected': self.ws is not None and not self.ws.closed,
-                'auto_answer_ready': enabled, 'error': '' if ready else (self.audio_error or
+                'auto_answer_ready': enabled, 'capture': dict(self.capture_stats), 'error': '' if ready else (self.audio_error or
                     ('等待 QQ 登录及通话插件就绪' if not deps['bridge'] else
                      ('等待 AVSDK 宿主就绪' if not deps['av_host'] else '虚拟音频设备未就绪')))}
             await self.send_status()
@@ -148,14 +151,29 @@ class MediaBroker:
 
     async def capture_audio(self, session_id):
         process = None
+        next_report = time.monotonic()
         try:
+            print(json.dumps({"event": "qq_call_capture_started", "session_id": session_id}), flush=True)
             process = await asyncio.create_subprocess_exec(*self.capture_command,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+                stdout=asyncio.subprocess.PIPE, stderr=None)
             self.capture = process
             while self.session_id == session_id and self.ws is not None and not self.ws.closed:
                 frame = await process.stdout.readexactly(640)
+                samples = array.array("h", frame)
+                if sys.byteorder != "little":
+                    samples.byteswap()
+                peak = max((abs(sample) for sample in samples), default=0)
+                self.capture_stats["frames"] = self.capture_stats.get("frames", 0) + 1
+                self.capture_stats["bytes"] = self.capture_stats.get("bytes", 0) + len(frame)
+                self.capture_stats["peak"] = max(self.capture_stats.get("peak", 0), peak)
+                if time.monotonic() >= next_report:
+                    print(json.dumps({"event": "qq_call_capture_progress", "session_id": session_id,
+                          **self.capture_stats}), flush=True)
+                    next_report = time.monotonic() + 5
                 await asyncio.wait_for(self.ws.send_bytes(frame), 2)
-        except (OSError, ConnectionError, asyncio.IncompleteReadError, asyncio.TimeoutError):
+        except (OSError, ConnectionError, asyncio.IncompleteReadError, asyncio.TimeoutError) as error:
+            print(json.dumps({"event": "qq_call_capture_failed", "session_id": session_id,
+                  "error_type": type(error).__name__, "error": str(error)}), flush=True)
             # Unexpected capture failures close the connection so Momoi can
             # reconnect and re-arm, rather than leave a silently disabled socket.
             if self.session_id == session_id and self.ws is not None and not self.ws.closed:
