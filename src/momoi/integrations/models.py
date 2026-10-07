@@ -16,7 +16,7 @@ class LLMConfig:
     timeout_seconds: float
     max_retries: int
     api_format: str = "anthropic"
-    tool_choice: bool = True
+    tool_choice: bool = False
     thinking: ThinkingConfig = ThinkingConfig()
 
 

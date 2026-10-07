@@ -663,3 +663,14 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
             )
             self.assertEqual(await vectors.encode(["hello"], query=True), [[1.0, 0.0]])
         self.assertTrue(vectors.closed)
+
+
+def test_tool_choice_defaults_off_and_explicit_enable_is_preserved():
+    from momoi.integrations.models import LLMConfig
+    from momoi.integrations.validation import llm_config
+    from momoi.integrations.schema import LLM
+    options = {"base_url": "https://example.invalid", "model": "synthetic"}
+    assert LLMConfig("https://example.invalid", "", "synthetic", 100, 0, 1, 0).tool_choice is False
+    assert llm_config(options, "openai").tool_choice is False
+    assert llm_config({**options, "tool_choice": True}, "openai").tool_choice is True
+    assert LLM["tool_choice"]["default"] is False

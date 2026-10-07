@@ -724,6 +724,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 temperature=0,
                 timeout_seconds=1,
                 max_retries=1,
+                tool_choice=True,
                 thinking=ThinkingConfig(
                     effort="high",
                 ),
@@ -1334,6 +1335,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     base_url=str(server.make_url("/")).rstrip("/"),
                     api_key="openai-test-key",
                     model="test-model",
+                    tool_choice=True,
                     max_tokens=100,
                     temperature=0,
                     timeout_seconds=1,
@@ -1408,7 +1410,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     timeout_seconds=1,
                     max_retries=0,
                     api_format="openai",
-                    tool_choice=False,
                 )
             )
             async with provider_without_tool_choice:
@@ -1430,6 +1431,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     base_url=str(server.make_url("/")).rstrip("/"),
                     api_key="openai-test-key",
                     model="named-tool-model",
+                    tool_choice=True,
                     max_tokens=100,
                     temperature=0,
                     timeout_seconds=1,

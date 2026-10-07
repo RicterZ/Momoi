@@ -21,7 +21,7 @@ LLM = {
     "temperature": field("number", 0.6),
     "timeout_seconds": field("number", 300),
     "max_retries": field("integer", 3),
-    "tool_choice": field("boolean", True),
+    "tool_choice": field("boolean", False),
     "thinking": {
         **field("object", {}),
         "properties": {

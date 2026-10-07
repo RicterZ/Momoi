@@ -83,7 +83,7 @@ def llm_config(options, api_format):
     effort = thinking.get("effort", "low")
     if not isinstance(effort, str) or effort not in ("", *THINKING_EFFORTS):
         raise ConfigError(f"thinking.effort must be empty or one of {', '.join(THINKING_EFFORTS)}")
-    choice = options.get("tool_choice", True)
+    choice = options.get("tool_choice", False)
     if type(choice) is not bool:
         raise ConfigError("tool_choice must be boolean")
     return LLMConfig(
