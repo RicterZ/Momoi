@@ -1205,6 +1205,12 @@
   .settings-runtime-fields > .settings-field { width: 150px; }
 }
 
+.settings-channel-login.settings-desktop-qq {
+  min-height: 0;
+  align-content: start;
+  padding: 12px 0;
+}
+
 .settings-qq-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1213,7 +1219,7 @@
 }
 .settings-qq-actions .settings-button {
   width: auto;
-  padding: 8px 12px;
+  padding: 8px 20px;
 }
 
 /* First-run setup shares the normal configuration forms. */

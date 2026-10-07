@@ -35,7 +35,7 @@ export default function DesktopQQ({ botQQ, ownerQQ, connected, disabled, onConne
     } catch (failure) { setError(failure.message); }
     finally { setPending(false); }
   }
-  return <div className="settings-channel-login">
+  return <div className="settings-channel-login settings-desktop-qq">
     <p className="settings-channel-note">内置 QQ：{pending ? '正在处理…' : status?.running ? '客户端运行中' : status?.available === false ? '组件缺失，请安装新版桌面版' : '未启动'}。启动后在独立窗口扫码。QQ 消息连接：{connected ? "已连接" : "未连接"}。</p>
     <div className="settings-qq-actions">
     <button type="button" className="quiet-button settings-button" disabled={disabled || pending || status?.available === false} onClick={() => operate('start')}>启动并连接</button>
