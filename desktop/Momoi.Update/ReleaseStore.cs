@@ -71,6 +71,12 @@ public sealed class ReleaseStore
         return release;
     }
 
+    public CodeRelease GetRelease(string id)
+    {
+        if (!SafeId.IsMatch(id)) throw new InvalidDataException("Invalid release ID");
+        return Validate(Path.Combine(releases, id));
+    }
+
     public void Activate(CodeRelease release)
     {
         if (!SafeId.IsMatch(release.Manifest.ReleaseId) ||

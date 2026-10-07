@@ -55,7 +55,7 @@ public static class SignedLatest
         return Verify(buffer.ToArray(), EmbeddedPublicKey());
     }
 
-    public static LatestRelease Verify(byte[] envelope, byte[] publicKey)
+    public static byte[] VerifyPayload(byte[] envelope, byte[] publicKey)
     {
         if (envelope.Length > MaxManifestBytes || publicKey.Length != 32) throw new InvalidDataException("Invalid signed manifest");
         try
@@ -63,11 +63,22 @@ public static class SignedLatest
             using var document = JsonDocument.Parse(envelope);
             byte[] payload = Convert.FromBase64String(document.RootElement.GetProperty("signed").GetString()!);
             byte[] signature = Convert.FromBase64String(document.RootElement.GetProperty("signature").GetString()!);
-            if (signature.Length != 64) throw new InvalidDataException("Invalid Ed25519 signature");
             var verifier = new Ed25519Signer();
             verifier.Init(false, new Ed25519PublicKeyParameters(publicKey, 0));
             verifier.BlockUpdate(payload, 0, payload.Length);
-            if (!verifier.VerifySignature(signature)) throw new InvalidDataException("更新签名验证失败。");
+            if (signature.Length != 64 || !verifier.VerifySignature(signature)) throw new InvalidDataException("更新签名验证失败。");
+            return payload;
+        }
+        catch (Exception error) when (error is JsonException or FormatException or KeyNotFoundException or ArgumentException or InvalidOperationException)
+        { throw new InvalidDataException("Invalid signed manifest", error); }
+    }
+
+    public static LatestRelease Verify(byte[] envelope, byte[] publicKey)
+    {
+        if (envelope.Length > MaxManifestBytes || publicKey.Length != 32) throw new InvalidDataException("Invalid signed manifest");
+        try
+        {
+            byte[] payload = VerifyPayload(envelope, publicKey);
             var latest = JsonSerializer.Deserialize<LatestRelease>(payload) ?? throw new InvalidDataException("Invalid latest payload");
             if (latest.FormatVersion != 1 || latest.Size is < 1 or > 64 * 1024 * 1024 || latest.PublishedAt <= 0 ||
                 latest.Sha256 is null || !Regex.IsMatch(latest.Sha256, @"^[0-9a-f]{64}$") ||

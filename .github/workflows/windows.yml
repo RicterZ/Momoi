@@ -5,6 +5,10 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
+      version:
+        description: "Build version (default: project version)"
+        default: ""
+        required: false
       installer_run:
         description: "Reuse an existing Windows installer artifact for installation diagnostics"
         default: ""
@@ -32,6 +36,7 @@ jobs:
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          BUILD_VERSION: ${{ inputs.version }}
         run: |
           if ($env:GITHUB_EVENT_NAME -eq 'release') {
             $Version = $env:RELEASE_TAG -replace '^v', ''
@@ -39,6 +44,9 @@ jobs:
               throw "Release tag must be a version such as v1.1.0: $env:RELEASE_TAG"
             }
             "value=$Version" >> $env:GITHUB_OUTPUT
+          } elseif ($env:BUILD_VERSION) {
+            if ($env:BUILD_VERSION -notmatch '^\d+\.\d+\.\d+(?:[.-][A-Za-z0-9.-]+)?$') { throw "Invalid build version" }
+            "value=$env:BUILD_VERSION" >> $env:GITHUB_OUTPUT
           }
       - uses: astral-sh/setup-uv@v6
       - uses: actions/setup-node@v4
@@ -67,6 +75,25 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.value }}
         run: ./packaging/windows/build.ps1 -Version $env:RELEASE_VERSION
+      - name: Build independent shell update
+        if: inputs.installer_run == ''
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          $Version = $env:RELEASE_VERSION
+          if (-not $Version) { $Version = (& uv run --no-sync python -c "import importlib.metadata; print(importlib.metadata.version('momoi'))").Trim() }
+          uv run --no-sync python packaging/windows/build_shell.py --version $Version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Native shell replacement and rollback smoke
+        if: inputs.installer_run == ''
+        shell: pwsh
+        run: |
+          $Archive = (Get-ChildItem dist/windows/shell/Momoi-Shell-*-x64.zip | Select-Object -First 1).FullName
+          $Shell = (Resolve-Path dist/windows/shell/payload/Momoi.exe).Path
+          $Process = Start-Process $Shell -ArgumentList @('--update-shell-smoke', ('"' + $Archive + '"')) -Wait -PassThru
+          if ($Process.ExitCode -ne 0) { throw "Shell update smoke failed; inspect $Archive.smoke-error.log" }
+          Get-Content "$Archive.smoke.json"
       - uses: actions/download-artifact@v4
         if: inputs.installer_run != ''
         with:
@@ -92,6 +119,7 @@ jobs:
             dist/windows/Momoi-Windows-*-x64.zip
             dist/windows/releases/Momoi-Code-*.zip
             dist/windows/releases/runtime.json
+            dist/windows/shell/Momoi-Shell-*-x64.zip
             dist/windows/components/prerequisites/
           if-no-files-found: error
 

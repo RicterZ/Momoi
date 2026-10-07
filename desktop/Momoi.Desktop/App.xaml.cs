@@ -24,6 +24,7 @@ public partial class App : Application
     private Mutex? instance;
     private bool ownsInstance, exiting, updateBusy, switching;
     private Forms.ToolStripItem? updateMenu;
+    private MenuItem? windowUpdateMenu;
     private ReleaseStore? releases;
     private CodeRelease? currentRelease;
     private string? authScript;
@@ -48,6 +49,17 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Length == 2 && e.Args[0] == "--update-shell-smoke")
+        {
+            try { await ComponentUpdateWorker.SmokeAsync(e.Args[1]); Shutdown(0); }
+            catch (Exception error) { File.WriteAllText(e.Args[1] + ".smoke-error.log", error.ToString()); Shutdown(1); }
+            return;
+        }
+        if (e.Args.Length == 2 && e.Args[0] == "--install-update")
+        {
+            await ComponentUpdateWorker.RunAsync(this, e.Args[1]);
+            return;
+        }
         instance = new Mutex(false, @"Local\" + InstanceName);
         try { ownsInstance = instance.WaitOne(0); }
         catch (AbandonedMutexException) { ownsInstance = true; }
@@ -107,34 +119,29 @@ public partial class App : Application
             Directory.CreateDirectory(workspace);
             Process.Start(new ProcessStartInfo(workspace) { UseShellExecute = true });
         }));
-        menu.Items.Add("查看日志", null, (_, _) => Dispatcher.BeginInvoke(() =>
-        {
-            if (logWindow is null)
-            {
-                logWindow = new LogWindow(workspace);
-                logWindow.Closed += (_, _) => logWindow = null;
-            }
-            logWindow.Show();
-            if (logWindow.WindowState == WindowState.Minimized) logWindow.WindowState = WindowState.Normal;
-            logWindow.Activate();
-        }));
+        menu.Items.Add("查看日志", null, (_, _) => Dispatcher.BeginInvoke(ShowLogs));
         menu.Items.Add("QQ 登录", null, (_, _) => Dispatcher.BeginInvoke(async () =>
         {
             try { await OpenQQLoginAsync(); }
             catch (Exception error) { MessageBox.Show(error.Message, "Momoi QQ", MessageBoxButton.OK, MessageBoxImage.Information); }
         }));
-        updateMenu = menu.Items.Add("检查更新", null, (_, _) => Dispatcher.BeginInvoke(() => updateTask = UpdateAsync()));
+        updateMenu = menu.Items.Add("检查更新", null, (_, _) => Dispatcher.BeginInvoke(() => updateTask = CheckAllUpdatesAsync()));
         menu.Items.Add("退出程序", null, (_, _) => Dispatcher.BeginInvoke(() => _ = ExitAsync()));
         tray = new Forms.NotifyIcon { Icon = trayImage, Text = "Momoi", ContextMenuStrip = menu, Visible = true };
         tray.DoubleClick += (_, _) => Dispatcher.BeginInvoke(ShowPanel);
         panelContent = new Grid();
+        var shellLayout = new DockPanel();
+        var navigation = CreateWindowMenu();
+        DockPanel.SetDock(navigation, Dock.Top);
+        shellLayout.Children.Add(navigation);
+        shellLayout.Children.Add(panelContent);
         panel = new Window
         {
             Title = "Momoi", Width = Math.Min(1440, SystemParameters.WorkArea.Width * 0.94),
             Height = Math.Min(850, SystemParameters.WorkArea.Height * 0.94), MinWidth = 800, MinHeight = 600,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
             Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")),
-            Content = panelContent,
+            Content = shellLayout,
         };
         ShowLoading("正在启动…");
         MainWindow = panel;
@@ -143,6 +150,73 @@ public partial class App : Application
         pipeListener = ListenForActivationAsync();
         startup = StartServicesAsync();
         await startup;
+        if (!exiting && File.Exists(UpdatePlanPath)) updateTask = ResumeUpdatesAsync();
+    }
+
+    private void ShowLogs()
+    {
+        if (logWindow is null)
+        {
+            logWindow = new LogWindow(workspace);
+            logWindow.Closed += (_, _) => logWindow = null;
+        }
+        logWindow.Show();
+        if (logWindow.WindowState == WindowState.Minimized) logWindow.WindowState = WindowState.Normal;
+        logWindow.Activate();
+    }
+
+    private Menu CreateWindowMenu()
+    {
+        var menu = new Menu
+        {
+            Padding = new Thickness(12, 5, 12, 5),
+            Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(247, 248, 251)),
+            Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(32, 36, 58)),
+            FontFamily = new System.Windows.Media.FontFamily("Segoe UI Variable, Segoe UI, DengXian"),
+            FontSize = 13,
+        };
+        MenuItem Item(string label, Action action)
+        {
+            var item = new MenuItem { Header = label, Padding = new Thickness(14, 7, 14, 7) };
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
+            return item;
+        }
+        Item("日志", ShowLogs);
+        var qq = new MenuItem { Header = "QQ 设置", Padding = new Thickness(14, 7, 14, 7) };
+        var channel = new MenuItem { Header = "消息渠道设置" };
+        channel.Click += async (_, _) => await OpenSettingsAsync("channel");
+        var login = new MenuItem { Header = "打开 QQ 登录窗口" };
+        login.Click += async (_, _) =>
+        {
+            try { await OpenQQLoginAsync(); }
+            catch (Exception error) { MessageBox.Show(error.Message, "Momoi QQ", MessageBoxButton.OK, MessageBoxImage.Information); }
+        };
+        qq.Items.Add(channel); qq.Items.Add(login); menu.Items.Add(qq);
+        Item("配置目录", () =>
+        {
+            Directory.CreateDirectory(workspace);
+            Process.Start(new ProcessStartInfo(workspace) { UseShellExecute = true });
+        });
+        var audio = new MenuItem { Header = "音频", Padding = new Thickness(14, 7, 14, 7) };
+        var devices = new MenuItem { Header = "电话与虚拟设备设置" };
+        devices.Click += async (_, _) => await OpenSettingsAsync("channel");
+        var voice = new MenuItem { Header = "语音识别与合成设置" };
+        voice.Click += async (_, _) => await OpenSettingsAsync("voice");
+        audio.Items.Add(devices); audio.Items.Add(voice); menu.Items.Add(audio);
+        windowUpdateMenu = Item("检查更新", () => updateTask = CheckAllUpdatesAsync());
+        return menu;
+    }
+
+    private async Task OpenSettingsAsync(string section)
+    {
+        ShowPanel();
+        if (!dashboardReady || browser?.CoreWebView2 is null || switching)
+        {
+            MessageBox.Show("面板尚未就绪，请稍后再打开设置。", "Momoi");
+            return;
+        }
+        await browser.CoreWebView2.ExecuteScriptAsync("window.location.hash = " + JsonSerializer.Serialize("settings/" + section));
     }
 
     private async Task ListenForActivationAsync()
@@ -185,7 +259,7 @@ public partial class App : Application
             catch (OperationCanceledException) when (exiting) { }
             catch (Exception error) { if (!exiting) MessageBox.Show($"内置 QQ 未能启动：{error.Message}\n可在消息渠道设置中重试。", "Momoi QQ", MessageBoxButton.OK, MessageBoxImage.Warning); }
             updateTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
-            updateTimer.Tick += (_, _) => { updateTimer.Stop(); updateTask = UpdateAsync(quiet: true); };
+            updateTimer.Tick += (_, _) => { updateTimer.Stop(); if (!File.Exists(UpdatePlanPath)) updateTask = CheckAllUpdatesAsync(quiet: true); };
             updateTimer.Start();
         }
         catch (OperationCanceledException) when (exiting) { }
@@ -268,19 +342,20 @@ public partial class App : Application
         }
     }
 
-    private async Task UpdateAsync(bool quiet = false)
+    private async Task UpdateAsync(bool quiet = false, CodeRelease? staged = null)
     {
         if (updateBusy || exiting || releases is null || currentRelease is null || backend is null) return;
         updateBusy = true;
         bool installationRequested = false;
         if (updateMenu is not null) updateMenu.Enabled = false;
+        if (windowUpdateMenu is not null) windowUpdateMenu.IsEnabled = false;
         try
         {
             tray!.Text = "Momoi — 正在检查更新";
-            LatestRelease latest = await SignedLatest.FetchAsync(lifetime.Token);
-            if (latest.ReleaseId == currentRelease.Manifest.ReleaseId)
+            LatestRelease? latest = staged is null ? await SignedLatest.FetchAsync(lifetime.Token) : null;
+            if ((latest?.ReleaseId ?? staged!.Manifest.ReleaseId) == currentRelease.Manifest.ReleaseId)
             { if (!quiet) MessageBox.Show("当前已是最新发布版本。", "Momoi"); return; }
-            if (MessageBox.Show($"发现新版本 {latest.Version}（当前 {currentRelease.Manifest.Version}）。\n是否下载安装？安装完成后会重启后台并刷新面板。", "Momoi 更新", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes) return;
+            if (staged is null && MessageBox.Show($"发现新版本 {latest!.Version}（当前 {currentRelease.Manifest.Version}）。\n是否下载安装？安装完成后会重启后台并刷新面板。", "Momoi 更新", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes) return;
             installationRequested = true;
             ShowLoading("正在更新…");
             loadingView!.SetDetail("下载中");
@@ -297,7 +372,7 @@ public partial class App : Application
                 }
                 loadingView?.SetDetail(detail);
             });
-            CodeRelease next = await releases.DownloadAsync(latest, lifetime.Token, progress);
+            CodeRelease next = staged ?? await releases.DownloadAsync(latest!, lifetime.Token, progress);
             loadingView?.SetDetail("安装中");
             tray.Text = "Momoi — 正在安装更新";
             switching = true;
@@ -355,6 +430,7 @@ public partial class App : Application
             switching = false;
             updateBusy = false;
             if (updateMenu is not null) updateMenu.Enabled = true;
+            if (windowUpdateMenu is not null) windowUpdateMenu.IsEnabled = true;
             if (tray is not null && !exiting) tray.Text = "Momoi";
         }
     }

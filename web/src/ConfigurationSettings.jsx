@@ -1444,6 +1444,16 @@ export default function ConfigurationSettings({
   const [loading, setLoading] = useState(true);
   const [generation, setGeneration] = useState(0);
   const [activeSection, setActiveSection] = useState("model");
+  useEffect(() => {
+    if (setupMode) return;
+    const navigate = () => {
+      const [page, section] = window.location.hash.slice(1).split("/");
+      if (page === "settings" && modules.some(module => module.id === section)) setActiveSection(section);
+    };
+    navigate();
+    window.addEventListener("hashchange", navigate);
+    return () => window.removeEventListener("hashchange", navigate);
+  }, [setupMode]);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const providerTestLock = useRef(false);

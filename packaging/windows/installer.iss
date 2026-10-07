@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.1.2"
+  #define AppVersion "1.1.3"
 #endif
 #define Root "..\.."
 #include "..\..\build\windows-qq-pin.iss"

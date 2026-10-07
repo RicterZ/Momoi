@@ -66,6 +66,40 @@ try
     catch (InvalidDataException) { tampered = true; }
     if (!tampered) throw new Exception("Tampered signature accepted");
     if (SignedLatest.EmbeddedPublicKey().Length != 32) throw new Exception("Public key missing from assembly");
+    byte[] SignCatalog(UpdateCatalog catalog)
+    {
+        byte[] raw = JsonSerializer.SerializeToUtf8Bytes(catalog);
+        var sign = new Ed25519Signer();
+        sign.Init(true, signingKey); sign.BlockUpdate(raw, 0, raw.Length);
+        return Envelope(raw, sign.GenerateSignature());
+    }
+    var shellArtifact = new UpdateArtifact("1.1.3", "1.1.3", UpdateCatalog.Url.Replace("catalog.json", "shell/test.zip"), new string('a', 64), 100, "shell-zip");
+    var pairArtifact = new UpdateArtifact("pair", "1.1.2", UpdateCatalog.Url.Replace("catalog.json", "components/test.exe"), new string('b', 64), 200, "napcat-installer");
+    var catalog = new UpdateCatalog(1, "1.1.3", shellArtifact, pairArtifact);
+    if (UpdateCatalog.Verify(SignCatalog(catalog), publicKey).Shell.Id != "1.1.3") throw new Exception("Catalog verification failed");
+    foreach (var invalid in new[] {
+        catalog with { FormatVersion = 2 },
+        catalog with { Shell = shellArtifact with { Url = "https://untrusted.example/shell.zip" } },
+        catalog with { Shell = shellArtifact with { Kind = "napcat-installer" } },
+        catalog with { NapCat = pairArtifact with { Size = 0 } },
+        catalog with { NapCat = pairArtifact with { Sha256 = "bad" } } })
+    {
+        bool rejected = false;
+        try { UpdateCatalog.Verify(SignCatalog(invalid), publicKey); }
+        catch (InvalidDataException) { rejected = true; }
+        if (!rejected) throw new Exception("Invalid component catalog accepted");
+    }
+    byte[] brokenCatalog = SignCatalog(catalog);
+    using (var document = JsonDocument.Parse(brokenCatalog))
+    {
+        var raw = Convert.FromBase64String(document.RootElement.GetProperty("signed").GetString()!);
+        var sig = Convert.FromBase64String(document.RootElement.GetProperty("signature").GetString()!);
+        sig[0] ^= 1;
+        bool rejected = false;
+        try { UpdateCatalog.Verify(Envelope(raw, sig), publicKey); }
+        catch (InvalidDataException) { rejected = true; }
+        if (!rejected) throw new Exception("Tampered catalog accepted");
+    }
     if (args.Length > 0)
     {
         // Check Python cryptography signatures against the .NET implementation.
