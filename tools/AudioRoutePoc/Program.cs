@@ -61,12 +61,17 @@ internal sealed class MainForm : Form
         }
         return result;
     }
+    private static bool IsPrivateHost(string path)
+    {
+        string normalized = Path.GetFullPath(path);
+        return normalized.EndsWith(@"\runtime\qq-call\qq\Files\QQ.exe", StringComparison.OrdinalIgnoreCase);
+    }
     private void RefreshChoices()
     {
         targets.Items.Clear();
         foreach (var p in Process.GetProcessesByName("QQ"))
         {
-            using (p) { try { string path = p.MainModule?.FileName ?? ""; targets.Items.Add(new Target(p.Id, path, p.StartTime.ToUniversalTime().Ticks)); } catch { } }
+            using (p) { try { string path = p.MainModule?.FileName ?? ""; if (!IsPrivateHost(path)) continue; targets.Items.Add(new Target(p.Id, path, p.StartTime.ToUniversalTime().Ticks)); } catch { } }
         }
         foreach (var pair in new[] { (input, 1, "Steam Streaming Microphone"), (output, 0, "Steam Streaming Speakers") })
         {
@@ -74,9 +79,9 @@ internal sealed class MainForm : Form
             pair.Item1.SelectedItem = pair.Item1.Items.Cast<Endpoint>().FirstOrDefault(item => item.Name.Contains(pair.Item3));
         }
         if (targets.Items.Count > 0) targets.SelectedIndex = 0;
-        Write($"Windows {Environment.OSVersion.Version}; QQ 进程 {targets.Items.Count}; 待恢复记录 {saved.Count}");
+        Write($"Windows {Environment.OSVersion.Version}; QQ 进程 {targets.Items.Count}; 待恢复记录 {saved.Count}；普通 QQ 客户端已过滤");
     }
-    private Target Selected() { var t = targets.SelectedItem as Target ?? throw new InvalidOperationException("请选择 QQ 进程"); t.Verify(); return t; }
+    private Target Selected() { var t = targets.SelectedItem as Target ?? throw new InvalidOperationException("请选择 Momoi 私有语音宿主进程"); if (!IsPrivateHost(t.Path)) throw new InvalidOperationException("拒绝修改普通 QQ 客户端"); t.Verify(); return t; }
     private void Probe()
     {
         var t = Selected(); using var policy = new Policy();
