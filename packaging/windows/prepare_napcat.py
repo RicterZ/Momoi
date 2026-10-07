@@ -5,6 +5,7 @@ import json
 import shutil
 import os
 import subprocess
+import time
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -18,9 +19,18 @@ def download_verified(destination: Path, component: dict) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_suffix('.download')
         try:
-            with urllib.request.urlopen(component['url'], timeout=120) as source, temporary.open('wb') as target:
-                shutil.copyfileobj(source, target)
-            temporary.replace(destination)
+            for attempt in range(4):
+                try:
+                    with urllib.request.urlopen(component['url'], timeout=120) as source, temporary.open('wb') as target:
+                        shutil.copyfileobj(source, target)
+                    temporary.replace(destination)
+                    break
+                except (OSError, urllib.error.URLError):
+                    temporary.unlink(missing_ok=True)
+                    if attempt == 3:
+                        raise
+                    print(f'Network download retry {attempt + 1}/3: {destination.name}', flush=True)
+                    time.sleep(2 ** attempt)
         finally:
             temporary.unlink(missing_ok=True)
     with destination.open('rb') as source:

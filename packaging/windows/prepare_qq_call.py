@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 import zipfile
 
@@ -24,9 +25,18 @@ def verified_download(spec, destination):
     if not destination.exists():
         temporary = destination.with_suffix('.partial')
         try:
-            with urllib.request.urlopen(spec['url'], timeout=120) as source, temporary.open('wb') as target:
-                shutil.copyfileobj(source, target)
-            temporary.replace(destination)
+            for attempt in range(4):
+                try:
+                    with urllib.request.urlopen(spec['url'], timeout=120) as source, temporary.open('wb') as target:
+                        shutil.copyfileobj(source, target)
+                    temporary.replace(destination)
+                    break
+                except (OSError, urllib.error.URLError):
+                    temporary.unlink(missing_ok=True)
+                    if attempt == 3:
+                        raise
+                    print(f'Network download retry {attempt + 1}/3: {destination.name}', flush=True)
+                    time.sleep(2 ** attempt)
         finally:
             temporary.unlink(missing_ok=True)
     with destination.open('rb') as stream:
