@@ -1279,3 +1279,10 @@
 .settings-qq-call-heading:has(input:checked) {
   border-bottom: 2px solid var(--ink);
 }
+
+.settings-qq-call.is-managed > .settings-disclosure-body {
+  padding: 12px 16px;
+}
+.settings-qq-call-managed-note {
+  margin: 0 0 8px;
+}

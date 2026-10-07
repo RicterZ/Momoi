@@ -1829,14 +1829,15 @@ function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) 
     finally { setTesting(false); }
   }
   function edit(key, next) { setTest(null); onChange({ ...value, [key]: next }); }
-  return <section className="settings-disclosure settings-qq-call">
+  return <section className={`settings-disclosure settings-qq-call${managed ? " is-managed" : ""}`}>
     <header className="settings-qq-call-heading">
       <strong>语音电话</strong>
       <Toggle checked={Boolean(value.enabled)} disabled={disabled} hideLabel onChange={v => edit("enabled", v)}>启用语音电话</Toggle>
     </header>
     {value.enabled && <div className="settings-disclosure-body">
+    {managed && <p className="settings-channel-note settings-qq-call-managed-note">连接地址和认证信息由桌面程序自动管理，无需填写。</p>}
     <Fields as="div" disabled={disabled}>
-      {managed ? <p className="settings-channel-note">连接地址和认证信息由桌面程序自动管理，无需填写。</p> : <>
+      {!managed && <>
       <OptionField name="bridge_url" spec={{ type: "string", label: "Bridge 地址", default: "" }} value={value.bridge_url} onChange={v => edit("bridge_url", v)} />
       <OptionField name="bridge_token" spec={{ type: "string", label: "认证 Token", secret: true }} value={value.bridge_token} onChange={v => edit("bridge_token", v)} />
       </>}
