@@ -597,6 +597,8 @@ class NapCatChannel:
                 "type": segment.get("type"),
                 "data": dict(segment.get("data") or {}),
             }
+            if item["type"] == "video":
+                item["type"] = "file"
             if item["type"] in {"json", "xml"} and isinstance(
                 item["data"].get("data"), dict
             ):

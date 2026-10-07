@@ -209,9 +209,11 @@ def owner_content_blocks(
             continue
         received_at = context_timestamp(event.received_at, timezone)
         opening = "<current_messages>\n" if index == 0 else ""
+        message_id = (f" message_id={quoteattr(event.message_id)}"
+                      if event.channel == "napcat" and event.message_id else "")
         blocks.append({
             "type": "text",
-            "text": f'{opening}<message time={quoteattr(received_at)}>\n{escape(event.text.strip())}',
+            "text": f'{opening}<message time={quoteattr(received_at)}{message_id}>\n{escape(event.text.strip())}',
         })
         blocks.extend(content_blocks(event.segments))
         blocks.append({"type": "text", "text": "\n</message>\n"})

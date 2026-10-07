@@ -33,6 +33,15 @@ class Replyer:
         mode = call.arguments.get("mode", "text")
         if mode not in {"text", "voice"}:
             raise ValueError("invalid reply mode")
+        quote_id = call.arguments.get("reply_to_message_id")
+        if quote_id is not None:
+            if mode != "text" or request.delivery_channel.name != "napcat":
+                raise ValueError("quote replies require QQ text mode")
+            if not any(event.message_id == quote_id and event.channel == "napcat"
+                       and not event.delivery_context.get("channel_notice")
+                       and request.delivery_channel.message_current(event)
+                       for event in request.current_events):
+                raise ValueError("quote target must be a current, unrecalled QQ message")
         emotions = self.store.emotion_context()
         if emotions.strip():
             system += "\n\n<emotion_catalog>\n" + emotions + "\n</emotion_catalog>\n" + EMOTION_REACTION_POLICY
@@ -82,4 +91,15 @@ class Replyer:
                 raise ValueError("poke directive must be a standalone bubble")
             if mode != "text" or not callable(getattr(request.delivery_channel, "poke_owner", None)):
                 raise ValueError("poke is unavailable in this reply mode or channel")
+        if quote_id is not None:
+            for index, bubble in enumerate(bubbles):
+                if bubble.startswith("emotion://") or bubble == QQ_POKE_MARKER:
+                    continue
+                bubbles[index] = {"segments": [
+                    {"type": "reply", "data": {"id": quote_id}},
+                    {"type": "text", "data": {"text": bubble}},
+                ]}
+                break
+            else:
+                raise ValueError("quote reply requires a text bubble")
         return bubbles

@@ -22,6 +22,8 @@ REPLY_TOOL_SPEC = {
                           "description": "必要事实、查询结论、时间数字及承诺边界；与当前回应无关的材料不传。"},
             "mode": {"type": "string", "enum": ["text", "voice"], "default": "text",
                      "description": "发送形式：text 为文字气泡，voice 为语音；可用能力见工具描述。"},
+            "reply_to_message_id": {"type": "string", "minLength": 1,
+                "description": "可选，仅 QQ 文字回应：需要突出回应当前批次中的某条消息时，填写其 message_id；普通回应省略。只引用第一个文字气泡，不引用整批消息。"},
             "attachments": {
                 "type": "array", "minItems": 1,
                 "description": "随文字回应发送的媒体或附件，原样交给发送层；不放普通发言文本，仅用于 mode=text。",
@@ -33,6 +35,6 @@ REPLY_TOOL_SPEC = {
         "required": ["intent", "reference"],
         "additionalProperties": False,
         "allOf": [{"if": {"properties": {"mode": {"const": "voice"}}, "required": ["mode"]},
-                   "then": {"not": {"required": ["attachments"]}}}],
+                   "then": {"not": {"anyOf": [{"required": ["attachments"]}, {"required": ["reply_to_message_id"]}]}}}],
     },
 }

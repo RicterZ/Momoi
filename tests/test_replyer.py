@@ -84,7 +84,8 @@ def test_memory_evidence_reads_reply_result_not_intent():
 
 @pytest.mark.parametrize("delivery_context, expression", [({}, "实际回复"),
     ({"channel_notice": "message_recall"}, "实际回复"), ({"channel_notice": "poke"}, "qq://poke")])
-def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_context, expression):
+@pytest.mark.parametrize("quote", [False, True])
+def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_context, expression, quote):
     from momoi.config.models import AppConfig
     from momoi.integrations.models import LLMConfig
     from momoi.channel.napcat import NapCatConfig
@@ -110,7 +111,8 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_contex
             return ProviderResponse([{'type': 'text', 'text': expression}], [], usage={'input': 8, 'output': 2})
         rounds += 1
         if rounds == 1:
-            call = ToolCall('reply-one', 'reply', {'intent': '直接接住输入', 'reference': ''})
+            call = ToolCall('reply-one', 'reply', {'intent': '直接接住输入', 'reference': '',
+                **({'reply_to_message_id': 'event'} if quote and not delivery_context else {})})
         else:
             assert expression in str(history)
             call = ToolCall('done', 'end_turn', {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'}})
@@ -124,7 +126,10 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_contex
             [event], TurnDraft(), execution=TurnExecutionSpec('owner', permitted_tools=daemon.tool_surface.permitted_names('owner')),
             source_event_id='event', turn_id='owner-test', delivery_channel=daemon.channel))
         assert rounds == 2
-        assert daemon.store._db.execute("SELECT text FROM turn_progress WHERE turn_id='owner-test'").fetchone()[0] == expression
+        assert expression in daemon.store._db.execute("SELECT text FROM turn_progress WHERE turn_id='owner-test'").fetchone()[0]
+        if quote and not delivery_context:
+            pending = daemon.store.due_outbox()[0]
+            assert pending.payload['segments'][0] == {'type': 'reply', 'data': {'id': 'event'}}
         assert expression in str(messages)
         if expression == 'qq://poke':
             pending = daemon.store.due_outbox()[0]
@@ -329,3 +334,29 @@ def test_qq_replyer_poke_capability_prefix_is_identical_for_text_and_phone():
         asyncio.run(replyer.generate(ToolCall('reply', 'reply', {'intent': 'test', 'reference': '', 'mode': mode}), request))
     assert prefixes[0] == prefixes[1]
     assert '<qq_expression>' in prefixes[0]
+
+
+def test_optional_qq_quote_targets_selected_message_and_keeps_other_bubbles_plain():
+    from momoi.channel.napcat import NapCatChannel, NapCatConfig
+    from momoi.runtime.tool_contracts.reply import REPLY_TOOL_SPEC
+    from momoi.tools.validation import validate_tool_arguments
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt='测试', timezone='UTC', thinking_stages={})
+    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), emotion_context=lambda: '')
+    channel = NapCatChannel(NapCatConfig('ws://localhost', '20000', 1, 60, 30, 30, 20))
+    events = [IncomingMessage('one', '101', '第一条', 1, 1, channel='napcat'),
+              IncomingMessage('two', '102', '第二条', 2, 2, channel='napcat')]
+    request = SimpleNamespace(delivery_channel=channel, current_events=events, turn_id='quote', round_number=1)
+    async def complete(*args):
+        return ProviderResponse([{'type': 'text', 'text': '重点回应\n\n后续补充'}], [])
+    replyer = Replyer(config, store, SimpleNamespace(complete=complete))
+    args = {'intent': '突出第一条', 'reference': '', 'reply_to_message_id': '101'}
+    assert validate_tool_arguments('reply', args, REPLY_TOOL_SPEC['input_schema'])[1] is None
+    assert validate_tool_arguments('reply', {**args, 'mode': 'voice'}, REPLY_TOOL_SPEC['input_schema'])[1] is not None
+    result = asyncio.run(replyer.generate(ToolCall('quote-call', 'reply', args), request))
+    assert result == [{'segments': [{'type': 'reply', 'data': {'id': '101'}},
+                                   {'type': 'text', 'data': {'text': '重点回应'}}]}, '后续补充']
+    with pytest.raises(ValueError, match='quote target'):
+        asyncio.run(replyer.generate(ToolCall('bad', 'reply', {**args, 'reply_to_message_id': '999'}), request))
+    channel.is_message_recalled = lambda channel, message_id: message_id == '101'
+    with pytest.raises(ValueError, match='quote target'):
+        asyncio.run(replyer.generate(ToolCall('recalled', 'reply', args), request))

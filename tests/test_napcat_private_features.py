@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 from unittest.mock import AsyncMock, call
 from zoneinfo import ZoneInfo
@@ -321,3 +322,27 @@ def test_received_file_downloads_to_workspace_and_renders_local_path(tmp_path):
         finally:
             await runner.cleanup()
     asyncio.run(scenario())
+
+
+def test_video_is_sent_as_file_and_quote_segments_remain_in_same_message(tmp_path):
+    async def scenario():
+        item = channel()
+        video = tmp_path / 'synthetic.mp4'
+        video.write_bytes(b'synthetic video')
+        item._request_action = AsyncMock(return_value={'data': {'message_id': '123'}})
+        assert await item.send_message({'segments': [{'type': 'video', 'data': {'file': str(video)}}]}) == '123'
+        sent = item._request_action.await_args.args
+        assert sent[0] == 'send_private_msg'
+        assert sent[1]['message'] == [{'type': 'file', 'data': {
+            'file': 'base64://' + base64.b64encode(b'synthetic video').decode(), 'name': 'synthetic.mp4'}}]
+        await item.send_message({'segments': [{'type': 'reply', 'data': {'id': '42'}},
+                                             {'type': 'text', 'data': {'text': '重点回应'}}]})
+        assert item._request_action.await_args.args[1]['message'][0] == {'type': 'reply', 'data': {'id': '42'}}
+    asyncio.run(scenario())
+
+
+def test_current_qq_messages_expose_quote_ids():
+    events = [IncomingMessage('one', '42', '第一条', 1, 1, channel='napcat'),
+              IncomingMessage('two', '43', '第二条', 2, 2, channel='napcat')]
+    text = ''.join(block['text'] for block in owner_content_blocks(events, lambda _: [], ZoneInfo('UTC')))
+    assert 'message_id="42"' in text and 'message_id="43"' in text
