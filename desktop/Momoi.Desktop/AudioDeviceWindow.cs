@@ -101,7 +101,7 @@ internal sealed class AudioDeviceWindow : Window
             var app = settings.RootElement.GetProperty("app");
             Fill(input, inputs, catalog.RootElement, "inputs", Selected(app, "input_device"));
             Fill(output, outputs, catalog.RootElement, "outputs", Selected(app, "output_device"));
-            status.Text = "已列出所有可用音频设备。推荐 Steam 虚拟线路；选择实体设备会使用其收音或外放。应用后重新拨打电话。";
+            status.Text = "已列出所有可用音频设备。推荐 Steam 虚拟线路；实体设备可能收音、外放或回声，仍可自行选择。应用后重新拨打电话。";
         }
         catch (Exception error) { status.Text = error.Message; }
         finally { SetBusy(false); }
@@ -137,6 +137,7 @@ internal sealed class AudioDeviceWindow : Window
             using var devices = JsonDocument.Parse(JsonSerializer.Serialize(new { audio_devices = new { input_device = new { id = effectiveInput.Id }, output_device = new { id = effectiveOutput.Id } } }));
             bool routed = routes.Ensure(host.RootElement, devices.RootElement);
             status.Text = routed ? "设备已保存，私有 QQ 路由已应用并回读验证。请重新拨打电话。" : "设备已保存。私有 QQ 音频进程尚未就绪，启动并登录内置 QQ 后，再点击应用。";
+            status.Text += " 实体设备可能外放或回声。";
         }
         catch (Exception error) { status.Text = (savedConfiguration ? "设备已保存；路由应用失败：" : "应用失败：") + error.Message; LiveLog.Write("audio-route", "stderr", error.ToString()); }
         finally { SetBusy(false); }

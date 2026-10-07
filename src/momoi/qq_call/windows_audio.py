@@ -34,6 +34,14 @@ class DeferredWindowsAudio:
         return getattr(self.backend, "device_selection", {})
 
     @property
+    def warnings(self):
+        return getattr(self.backend, "warnings", [])
+
+    @property
+    def half_duplex(self):
+        return getattr(self.backend, "half_duplex", False)
+
+    @property
     def ready(self):
         return bool(self.backend and self.backend.ready)
 

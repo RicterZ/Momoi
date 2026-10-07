@@ -1834,7 +1834,7 @@ function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) 
     setTesting(true);
     try {
       const result = await onTest(value);
-      setTest(result.ok ? "Bridge、AV Host 和音频设备可用；测试没有接听或播放。" : result.error || "Bridge 未就绪");
+      setTest(result.ok ? ["Bridge、AV Host 和音频设备可用；测试没有接听或播放。", ...(result.warnings || [])].join(" ") : result.error || "Bridge 未就绪");
     } catch (error) { setTest(error.message); }
     finally { setTesting(false); }
   }

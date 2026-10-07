@@ -16,6 +16,7 @@ async def probe(config):
                 if value.get('protocol_version') != 1:
                     return {'ok': False, 'error': 'Bridge 协议版本不匹配'}
                 return {'ok': bool(value.get('ready')), 'error': value.get('error') or '',
-                        'dependencies': value.get('dependencies', {})}
+                        'dependencies': value.get('dependencies', {}),
+                        'warnings': value.get('audio_warnings', [])}
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
         return {'ok': False, 'error': '无法连接通话 Bridge，请检查地址及服务状态'}

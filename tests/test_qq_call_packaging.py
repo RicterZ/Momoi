@@ -24,7 +24,7 @@ def write_bundle(path, *, platform='windows', extra=None, corrupt=False):
     files = {name: name.encode() for name in ('LICENSE', 'av-host/host.cjs', 'av-host/host.html', 'av-host/commands.cjs',
              'napcat-plugin/index.mjs', 'napcat-plugin/package.json',
              'windows/start-av-host.ps1', 'windows/components.json',
-             'windows/virtual_audio.py', 'windows/audio_stream.py', 'windows/audio_backend.py')}
+             'windows/virtual_audio.py', 'windows/audio_stream.py', 'windows/audio_backend.py', 'windows/wasapi.py')}
     if extra:
         files[extra] = b'linux'
     manifest = {'platform': platform, 'files': {name: hashlib.sha256(data).hexdigest()

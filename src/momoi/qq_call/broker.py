@@ -50,6 +50,7 @@ class MediaBroker:
         self.status = {'protocol_version': 1, 'ready': False, 'phase': 'unavailable', 'error': 'Starting'}
         self.capture = self.capture_task = self.play_process = self.poll_task = None
         self.capture_stats = {}
+        self.capture_muted_until = 0.0
         self.audio_error = ""
         self.audio_retry_at = 0.0
         self.play_lock = asyncio.Lock()
@@ -145,6 +146,8 @@ class MediaBroker:
             self.status = {'protocol_version': 1, 'ready': ready, 'dependencies': deps,
                 'phase': phase, 'client_connected': self.ws is not None and not self.ws.closed,
                 'audio_devices': getattr(self.audio, 'device_selection', {}),
+                'audio_warnings': getattr(self.audio, 'warnings', []),
+                'half_duplex': getattr(self.audio, 'half_duplex', False),
                 'auto_answer_ready': enabled, 'capture': dict(self.capture_stats), 'error': '' if ready else (self.audio_error or
                     ('等待 QQ 登录及通话插件就绪' if not deps['bridge'] else
                      ('等待 AVSDK 宿主就绪' if not deps['av_host'] else '虚拟音频设备未就绪')))}
@@ -174,6 +177,11 @@ class MediaBroker:
                     print(json.dumps({"event": "qq_call_capture_progress", "session_id": session_id,
                           **self.capture_stats}), flush=True)
                     next_report = time.monotonic() + 5
+                if getattr(self.audio, "half_duplex", False):
+                    if self.play_process is not None:
+                        self.capture_muted_until = time.monotonic() + .35
+                    if time.monotonic() < self.capture_muted_until:
+                        frame = b"\0" * 640
                 await asyncio.wait_for(self.ws.send_bytes(frame), 2)
         except (OSError, ConnectionError, asyncio.IncompleteReadError, asyncio.TimeoutError) as error:
             print(json.dumps({"event": "qq_call_capture_failed", "session_id": session_id,
