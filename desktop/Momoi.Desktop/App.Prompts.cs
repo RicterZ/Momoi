@@ -44,7 +44,12 @@ public partial class App
             shellRoot.Children.Remove(updatePrompt);
             updatePrompt = null; updatePromptTask = null;
             if (content is not null) content.IsEnabled = contentEnabled;
-            if (browser is not null && previousVisibility.HasValue) browser.Visibility = previousVisibility.Value;
+            if (browser is not null)
+            {
+                // Startup may have created the WebView while a prompt was open.
+                if (!exiting && dashboardReady && loadingView is null) browser.Visibility = Visibility.Visible;
+                else if (previousVisibility.HasValue) browser.Visibility = previousVisibility.Value;
+            }
             if (!exiting && previousFocus is not null) Keyboard.Focus(previousFocus);
         }
     }
