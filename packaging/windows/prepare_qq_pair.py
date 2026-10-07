@@ -29,7 +29,7 @@ def prepare(stage, output, archive=None):
             sha = hashlib.file_digest(stream, 'sha256').hexdigest()
     package_name = name + '.exe'
     if archive:
-        package_name = name + '-' + sha[:16] + '.exe'
+        package_name = name.removesuffix('-x64') + '-' + sha[:16] + '-x64.exe'
         destination = archive.with_name(package_name)
         if destination != archive:
             archive.replace(destination)
