@@ -68,6 +68,20 @@ class DeferredWindowsAudio:
             raise
         self.backend = backend
 
+    def endpoints_available(self):
+        if not self.ready:
+            return True
+        from virtual_audio import active_endpoint_ids
+        try:
+            active = {flow: {value.casefold() for value in active_endpoint_ids(flow)}
+                      for flow in (0, 1)}
+            return all(device["id"].casefold() in active[flow]
+                       for role, flow in (("input_device", 1), ("output_device", 0),
+                                          ("injection_device", 0))
+                       if (device := self.device_selection.get(role)))
+        except (OSError, RuntimeError):
+            return False
+
     def close(self):
         if self.backend:
             backend, self.backend = self.backend, None

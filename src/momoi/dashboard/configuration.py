@@ -218,7 +218,7 @@ def register_configuration_routes(app, configuration, runtime):
         from pathlib import Path
         from ..qq_call.windows_audio import device_catalog
         try:
-            return web.json_response(device_catalog(Path(__file__).resolve().parents[2] / "qq_call_bridge"))
+            return web.json_response(await asyncio.to_thread(device_catalog, Path(__file__).resolve().parents[2] / "qq_call_bridge"))
         except (OSError, ImportError, RuntimeError):
             return web.json_response({"inputs": [], "outputs": [], "errors": ["暂时无法读取音频设备，请刷新设备列表"]}, status=503)
 
@@ -231,7 +231,7 @@ def register_configuration_routes(app, configuration, runtime):
             raise web.HTTPBadRequest(text="设备标识无效")
         from pathlib import Path
         from ..qq_call.windows_audio import device_catalog
-        catalog = device_catalog(Path(__file__).resolve().parents[2] / "qq_call_bridge")
+        catalog = await asyncio.to_thread(device_catalog, Path(__file__).resolve().parents[2] / "qq_call_bridge")
         for key, group in (("input_device", "inputs"), ("output_device", "outputs")):
             if selected[key] and selected[key] not in {item["id"] for item in catalog[group]}:
                 raise web.HTTPBadRequest(text="所选音频设备不可用，请刷新设备列表")

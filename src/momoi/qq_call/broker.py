@@ -117,6 +117,12 @@ class MediaBroker:
             if self.audio is not None and hasattr(self.audio, "configuration_changed") and self.audio.configuration_changed():
                 await self.invalidate()
                 self.audio.reload_configuration()
+            if self.audio is not None and self.audio.ready and hasattr(self.audio, "endpoints_available"):
+                if not await asyncio.to_thread(self.audio.endpoints_available):
+                    await self.invalidate()
+                    self.audio.close()
+                    self.audio_retry_at = 0
+                    print(json.dumps({"event": "qq_call_audio_devices_lost"}), file=sys.stderr, flush=True)
             deps, call = await self.dependencies()
             if self.audio is not None and not self.audio.ready and deps['av_host'] and time.monotonic() >= self.audio_retry_at:
                 try:

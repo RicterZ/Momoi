@@ -77,3 +77,19 @@ def test_media_starts_before_audio_ready_and_retries():
             await broker.cleanup(None)
         assert audio.closed
     asyncio.run(scenario())
+
+
+def test_endpoint_loss_detected_and_returning_devices_rechecked(monkeypatch):
+    import sys
+    available = {0: ['speaker'], 1: ['mic']}
+    monkeypatch.setitem(sys.modules, 'virtual_audio', SimpleNamespace(
+        active_endpoint_ids=lambda flow: available[flow]))
+    audio = DeferredWindowsAudio.__new__(DeferredWindowsAudio)
+    audio.backend = SimpleNamespace(ready=True, device_selection={
+        'input_device': {'id': 'mic'}, 'output_device': {'id': 'speaker'},
+        'injection_device': {'id': 'speaker'}})
+    assert audio.endpoints_available()
+    available[0] = []
+    assert not audio.endpoints_available()
+    available[0] = ['speaker']
+    assert audio.endpoints_available()
