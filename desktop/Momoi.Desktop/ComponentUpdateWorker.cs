@@ -144,9 +144,9 @@ internal static class ComponentUpdateWorker
         using var child = Process.Start(start) ?? throw new IOException("Failed to start smoke installer");
         await child.WaitForExitAsync();
         if (child.ExitCode != 0 || File.ReadAllText(Path.Combine(install, "data", "preserve.txt")) != "keep user data") throw new IOException("Shell install smoke failed");
-        using var actual = File.OpenRead(Path.Combine(install, "Momoi.exe"));
-        using var expected = File.OpenRead(Path.Combine(package, "payload", "Momoi.exe"));
-        if (!SHA256.HashData(actual).SequenceEqual(SHA256.HashData(expected))) throw new IOException("Shell replacement smoke failed");
+        using (var actual = File.OpenRead(Path.Combine(install, "Momoi.exe")))
+        using (var expected = File.OpenRead(Path.Combine(package, "payload", "Momoi.exe")))
+            if (!SHA256.HashData(actual).SequenceEqual(SHA256.HashData(expected))) throw new IOException("Shell replacement smoke failed");
         string saved = Directory.GetFiles(Path.Combine(install, "data", "shell-backups"), "Momoi.exe", SearchOption.AllDirectories).Single();
         if (File.ReadAllText(saved) != "old shell") throw new IOException("Shell backup smoke failed");
         // A missing later payload forces rollback after the first file is replaced.
