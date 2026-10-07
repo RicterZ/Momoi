@@ -92,7 +92,7 @@ internal sealed class AudioDeviceWindow : Window
         try
         {
             using var client = Client();
-            using var settings = JsonDocument.Parse(await client.GetStringAsync("/api/settings/configuration"));
+            using var settings = JsonDocument.Parse(await client.GetStringAsync("/api/settings/channels/napcat/voice-call/audio-configuration"));
             using var response = await client.GetAsync("/api/settings/channels/napcat/voice-call/devices");
             string body = await response.Content.ReadAsStringAsync();
             using var catalog = JsonDocument.Parse(body);

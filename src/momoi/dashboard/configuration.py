@@ -212,6 +212,19 @@ def register_configuration_routes(app, configuration, runtime):
         await channel_login.close()
         return web.json_response(channel_login.state)
 
+    async def qq_call_audio_configuration(request):
+        if not os.environ.get("MOMOI_QQ_CALL_MANAGED"):
+            raise web.HTTPNotFound()
+        def read():
+            app = configuration.read_app()
+            voice = app.get("channels", {}).get("enabled", {}).get("napcat", {}).get("voice_call", {})
+            # Native routing needs no provider validation, MCP parsing, or credentials.
+            options = {key: voice.get(key, default) for key, default in (
+                ("enabled", False), ("input_device", ""), ("output_device", ""))}
+            return {"revision": configuration.revision(), "app": {
+                "channels": {"enabled": {"napcat": {"voice_call": options}}}}}
+        return web.json_response(await asyncio.to_thread(read))
+
     async def qq_call_devices(request):
         if not os.environ.get("MOMOI_QQ_CALL_MANAGED"):
             raise web.HTTPNotFound()
@@ -288,6 +301,7 @@ def register_configuration_routes(app, configuration, runtime):
     app.router.add_put("/api/settings/providers/{capability}", save)
     app.router.add_put("/api/settings/providers", save)
     app.router.add_patch("/api/settings/configuration/app", save)
+    app.router.add_get("/api/settings/channels/napcat/voice-call/audio-configuration", qq_call_audio_configuration)
     app.router.add_get("/api/settings/channels/napcat/voice-call/devices", qq_call_devices)
     app.router.add_put("/api/settings/channels/napcat/voice-call/devices", save_qq_call_devices)
     app.router.add_post("/api/settings/channels/napcat/voice-call/test", test_qq_call)

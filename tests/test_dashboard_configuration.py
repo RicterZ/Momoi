@@ -365,6 +365,22 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         }
         self.manager.save("app", app, snapshot["revision"])
 
+    async def test_native_audio_configuration_skips_full_validation_and_secrets(self):
+        self.enable()
+        self.client.session.headers["Authorization"] = self.auth
+        managed = self.path.parent / "audio-managed.json"
+        managed.write_text(json.dumps({"bridge_url": "http://127.0.0.1:43210", "bridge_token": "a" * 64}))
+        with patch.dict(os.environ, {"MOMOI_QQ_CALL_MANAGED": str(managed)}), patch.object(
+            self.manager, "snapshot", side_effect=AssertionError("full snapshot must not run")
+        ):
+            response = await self.client.get("/api/settings/channels/napcat/voice-call/audio-configuration")
+            self.assertEqual(response.status, 200)
+            value = await response.json()
+            self.assertEqual(value["revision"], self.manager.revision())
+            voice = value["app"]["channels"]["enabled"]["napcat"]["voice_call"]
+            self.assertEqual(set(voice), {"enabled", "input_device", "output_device"})
+            self.assertNotIn("bridge_token", voice)
+
     async def test_native_audio_device_save_preserves_secrets_and_rejects_conflicts(self):
         self.enable()
         self.client.session.headers["Authorization"] = self.auth
