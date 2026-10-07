@@ -1262,7 +1262,7 @@ const channelOptions = [
 ];
 const channelDefaults = (name) =>
   name === "napcat" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : {};
-function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, qqConnected, qqCall, testCall }) {
+function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, qqConnected }) {
   const [channels, setChannels] = useState(data.app.channels || { primary: "", enabled: {} });
   const [saved, setSaved] = useState(channels);
   const [status, setStatus] = useState(null);
@@ -1374,8 +1374,6 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                     <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "内置组件自动生成；外部 NapCat 填写其 WebSocket 令牌。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
                     <OptionField name="owner_qq" spec={{ type: "string", label: "主人 QQ" }} value={options.owner_qq} onChange={value => edit(name, { ...options, owner_qq: value })} />
                   </Fields>
-                  <QQCallSettings managed={data.desktop_qq_call_managed} value={options.voice_call || {}} disabled={busy || loginActive} status={qqCall} onTest={testCall}
-                    onChange={voice_call => edit(name, { ...options, voice_call })} />
                   <DesktopQQ botQQ={options.bot_qq} ownerQQ={options.owner_qq} connected={qqConnected} disabled={busy || loginActive} onConnection={connectDesktopQQ} />
                   </div>
                 ) : name === "weixin" ? (
@@ -1776,8 +1774,7 @@ export default function ConfigurationSettings({
                       data={data}
                       save={save}
                       login={runtime?.weixin_login}
-                      testCall={document => call("/api/settings/channels/napcat/voice-call/test", { method: "POST", body: document })}
-                      qqConnected={runtime?.qq_connected} qqCall={runtime?.qq_call}
+                      qqConnected={runtime?.qq_connected}
                       action={action}
                       saving={saving || loading}
                       actionBusy={actionBusy}
@@ -1795,6 +1792,9 @@ export default function ConfigurationSettings({
                       saving={saving || loading}
                     />
                   )}
+                  {module.id === "voice" && <VoiceCallSection key={`voice-call-${generation}`} data={data} save={save}
+                    saving={saving || loading || actionBusy} status={runtime?.qq_call}
+                    onTest={document => call("/api/settings/channels/napcat/voice-call/test", { method: "POST", body: document })} />}
                   {module.id !== "prompts" && runtimeContent}
                 </section>
               );
@@ -1826,6 +1826,37 @@ export default function ConfigurationSettings({
   );
 }
 
+
+function VoiceCallSection({ data, save, saving, status, onTest }) {
+  const napcat = data.app.channels?.enabled?.napcat;
+  const [draft, setDraft] = useState(napcat?.voice_call || {});
+  const [saved, setSaved] = useState(draft);
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const dirty = !equal(draft, saved);
+  async function submit(event) {
+    event.preventDefault();
+    if (!napcat || saving || busy || !dirty) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const channels = { ...data.app.channels, enabled: { ...data.app.channels.enabled,
+        napcat: { ...napcat, voice_call: draft } } };
+      const response = await save("/api/settings/configuration/app", { channels }, "PATCH");
+      const updated = response.app.channels.enabled.napcat.voice_call || {};
+      setDraft(updated);
+      setSaved(updated);
+      setResult(response.applyStatus || { text: "已保存", error: false });
+    } catch (error) { setResult({ text: error.message, error: true }); }
+    finally { setBusy(false); }
+  }
+  return <form className="settings-voice-call-section" onSubmit={submit} data-dirty={dirty} data-config-dirty={dirty}>
+    <p className="settings-channel-note">必须开启 NapCat QQ 才能使用此功能。</p>
+    <QQCallSettings managed={data.desktop_qq_call_managed} value={draft} disabled={!napcat || saving || busy}
+      status={status} onTest={onTest} onChange={next => { setDraft(next); setResult(null); }} />
+    <SaveBar busy={saving || busy} dirty={dirty} status={result} />
+  </form>;
+}
 
 function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) {
   const [test, setTest] = useState(null);

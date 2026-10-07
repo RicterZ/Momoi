@@ -1292,3 +1292,11 @@
 .settings-qq-call-managed-note {
   margin: 0 0 8px;
 }
+
+.settings-voice-call-section {
+  border-top: 2px solid var(--ink);
+  margin-top: 24px;
+  padding-top: 24px;
+}
+.settings-voice-call-section > .settings-channel-note { margin: 0 24px 16px; }
+.settings-voice-call-section > .settings-qq-call { margin: 0 24px; }
