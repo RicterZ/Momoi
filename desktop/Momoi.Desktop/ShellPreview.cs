@@ -16,7 +16,14 @@ internal static class ShellPreview
     {
         element.UpdateLayout();
         var image = new RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth), (int)Math.Ceiling(element.ActualHeight), 96, 96, PixelFormats.Pbgra32);
-        image.Render(element);
+        var drawing = new DrawingVisual();
+        using (var context = drawing.RenderOpen())
+        {
+            var bounds = new Rect(0, 0, element.ActualWidth, element.ActualHeight);
+            context.DrawRectangle((Brush)Application.Current.FindResource("Canvas"), null, bounds);
+            context.DrawRectangle(new VisualBrush(element), null, bounds);
+        }
+        image.Render(drawing);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
         using var file = File.Create(path); encoder.Save(file);
     }

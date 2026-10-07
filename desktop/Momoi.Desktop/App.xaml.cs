@@ -382,6 +382,7 @@ public partial class App : Application
             { if (!quiet) MessageBox.Show("当前已是最新发布版本。", "Momoi"); return; }
             if (staged is null && MessageBox.Show($"发现新版本 {latest!.Version}（当前 {currentRelease.Manifest.Version}）。\n是否下载安装？安装完成后会重启后台并刷新面板。", "Momoi 更新", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes) return;
             installationRequested = true;
+            audioDeviceWindow?.Close();
             ShowLoading("正在更新…");
             loadingView!.SetDetail("下载中");
             tray!.Text = "Momoi — 正在下载并验证更新";

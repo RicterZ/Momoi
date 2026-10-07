@@ -109,6 +109,7 @@ internal sealed class AudioDeviceWindow : Window
     private async Task ApplyAsync()
     {
         SetBusy(true); status.Text = "正在保存并应用…";
+        bool savedConfiguration = false;
         try
         {
             var selectedInput = input.SelectedItem as AudioChoice ?? throw new InvalidOperationException("请选择输入设备。");
@@ -120,7 +121,8 @@ internal sealed class AudioDeviceWindow : Window
             string payload = JsonSerializer.Serialize(new { input_device = selectedInput.Id, output_device = selectedOutput.Id, revision });
             using var response = await client.PutAsync("/api/settings/channels/napcat/voice-call/devices", new StringContent(payload, Encoding.UTF8, "application/json"));
             string body = await response.Content.ReadAsStringAsync();
-            if (!response.IsSuccessStatusCode) throw new InvalidOperationException(response.StatusCode == System.Net.HttpStatusCode.Conflict ? "配置已被修改，请刷新后重新应用。" : body);
+            if (!response.IsSuccessStatusCode) throw new InvalidOperationException(response.StatusCode == System.Net.HttpStatusCode.Conflict ? "配置已被修改，请刷新后重新应用。" : response.StatusCode == System.Net.HttpStatusCode.MethodNotAllowed ? "主体程序尚未更新，请先点击检查更新完成升级。" : body);
+            savedConfiguration = true;
             using (var saved = JsonDocument.Parse(body)) revision = saved.RootElement.GetProperty("revision").GetString()!;
             var processes = new List<object>();
             foreach (var process in Process.GetProcessesByName("QQ"))
@@ -136,7 +138,7 @@ internal sealed class AudioDeviceWindow : Window
             bool routed = routes.Ensure(host.RootElement, devices.RootElement);
             status.Text = routed ? "设备已保存，私有 QQ 路由已应用并回读验证。请重新拨打电话。" : "设备已保存。私有 QQ 音频进程尚未就绪，启动并登录内置 QQ 后，再点击应用。";
         }
-        catch (Exception error) { status.Text = "应用失败：" + error.Message; LiveLog.Write("audio-route", "stderr", error.Message); }
+        catch (Exception error) { status.Text = (savedConfiguration ? "设备已保存；路由应用失败：" : "应用失败：") + error.Message; LiveLog.Write("audio-route", "stderr", error.Message); }
         finally { SetBusy(false); }
     }
 }
