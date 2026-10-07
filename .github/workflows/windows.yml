@@ -86,6 +86,7 @@ jobs:
             dist/windows/Momoi-QQ-Components-*-x64.json
             dist/windows/releases/Momoi-Code-*.zip
             dist/windows/releases/runtime.json
+            dist/windows/prerequisites/
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
@@ -95,6 +96,7 @@ jobs:
           path: |
             dist/windows/install-test/
             build/windows-installer-files.json
+            build/windows-python-trim.json
           if-no-files-found: ignore
 
   publish-release:

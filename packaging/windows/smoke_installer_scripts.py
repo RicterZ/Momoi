@@ -30,6 +30,7 @@ def check(compiler):
                    'QQPackageName': 'QQ-syntax-check.exe', 'QQPackageSHA256': '0' * 64,
                    'QQPackageURL': 'https://example.invalid/qq.exe'}
         (build / 'windows-qq-pin.iss').write_text('\n'.join(f'#define {key} "{value}"' for key, value in defines.items()), encoding='utf-8')
+        (build / 'windows-prerequisite-pin.iss').write_text('\n'.join(f'#define {key}{suffix} "{value}"' for key in ('VC', 'WebView') for suffix, value in [('Name', 'fixture.exe'), ('URL', 'https://example.invalid/fixture.exe'), ('SHA256', '0' * 64)]), encoding='utf-8')
         prerequisites = build / 'windows-prerequisites'
         prerequisites.mkdir()
         for name in ('WebView2RuntimeInstallerX64.exe', 'vc_redist.x64.exe'):

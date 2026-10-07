@@ -60,6 +60,7 @@ New-Item -ItemType Directory -Path (Join-Path $Stage "models") -Force | Out-Null
 Copy-Item "build/windows-model/bge-small-zh-v1.5" (Join-Path $Stage "models/bge-small-zh-v1.5") -Recurse
 $ModelCache = Join-Path $Stage "models/bge-small-zh-v1.5/.cache"
 if (Test-Path $ModelCache) { Remove-Item $ModelCache -Recurse -Force }
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/trim_python.py", "--root", (Join-Path $Runtime "python"), "--report", "build/windows-python-trim.json")
 $Entry = Join-Path $Bundled "app/backend_entry.py"
 Invoke-Checked $PrivatePython @("-I", "-B", "-X", "utf8", $Entry, "--check-model", "--model-path", (Join-Path $Stage "models/bge-small-zh-v1.5"))
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/smoke_backend.py", "--python", $PrivatePython, "--entry", $Entry, "--model-path", (Join-Path $Stage "models/bge-small-zh-v1.5"))
@@ -105,6 +106,7 @@ function Get-MicrosoftInstaller {
 }
 Get-MicrosoftInstaller $WebViewInstaller "https://go.microsoft.com/fwlink/?linkid=2124701" "WebView2RuntimeInstallerX64.exe" | Out-Null
 Get-MicrosoftInstaller $VcInstaller "https://aka.ms/vs/17/release/vc_redist.x64.exe" "vc_redist.x64.exe" | Out-Null
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_prerequisites.py", "--source", $Prerequisites, "--destination", "dist/windows/prerequisites", "--include", "build/windows-prerequisite-pin.iss")
 Get-ChildItem $Prerequisites -Filter *.exe | Get-FileHash -Algorithm SHA256 | Format-Table | Out-String | Set-Content (Join-Path $Prerequisites "SHA256SUMS.txt")
 if (-not $IsccPath) {
     $IsccPath = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6/ISCC.exe"
