@@ -130,3 +130,11 @@ def test_windows_optional_component_defaults_without_loading(monkeypatch, tmp_pa
     assert remote.model_path == ''
     with pytest.raises(ValueError):
         SherpaASRProvider(endpoint='http://asr:8003', model_path='/models')
+
+
+def test_optional_component_resolves_relative_install_directory(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('MOMOI_INSTALL_DIR', 'install')
+    provider = SherpaASRProvider()
+    assert provider.model_path == str(tmp_path / 'install' / 'models' / 'asr')
+    assert provider._engine is None
