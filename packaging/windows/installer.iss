@@ -70,7 +70,8 @@ procedure StopMomoi; forward;
 
 function InstallQQPair: String;
 var
-  PackagePath, Marker: String;
+  PackagePath: String;
+  Marker: AnsiString;
   Code: Integer;
 begin
   Result := '';
