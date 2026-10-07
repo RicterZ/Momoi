@@ -59,7 +59,7 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
             await self.daemon._run_tool_loop(
                 self.daemon._system(planner=True), [{"role": "user", "content": "synthetic request"}],
                 [QQ_POKE_SPEC, END_TURN_TOOL_SPEC], [message], TurnDraft(),
-                execution=TurnExecutionSpec("owner", permitted_tools=frozenset({"qq_poke", "end_turn"})),
+                execution=TurnExecutionSpec("owner", permitted_tools=self.daemon.tool_surface.permitted_names("owner")),
                 source_event_id=message.event_id, turn_id="poke-turn", delivery_channel=self.daemon.channel)
         self.daemon.channel.poke_owner.assert_awaited_once()
         row = self.store._db.execute("SELECT capability, state, ok FROM tool_audit WHERE tool_name='qq_poke'").fetchone()

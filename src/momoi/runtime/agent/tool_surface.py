@@ -153,6 +153,7 @@ class ToolSurface:
             copy.deepcopy(GOAL_REVIEW_TOOL_SPEC),
             {**reply_spec, "description": REPLY_TOOL_SPEC["description"] + (" 已配置语音合成；语音渠道：" + "、".join(self.voice_channels) + "。在这些渠道可选 mode=voice，其他渠道使用 mode=text。" if self.voice_enabled else " 当前仅支持 mode=text，语音合成或渠道语音能力不可用。")},
             READ_TOOL_RESULT_SPEC,
+            *([copy.deepcopy(QQ_POKE_SPEC)] if "napcat" in self.channel_names else []),
             *copy.deepcopy([spec for spec in MEMORY_TOOL_SPECS if spec["name"] not in DEFERRED_TOOLS]),
             *copy.deepcopy(IMAGE_TOOL_SPECS),
             *self.public_specs(AGENDA_TOOL_SPECS),
@@ -181,6 +182,8 @@ class ToolSurface:
         agenda = {str(spec["name"]) for spec in AGENDA_TOOL_SPECS}
         memory = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}
         thinking = {str(spec["name"]) for spec in THINKING_TOOL_SPECS}
+        channel_tools = {spec["name"] for group, specs in self.discovery_groups().items()
+                         if group in {"builtin_qq_messages", "builtin_calls"} for spec in specs}
         shared = {"reply", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
         general_chat = {
             "recall",
@@ -192,6 +195,7 @@ class ToolSurface:
             *agenda,
             *memory,
             *thinking,
+            *channel_tools,
             *external,
         }
         if stage == "owner":
@@ -210,6 +214,7 @@ class ToolSurface:
                     *agenda,
                     *memory,
                     *thinking,
+                    *channel_tools,
                     *external,
                 }
             )
@@ -222,6 +227,7 @@ class ToolSurface:
                 {
                     "goal_review",
                     "reply",
+                    *channel_tools,
                     "goal_create",
                     "memory_search",
                     "read_tool_result",
