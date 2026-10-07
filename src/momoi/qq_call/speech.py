@@ -1,7 +1,7 @@
 """Ordered bubble audio with bounded, cancellable TTS prefetch."""
 
 import asyncio
-from time import monotonic
+from time import perf_counter as monotonic
 from contextlib import aclosing
 
 
