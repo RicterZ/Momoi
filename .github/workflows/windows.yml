@@ -130,4 +130,4 @@ jobs:
             echo "Expected exactly one tested Windows installer" >&2
             exit 1
           fi
-          gh release upload "$RELEASE_TAG" "${installers[0]}" dist/windows/Momoi-QQ-Components-*-x64.exe dist/windows/Momoi-QQ-Components-*-x64.json --clobber
+          gh release upload "$RELEASE_TAG" "${installers[0]}" dist/windows/Momoi-QQ-Components-*-x64.exe dist/windows/Momoi-QQ-Components-*-x64.json dist/windows/prerequisites/* --clobber

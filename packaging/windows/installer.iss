@@ -44,6 +44,14 @@ Name: "{app}\data"; Permissions: users-modify; Flags: uninsneveruninstall
 [Files]
 #include "..\..\build\windows-installer-files.iss"
 
+[InstallDelete]
+; Only remove obsolete tooling in the private interpreter, never user data.
+Type: filesandordirs; Name: "{app}\runtime\python\Lib\site-packages\pip"
+Type: filesandordirs; Name: "{app}\runtime\python\Lib\site-packages\pip-*.dist-info"
+Type: filesandordirs; Name: "{app}\runtime\python\Lib\ensurepip"
+Type: filesandordirs; Name: "{app}\runtime\python\Lib\idlelib"
+Type: filesandordirs; Name: "{app}\runtime\python\Lib\pydoc_data"
+
 [Icons]
 Name: "{group}\Momoi"; Filename: "{app}\Momoi.exe"
 Name: "{autodesktop}\Momoi"; Filename: "{app}\Momoi.exe"; Tasks: desktopicon
