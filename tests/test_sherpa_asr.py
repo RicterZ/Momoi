@@ -16,8 +16,12 @@ def test_remote_asr_batch_and_stream_share_provider():
     async def run():
         async def batch(request):
             assert await request.read() == b'wav-data'
+            assert request.query['trailing_silence'] == '0.8'
+            assert request.query['num_threads'] == '3'
             return web.json_response({'text': '测试'})
         async def stream(request):
+            assert request.query['trailing_silence'] == '0.8'
+            assert request.query['num_threads'] == '3'
             ws = web.WebSocketResponse()
             await ws.prepare(request)
             async for message in ws:
@@ -28,7 +32,7 @@ def test_remote_asr_batch_and_stream_share_provider():
         app.router.add_post('/v1/transcribe', batch)
         app.router.add_get('/v1/stream', stream)
         async with TestServer(app) as server:
-            provider = SherpaASRProvider(endpoint=str(server.make_url('')).rstrip('/'))
+            provider = SherpaASRProvider(endpoint=str(server.make_url('')).rstrip('/'), num_threads=3)
             try:
                 assert await provider.transcribe(AudioInput(b'wav-data', 'wav')) == '测试'
                 session = await provider.create_stream()
@@ -114,3 +118,4 @@ def test_dashboard_switches_asr_without_cloud_credentials(tmp_path):
     disabled = {**local, 'enabled': False}
     manager.save_bindings({'asr': disabled}, manager.revision())
     assert ServiceRegistry(manager.validate().providers).asr is None
+

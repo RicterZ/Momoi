@@ -13,7 +13,7 @@ from ..contracts.asr import ASRError, ASRProvider, AudioInput
 
 
 class SherpaEngine:
-    def __init__(self, model_path, num_threads=2, trailing_silence=1.2):
+    def __init__(self, model_path, num_threads=2, trailing_silence=0.8):
         import sherpa_onnx
         root = Path(model_path)
         names = ('tokens.txt', 'encoder.int8.onnx', 'decoder.onnx', 'joiner.int8.onnx')
@@ -93,14 +93,14 @@ class SherpaASRProvider(ASRProvider):
     engine = 'zipformer-zh-int8-2025-06-30'
 
     def __init__(self, *, endpoint='', model_path='', num_threads=2,
-                 trailing_silence=1.2, timeout_seconds=30):
+                 trailing_silence=0.8, timeout_seconds=30):
         if bool(endpoint) == bool(model_path):
             raise ValueError('本地 ASR 必须填写 endpoint 或 model_path，二选一')
         from ..validation import url, number
         if endpoint:
             url({'endpoint': endpoint}, 'endpoint')
         number({'num_threads': num_threads}, 'num_threads', 2, integer=True)
-        number({'trailing_silence': trailing_silence}, 'trailing_silence', 1.2)
+        number({'trailing_silence': trailing_silence}, 'trailing_silence', 0.8)
         number({'timeout_seconds': timeout_seconds}, 'timeout_seconds', 30)
         if num_threads > 16 or trailing_silence > 5:
             raise ValueError('本地 ASR 线程数不能超过 16，断句静音不能超过 5 秒')
@@ -108,6 +108,7 @@ class SherpaASRProvider(ASRProvider):
         self.model_path, self.num_threads = model_path, num_threads
         self.trailing_silence, self.timeout = trailing_silence, timeout_seconds
         self._engine = None
+        self._dll_directory = None
         self._http = None
         self._load_lock = asyncio.Lock()
 
@@ -115,6 +116,9 @@ class SherpaASRProvider(ASRProvider):
         async with self._load_lock:
             if self._engine is None:
                 try:
+                        dlls = libraries / "sherpa_onnx" / "lib"
+                        if os.name == "nt" and dlls.is_dir() and self._dll_directory is None:
+                            self._dll_directory = os.add_dll_directory(str(dlls))
                     self._engine = await asyncio.to_thread(SherpaEngine, self.model_path,
                                                           self.num_threads, self.trailing_silence)
                 except (ImportError, ValueError, RuntimeError, OSError) as error:
@@ -132,7 +136,8 @@ class SherpaASRProvider(ASRProvider):
             engine = await self._local()
             return LocalStream(engine, await asyncio.to_thread(engine.create_stream))
         try:
-            ws = await self._client().ws_connect(self.endpoint + '/v1/stream', heartbeat=10)
+            ws = await self._client().ws_connect(self.endpoint + '/v1/stream', heartbeat=10,
+                params={'trailing_silence': self.trailing_silence, 'num_threads': self.num_threads})
             return RemoteStream(ws, self.timeout)
         except (aiohttp.ClientError, asyncio.TimeoutError) as error:
             raise ASRError('无法连接本地 ASR 容器') from error
@@ -144,6 +149,7 @@ class SherpaASRProvider(ASRProvider):
             if not self.endpoint:
                 return await asyncio.to_thread((await self._local()).transcribe, audio.data)
             async with self._client().post(self.endpoint + '/v1/transcribe', data=audio.data,
+                                          params={'trailing_silence': self.trailing_silence, 'num_threads': self.num_threads},
                                           headers={'Content-Type': 'audio/wav'}) as response:
                 response.raise_for_status()
                 result = await response.json()

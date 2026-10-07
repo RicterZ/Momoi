@@ -5,9 +5,6 @@ services:
     build:
       context: .
       dockerfile: infra/asr/Dockerfile
-    environment:
-      ASR_NUM_THREADS: ${ASR_NUM_THREADS:-2}
-      ASR_TRAILING_SILENCE: ${ASR_TRAILING_SILENCE:-1.2}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/healthz', timeout=3)"]
       interval: 10s

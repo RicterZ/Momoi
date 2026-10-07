@@ -9,7 +9,7 @@ import wave
 from momoi.integrations.adapters.sherpa import SherpaEngine
 
 
-def benchmark(model, files, threads, paced, trailing_silence=1.2):
+def benchmark(model, files, threads, paced, trailing_silence=0.8):
     started = time.perf_counter()
     engine = SherpaEngine(model, threads, trailing_silence)
     print(json.dumps({'platform': platform.platform(), 'machine': platform.machine(),
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     p.add_argument('--model', default='/models')
     p.add_argument('--threads', type=int, default=2)
     p.add_argument('--paced', action='store_true')
-    p.add_argument('--trailing-silence', type=float, default=1.2)
+    p.add_argument('--trailing-silence', type=float, default=0.8)
     p.add_argument('files', type=Path, nargs='+')
     args = p.parse_args()
     benchmark(args.model, args.files, args.threads, args.paced, args.trailing_silence)

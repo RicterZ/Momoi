@@ -1014,6 +1014,7 @@ desktop = [
 
 [package.dev-dependencies]
 test = [
+    { name = "fastapi" },
     { name = "pytest" },
     { name = "pytest-xdist" },
 ]
@@ -1047,6 +1048,7 @@ provides-extras = ["asr", "desktop"]
 
 [package.metadata.requires-dev]
 test = [
+    { name = "fastapi", specifier = "==0.135.1" },
     { name = "pytest", specifier = ">=9,<10" },
     { name = "pytest-xdist", specifier = ">=3.8,<4" },
 ]
