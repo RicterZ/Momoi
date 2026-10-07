@@ -63,3 +63,23 @@ def test_pair_lock_rejects_silent_native_version_change(tmp_path, monkeypatch):
     (packaging / 'components.json').write_text(json.dumps(components))
     with pytest.raises(ValueError, match='frozen QQ'):
         module.prepare(tmp_path / 'app', tmp_path / 'pin.iss')
+
+
+def test_component_installer_hash_is_pinned_in_main_include(tmp_path):
+    import hashlib
+    spec = importlib.util.spec_from_file_location('qq_pair_hash', Path(__file__).resolve().parents[1] / 'packaging/windows/prepare_qq_pair.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    stage, include = tmp_path / 'app', tmp_path / 'pin.iss'
+    initial = module.prepare(stage, include)
+    archive = tmp_path / initial['QQPackageName']
+    archive.write_bytes(b'component installer bytes')
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    final = module.prepare(stage, include, archive)
+    assert final['QQPackageSHA256'] == digest
+    assert digest[:16] in final['QQPackageName']
+    assert final['QQPackageName'].endswith('-x64.exe')
+    assert final['QQPairId'] == initial['QQPairId']
+    assert (tmp_path / final['QQPackageName']).read_bytes() == b'component installer bytes'
+    assert final['QQPackageURL'].endswith(final['QQPackageName'])
+    assert digest in include.read_text()
