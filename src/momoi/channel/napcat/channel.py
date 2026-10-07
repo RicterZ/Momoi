@@ -20,7 +20,8 @@ from .. import (
     SendRejected,
 )
 from ...observability.events import log_event
-from ...models import IncomingMessage, OwnerInputStatus
+from ...models import IncomingMessage, OwnerInputStatus, MessageRecalled
+from .favorites import FavoriteStickers
 from .config import NapCatConfig
 from .parsing import (
     image_blocks,
@@ -47,6 +48,39 @@ class NapCatChannel:
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._send_lock = asyncio.Lock()
         self._inbound_lock = asyncio.Lock()
+        self.favorites = None
+        self.is_message_recalled = lambda channel, message_id: False
+
+    def message_current(self, message):
+        return bool(message.delivery_context.get("channel_notice")) or not self.is_message_recalled(
+            self.name, message.message_id,
+        )
+
+    def configure_emotions(self, catalog):
+        self.favorites = FavoriteStickers(self._request_action, catalog)
+
+    async def sync_emotions(self, stop):
+        if self.favorites is not None:
+            await self.favorites.run(self._ready)
+
+    def emotions_changed(self):
+        if self.favorites is not None:
+            self.favorites.notify()
+
+    async def recall_message(self, message_id: str):
+        await self._request_action('delete_msg', {'message_id': int(message_id)})
+
+    async def set_typing(self, active: bool):
+        if not self.connected:
+            return
+        try:
+            async with asyncio.timeout(1):
+                await self._request_action('set_input_status', {
+                    'user_id': self.config.owner_qq, 'event_type': 1 if active else 0,
+                })
+        except (ChannelError, TimeoutError) as error:
+            log_event(logger, logging.DEBUG, 'qq_input_status_failure', channel=self.name,
+                      error_type=type(error).__name__)
 
     @property
     def connected(self) -> bool:
@@ -54,7 +88,7 @@ class NapCatChannel:
 
     async def run(
         self,
-        on_event: Callable[[IncomingMessage | OwnerInputStatus], Awaitable[None]],
+        on_event: Callable[[IncomingMessage | OwnerInputStatus | MessageRecalled], Awaitable[None]],
         stop: asyncio.Event,
     ) -> None:
         timeout = aiohttp.ClientTimeout(total=None, connect=20)
@@ -115,6 +149,7 @@ class NapCatChannel:
                             }:
                                 break
                         self._ready.clear()
+                        self.emotions_changed()
                         self._fail_pending()
                         if inbound_tasks:
                             await asyncio.gather(*inbound_tasks, return_exceptions=True)
@@ -171,8 +206,20 @@ class NapCatChannel:
     async def _handle_payload(
         self,
         payload: dict[str, Any],
-        on_event: Callable[[IncomingMessage | OwnerInputStatus], Awaitable[None]],
+        on_event: Callable[[IncomingMessage | OwnerInputStatus | MessageRecalled], Awaitable[None]],
     ) -> None:
+        if payload.get("post_type") == "notice" and payload.get("notice_type") == "friend_recall":
+            user_id = str(payload.get("user_id", ""))
+            bot_id = self.config.bot_qq or str(payload.get("self_id", ""))
+            if user_id not in {self.config.owner_qq, bot_id} or not payload.get("message_id"):
+                return
+            message_id = str(payload["message_id"])
+            await on_event(MessageRecalled(
+                f"napcat:{bot_id}:recall:{message_id}", message_id,
+                float(payload.get("time") or time.time()), self.name,
+                "owner" if user_id == self.config.owner_qq else "assistant",
+            ))
+            return
         if (
             payload.get("post_type") == "notice"
             and payload.get("notice_type") == "notify"
@@ -453,6 +500,9 @@ class NapCatChannel:
         }])
 
     async def send_message(self, payload: dict[str, Any]) -> str:
+        slug = payload.get('emotion_slug')
+        if slug and self.favorites is not None:
+            return await self._send_segments([await self.favorites.segment(str(slug))])
         if payload.get("action") == "forward":
             nodes = []
             for node in payload.get("nodes") or []:

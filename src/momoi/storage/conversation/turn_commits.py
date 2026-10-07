@@ -30,6 +30,7 @@ class TurnCommitStore:
         turn_id: str | None = None,
         target_channel: str = "",
     ) -> str:
+        events = [event for event in events if not event.delivery_context.get("channel_notice")]
         assistant_messages = reply.messages
         normalized_messages = [
             self._outbox_content(message) for message in assistant_messages

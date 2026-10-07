@@ -84,7 +84,14 @@ class OutboxWorker:
                         outbox_id=row.id,
                         delay_ms=int(delay * 1000),
                     )
-                    await self._wait_outbox_gap(row.id, delay)
+                    typing = getattr(channel, "set_typing", None) if row.kind == "text" and delay > 0 else None
+                    if callable(typing):
+                        await typing(True)
+                    try:
+                        await self._wait_outbox_gap(row.id, delay)
+                    finally:
+                        if callable(typing):
+                            await typing(False)
                 if not self.store.outbox_dispatchable(row.id):
                     continue
                 check = getattr(channel, "context_valid", None)
@@ -119,6 +126,7 @@ class OutboxWorker:
                     continue
                 attempt = row.attempts + 1
                 send_started = monotonic()
+                native_message_id = None
                 try:
                     log_event(
                         logger,
@@ -138,10 +146,13 @@ class OutboxWorker:
                         elif callable(getattr(channel, "send_call_voice", None)):
                             await channel.send_call_voice(audio, (row.payload or {}).get("delivery_context", {}), str(row.id))
                         else:
-                            await channel.send_voice(audio)
+                            native_message_id = await channel.send_voice(audio)
                     else:
-                        await channel.send_message(
-                            row.payload
+                        payload = row.payload
+                        if row.text.startswith("emotion://") and payload is not None:
+                            payload = {**payload, "emotion_slug": row.text[len("emotion://"):]}
+                        native_message_id = await channel.send_message(
+                            payload
                             or {
                                 "action": "message",
                                 "segments": [{"type": "text", "data": {"text": row.text}}],
@@ -204,6 +215,8 @@ class OutboxWorker:
                 else:
                     if row.kind == "voice":
                         self.bubble_delivery.voice_audio.pop((row.turn_id, row.text), None)
+                    if isinstance(native_message_id, str) and native_message_id:
+                        self.store.record_delivery_receipt(row.id, native_message_id)
                     reply_waiting = self.store.mark_sent(row.id)
                     if reply_waiting:
                         self.agenda_changed.set()

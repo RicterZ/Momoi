@@ -90,6 +90,9 @@ class EmotionStore:
                      description=excluded.description, updated_at=excluded.updated_at""",
                 (slug, self._stored_asset_path(asset), description, now, now),
             )
+        callback = getattr(self, "emotions_changed", None)
+        if callback is not None:
+            callback()
         return self.emotion(slug) or {}
 
     def delete_emotion(self, slug: str) -> bool:

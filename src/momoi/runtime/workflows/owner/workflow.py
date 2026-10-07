@@ -202,7 +202,7 @@ class OwnerWorkflow:
         self.store.record_turn_failure(turn_id, failure_reason)
 
     def _render_batch(self, batch: list[IncomingMessage]) -> str:
-        return "\n".join(message.text for message in batch)
+        return "\n".join(message.text for message in batch if not message.delivery_context.get("channel_notice"))
 
     def _apply_reconciliation_commands(self, batch: list[IncomingMessage]) -> str:
         results: list[str] = []

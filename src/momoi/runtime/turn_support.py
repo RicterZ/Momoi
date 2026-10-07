@@ -202,6 +202,11 @@ def owner_content_blocks(
         # that keeps the sections readable has to be part of the text.
         blocks.append({"type": "text", "text": f"{runtime_text}\n\n"})
     for index, event in enumerate(events):
+        if event.delivery_context.get("channel_notice"):
+            opening = "<current_messages>\n" if index == 0 else ""
+            blocks.append({"type": "text", "text":
+                f'{opening}<event source="napcat:message_recall">\n{escape(event.text)}\n</event>\n'})
+            continue
         received_at = context_timestamp(event.received_at, timezone)
         opening = "<current_messages>\n" if index == 0 else ""
         blocks.append({

@@ -26,6 +26,15 @@ class IncomingMessage:
 
 
 @dataclass(frozen=True)
+class MessageRecalled:
+    event_id: str
+    message_id: str
+    occurred_at: float
+    channel: str
+    author: str = "owner"
+
+
+@dataclass(frozen=True)
 class OwnerInputStatus:
     channel: str
 

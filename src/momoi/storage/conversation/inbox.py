@@ -2,7 +2,7 @@ import json
 import sqlite3
 import time
 
-from ...models import IncomingMessage
+from ...models import IncomingMessage, MessageRecalled
 from ..episode.episode_sql import runtime_archive_kind_sql
 from ..core.integrity import decode_stored_json
 from ..core.turn_workflow import turn_workflow_kind_sql
@@ -10,6 +10,55 @@ from ..core.turn_workflow import turn_workflow_kind_sql
 
 class InboxStore:
     """Owner event ingestion, pending inbox, and reply-wait cancellation."""
+
+    def message_recall_recorded(self, channel: str, message_id: str) -> bool:
+        return self._db.execute("SELECT 1 FROM events WHERE kind=? AND message_id=? LIMIT 1",
+                                (f"{channel}.recall", message_id)).fetchone() is not None
+
+    def message_recalled(self, channel: str, message_id: str) -> bool:
+        return self._db.execute(
+            "SELECT 1 FROM events WHERE kind=? AND message_id=? AND json_extract(payload_json, '$.author')='owner' LIMIT 1",
+            (f"{channel}.recall", message_id),
+        ).fetchone() is not None
+
+    def record_message_recall(self, notice: MessageRecalled) -> IncomingMessage | None:
+        if self.message_recall_recorded(notice.channel, notice.message_id):
+            return None
+        original = self._db.execute(
+            "SELECT occurred_at FROM events WHERE kind=? AND message_id=? ORDER BY received_at LIMIT 1",
+            (f"{notice.channel}.message", notice.message_id),
+        ).fetchone()
+        speaker = "老师" if notice.author == "owner" else "机器人"
+        text = f"【QQ 消息撤回】\n{speaker}撤回了消息 message_id={notice.message_id}。"
+        if original is not None:
+            text += f"原消息发送时间：{self.context_timestamp(original['occurred_at'])}。"
+        elif notice.author == "owner":
+            text += "原消息未收到，内容未知。"
+        text += "\n这条消息已撤回，不再作为当前请求或待执行指令；已执行的操作不代表已经回滚。撤回事件本身无需回复。"
+        now = time.time()
+        payload = {"channel": notice.channel, "notice_type": "message_recall", "author": notice.author}
+        with self._db:
+            cursor = self._db.execute(
+                """INSERT OR IGNORE INTO events
+                   (id, message_id, kind, content, occurred_at, received_at, payload_json, processed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+                (notice.event_id, notice.message_id, f"{notice.channel}.recall", text,
+                 notice.occurred_at, now, json.dumps(payload)),
+            )
+            if cursor.rowcount == 0:
+                return None
+            if notice.author == "owner":
+                self._db.execute("UPDATE events SET processed=1 WHERE kind=? AND message_id=?",
+                                 (f"{notice.channel}.message", notice.message_id))
+            self.begin_turn(notice.event_id, "channel_event", [notice.event_id])
+            self._db.execute(
+                """INSERT INTO messages (turn_id, role, content, created_at, source_event_ids_json)
+                   VALUES (?, 'event', ?, ?, ?)""",
+                (notice.event_id, text, now, json.dumps([notice.event_id])),
+            )
+            self.complete_background_turn(notice.event_id)
+        return IncomingMessage(notice.event_id, notice.message_id, text, notice.occurred_at, now,
+                               channel=notice.channel, delivery_context={"channel_notice": "message_recall"})
 
     def owner_channel_revision(self, channel: str) -> int:
         return int(self._db.execute(

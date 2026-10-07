@@ -114,6 +114,8 @@ class AgentWorker:
                     continue
                 message = item
                 assert isinstance(message, IncomingMessage)
+                if message.delivery_context.get("channel_notice"):
+                    continue
                 if not self._message_current(message):
                     self.store.discard_events([message])
                     continue
@@ -160,7 +162,7 @@ class AgentWorker:
                 sealed = [event for event in batch if self._message_current(event)]
                 self.store.discard_events([event for event in batch if event not in sealed])
                 batch = []
-                if not sealed:
+                if not any(not event.delivery_context.get("channel_notice") for event in sealed):
                     continue
                 sealed_turn_id = self._turn_id(*(event.event_id for event in sealed))
                 self.start_active_turn(

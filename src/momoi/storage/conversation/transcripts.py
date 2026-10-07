@@ -302,9 +302,12 @@ class TranscriptStore:
                        {_MESSAGE_TIME_SQL} AS created_at,
                        m.delivery_state,
                        CASE WHEN m.role='event'
-                            THEN 'webhook:' || COALESCE(wr.workflow_id, 'unknown')
+                            THEN CASE WHEN t.workflow_kind='channel_event'
+                                      THEN 'napcat:message_recall'
+                                      ELSE 'webhook:' || COALESCE(wr.workflow_id, 'unknown') END
                             ELSE '' END AS event_source
                 FROM messages AS m
+                LEFT JOIN turns AS t ON t.id=m.turn_id
                 LEFT JOIN webhook_steps AS ws
                   ON m.turn_id=('webhook:' || ws.run_id || ':' || ws.step_index)
                 LEFT JOIN webhook_runs AS wr ON wr.id=ws.run_id

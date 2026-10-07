@@ -1,3 +1,4 @@
+import time
 import copy
 from dataclasses import replace
 import logging
@@ -8,7 +9,7 @@ from typing import Any
 
 from ...channel import Channel, ChannelMessage
 from ...observability.context import log_context
-from ...models import AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
+from ...models import MessageRecalled, AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
 from ...observability.events import TRACE, log_event
 from ...observability.values import safe_preview
 from ..turn_support import (
@@ -440,6 +441,27 @@ class ToolBatchExecutor:
                     except Exception as error:
                         logger.exception("reply_generation_failed")
                         result = {"ok": False, "error": "reply_generation_failed", "message": type(error).__name__}
+            elif call.name == "qq_recall_message":
+                result = self.store.begin_tool_call(request.turn_id, call.id, call.name,
+                                                    call.arguments, "external_effect")
+                if result is None:
+                    try:
+                        if request.delivery_channel.name != "napcat":
+                            raise ValueError("此工具仅适用于当前 QQ 私聊")
+                        outbox_id, message_id = self.store.recallable_delivery(
+                            "napcat", call.arguments.get("outbox_id"))
+                        if self.store.message_recall_recorded("napcat", message_id):
+                            result = {"ok": True, "message_id": message_id, "recalled": True}
+                        else:
+                            await request.delivery_channel.recall_message(message_id)
+                            self.store.record_message_recall(MessageRecalled(
+                                f"napcat:sent:recall:{message_id}", message_id, time.time(),
+                                "napcat", "assistant"))
+                            result = {"ok": True, "message_id": message_id, "recalled": True}
+                        external_effect = True
+                    except Exception as error:
+                        result = {"ok": False, "error": "qq_recall_failed", "message": str(error)}
+                    self.store.complete_tool_call(request.turn_id, call.id, result)
             elif call.name == "qq_call_status":
                 phone = self.bubble_delivery.channels.get("qq_call")
                 result = {"ok": True, **(phone.status if phone else {"phase": "disabled"})}

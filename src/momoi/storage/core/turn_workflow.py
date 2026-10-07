@@ -4,6 +4,7 @@ from typing import Literal, cast
 
 
 TurnWorkflowKind = Literal[
+    "channel_event",
     "plan_step",
     "owner",
     "webhook",
@@ -21,6 +22,7 @@ TurnWorkflowKind = Literal[
 
 TURN_WORKFLOW_KINDS = frozenset(
     {
+        "channel_event",
         "plan_step",
         "owner",
         "webhook",

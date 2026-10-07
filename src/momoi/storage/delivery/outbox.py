@@ -81,6 +81,7 @@ class OutboxStore:
             path = self._stored_asset_path(str(asset["path"]))
             payload: dict[str, object] = {
                 "action": "message",
+                "emotion_slug": slug,
                 "segments": [{"type": "image", "data": {"file": path}}],
             }
             return message, "image", path, payload

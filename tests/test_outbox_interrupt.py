@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
-from momoi.models import AgentReply, IncomingMessage, OwnerInputStatus
+from momoi.models import AgentReply, IncomingMessage, OwnerInputStatus, MessageRecalled
 from momoi.runtime import MomoiDaemon
 from momoi.integrations.contracts.tts import AudioOutput
 
@@ -31,6 +31,52 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.store = self.daemon.store
         self.addCleanup(self.store.close)
         self.message = IncomingMessage("new-message", "1", "等一下", 1, 1)
+
+    async def test_idle_recall_is_saved_without_starting_reply(self):
+        message = IncomingMessage("recall-source", "1", "synthetic request", 1, 1, channel="napcat")
+        await self.daemon._receive(message)
+        self.daemon.incoming.get_nowait()
+        await self.daemon._receive(MessageRecalled("recall-new", "1", 2, "napcat"))
+        self.assertTrue(self.daemon.incoming.empty())
+        self.assertFalse(self.daemon._message_current(message))
+        self.assertTrue(self.store.message_recalled("napcat", "1"))
+        self.assertEqual(self.store.pending_events(), [])
+
+    async def test_recall_interrupts_active_owner_request_with_runtime_event(self):
+        entered = asyncio.Event()
+        async def active():
+            entered.set()
+            await asyncio.Event().wait()
+        self.daemon.start_active_turn(active(), stage="owner", channel="napcat")
+        try:
+            await entered.wait()
+            await self.daemon._receive(MessageRecalled("active-recall", "1", 2, "napcat"))
+            update = self.daemon.incoming.get_nowait()
+            self.assertEqual(update.delivery_context["channel_notice"], "message_recall")
+            self.assertTrue(self.daemon._owner_message_changed.is_set())
+        finally:
+            self.daemon._active_turn.cancel()
+            await asyncio.gather(self.daemon._active_turn, return_exceptions=True)
+            self.daemon.finish_active_turn()
+
+    async def test_text_gap_sets_typing_and_clears_it_before_send(self):
+        self.store.queue_progress("typing", "typing", ["first", "second"], "napcat")
+        stop = asyncio.Event()
+        actions = []
+        async def typing(active):
+            actions.append(("typing", active))
+        async def send(payload):
+            text = payload["segments"][0]["data"]["text"]
+            actions.append(("send", text))
+            if text == "second":
+                stop.set()
+            return "123"
+        self.daemon.channel.set_typing = typing
+        self.daemon.channel.send_message = send
+        with patch("momoi.runtime.dispatch.delivery.random.uniform", return_value=0.001):
+            await asyncio.wait_for(self.daemon._outbox_worker(stop), 1)
+        self.assertEqual(actions, [("send", "first"), ("typing", True),
+                                   ("typing", False), ("send", "second")])
 
     async def test_new_message_cancels_only_existing_queue_on_its_channel(self):
         self.store.commit_turn(

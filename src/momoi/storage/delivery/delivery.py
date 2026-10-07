@@ -1,3 +1,4 @@
+import json
 import time
 
 from ...channel import normalize_channel_message
@@ -79,12 +80,17 @@ class DeliveryStore:
             )
         return messages
 
-    def cancel_pending_outbox(self, channel: str, reason: str) -> int:
+    def cancel_pending_outbox(self, channel: str, reason: str, *, source_message_id: str | None = None) -> int:
         with self._db:
             rows = self._db.execute(
                 """SELECT id FROM outbox
-                   WHERE target_channel=? AND state IN ('pending', 'ambiguous')""",
-                (channel,),
+                   WHERE target_channel=? AND state IN ('pending', 'ambiguous')
+                     AND (? IS NULL OR EXISTS (
+                         SELECT 1 FROM turns t, json_each(t.source_ids_json) src
+                         JOIN events e ON e.id=src.value
+                         WHERE t.id=outbox.turn_id AND e.kind=? AND e.message_id=?
+                     ))""",
+                (channel, source_message_id, f"{channel}.message", source_message_id),
             ).fetchall()
             for row in rows:
                 outbox_id = int(row["id"])
@@ -111,6 +117,27 @@ class DeliveryStore:
                    next_attempt_at=?, last_error=? WHERE id=?""",
                 (time.time() + 2, error, outbox_id),
             )
+
+    def record_delivery_receipt(self, outbox_id: int, message_id: str) -> None:
+        row = self._db.execute("SELECT payload_json FROM outbox WHERE id=?", (outbox_id,)).fetchone()
+        if row is None or not message_id:
+            return
+        payload = json.loads(row[0] or "{}")
+        payload["_delivery_receipt"] = {"message_id": str(message_id)}
+        with self._db:
+            self._db.execute("UPDATE outbox SET payload_json=? WHERE id=?",
+                             (json.dumps(payload, ensure_ascii=False), outbox_id))
+
+    def recallable_delivery(self, channel: str, outbox_id: int | None = None):
+        row = self._db.execute(
+            """SELECT id, payload_json FROM outbox
+               WHERE target_channel=? AND state='sent' AND (? IS NULL OR id=?)
+                 AND json_extract(payload_json, '$._delivery_receipt.message_id') IS NOT NULL
+               ORDER BY id DESC LIMIT 1""", (channel, outbox_id, outbox_id),
+        ).fetchone()
+        if row is None:
+            raise ValueError("没有可撤回的已发送消息")
+        return int(row['id']), str(json.loads(row['payload_json'])['_delivery_receipt']['message_id'])
 
     def mark_sent(self, outbox_id: int) -> bool:
         activated = False

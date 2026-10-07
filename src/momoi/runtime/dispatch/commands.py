@@ -3,7 +3,7 @@ import logging
 
 from ...observability.events import TRACE, log_event
 from ...observability.values import safe_preview
-from ...models import IncomingMessage, OwnerInputStatus
+from ...models import IncomingMessage, OwnerInputStatus, MessageRecalled
 from ..jobs import AutonomousJob
 from ..workflows.memory_maintenance import MEMORY_MAINTENANCE_RUN_VERSION
 
@@ -26,7 +26,21 @@ class CommandRouter:
         )
         self._owner_activity_changed.set()
 
-    async def _receive(self, event: IncomingMessage | OwnerInputStatus) -> None:
+    async def _receive(self, event: IncomingMessage | OwnerInputStatus | MessageRecalled) -> None:
+        if isinstance(event, MessageRecalled):
+            message = self.store.record_message_recall(event)
+            if message is None:
+                return
+            cancelled = (self.store.cancel_pending_outbox(event.channel, "message_recalled",
+                         source_message_id=event.message_id) if event.author == "owner" else 0)
+            if cancelled:
+                self.outbox_changed.set()
+            if (self._active_turn is not None and not self._active_turn.done()
+                    and self._active_turn_stage == "owner"
+                    and self._active_turn_channel == event.channel):
+                await self.incoming.put(message)
+                self._owner_message_changed.set()
+            return
         if isinstance(event, OwnerInputStatus):
             channel = self._channel_for(event.channel)
             self._touch_owner_activity(

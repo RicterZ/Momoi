@@ -137,6 +137,15 @@ class MomoiDaemon(
                 from ..qq_call.channel import QQCallChannel
                 self.channels["qq_call"] = QQCallChannel(phone, item.owner_qq, self.services.asr,
                     tts_enabled=self.services.tts is not None, interrupt=self._interrupt_qq_call)
+        emotion_channels = [item for item in self.channels.values()
+                            if callable(getattr(item, "configure_emotions", None))]
+        for item in emotion_channels:
+            item.configure_emotions(self.store.list_emotions)
+            item.is_message_recalled = self.store.message_recalled
+        def emotions_changed():
+            for item in emotion_channels:
+                item.emotions_changed()
+        self.store.emotions_changed = emotions_changed
         self.provider = self.services.llm
         self.provider.usage_sink = self.store.record_llm_call
         if hasattr(self.provider, "request_metrics_sink"):
@@ -253,6 +262,9 @@ class MomoiDaemon(
                         group.create_task(self._run_channel(item, stop))
                         for item in self.channels.values()
                     )
+                    tasks.extend(group.create_task(item.sync_emotions(stop))
+                                 for item in self.channels.values()
+                                 if callable(getattr(item, "sync_emotions", None)))
                     tasks.append(group.create_task(self._agent_worker(stop)))
                     tasks.append(group.create_task(self._scheduler_worker(stop)))
                     tasks.append(group.create_task(self._outbox_worker(stop)))
@@ -289,6 +301,9 @@ class MomoiDaemon(
                 active.cancel()
 
     def _message_current(self, message):
+        if (not message.delivery_context.get("channel_notice")
+                and self.store.message_recalled(message.channel, message.message_id)):
+            return False
         target = self._channel_for(message.channel)
         check = getattr(target, "message_current", None)
         return check(message) if callable(check) else True

@@ -16,6 +16,10 @@ from ..conversation.replyer import REPLYER_HISTORY_SCHEMA
 from ..conversation.tool_discovery import TOOL_DISCOVERY_SCHEMA
 
 
+def _add_channel_event_workflow(database):
+    _add_turn_workflow(database, "channel_event")
+
+
 def _add_task_plans(database):
     database.execute(PLAN_SCHEMA)
 
@@ -706,6 +710,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_episode_relation_reviews,
     _add_replyer_history_windows,
     _add_tool_discovery,
+    _add_channel_event_workflow,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

@@ -25,7 +25,10 @@ class Replyer:
         system = soul + "\n\n" + guide
         rows = self.store.replyer_history_rows(getattr(request.delivery_channel, "dialogue_channel", request.delivery_channel.name))
         messages = visible_dialogue(rows, timezone=self.config.timezone)
-        target = "\n".join(event.text for event in request.current_events)
+        target = "\n".join(event.text for event in request.current_events
+                           if not event.delivery_context.get("channel_notice")
+                           and (not callable(getattr(request.delivery_channel, "message_current", None))
+                                or request.delivery_channel.message_current(event)))
         mode = call.arguments.get("mode", "text")
         if mode not in {"text", "voice"}:
             raise ValueError("invalid reply mode")
