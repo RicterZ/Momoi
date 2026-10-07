@@ -137,6 +137,7 @@ context and does not override confirmed facts.
 | Private chat | One owner across QQ (NapCat) and WeChat; replies return to the originating channel and proactive messages use the configured primary channel |
 | Conversation | Message batching, quoted/forwarded content, media handling, natural multi-bubble delivery, optional image reactions, and valid silence |
 | Voice calls | Real-time QQ voice calls through NapCat, with speech recognition, synthesized replies, and interruption support on Windows and Linux |
+| Speech recognition | Choose Tencent Cloud ASR or optional local CPU streaming ASR with Sherpa; Linux runs inference in a separate container, and Windows installs the model as an optional component |
 | Context | Native shared transcript, on-demand recall, background Episode archiving and relationships, runtime re-search, and bounded model input |
 | Tools | Built-in file/HTTP tools plus dynamically discovered MCP servers and per-server tool allowlists |
 | Long-running work | Tool loops, progress messages, interruption, execution limits, large-result snapshots, and recovery for uncertain external effects |
