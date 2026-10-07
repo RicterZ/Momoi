@@ -80,16 +80,88 @@ def test_media_starts_before_audio_ready_and_retries():
 
 
 def test_endpoint_loss_detected_and_returning_devices_rechecked(monkeypatch):
-    import sys
-    available = {0: ['speaker'], 1: ['mic']}
-    monkeypatch.setitem(sys.modules, 'virtual_audio', SimpleNamespace(
-        active_endpoint_ids=lambda flow: available[flow]))
+    from momoi.qq_call import windows_audio
+    available = {"0": ['speaker'], "1": ['mic']}
+    async def probe(*args):
+        return available
+    monkeypatch.setattr(windows_audio, '_read_audio_probe', probe)
     audio = DeferredWindowsAudio.__new__(DeferredWindowsAudio)
+    audio.bridge = Path('.')
     audio.backend = SimpleNamespace(ready=True, device_selection={
         'input_device': {'id': 'mic'}, 'output_device': {'id': 'speaker'},
         'injection_device': {'id': 'speaker'}})
-    assert audio.endpoints_available()
-    available[0] = []
-    assert not audio.endpoints_available()
-    available[0] = ['speaker']
-    assert audio.endpoints_available()
+    async def scenario():
+        assert await audio.check_endpoints()
+        available["0"] = []
+        assert not await audio.check_endpoints()
+        available["0"] = ['speaker']
+        assert await audio.check_endpoints()
+    asyncio.run(scenario())
+
+
+def test_device_enumeration_timeout_kills_probe(monkeypatch):
+    from momoi.qq_call import windows_audio
+    async def scenario():
+        class Probe:
+            returncode = None
+            killed = False
+            async def communicate(self):
+                raise asyncio.TimeoutError()
+            def kill(self):
+                self.killed = True
+            async def wait(self):
+                self.returncode = -1
+        probe = Probe()
+        async def launch(*args, **kwargs):
+            assert '-I' in args
+            assert kwargs['stderr'] == asyncio.subprocess.DEVNULL
+            return probe
+        monkeypatch.setattr(windows_audio.sys, 'platform', 'win32')
+        monkeypatch.setattr(windows_audio.subprocess, 'CREATE_NO_WINDOW', 0x08000000, raising=False)
+        monkeypatch.setattr(windows_audio.asyncio, 'create_subprocess_exec', launch)
+        with pytest.raises(RuntimeError, match='响应超时'):
+            await windows_audio.read_device_catalog(Path('.'))
+        assert probe.killed
+        assert probe.returncode == -1
+    asyncio.run(scenario())
+
+
+def test_av_host_restart_discards_previous_device_selection():
+    async def scenario():
+        class Audio:
+            ready = True
+            closed = 0
+            prepared = 0
+            capture_command = ('new-capture',)
+            playback_command = ('new-playback',)
+            def close(self):
+                self.ready = False
+                self.closed += 1
+            async def prepare(self, *args):
+                self.ready = True
+                self.prepared += 1
+        audio = Audio()
+        broker = MediaBroker('a' * 64, audio=audio)
+        host_up = False
+        async def dependencies():
+            return {'bridge': host_up, 'av_host': host_up, 'audio': audio.ready}, {}
+        broker.dependencies = dependencies
+        await broker.startup(None)
+        try:
+            for _ in range(100):
+                if audio.closed:
+                    break
+                await asyncio.sleep(.01)
+            assert audio.closed == 1
+            assert not audio.ready
+            host_up = True
+            for _ in range(150):
+                if audio.prepared:
+                    break
+                await asyncio.sleep(.01)
+            assert audio.prepared == 1
+            assert broker.capture_command == ('new-capture',)
+            assert broker.playback_command == ('new-playback',)
+        finally:
+            await broker.cleanup(None)
+    asyncio.run(scenario())

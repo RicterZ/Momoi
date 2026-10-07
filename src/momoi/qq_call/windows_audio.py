@@ -1,5 +1,8 @@
 """Retry unavailable virtual devices without replacing them with physical audio."""
+import asyncio
+import contextlib
 import json
+import subprocess
 from pathlib import Path
 import sys
 
@@ -10,6 +13,7 @@ class DeferredWindowsAudio:
         from audio_backend import WindowsAudioBackend
         self.factory = WindowsAudioBackend
         self.runtime = runtime
+        self.bridge = Path(bridge)
         self.backend = None
         self.config_path = Path(runtime).parent / "config.json"
         self.device_ids = self.read_device_ids()
@@ -68,18 +72,19 @@ class DeferredWindowsAudio:
             raise
         self.backend = backend
 
-    def endpoints_available(self):
+    async def check_endpoints(self):
         if not self.ready:
             return True
-        from virtual_audio import active_endpoint_ids
         try:
-            active = {flow: {value.casefold() for value in active_endpoint_ids(flow)}
-                      for flow in (0, 1)}
+            active = await _read_audio_probe(self.bridge,
+                "{str(flow): virtual_audio.active_endpoint_ids(flow) for flow in (0,1)}")
+            active = {int(flow): {value.casefold() for value in values}
+                      for flow, values in active.items()}
             return all(device["id"].casefold() in active[flow]
                        for role, flow in (("input_device", 1), ("output_device", 0),
                                           ("injection_device", 0))
                        if (device := self.device_selection.get(role)))
-        except (OSError, RuntimeError):
+        except (OSError, RuntimeError, ValueError):
             return False
 
     def close(self):
@@ -94,3 +99,35 @@ def device_catalog(bridge):
     sys.path.insert(0, str(Path(bridge).resolve() / "windows"))
     from virtual_audio import audio_device_catalog
     return audio_device_catalog()
+
+
+async def read_device_catalog(bridge):
+    """Isolate Windows audio enumeration so a stuck driver cannot wedge the API."""
+    if sys.platform != "win32":
+        return await asyncio.to_thread(device_catalog, bridge)
+    return await _read_audio_probe(bridge, "virtual_audio.audio_device_catalog()")
+
+
+async def _read_audio_probe(bridge, expression):
+    script = (
+        "import json,sys; sys.path.insert(0,sys.argv[1]); import virtual_audio; "
+        "print(json.dumps(" + expression + "))"
+    )
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, "-I", "-B", "-X", "utf8", "-c", script,
+        str(Path(bridge).resolve() / "windows"),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    try:
+        output, _ = await asyncio.wait_for(process.communicate(), 3)
+        if process.returncode:
+            raise RuntimeError("暂时无法读取音频设备，请稍后刷新")
+        return json.loads(output)
+    except asyncio.TimeoutError:
+        raise RuntimeError("音频设备响应超时，请稍后刷新") from None
+    finally:
+        if process.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+            await process.wait()

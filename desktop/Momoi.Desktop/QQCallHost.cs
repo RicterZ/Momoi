@@ -231,15 +231,31 @@ internal sealed class QQCallHost : IAsyncDisposable
         {
             try
             {
-                using var response = await http.PostAsync(mediaUrl + "/v1/shutdown", null);
-                await media.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(8));
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                using var response = await http.PostAsync(mediaUrl + "/v1/shutdown", null, deadline.Token);
+                await media.WaitForExitAsync(deadline.Token);
             }
             catch (Exception failure) when (failure is HttpRequestException || failure is TaskCanceledException || failure is TimeoutException) { }
         }
         job.Dispose(); job = null;
-        foreach (var child in children) { await child.WaitForExitAsync(); child.Dispose(); }
+        foreach (var child in children)
+        {
+            try
+            {
+                await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3));
+            }
+            catch (TimeoutException)
+            {
+                LiveLog.Write("voice-service", "stderr", $"语音子进程退出超时 PID={child.Id}，强制结束。");
+                try { child.Kill(entireProcessTree: true); }
+                catch (InvalidOperationException) { }
+            }
+            finally { child.Dispose(); }
+        }
         children.Clear(); media = null; loginRequested = false;
-        await Task.WhenAll(readers); readers.Clear();
+        try { await Task.WhenAll(readers).WaitAsync(TimeSpan.FromSeconds(2)); }
+        catch (TimeoutException) { LiveLog.Write("voice-service", "stderr", "语音日志管道关闭超时，继续清理。"); }
+        readers.Clear();
     }
     public async ValueTask DisposeAsync()
     {
