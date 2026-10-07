@@ -52,6 +52,12 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Length == 2 && e.Args[0] == "--update-prompt-smoke")
+        {
+            try { await RunUpdatePromptSmokeAsync(e.Args[1]); Shutdown(0); }
+            catch (Exception error) { Directory.CreateDirectory(e.Args[1]); File.WriteAllText(Path.Combine(e.Args[1], "prompt-error.log"), error.ToString()); Shutdown(1); }
+            return;
+        }
         if (e.Args.Length == 2 && e.Args[0] == "--shell-ui-preview")
         {
             workspace = e.Args[1];
@@ -146,13 +152,15 @@ public partial class App : Application
         DockPanel.SetDock(navigationBorder, Dock.Top);
         shellLayout.Children.Add(navigationBorder);
         shellLayout.Children.Add(panelContent);
+        shellRoot = new Grid();
+        shellRoot.Children.Add(shellLayout);
         panel = new Window
         {
             Title = "Momoi", Width = Math.Min(1440, SystemParameters.WorkArea.Width * 0.94),
             Height = Math.Min(850, SystemParameters.WorkArea.Height * 0.94), MinWidth = 800, MinHeight = 600,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
             Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")),
-            Content = shellLayout,
+            Content = shellRoot,
         };
         ShowLoading("正在启动…");
         MainWindow = panel;
@@ -311,7 +319,7 @@ public partial class App : Application
         if (!dashboardReady || browser is null) return;
         if (loadingView is not null) panelContent.Children.Remove(loadingView);
         loadingView = null;
-        browser.Visibility = Visibility.Visible;
+        if (updatePrompt is null) browser.Visibility = Visibility.Visible;
     }
 
     private async Task LoadDashboardAsync(BackendReady ready)
@@ -378,8 +386,8 @@ public partial class App : Application
             tray!.Text = "Momoi — 正在检查更新";
             LatestRelease? latest = staged is null ? await SignedLatest.FetchAsync(lifetime.Token) : null;
             if ((latest?.ReleaseId ?? staged!.Manifest.ReleaseId) == currentRelease.Manifest.ReleaseId)
-            { if (!quiet) MessageBox.Show("当前已是最新发布版本。", "Momoi"); return; }
-            if (staged is null && MessageBox.Show($"发现新版本 {latest!.Version}（当前 {currentRelease.Manifest.Version}）。\n是否下载安装？安装完成后会重启后台并刷新面板。", "Momoi 更新", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes) return;
+            { if (!quiet) await ShowUpdatePromptAsync("已是最新版本", "当前已是最新发布版本。"); return; }
+            if (staged is null && !await ShowUpdatePromptAsync("发现可用更新", $"新版本 {latest!.Version}（当前 {currentRelease.Manifest.Version}）。\n安装完成后会重启后台并刷新面板。", "安装并重启", "稍后再说")) return;
             installationRequested = true;
             audioDeviceWindow?.Close();
             ShowLoading("正在更新…");
@@ -443,12 +451,12 @@ public partial class App : Application
                         await napcat.StartAsync(botQQ, QQEntry(), lifetime.Token);
                     await LoadDashboardAsync(ready);
                     _ = WatchBackendAsync(backend);
-                    MessageBox.Show($"更新未能启动，已恢复原版本与数据。\n{updateError.Message}", "Momoi", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    await ShowUpdatePromptAsync("已恢复原版本", $"更新未能启动，已恢复原版本与数据。\n{updateError.Message}");
                 }
             }
         }
         catch (OperationCanceledException) when (exiting) { }
-        catch (Exception error) { if (!exiting && (!quiet || installationRequested)) MessageBox.Show($"更新失败：{error.Message}", "Momoi", MessageBoxButton.OK, MessageBoxImage.Error); }
+        catch (Exception error) { if (!exiting && (!quiet || installationRequested)) await ShowUpdatePromptAsync("更新未完成", error.Message); }
         finally
         {
             if (!exiting) ShowDashboard();
@@ -547,7 +555,7 @@ public partial class App : Application
 
     private void HideOnClose(object? sender, CancelEventArgs args)
     {
-        if (!exiting) { args.Cancel = true; panel!.Hide(); }
+        if (!exiting) { args.Cancel = true; if (updatePrompt is null) panel!.Hide(); }
     }
 
     private async Task ExitAsync()
