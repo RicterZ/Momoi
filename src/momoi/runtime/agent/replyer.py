@@ -7,6 +7,7 @@ from ...integrations.request_context import model_request
 from ...observability.context import log_context, new_trace_id, current_log_context
 from ...storage import estimate_tokens
 from ...storage.delivery.emotions import EMOTION_REACTION_POLICY
+from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_POLICY
 from ..transcript.replyer import visible_dialogue
 
 
@@ -36,8 +37,10 @@ class Replyer:
         if emotions.strip():
             system += "\n\n<emotion_catalog>\n" + emotions + "\n</emotion_catalog>\n" + EMOTION_REACTION_POLICY
             system += "\n文字模式选用表情时，将 emotion:// 标识单独作为一个气泡，用空行与文字分隔；只能使用目录中的标识。语音模式只生成朗读文本，不输出表情。"
+        if getattr(request.delivery_channel, "dialogue_channel", request.delivery_channel.name) == "napcat":
+            system += "\n\n" + QQ_POKE_POLICY
         expression = (
-            "只输出适合朗读的实际发言，用空行分隔气泡；使用自然口语，不包含 Markdown、颜文字、表情标记或媒体路径。"
+            "只输出适合朗读的实际发言，用空行分隔气泡；使用自然口语，不包含 Markdown、颜文字、表情标记、动作标记或媒体路径。"
             if mode == "voice" else "只输出实际发言，用空行分隔气泡。"
         )
         tail = (
@@ -71,4 +74,12 @@ class Replyer:
         text = "\n".join(str(block.get("text", "")) for block in response.content if block.get("type") == "text").strip()
         if not text:
             raise ValueError("Replyer returned empty text")
-        return [part.strip() for part in text.split("\n\n") if part.strip()]
+        bubbles = [part.strip() for part in text.split("\n\n") if part.strip()]
+        for bubble in bubbles:
+            if QQ_POKE_MARKER not in bubble:
+                continue
+            if bubble != QQ_POKE_MARKER:
+                raise ValueError("poke directive must be a standalone bubble")
+            if mode != "text" or not callable(getattr(request.delivery_channel, "poke_owner", None)):
+                raise ValueError("poke is unavailable in this reply mode or channel")
+        return bubbles

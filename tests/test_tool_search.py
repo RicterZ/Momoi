@@ -167,29 +167,26 @@ def test_builtin_discovery_loads_requested_tools_and_persists_until_compact(tmp_
         store.close()
 
 
-def test_qq_poke_is_permanent_and_discovered_qq_tools_are_permitted(tmp_path):
+def test_replyer_poke_not_a_planner_tool_and_qq_control_is_permitted(tmp_path):
     store = Store(tmp_path / 'db')
     try:
         current = surface({}, store=store)
         current.channel_names = ['napcat', 'qq_call']
         tools = current.conversation_specs()
         names = [spec['name'] for spec in tools]
-        assert names.count('qq_poke') == 1
+        assert 'qq_poke' not in names
         assert 'qq_recall_message' not in names
+        assert '戳一戳' in next(spec['description'] for spec in tools if spec['name'] == 'reply')
         for stage in ('owner', 'heartbeat', 'reply_followup', 'goal'):
-            assert {'qq_poke', 'qq_recall_message', 'qq_call_status'} <= current.permitted_names(stage)
+            assert {'qq_recall_message', 'qq_call_status'} <= current.permitted_names(stage)
+            assert 'qq_poke' not in current.permitted_names(stage)
         groups = current.discovery_groups()
-        enabled = enable_tools(ToolCall('enable', 'tool_enable', {'tools': ['qq_poke', 'qq_recall_message']}),
+        assert not any(spec['name'] == 'qq_poke' for specs in groups.values() for spec in specs)
+        enabled = enable_tools(ToolCall('enable', 'tool_enable', {'tools': ['qq_recall_message']}),
                                enable_tool_groups=groups, tools=tools, tool_surface=current)
         assert enabled['ok']
         assert enabled['newly_loaded_tools'] == ['qq_recall_message']
-        assert [spec['name'] for spec in tools].count('qq_poke') == 1
         store.transcript_window_turn_limit(1, 3, force_compact=True)
-        after = [spec['name'] for spec in current.conversation_specs()]
-        assert after.count('qq_poke') == 1
-        assert 'qq_recall_message' not in after
-        current.channel_names = []
-        assert 'qq_poke' not in {spec['name'] for spec in current.conversation_specs()}
-        assert 'qq_poke' not in current.permitted_names('owner')
+        assert 'qq_recall_message' not in {spec['name'] for spec in current.conversation_specs()}
     finally:
         store.close()

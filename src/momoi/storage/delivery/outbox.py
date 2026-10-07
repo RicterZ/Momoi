@@ -8,6 +8,7 @@ from ...channel import (
     render_channel_message,
 )
 from .emotions import emotion_slug
+from .actions import QQ_POKE_MARKER
 
 
 class OutboxStore:
@@ -73,6 +74,8 @@ class OutboxStore:
     def _outbox_content(
         self, message: ChannelMessage
     ) -> tuple[str, str, str | None, dict[str, object]]:
+        if isinstance(message, str) and message == QQ_POKE_MARKER:
+            return message, "poke", None, {"action": "poke"}
         slug = emotion_slug(message) if isinstance(message, str) else None
         if slug is not None:
             asset = self.emotion(slug)

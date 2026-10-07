@@ -32,38 +32,25 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.store.close)
         self.message = IncomingMessage("new-message", "1", "等一下", 1, 1)
 
-    async def test_poke_tool_is_audited_and_replay_does_not_send_twice(self):
-        from types import SimpleNamespace
-        from momoi.models import ProviderResponse, ToolCall, TurnDraft
-        from momoi.runtime.agent import TurnExecutionSpec
-        from momoi.runtime.tool_contracts.qq_message import QQ_POKE_SPEC
-        from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
+    async def test_replyer_poke_outbox_replay_and_delivery(self):
         self.daemon.channel.poke_owner = AsyncMock()
-        message = IncomingMessage("poke-request", "123", "synthetic request", 1, 1, channel="napcat")
-        self.store.add_event(message)
-        self.store.begin_turn("poke-turn", "owner", [message.event_id])
+        self.store.begin_turn("poke-turn", "owner", [])
         for _ in range(2):
-            rounds = 0
-            async def complete(system, history, tools, **kwargs):
-                nonlocal rounds
-                rounds += 1
-                if rounds == 1:
-                    call = ToolCall("poke-once", "qq_poke", {})
-                else:
-                    self.assertIn('"poked": true', str(history))
-                    call = ToolCall("done", "end_turn", {"reply_wait": {"wait": False},
-                                                         "mood": {"decision": "unchanged"}})
-                return ProviderResponse([{"type": "tool_use", "id": call.id, "name": call.name,
-                                          "input": call.arguments}], [call])
-            self.daemon.provider = SimpleNamespace(complete=complete)
-            await self.daemon._run_tool_loop(
-                self.daemon._system(planner=True), [{"role": "user", "content": "synthetic request"}],
-                [QQ_POKE_SPEC, END_TURN_TOOL_SPEC], [message], TurnDraft(),
-                execution=TurnExecutionSpec("owner", permitted_tools=self.daemon.tool_surface.permitted_names("owner")),
-                source_event_id=message.event_id, turn_id="poke-turn", delivery_channel=self.daemon.channel)
+            self.store.queue_progress("poke-turn", "reply-once", ["qq://poke"], "napcat")
+        rows = self.store.due_outbox()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].kind, "poke")
+        self.assertEqual(rows[0].payload, {"action": "poke"})
+        stop = asyncio.Event()
+        async def poke():
+            stop.set()
+        self.daemon.channel.poke_owner.side_effect = poke
+        self.daemon.channel._request_action = AsyncMock()
+        await asyncio.wait_for(self.daemon._outbox_worker(stop), 1)
         self.daemon.channel.poke_owner.assert_awaited_once()
-        row = self.store._db.execute("SELECT capability, state, ok FROM tool_audit WHERE tool_name='qq_poke'").fetchone()
-        self.assertEqual(tuple(row), ("external_effect", "completed", 1))
+        self.daemon.channel._request_action.assert_not_awaited()
+        self.assertEqual(self.store._db.execute("SELECT state FROM outbox").fetchone()[0], "sent")
+        self.assertEqual(self.store.committed_reply("poke-turn", "reply-once")["bubbles"], ["qq://poke"])
 
     async def test_owner_poke_reaches_planner_without_cancelling_pending_text(self):
         self.store.queue_progress("previous", "previous", ["pending reply"], "napcat")

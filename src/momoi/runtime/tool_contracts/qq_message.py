@@ -9,9 +9,3 @@ QQ_RECALL_MESSAGE_SPEC = {
         "additionalProperties": False,
     },
 }
-
-QQ_POKE_SPEC = {
-    "name": "qq_poke",
-    "description": "通过 QQ 私聊主动戳一戳用户，作为轻量互动。仅发送戳一戳动作，不自动附带文字；是否另发文字由你根据上下文判断。",
-    "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-}

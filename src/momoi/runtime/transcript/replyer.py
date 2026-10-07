@@ -1,6 +1,7 @@
 """Project only actual dialogue, keeping internal planner records out of replies."""
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from ...storage.delivery.actions import QQ_POKE_MARKER
 
 
 def visible_dialogue(rows, *, timezone="UTC"):
@@ -14,6 +15,8 @@ def visible_dialogue(rows, *, timezone="UTC"):
         text = str(row.get("content") or "").strip()
         if not text:
             continue
+        if text == QQ_POKE_MARKER:
+            text = "[QQ 动作：戳一戳用户]"
         if role == "user":
             timestamp = datetime.fromtimestamp(float(row["created_at"]), ZoneInfo(str(timezone))).isoformat()
             text = f'<message time="{timestamp}">\n{text}\n</message>'

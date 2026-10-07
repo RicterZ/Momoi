@@ -25,7 +25,7 @@ from ..tool_contracts.plan import PLAN_TOOLS, PLAN_STEP_FINISH
 from .progress import public_tool_spec
 from ..tool_contracts.reply import REPLY_TOOL_SPEC
 from ..tool_contracts.qq_call import QQ_CALL_STATUS_SPEC
-from ..tool_contracts.qq_message import QQ_RECALL_MESSAGE_SPEC, QQ_POKE_SPEC
+from ..tool_contracts.qq_message import QQ_RECALL_MESSAGE_SPEC
 
 logger = logging.getLogger("momoi.runtime.turns")
 
@@ -36,7 +36,7 @@ DEFERRED_TOOLS = frozenset({
 BUILTIN_GROUP_DESCRIPTIONS = {
     "builtin_history": "查询记忆、历史话题与关联话题，查看过去的思考记录。",
     "builtin_files": "写入、修改、移动、删除文件和创建目录。",
-    "builtin_qq_messages": "QQ 私聊互动：戳一戳用户、撤回机器人已发送的消息。",
+    "builtin_qq_messages": "撤回机器人已经发送到 QQ 私聊的消息。",
     "builtin_calls": "查询 QQ 语音电话的当前状态和基础服务是否就绪。",
 }
 
@@ -81,7 +81,7 @@ class ToolSurface:
             spec for spec in self.builtin_specs if spec["name"] in DEFERRED_TOOLS
         ])
         if "napcat" in self.channel_names:
-            groups["builtin_qq_messages"] = self.public_specs([QQ_RECALL_MESSAGE_SPEC, QQ_POKE_SPEC])
+            groups["builtin_qq_messages"] = self.public_specs([QQ_RECALL_MESSAGE_SPEC])
         if "qq_call" in self.channel_names:
             groups["builtin_calls"] = self.public_specs([QQ_CALL_STATUS_SPEC])
         return groups
@@ -144,6 +144,8 @@ class ToolSurface:
             "type": "string", "enum": self.channel_names,
             "description": "目标渠道；省略时回复当前消息所在渠道。",
         }
+        if "napcat" in self.channel_names:
+            reply_spec["description"] += " QQ 文字回复中，Replyer 也能选择戳一戳用户；需要这种互动时在 intent 中说明意图。"
         if not self.voice_enabled:
             reply_spec["input_schema"]["properties"]["mode"]["enum"] = ["text"]
         tools = [
@@ -151,9 +153,8 @@ class ToolSurface:
             heartbeat_begin_spec(),
             copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC),
             copy.deepcopy(GOAL_REVIEW_TOOL_SPEC),
-            {**reply_spec, "description": REPLY_TOOL_SPEC["description"] + (" 已配置语音合成；语音渠道：" + "、".join(self.voice_channels) + "。在这些渠道可选 mode=voice，其他渠道使用 mode=text。" if self.voice_enabled else " 当前仅支持 mode=text，语音合成或渠道语音能力不可用。")},
+            {**reply_spec, "description": reply_spec["description"] + (" 已配置语音合成；语音渠道：" + "、".join(self.voice_channels) + "。在这些渠道可选 mode=voice，其他渠道使用 mode=text。" if self.voice_enabled else " 当前仅支持 mode=text，语音合成或渠道语音能力不可用。")},
             READ_TOOL_RESULT_SPEC,
-            *([copy.deepcopy(QQ_POKE_SPEC)] if "napcat" in self.channel_names else []),
             *copy.deepcopy([spec for spec in MEMORY_TOOL_SPECS if spec["name"] not in DEFERRED_TOOLS]),
             *copy.deepcopy(IMAGE_TOOL_SPECS),
             *self.public_specs(AGENDA_TOOL_SPECS),

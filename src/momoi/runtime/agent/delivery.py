@@ -10,6 +10,7 @@ from typing import Any
 from ...channel import Channel, ChannelMessage, normalize_channel_message, render_channel_message
 from ...integrations.contracts.tts import AudioOutput, TTSError, TTSProvider
 from ...storage.delivery.emotions import EMOTION_PREFIX, emotion_slug
+from ...storage.delivery.actions import QQ_POKE_MARKER
 from ...observability.events import log_event
 from ...models import ToolCall
 from ..parsing import parse_bubbles
@@ -63,6 +64,9 @@ class DeliveryPolicy:
 
     def validate_emotions(self, messages: list[ChannelMessage]) -> str | None:
         for message in messages:
+            rendered = message if isinstance(message, str) else render_channel_message(normalize_channel_message(message))
+            if QQ_POKE_MARKER in rendered and message != QQ_POKE_MARKER:
+                return "poke_directive_must_be_a_standalone_bubble"
             if not isinstance(message, str):
                 if EMOTION_PREFIX in render_channel_message(
                     normalize_channel_message(message)
@@ -148,6 +152,8 @@ class BubbleDelivery:
 
         if not isinstance(text, str) or not text.strip():
             return failure("invalid_voice_text")
+        if QQ_POKE_MARKER in text:
+            return failure("voice_cannot_include_poke")
         if EMOTION_PREFIX in text:
             return failure("voice_cannot_include_emotion")
         if not tool_call_id:
@@ -266,6 +272,8 @@ class BubbleDelivery:
         )
         if target is None:
             return BubbleDeliveryResult({"ok": False, "error": "invalid_channel"})
+        if QQ_POKE_MARKER in bubbles and not callable(getattr(target, "poke_owner", None)):
+            return BubbleDeliveryResult({"ok": False, "error": "poke_not_supported"})
         similarity = (
             self.policy.similarity(previous_bubbles, bubbles)
             if previous_tool_name in {"reply", "send_bubbles", "send_voice"}

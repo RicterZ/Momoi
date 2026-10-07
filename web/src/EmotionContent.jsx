@@ -19,6 +19,6 @@ export default function EmotionContent({ text, className = "message-content" }) 
     const match = /^emotion:\/\/([a-z0-9][a-z0-9._-]{0,63})$/.exec(line.trim());
     return <span key={index}>{index > 0 && <br />}{match
       ? <EmotionImage key={match[1]} slug={match[1]} />
-      : line}</span>;
+      : line.trim() === "qq://poke" ? "[戳一戳用户]" : line}</span>;
   })}</div>;
 }

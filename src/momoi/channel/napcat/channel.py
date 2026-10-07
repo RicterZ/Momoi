@@ -520,6 +520,9 @@ class NapCatChannel:
         }])
 
     async def send_message(self, payload: dict[str, Any]) -> str:
+        if payload.get("action") == "poke":
+            await self.poke_owner()
+            return ""
         slug = payload.get('emotion_slug')
         if slug and self.favorites is not None:
             return await self._send_segments([await self.favorites.segment(str(slug))])

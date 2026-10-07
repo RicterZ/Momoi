@@ -82,8 +82,9 @@ def test_memory_evidence_reads_reply_result_not_intent():
     assert '内部派发方向' not in evidence
 
 
-@pytest.mark.parametrize("delivery_context", [{}, {"channel_notice": "message_recall"}])
-def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_context):
+@pytest.mark.parametrize("delivery_context, expression", [({}, "实际回复"),
+    ({"channel_notice": "message_recall"}, "实际回复"), ({"channel_notice": "poke"}, "qq://poke")])
+def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_context, expression):
     from momoi.config.models import AppConfig
     from momoi.integrations.models import LLMConfig
     from momoi.channel.napcat import NapCatConfig
@@ -106,12 +107,12 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_contex
         nonlocal rounds
         if not tools:
             assert current_log_context()['stage'] == 'replyer'
-            return ProviderResponse([{'type': 'text', 'text': '实际回复'}], [], usage={'input': 8, 'output': 2})
+            return ProviderResponse([{'type': 'text', 'text': expression}], [], usage={'input': 8, 'output': 2})
         rounds += 1
         if rounds == 1:
             call = ToolCall('reply-one', 'reply', {'intent': '直接接住输入', 'reference': ''})
         else:
-            assert '实际回复' in str(history)
+            assert expression in str(history)
             call = ToolCall('done', 'end_turn', {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'}})
         return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
 
@@ -123,8 +124,11 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_contex
             [event], TurnDraft(), execution=TurnExecutionSpec('owner', permitted_tools=daemon.tool_surface.permitted_names('owner')),
             source_event_id='event', turn_id='owner-test', delivery_channel=daemon.channel))
         assert rounds == 2
-        assert daemon.store._db.execute("SELECT text FROM turn_progress WHERE turn_id='owner-test'").fetchone()[0] == '实际回复'
-        assert '实际回复' in str(messages)
+        assert daemon.store._db.execute("SELECT text FROM turn_progress WHERE turn_id='owner-test'").fetchone()[0] == expression
+        assert expression in str(messages)
+        if expression == 'qq://poke':
+            pending = daemon.store.due_outbox()[0]
+            assert pending.kind == 'poke' and pending.payload == {'action': 'poke'}
         assert daemon.store.turn_usage('owner-test')['llm_calls'] == 3
     finally:
         daemon.store.close()
@@ -282,3 +286,46 @@ def test_replyer_text_and_voice_have_identical_system_and_history():
     assert requests[0][1][:-1] == requests[1][1][:-1]
     assert requests[0][2] == requests[1][2] == []
     assert requests[0][1][-1] != requests[1][1][-1]
+
+
+@pytest.mark.parametrize("channel_name, mode, output, accepted", [
+    ("napcat", "text", "qq://poke", True),
+    ("napcat", "voice", "qq://poke", False),
+    ("other", "text", "qq://poke", False),
+    ("napcat", "text", "hello qq://poke", False),
+])
+def test_replyer_poke_is_an_action_not_spoken_or_literal_text(channel_name, mode, output, accepted):
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt='test', timezone='UTC', thinking_stages={})
+    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
+                            emotion_context=lambda: '')
+    channel = SimpleNamespace(name=channel_name, content_blocks=lambda _: [])
+    if channel_name == 'napcat':
+        channel.poke_owner = Mock()
+    request = SimpleNamespace(turn_id='turn', round_number=1, delivery_channel=channel, current_events=[])
+    async def complete(system, messages, tools):
+        assert tools == []
+        assert ('<qq_expression>' in system) == (channel_name == 'napcat')
+        return ProviderResponse([{'type': 'text', 'text': output}], [])
+    replyer = Replyer(config, store, SimpleNamespace(complete=complete))
+    call = ToolCall('reply', 'reply', {'intent': 'test', 'reference': '', 'mode': mode})
+    if accepted:
+        assert asyncio.run(replyer.generate(call, request)) == ['qq://poke']
+    else:
+        with pytest.raises(ValueError):
+            asyncio.run(replyer.generate(call, request))
+
+
+def test_qq_replyer_poke_capability_prefix_is_identical_for_text_and_phone():
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt='test', timezone='UTC', thinking_stages={})
+    store = SimpleNamespace(replyer_history_rows=lambda _: [], record_turn_usage=Mock(), emotion_context=lambda: '')
+    prefixes = []
+    async def complete(system, messages, tools):
+        prefixes.append(system)
+        return ProviderResponse([{'type': 'text', 'text': 'test'}], [])
+    replyer = Replyer(config, store, SimpleNamespace(complete=complete))
+    for channel, mode in [(SimpleNamespace(name='napcat', poke_owner=Mock()), 'text'),
+                          (SimpleNamespace(name='qq_call', dialogue_channel='napcat'), 'voice')]:
+        request = SimpleNamespace(turn_id='turn', round_number=1, delivery_channel=channel, current_events=[])
+        asyncio.run(replyer.generate(ToolCall('reply', 'reply', {'intent': 'test', 'reference': '', 'mode': mode}), request))
+    assert prefixes[0] == prefixes[1]
+    assert '<qq_expression>' in prefixes[0]
