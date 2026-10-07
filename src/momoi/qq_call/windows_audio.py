@@ -17,6 +17,7 @@ class DeferredWindowsAudio:
         self.backend = None
         self.config_path = Path(runtime).parent / "config.json"
         self.device_ids = self.read_device_ids()
+        self.missing_checks = 0
 
     def read_device_ids(self):
         try:
@@ -32,6 +33,7 @@ class DeferredWindowsAudio:
     def reload_configuration(self):
         self.close()
         self.device_ids = self.read_device_ids()
+        self.missing_checks = 0
 
     @property
     def device_selection(self):
@@ -80,12 +82,23 @@ class DeferredWindowsAudio:
                 "{str(flow): virtual_audio.active_endpoint_ids(flow) for flow in (0,1)}")
             active = {int(flow): {value.casefold() for value in values}
                       for flow, values in active.items()}
-            return all(device["id"].casefold() in active[flow]
+            missing = [device["id"]
                        for role, flow in (("input_device", 1), ("output_device", 0),
                                           ("injection_device", 0))
-                       if (device := self.device_selection.get(role)))
-        except (OSError, RuntimeError, ValueError):
-            return False
+                       if (device := self.device_selection.get(role)) and device["id"].casefold() not in active[flow]]
+            if not missing:
+                self.missing_checks = 0
+                return True
+            self.missing_checks = getattr(self, "missing_checks", 0) + 1
+            logging.getLogger(__name__).debug(
+                "event=qq_call_endpoint_missing_check consecutive=%s missing_ids=%s active_ids=%s",
+                self.missing_checks, missing, active)
+            # A single session-transition snapshot must not terminate a live call.
+            return self.missing_checks < 3
+        except (OSError, RuntimeError, ValueError) as error:
+            self.missing_checks = 0
+            logging.getLogger(__name__).debug("event=qq_call_endpoint_probe_uncertain error=%s", str(error))
+            return True
 
     def close(self):
         if self.backend:

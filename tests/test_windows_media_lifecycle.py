@@ -93,6 +93,8 @@ def test_endpoint_loss_detected_and_returning_devices_rechecked(monkeypatch):
     async def scenario():
         assert await audio.check_endpoints()
         available["0"] = []
+        assert await audio.check_endpoints()
+        assert await audio.check_endpoints()
         assert not await audio.check_endpoints()
         available["0"] = ['speaker']
         assert await audio.check_endpoints()
@@ -164,3 +166,19 @@ def test_device_probe_reports_windows_failure(monkeypatch, caplog):
     with pytest.raises(RuntimeError, match='0x80070490'):
         asyncio.run(windows_audio.read_device_catalog(Path('.')))
     assert 'qq_call_device_probe_failed' in caplog.text
+
+
+def test_probe_timeout_does_not_terminate_ready_audio(monkeypatch, caplog):
+    from momoi.qq_call import windows_audio
+    async def probe(*args):
+        raise RuntimeError("probe timeout")
+    monkeypatch.setattr(windows_audio, '_read_audio_probe', probe)
+    audio = DeferredWindowsAudio.__new__(DeferredWindowsAudio)
+    audio.bridge = Path('.')
+    audio.backend = SimpleNamespace(ready=True)
+    audio.missing_checks = 2
+    async def scenario():
+        assert await audio.check_endpoints()
+        assert audio.backend.ready
+        assert audio.missing_checks == 0
+    asyncio.run(scenario())
