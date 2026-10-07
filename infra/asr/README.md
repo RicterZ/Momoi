@@ -19,9 +19,6 @@ The service has no authentication and must remain on a trusted private network.
 The container loads the model once at startup. It owns inference and model files;
 Momoi's main container does not install sherpa-onnx or load the model.
 Inference threads and endpoint silence come from the Momoi ASR provider configuration (`num_threads`, default 2; `trailing_silence`, default 0.8 seconds). Both local loading and container requests use these settings. The container does not read ASR tuning environment variables. Updated settings apply to new recognition requests; active streams retain their original settings.
-Changing these container settings requires recreating the ASR container. Provider
-thread/silence fields apply only to future in-process Windows loading, not to the
-remote container.
 
 Model: Chinese streaming Zipformer INT8, 2025-06-30. Archive URL and SHA-256 are
 pinned in `model.json`, verified at build time. Runtime does not download models.
