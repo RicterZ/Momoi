@@ -40,6 +40,20 @@ class ConfigurationManagerTest(unittest.TestCase):
         bootstrap(self.path)
         self.manager = ConfigurationManager(self.path)
 
+    def test_settings_poll_does_not_log_mcp_runtime_loads(self):
+        from momoi.mcp.manager import MCPManager
+
+        with patch("momoi.mcp.config.log_event") as parsing_log:
+            for _ in range(3):
+                self.manager.snapshot()
+            parsing_log.assert_not_called()
+        config = self.manager.validate()
+        with self.assertLogs("momoi.mcp.manager", level="INFO") as captured:
+            MCPManager(config.mcp_config, servers=config.mcp_servers)
+        loads = [record for record in captured.records if record.momoi_event == "mcp_config_loaded"]
+        self.assertEqual(len(loads), 1)
+        self.assertEqual(loads[0].momoi_fields["servers"], 0)
+
     def test_bootstrap_is_idempotent_and_loads_without_model_or_channels(self):
         before = {
             path: path.read_bytes()

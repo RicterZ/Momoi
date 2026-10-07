@@ -51,6 +51,13 @@ class MCPManager:
         self, path: Path | None, *, servers: dict[str, dict[str, Any]] | None = None
     ) -> None:
         self.configs = load_mcp_servers(path) if servers is None else copy.deepcopy(servers)
+        log_event(
+            logger,
+            logging.INFO,
+            "mcp_config_loaded",
+            servers=len(self.configs),
+            names=",".join(sorted(self.configs)) or None,
+        )
         self.tool_specs: list[dict[str, Any]] = []
         self._tools: dict[str, tuple[str, str]] = {}
         self._capabilities: dict[str, str] = {}

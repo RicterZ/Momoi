@@ -84,11 +84,4 @@ def parse_mcp_servers(content: str) -> dict[str, dict[str, Any]]:
             if any(not value.strip() for value in config.get(key, [])):
                 raise ValueError(f"MCP server {name} {key} names must not be empty")
         loaded[name] = config
-    log_event(
-        logger,
-        logging.INFO,
-        "mcp_config_loaded",
-        servers=len(loaded),
-        names=",".join(sorted(loaded)) or None,
-    )
     return loaded
