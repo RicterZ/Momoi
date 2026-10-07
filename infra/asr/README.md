@@ -103,3 +103,26 @@ real QQ call/accuracy test or exercise LLM/TTS output.
 Dashboard UI is audited against the test container with temporary credentials;
 local/Tencent choices and responsive layout screenshots are under the ignored
 `build/local-asr/ui/` directory. Existing live Momoi is not reconfigured.
+
+## Windows optional component
+
+The Windows installer lists local CPU speech recognition as an optional checkbox,
+unchecked by default. The component installs the pinned model to `models/asr`
+and the CPython 3.12 x64 inference libraries to `runtime/asr/site-packages`.
+The desktop shell sets `MOMOI_INSTALL_DIR`; selecting Sherpa with both service
+address and custom model directory empty uses these bundled paths. The model is
+loaded only when recognition is requested. Tencent ASR remains available.
+
+The complete distribution keeps the ASR installer under `components/`, beside
+the separately versioned QQ/NapCat pair. The online installer downloads it only
+when selected. Both paths verify hashes before running the component installer.
+The signed update catalog describes it independently from shell, QQ and code;
+unified checking updates installed ASR components, and offers installation when
+local Sherpa is selected but the component is missing. Updates run shell first,
+QQ second, optional ASR third, and code last. Uninstall removes the ASR model and
+runtime but retains the user's `data` directory.
+
+Windows CI loads the model using the private interpreter, recognizes a pinned
+sample, verifies independent recognition sessions, then repeats the probe after
+real installation and checks component removal on uninstall. These checks do not
+replace real QQ call accuracy testing.
