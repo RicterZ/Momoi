@@ -5,6 +5,7 @@ import os
 import socket
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from threading import Thread
 from queue import Queue
@@ -41,11 +42,19 @@ def main():
                 lines.put(None)
             Thread(target=capture, daemon=True).start()
             try:
-                line = lines.get(timeout=180)
-                if line is None:
-                    raise RuntimeError("backend exited before ready")
-                ready = json.loads(line)
-                assert ready["event"] == "ready"
+                deadline = time.monotonic() + 180
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError("backend did not become ready within 180 seconds")
+                    line = lines.get(timeout=remaining)
+                    if line is None:
+                        raise RuntimeError("backend exited before ready")
+                    ready = json.loads(line)
+                    if ready.get("event") == "startup_progress":
+                        continue
+                    assert ready["event"] == "ready", "Unexpected backend stdout event"
+                    break
                 with httpx.Client(trust_env=False) as client:
                     response = client.get(ready["url"] + "/")
                     response.raise_for_status()
