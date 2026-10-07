@@ -64,8 +64,15 @@ internal sealed class QQCallHost : IAsyncDisposable
     {
         phase = state; error = message;
         string path = Path.Combine(data, "status.json"), temporary = path + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(new { phase, error, updated_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
-        File.Move(temporary, path, overwrite: true);
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(new { phase, error, updated_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
+            File.Move(temporary, path, overwrite: true);
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            throw new IOException($"无法写入语音状态文件：{path}（临时文件：{temporary}）", failure);
+        }
     }
     private async Task MonitorAsync(Func<bool> qqRunning)
     {
@@ -113,9 +120,10 @@ internal sealed class QQCallHost : IAsyncDisposable
                 {
                     string directory = Path.Combine(data, "logs");
                     Directory.CreateDirectory(directory);
+                    string diagnostic = failure.ToString().Replace(token, "[redacted]");
                     lock (logGate) File.AppendAllText(Path.Combine(directory, "service.log"),
-                        $"{DateTimeOffset.Now:O} {failure.GetType().Name}: {failure.Message.Replace(token, "[redacted]")}{Environment.NewLine}", Encoding.UTF8);
-                    LiveLog.Write("voice-service", "stderr", failure.GetType().Name + ": " + failure.Message.Replace(token, "[redacted]"));
+                        $"{DateTimeOffset.Now:O} {diagnostic}{Environment.NewLine}", Encoding.UTF8);
+                    LiveLog.Write("voice-service", "stderr", diagnostic);
                     bool transient = failure is HttpRequestException or TaskCanceledException;
                     if (transient && job is not null && media is not null && !media.HasExited && ++transientFailures < 3)
                     {

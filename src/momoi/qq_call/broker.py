@@ -10,6 +10,7 @@ import shutil
 import uuid
 import time
 import sys
+import traceback
 from collections import OrderedDict
 
 from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
@@ -124,7 +125,11 @@ class MediaBroker:
                     self.playback_command = self.audio.playback_command
                     self.audio_error = ''
                 except Exception as error:
-                    self.audio_error = '虚拟音频设备未就绪：' + str(error)
+                    message = '音频设备未就绪：' + str(error)
+                    if message != self.audio_error:
+                        print(json.dumps({"event": "qq_call_audio_prepare_failed", "error": str(error),
+                            "traceback": traceback.format_exc()}, ensure_ascii=False), file=sys.stderr, flush=True)
+                    self.audio_error = message
                 self.audio_retry_at = time.monotonic() + 5
                 deps, call = await self.dependencies()
             ready = all(deps.values())
