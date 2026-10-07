@@ -35,8 +35,8 @@ internal sealed class LogWindow : Window
         toolbar.Children.Add(follow);
         output = new TextBox
         {
-            IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             FontFamily = new FontFamily("Cascadia Mono, Consolas, DengXian"), FontSize = 12,
             Background = new SolidColorBrush(Color.FromRgb(24, 29, 43)), Foreground = new SolidColorBrush(Color.FromRgb(226, 231, 241)),
             Padding = new Thickness(12), BorderThickness = new Thickness(0), IsUndoEnabled = false,
