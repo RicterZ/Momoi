@@ -212,6 +212,16 @@ def register_configuration_routes(app, configuration, runtime):
         await channel_login.close()
         return web.json_response(channel_login.state)
 
+    async def qq_call_devices(request):
+        if not os.environ.get("MOMOI_QQ_CALL_MANAGED"):
+            raise web.HTTPNotFound()
+        from pathlib import Path
+        from ..qq_call.windows_audio import device_catalog
+        try:
+            return web.json_response(device_catalog(Path(__file__).resolve().parents[2] / "qq_call_bridge"))
+        except (OSError, ImportError, RuntimeError):
+            return web.json_response({"inputs": [], "outputs": [], "errors": ["暂时无法读取虚拟音频设备，请检查驱动安装后刷新"]}, status=503)
+
     async def test_qq_call(request):
         from ..channel.napcat.config import QQCallConfig
         from ..config.manager import restore_secrets
@@ -251,6 +261,7 @@ def register_configuration_routes(app, configuration, runtime):
     app.router.add_put("/api/settings/providers/{capability}", save)
     app.router.add_put("/api/settings/providers", save)
     app.router.add_patch("/api/settings/configuration/app", save)
+    app.router.add_get("/api/settings/channels/napcat/voice-call/devices", qq_call_devices)
     app.router.add_post("/api/settings/channels/napcat/voice-call/test", test_qq_call)
     app.router.add_get("/api/settings/runtime", status)
     app.router.add_post("/api/settings/apply", apply)

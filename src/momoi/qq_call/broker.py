@@ -112,6 +112,9 @@ class MediaBroker:
 
     async def poll(self):
         while True:
+            if self.audio is not None and hasattr(self.audio, "configuration_changed") and self.audio.configuration_changed():
+                await self.invalidate()
+                self.audio.reload_configuration()
             deps, call = await self.dependencies()
             if self.audio is not None and not self.audio.ready and deps['av_host'] and time.monotonic() >= self.audio_retry_at:
                 try:
@@ -141,6 +144,7 @@ class MediaBroker:
                 self.generation = 0
             self.status = {'protocol_version': 1, 'ready': ready, 'dependencies': deps,
                 'phase': phase, 'client_connected': self.ws is not None and not self.ws.closed,
+                'audio_devices': getattr(self.audio, 'device_selection', {}),
                 'auto_answer_ready': enabled, 'capture': dict(self.capture_stats), 'error': '' if ready else (self.audio_error or
                     ('等待 QQ 登录及通话插件就绪' if not deps['bridge'] else
                      ('等待 AVSDK 宿主就绪' if not deps['av_host'] else '虚拟音频设备未就绪')))}

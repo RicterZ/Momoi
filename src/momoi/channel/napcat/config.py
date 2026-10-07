@@ -9,10 +9,12 @@ class QQCallConfig:
     bridge_url: str = ""
     bridge_token: str = field(default="", repr=False)
     request_timeout_seconds: float = 5
+    input_device: str = ""
+    output_device: str = ""
 
     @classmethod
     def from_mapping(cls, value):
-        if not isinstance(value, dict) or value.keys() - {"enabled", "bridge_url", "bridge_token", "request_timeout_seconds"}:
+        if not isinstance(value, dict) or value.keys() - {"enabled", "bridge_url", "bridge_token", "request_timeout_seconds", "input_device", "output_device"}:
             raise ValueError("invalid napcat voice_call configuration")
         enabled = value.get("enabled", False)
         if type(enabled) is not bool:
@@ -30,7 +32,10 @@ class QQCallConfig:
         timeout = value.get("request_timeout_seconds", 5)
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 60:
             raise ValueError("voice_call.request_timeout_seconds must be between 0 and 60")
-        return cls(enabled, url, token, float(timeout))
+        devices = [value.get(key, "") for key in ("input_device", "output_device")]
+        if any(not isinstance(item, str) or len(item) > 256 or "\0" in item for item in devices):
+            raise ValueError("voice_call device identities must be strings")
+        return cls(enabled, url, token, float(timeout), *devices)
 
 
 @dataclass(frozen=True)

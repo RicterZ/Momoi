@@ -14,7 +14,7 @@ def test_virtual_audio_failure_restores_before_retry():
         events = []
         class Backend:
             ready = False
-            def __init__(self, runtime):
+            def __init__(self, runtime, *, device_ids=None):
                 self.runtime = runtime
             def __enter__(self):
                 events.append('enter')
@@ -24,6 +24,7 @@ def test_virtual_audio_failure_restores_before_retry():
                 events.append('restore')
         audio = DeferredWindowsAudio.__new__(DeferredWindowsAudio)
         audio.factory, audio.runtime, audio.backend = Backend, Path('.'), None
+        audio.device_ids = {}
         with pytest.raises(RuntimeError, match='virtual endpoint'):
             await audio.prepare(None, '', '')
         assert events == ['enter', 'restore']
