@@ -161,7 +161,7 @@ public partial class App : Application
             operation.Token.ThrowIfCancellationRequested();
             installing = true; System.Windows.Input.CommandManager.InvalidateRequerySuggested(); loading?.SetDetail("安装中 · 请确认 Windows 管理员授权");
             string nativeLog = Path.Combine(cache, "native-install-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
-            var start = new ProcessStartInfo(core) { UseShellExecute = true, Verb = "runas", Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS=\"{(cable.IsChecked == true ? "vbcable" : "")}\" /DIR=\"{destination}\" /LOG=\"{nativeLog}\"" };
+            var start = new ProcessStartInfo(core) { UseShellExecute = true, Verb = "runas", Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS=\"{(cable.IsChecked == true ? "desktopicon,vbcable" : "desktopicon")}\" /DIR=\"{destination}\" /LOG=\"{nativeLog}\"" };
             Log("Requesting elevated native installer launch: " + core);
             using var child = Process.Start(start) ?? throw new IOException("无法启动安装程序。");
             Log($"Native installer started PID={child.Id}; log={nativeLog}");

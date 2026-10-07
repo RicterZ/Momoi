@@ -36,7 +36,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "vbcable"; Description: "Install VB-CABLE for voice calls (optional; skip if Steam audio devices are available)"; Flags: unchecked
-Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
+Name: "desktopicon"; Description: "Create a desktop shortcut"
 
 [Dirs]
 ; Keep user data on upgrades and uninstall. Only this subdirectory is writable.
