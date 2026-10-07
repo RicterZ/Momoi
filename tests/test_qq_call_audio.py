@@ -201,6 +201,48 @@ def test_empty_recognition_never_interrupts_and_valid_text_interrupts_once():
     asyncio.run(scenario())
 
 
+
+def test_exact_asr_filler_is_ignored_without_interrupting_playback():
+    async def scenario():
+        processed = asyncio.Event()
+        class ASR:
+            async def transcribe(self, audio):
+                processed.set()
+                return audio.data.decode()
+        interruptions, stops, events = [], [], []
+        channel = QQCallChannel(SimpleNamespace(), '123', ASR(), tts_enabled=True,
+                                interrupt=interruptions.append)
+        channel.session_id = 'first'
+        channel.status = {'phase': 'connected'}
+        async def stop(context):
+            stops.append(dict(context))
+        channel.stop_playback = stop
+        arrived = asyncio.Event()
+        async def receive(event):
+            events.append(event)
+            arrived.set()
+        original = dict(channel.routing_context())
+        worker = asyncio.create_task(channel.transcribe(receive))
+        try:
+            await channel.queue.put((original, '嗯。'.encode()))
+            await asyncio.wait_for(processed.wait(), 1)
+            await asyncio.sleep(0)
+            assert interruptions == stops == events == []
+            assert channel.generation == 0
+            assert channel.pending_stop is None
+            assert channel.context_valid(original)
+            for text in ('嗯', '嗯！', '嗯。继续', ' 嗯。', '嗯。 '):
+                arrived.clear()
+                await channel.queue.put((original, text.encode()))
+                await asyncio.wait_for(arrived.wait(), 1)
+                assert events[-1].text == text.strip()
+            assert len(events) == len(stops) == len(interruptions) == 5
+            assert channel.generation == 5
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+    asyncio.run(scenario())
+
 def test_hangup_keeps_connection_armed_for_next_call(monkeypatch):
     async def scenario():
         reader = asyncio.StreamReader()

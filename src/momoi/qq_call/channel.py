@@ -116,6 +116,8 @@ class QQCallChannel:
             started = time.monotonic()
             try:
                 text = await self.asr.transcribe(AudioInput(audio, 'wav'))
+                if text == '嗯。':
+                    text = ''
             except ASRError:
                 self.status = {'phase': 'error', 'error': 'ASR 请求失败，请检查语音服务与额度'}
                 # Fail closed: stop admitting calls until the runtime is reconfigured.
