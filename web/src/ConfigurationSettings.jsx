@@ -744,8 +744,12 @@ function normalizeProvider(name, value, adapters) {
   return { ...value, options };
 }
 
-function ProviderSection({ module, data, save, saving, testProvider, testing, next, previous }) {
+function ProviderSection({ module, data, save, saving, testProvider, testing, next, previous, qqCall, testCall }) {
   const configurationId = useId();
+  const napcat = data.app.channels?.enabled?.napcat;
+  const [callDraft, setCallDraft] = useState(napcat?.voice_call || {});
+  const [callSaved, setCallSaved] = useState(callDraft);
+  const callDirty = module.id === "voice" && !equal(callDraft, callSaved);
   const { names, optional } = module;
   const [draft, setDraft] = useState(() =>
     providerDraft(names, data, optional),
@@ -763,7 +767,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
     adapter.capability === name && adapter.adapter === draft.values[name].adapter && adapter.test_supported === true,
   ));
   useEffect(() => () => { testVersion.current += 1; }, []);
-  const dirty = !equal(draft, saved);
+  const dirty = !equal(draft, saved) || callDirty;
   function change(next) {
     testVersion.current += 1;
     setTestResult(null);
@@ -809,7 +813,14 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
           },
         ]),
       );
-      const result = await save("/api/settings/providers", document);
+      let result = !equal(draft, saved) ? await save("/api/settings/providers", document) : data;
+      if (callDirty && napcat) {
+        const channels = { ...result.app.channels, enabled: { ...result.app.channels.enabled,
+          napcat: { ...result.app.channels.enabled.napcat, voice_call: callDraft } } };
+        result = await save("/api/settings/configuration/app", { channels }, "PATCH");
+        setCallDraft(result.app.channels.enabled.napcat.voice_call || {});
+        setCallSaved(result.app.channels.enabled.napcat.voice_call || {});
+      }
       const next = {
         enabled: draft.enabled,
         values: Object.fromEntries(
@@ -1012,6 +1023,12 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
               );
             })}
           </div>
+          {module.id === "voice" && <div className="settings-voice-call-section">
+            <QQCallSettings managed={data.desktop_qq_call_managed} value={callDraft}
+              disabled={!napcat || saving || busy} status={qqCall} onTest={testCall}
+              onChange={value => { setCallDraft(value); setStatus(null); }} />
+            <p className="settings-channel-note">必须开启 NapCat QQ 才能使用此功能。</p>
+          </div>}
         </div>
         <SaveBar
           busy={saving || busy}
@@ -1787,14 +1804,13 @@ export default function ConfigurationSettings({
                       previous={previous}
                       data={data}
                       save={save}
+                      qqCall={runtime?.qq_call}
+                      testCall={document => call("/api/settings/channels/napcat/voice-call/test", { method: "POST", body: document })}
                       testProvider={testProvider}
                       testing={testing}
                       saving={saving || loading}
                     />
                   )}
-                  {module.id === "voice" && <VoiceCallSection key={`voice-call-${generation}`} data={data} save={save}
-                    saving={saving || loading || actionBusy} status={runtime?.qq_call}
-                    onTest={document => call("/api/settings/channels/napcat/voice-call/test", { method: "POST", body: document })} />}
                   {module.id !== "prompts" && runtimeContent}
                 </section>
               );
@@ -1826,37 +1842,6 @@ export default function ConfigurationSettings({
   );
 }
 
-
-function VoiceCallSection({ data, save, saving, status, onTest }) {
-  const napcat = data.app.channels?.enabled?.napcat;
-  const [draft, setDraft] = useState(napcat?.voice_call || {});
-  const [saved, setSaved] = useState(draft);
-  const [result, setResult] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const dirty = !equal(draft, saved);
-  async function submit(event) {
-    event.preventDefault();
-    if (!napcat || saving || busy || !dirty) return;
-    setBusy(true);
-    setResult(null);
-    try {
-      const channels = { ...data.app.channels, enabled: { ...data.app.channels.enabled,
-        napcat: { ...napcat, voice_call: draft } } };
-      const response = await save("/api/settings/configuration/app", { channels }, "PATCH");
-      const updated = response.app.channels.enabled.napcat.voice_call || {};
-      setDraft(updated);
-      setSaved(updated);
-      setResult(response.applyStatus || { text: "已保存", error: false });
-    } catch (error) { setResult({ text: error.message, error: true }); }
-    finally { setBusy(false); }
-  }
-  return <form className="settings-voice-call-section" onSubmit={submit} data-dirty={dirty} data-config-dirty={dirty}>
-    <p className="settings-channel-note">必须开启 NapCat QQ 才能使用此功能。</p>
-    <QQCallSettings managed={data.desktop_qq_call_managed} value={draft} disabled={!napcat || saving || busy}
-      status={status} onTest={onTest} onChange={next => { setDraft(next); setResult(null); }} />
-    <SaveBar busy={saving || busy} dirty={dirty} status={result} />
-  </form>;
-}
 
 function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) {
   const [test, setTest] = useState(null);

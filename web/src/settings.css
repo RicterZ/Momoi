@@ -1298,5 +1298,5 @@
   margin-top: 24px;
   padding-top: 24px;
 }
-.settings-voice-call-section > .settings-channel-note { margin: 0 24px 16px; }
-.settings-voice-call-section > .settings-qq-call { margin: 0 24px; }
+.settings-voice-call-section > .settings-channel-note { margin: 16px 0 0; }
+.settings-voice-call-section > .settings-qq-call { margin: 0; }
