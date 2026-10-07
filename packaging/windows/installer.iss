@@ -44,6 +44,15 @@ Name: "{app}\data"; Permissions: users-modify; Flags: uninsneveruninstall
 Source: "{#Root}\build\windows-prerequisites\WebView2RuntimeInstallerX64.exe"; Flags: dontcopy
 Source: "{#Root}\build\windows-prerequisites\vc_redist.x64.exe"; Flags: dontcopy
 
+[InstallDelete]
+; Remove obsolete native files left by older installers; user data is separate.
+Type: filesandordirs; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\wmpfsdk"
+Type: filesandordirs; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\miniapp"
+Type: filesandordirs; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\QQScreenShot"
+Type: files; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\major.node"
+Type: files; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\wrapper.node"
+Type: files; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\application.asar"
+
 [Icons]
 Name: "{group}\Momoi"; Filename: "{app}\Momoi.exe"
 Name: "{autodesktop}\Momoi"; Filename: "{app}\Momoi.exe"; Tasks: desktopicon
