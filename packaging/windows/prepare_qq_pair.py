@@ -27,9 +27,16 @@ def prepare(stage, output, archive=None):
             raise ValueError('QQ component filename differs from frozen pair')
         with archive.open('rb') as stream:
             sha = hashlib.file_digest(stream, 'sha256').hexdigest()
-    url = 'https://momoi-1253047877.cos.ap-guangzhou.myqcloud.com/windows/components/' + name + '.exe'
+    package_name = name + '.exe'
+    if archive:
+        package_name = name + '-' + sha[:16] + '.exe'
+        destination = archive.with_name(package_name)
+        if destination != archive:
+            archive.replace(destination)
+            archive = destination
+    url = 'https://momoi-1253047877.cos.ap-guangzhou.myqcloud.com/windows/components/' + package_name
     values = {'QQPairVersion': pair['version'], 'QQPairId': pair_id, 'QQPackageBase': name,
-              'QQPackageName': name + '.exe', 'QQPackageSHA256': sha, 'QQPackageURL': url}
+              'QQPackageName': package_name, 'QQPackageSHA256': sha, 'QQPackageURL': url}
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text('\n'.join(f'#define {key} "{value}"' for key, value in values.items())+'\n', encoding='utf-8')
     if archive:
