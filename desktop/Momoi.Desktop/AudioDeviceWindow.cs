@@ -95,8 +95,14 @@ internal sealed class AudioDeviceWindow : Window
             using var settings = JsonDocument.Parse(await client.GetStringAsync("/api/settings/configuration"));
             using var response = await client.GetAsync("/api/settings/channels/napcat/voice-call/devices");
             string body = await response.Content.ReadAsStringAsync();
-            if (!response.IsSuccessStatusCode) throw new InvalidOperationException("暂时无法读取音频设备，请刷新设备列表。");
             using var catalog = JsonDocument.Parse(body);
+            if (!response.IsSuccessStatusCode)
+            {
+                string detail = catalog.RootElement.TryGetProperty("errors", out var errors) && errors.GetArrayLength() > 0
+                    ? errors[0].GetString() ?? "暂时无法读取音频设备，请刷新设备列表。"
+                    : "暂时无法读取音频设备，请刷新设备列表。";
+                throw new InvalidOperationException(detail);
+            }
             revision = settings.RootElement.GetProperty("revision").GetString()!;
             var app = settings.RootElement.GetProperty("app");
             Fill(input, inputs, catalog.RootElement, "inputs", Selected(app, "input_device"));

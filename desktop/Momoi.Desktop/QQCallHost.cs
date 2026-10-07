@@ -27,6 +27,7 @@ internal sealed class QQCallHost : IAsyncDisposable
     private DateTime nextAttempt;
     private bool loginRequested;
     private int transientFailures;
+    private string lastStatusWriteError = "";
     public QQCallHost(string workspace, string napcatEntry)
     {
         this.workspace = workspace;
@@ -63,17 +64,21 @@ internal sealed class QQCallHost : IAsyncDisposable
     private void Status(string state, string message = "")
     {
         phase = state; error = message;
-        string path = Path.Combine(data, "status.json"), temporary = path + ".tmp";
-        try
+        string path = Path.Combine(data, "status.json");
+        if (QQCallStatusFile.TryWrite(path, phase, error, out var failure))
         {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(new { phase, error, updated_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
-            File.Move(temporary, path, overwrite: true);
+            lastStatusWriteError = "";
+            return;
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        string diagnostic = failure!.ToString().Replace(token, "[redacted]");
+        string identity = failure.InnerException?.Message ?? failure.Message;
+        if (identity != lastStatusWriteError)
         {
-            throw new IOException($"无法写入语音状态文件：{path}（临时文件：{temporary}）", failure);
+            lastStatusWriteError = identity;
+            LiveLog.Write("voice-service", "stderr", diagnostic + " 状态文件写入失败，语音服务继续运行并在下次刷新时重试。");
         }
     }
+
     private async Task MonitorAsync(Func<bool> qqRunning)
     {
         try

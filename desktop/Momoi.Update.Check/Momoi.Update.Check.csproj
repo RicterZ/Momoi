@@ -6,4 +6,5 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../Momoi.Update/Momoi.Update.csproj" /></ItemGroup>
+  <ItemGroup><Compile Include="../Momoi.Desktop/QQCallStatusFile.cs" Link="QQCallStatusFile.cs" /></ItemGroup>
 </Project>

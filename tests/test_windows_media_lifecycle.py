@@ -114,7 +114,7 @@ def test_device_enumeration_timeout_kills_probe(monkeypatch):
         probe = Probe()
         async def launch(*args, **kwargs):
             assert '-I' in args
-            assert kwargs['stderr'] == asyncio.subprocess.DEVNULL
+            assert kwargs['stderr'] == asyncio.subprocess.PIPE
             return probe
         monkeypatch.setattr(windows_audio.sys, 'platform', 'win32')
         monkeypatch.setattr(windows_audio.subprocess, 'CREATE_NO_WINDOW', 0x08000000, raising=False)
@@ -164,4 +164,22 @@ def test_av_host_restart_discards_previous_device_selection():
             assert broker.playback_command == ('new-playback',)
         finally:
             await broker.cleanup(None)
+    asyncio.run(scenario())
+
+
+def test_device_probe_reports_windows_failure(monkeypatch, caplog):
+    from momoi.qq_call import windows_audio
+    async def scenario():
+        class Probe:
+            returncode = 1
+            async def communicate(self):
+                return b'', b'Traceback:\nOSError: Audio policy HRESULT 0x80070490\n'
+        async def launch(*args, **kwargs):
+            return Probe()
+        monkeypatch.setattr(windows_audio.sys, 'platform', 'win32')
+        monkeypatch.setattr(windows_audio.subprocess, 'CREATE_NO_WINDOW', 0x08000000, raising=False)
+        monkeypatch.setattr(windows_audio.asyncio, 'create_subprocess_exec', launch)
+        with pytest.raises(RuntimeError, match='0x80070490'):
+            await windows_audio.read_device_catalog(Path('.'))
+        assert 'qq_call_device_probe_failed' in caplog.text
     asyncio.run(scenario())

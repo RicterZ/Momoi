@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 import subprocess
 from pathlib import Path
 import sys
@@ -116,14 +117,21 @@ async def _read_audio_probe(bridge, expression):
     process = await asyncio.create_subprocess_exec(
         sys.executable, "-I", "-B", "-X", "utf8", "-c", script,
         str(Path(bridge).resolve() / "windows"),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
     try:
-        output, _ = await asyncio.wait_for(process.communicate(), 3)
+        output, diagnostic = await asyncio.wait_for(process.communicate(), 3)
         if process.returncode:
-            raise RuntimeError("暂时无法读取音频设备，请稍后刷新")
-        return json.loads(output)
+            detail = diagnostic.decode("utf-8", errors="replace").strip()[-8192:]
+            logging.getLogger(__name__).warning("event=qq_call_device_probe_failed exit_code=%s detail=%s",
+                                              process.returncode, detail)
+            reason = detail.splitlines()[-1][:300] if detail else f"探测进程退出码 {process.returncode}"
+            raise RuntimeError("暂时无法读取音频设备：" + reason)
+        try:
+            return json.loads(output)
+        except ValueError:
+            raise RuntimeError("音频设备探测返回了无效数据，请稍后刷新") from None
     except asyncio.TimeoutError:
         raise RuntimeError("音频设备响应超时，请稍后刷新") from None
     finally:

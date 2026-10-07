@@ -10,6 +10,26 @@ string root = Path.Combine(Path.GetTempPath(), "Momoi-update-" + Guid.NewGuid().
 Directory.CreateDirectory(root);
 try
 {
+    string voiceStatus = Path.Combine(root, "voice", "status.json");
+    if (!Momoi.Desktop.QQCallStatusFile.TryWrite(voiceStatus, "ready", "", out _))
+        throw new Exception("Initial voice status write failed");
+    if (OperatingSystem.IsWindows())
+    {
+        // A reader without delete sharing can block atomic replacement on Windows.
+        using (var lockedStatus = new FileStream(voiceStatus, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            if (Momoi.Desktop.QQCallStatusFile.TryWrite(voiceStatus, "waiting", "", out var failure) || failure is null)
+                throw new Exception("Locked voice status replacement should fail without throwing");
+            if (Directory.GetFiles(Path.GetDirectoryName(voiceStatus)!, "*.tmp").Length != 0)
+                throw new Exception("Failed voice status replacement leaked a temporary file");
+        }
+    }
+    if (!Momoi.Desktop.QQCallStatusFile.TryWrite(voiceStatus, "waiting", "", out _))
+        throw new Exception("Voice status failed to recover after unlocking");
+    using (var writtenStatus = JsonDocument.Parse(File.ReadAllText(voiceStatus)))
+        if (writtenStatus.RootElement.GetProperty("phase").GetString() != "waiting")
+            throw new Exception("Voice status retry did not persist updated state");
+    Console.WriteLine("PASS: nonfatal voice status persistence and retry.");
     await InstallerChecks.RunAsync(root);
     string install = Path.Combine(root, "install");
     string workspace = Path.Combine(root, "user");

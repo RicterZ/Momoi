@@ -219,8 +219,8 @@ def register_configuration_routes(app, configuration, runtime):
         from ..qq_call.windows_audio import read_device_catalog
         try:
             return web.json_response(await read_device_catalog(Path(__file__).resolve().parents[2] / "qq_call_bridge"))
-        except (OSError, ImportError, RuntimeError):
-            return web.json_response({"inputs": [], "outputs": [], "errors": ["暂时无法读取音频设备，请刷新设备列表"]}, status=503)
+        except (OSError, ImportError, RuntimeError) as error:
+            return web.json_response({"inputs": [], "outputs": [], "errors": [str(error)]}, status=503)
 
     async def save_qq_call_devices(request):
         if not os.environ.get("MOMOI_QQ_CALL_MANAGED"):
