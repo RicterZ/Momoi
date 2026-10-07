@@ -88,7 +88,7 @@ try {
     # Exercise the installed interpreter, model and authenticated dashboard.
     & uv run --no-sync python (Join-Path $PSScriptRoot 'smoke_backend.py') --python (Join-Path $Target 'runtime/python/python.exe') --entry (Join-Path $Target 'releases/bundled/app/backend_entry.py') --model-path (Join-Path $Target 'models/bge-small-zh-v1.5')
     if ($LASTEXITCODE -ne 0) { throw 'Installed backend smoke failed' }
-    & (Join-Path $Target 'runtime/python/python.exe') -I -X utf8 (Join-Path $PSScriptRoot 'smoke_asr.py') --install $Target --source $Root --archive (Join-Path $Root 'build/local-asr/model.tar.bz2') --evidence (Join-Path $Evidence 'asr-installed.json')
+    & (Join-Path $Target 'runtime/python/python.exe') -I -X utf8 (Join-Path $PSScriptRoot 'smoke_asr.py') --install $Target --source $Root --archive (Join-Path $Root 'build/local-asr/model.tar.bz2') --evidence (Join-Path $Evidence 'asr-installed.json') --bge-model (Join-Path $Target 'models/bge-small-zh-v1.5')
     if ($LASTEXITCODE -ne 0) { throw 'Installed optional ASR smoke failed' }
     & uv run --no-sync python (Join-Path $PSScriptRoot 'smoke_mcp.py') --node (Join-Path $Target 'runtime/node/node.exe') --uv (Join-Path $Target 'runtime/uv/uv.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Installed MCP smoke failed' }

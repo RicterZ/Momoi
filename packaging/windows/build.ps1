@@ -145,7 +145,7 @@ else {
 }
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_installer_files.py", "--stage", $Stage, "--component", "main", "--output", "build/windows-installer-files.iss")
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_asr.py")
-Invoke-Checked $PrivatePython @("-I", "-X", "utf8", "packaging/windows/smoke_asr.py", "--install", "build/windows-asr-stage", "--source", $Root, "--archive", "build/local-asr/model.tar.bz2", "--evidence", "build/windows-smoke/asr-native.json")
+Invoke-Checked $PrivatePython @("-I", "-X", "utf8", "packaging/windows/smoke_asr.py", "--install", "build/windows-asr-stage", "--source", $Root, "--archive", "build/local-asr/model.tar.bz2", "--evidence", "build/windows-smoke/asr-native.json", "--bge-model", (Join-Path $Stage "models/bge-small-zh-v1.5"))
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_installer_files.py", "--stage", "build/windows-asr-stage", "--output", "build/windows-asr-files.iss")
 Invoke-Checked $IsccPath @("/DAppVersion=$Version", "packaging/windows/asr_components.iss")
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_asr_installer.py", "--archive", "dist/windows/components/Momoi-ASR-Components-$Version-x64.exe", "--version", $Version)

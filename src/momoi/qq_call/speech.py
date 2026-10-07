@@ -63,7 +63,7 @@ async def bubble_pcm(provider, text: str, *, pause_seconds: float = 0, paced: bo
                 if first_chunk and index and playback_end is not None:
                     # PCM duration is the playback clock. Synthesis/network wait
                     # already counts toward the intended inter-bubble pause.
-                    remaining = max(0, playback_end + pause_seconds - monotonic())
+                    remaining = min(pause_seconds, max(0, playback_end + pause_seconds - monotonic()))
                     if remaining:
                         silence = bytes(round(remaining * 24000) * 2)
                         yield silence
