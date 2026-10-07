@@ -159,3 +159,15 @@ def test_fish_default_voice_for_missing_or_blank_reference():
         provider = FishAudioTTSProvider(api_key="test", **options)
         assert provider.reference_id == "9bb8ad542dc44d148c21c73a0884e9ae"
     assert FishAudioTTSProvider(api_key="test", reference_id="custom").reference_id == "custom"
+
+
+def test_desktop_system_timezone_default_preserves_existing_selection(tmp_path, monkeypatch):
+    monkeypatch.setenv("MOMOI_DESKTOP_TIMEZONE", "Asia/Shanghai")
+    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    path = tmp_path / "config.json"
+    app = json.loads(path.read_text())
+    assert app["timezone"] == "Asia/Shanghai"
+    app["timezone"] = "America/New_York"
+    atomic_write(path, json.dumps(app))
+    prepare_workspace(tmp_path, "http://127.0.0.1:19002/v1/embeddings")
+    assert json.loads(path.read_text())["timezone"] == "America/New_York"

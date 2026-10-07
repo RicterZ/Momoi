@@ -1,6 +1,8 @@
 """Desktop-only defaults; preserve user-selected providers and credentials."""
 
 import json
+import os
+from zoneinfo import ZoneInfo
 from importlib.resources import files
 from pathlib import Path
 
@@ -15,6 +17,7 @@ MARKER = ".desktop-embedding.yaml"
 
 def prepare_workspace(workspace: Path, endpoint: str) -> None:
     config_path = workspace / "config.json"
+    fresh = not config_path.exists()
     app = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
     soul_path = workspace / app.get("context", {}).get("soul_prompt", "prompts/SOUL.md")
     for name, path in (
@@ -26,6 +29,11 @@ def prepare_workspace(workspace: Path, endpoint: str) -> None:
             content = files("momoi.desktop").joinpath(f"default_prompts/{name}.md").read_text(encoding="utf-8")
             atomic_write(path, content)
     bootstrap(config_path)
+    if fresh and (timezone := os.environ.get("MOMOI_DESKTOP_TIMEZONE")):
+        ZoneInfo(timezone)
+        initialized = json.loads(config_path.read_text(encoding="utf-8"))
+        initialized["timezone"] = timezone
+        atomic_write(config_path, json.dumps(initialized, ensure_ascii=False, indent=2) + "\n")
     provider_path = workspace / "providers.yaml"
     from ..config.manager import ConfigurationManager
 

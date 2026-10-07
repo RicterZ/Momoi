@@ -60,6 +60,8 @@ internal sealed class BackendHost : IAsyncDisposable
             "--dashboard-port", dashboardPort.ToString(), "--embedding-port", embeddingPort.ToString() })
             info.ArgumentList.Add(argument);
         info.Environment["MOMOI_QQ_CALL_MANAGED"] = QQCallSettings.Prepare(workspace);
+        if (TimeZoneInfo.TryConvertWindowsIdToIanaId(TimeZoneInfo.Local.Id, out string? localZone))
+            info.Environment["MOMOI_DESKTOP_TIMEZONE"] = localZone;
         info.Environment["PYTHONUTF8"] = "1";
         info.Environment["HF_HUB_OFFLINE"] = "1";
         info.Environment["TRANSFORMERS_OFFLINE"] = "1";
