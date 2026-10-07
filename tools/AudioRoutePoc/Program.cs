@@ -18,7 +18,7 @@ internal sealed record Target(int Pid, string Path, long Started)
             throw new InvalidOperationException("目标进程已经变化，请重新选择。");
     }
 }
-internal sealed record Endpoint(string Id, string Name) { public override string ToString() => Name + " · " + Id; }
+internal sealed record Endpoint(string Id, string Name) { public override string ToString() => Name; }
 internal sealed record Saved(Target Target, int Flow, int Role, string Previous, string Desired);
 internal sealed class MainForm : Form
 {
@@ -31,6 +31,7 @@ internal sealed class MainForm : Form
     public MainForm()
     {
         Text = "AudioRoute PoC · 仅修改选定应用的音频设备"; Width = 1150; Height = 750;
+        Font = new System.Drawing.Font("Segoe UI", 10);
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(12) };
         top.Controls.Add(new Label { Text = "目标 QQ 进程（私有宿主及 Pepper Plugin 进程可能需分别测试）", AutoSize = true }); top.Controls.Add(targets);
         top.Controls.Add(new Label { Text = "QQ 输入／麦克风", AutoSize = true }); top.Controls.Add(input);
@@ -47,7 +48,7 @@ internal sealed class MainForm : Form
     }
     private void Run(Action action) { try { action(); } catch (Exception e) { Write($"ERROR 0x{e.HResult:X8}: {e.Message}"); } }
     private void Write(string value) { log.AppendText($"{DateTime.Now:HH:mm:ss.fff} {value}{Environment.NewLine}"); File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "poc.log"), value + Environment.NewLine); }
-    private static List<Endpoint> Devices(int flow)
+    internal static List<Endpoint> Devices(int flow)
     {
         var result = new List<Endpoint>();
         using var root = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\" + (flow == 0 ? "Render" : "Capture"));
@@ -56,7 +57,9 @@ internal sealed class MainForm : Form
         {
             using var device = root.OpenSubKey(key); if (device?.GetValue("DeviceState") is not int state || (state & 15) != 1) continue;
             using var properties = device.OpenSubKey("Properties");
-            string name = properties?.GetValue("{a45c254e-df1c-4efd-8020-67d146a850e0},14") as string ?? key;
+            string? label = properties?.GetValue("{a45c254e-df1c-4efd-8020-67d146a850e0},2") as string;
+            string? adapter = properties?.GetValue("{b3f8fa53-0004-438e-9003-51a46e139bfc},6") as string;
+            string name = !string.IsNullOrWhiteSpace(adapter) ? (string.IsNullOrWhiteSpace(label) ? adapter : $"{label} ({adapter})") : label ?? key;
             result.Add(new Endpoint($"{{0.0.{flow}.00000000}}.{key}", name));
         }
         return result;
@@ -138,6 +141,11 @@ internal static class Program
     [STAThread] private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Length == 2 && args[0] == "--devices")
+        {
+            File.WriteAllText(args[1], JsonSerializer.Serialize(new { inputs = MainForm.Devices(1), outputs = MainForm.Devices(0) }));
+            return;
+        }
         if (args.Length == 2 && args[0] == "--probe")
         {
             var rows = new List<object>();
