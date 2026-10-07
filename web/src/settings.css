@@ -1264,7 +1264,7 @@
   grid-template-columns: minmax(0, calc((100% - 20px) / 2)) auto;
   justify-content: start;
   align-items: end;
-  gap: 12px;
+  gap: 20px;
 }
 .settings-qq-call-test-row > .settings-button {
   height: 44px;
@@ -1316,4 +1316,13 @@
 @media (max-width: 650px) {
   .settings-qq-call-connection-row { grid-template-columns: minmax(0, 1fr); }
   .settings-qq-call-test-row { grid-template-columns: minmax(0, 1fr) auto; }
+}
+
+.settings-qq-call-connection-row {
+  --control-accent: var(--blue);
+  --control-focus: var(--pink);
+}
+.settings-qq-call-test-row {
+  --control-accent: var(--pink);
+  --control-focus: var(--blue);
 }
