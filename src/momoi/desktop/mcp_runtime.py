@@ -18,6 +18,7 @@ def prepare_mcp_environment(install: Path, workspace: Path, environ=None) -> Non
     for name, directory in directories.items():
         directory.mkdir(parents=True, exist_ok=True)
         env[name] = str(directory)
+    env["MOMOI_MEDIA_CACHE"] = str(cache / "media")
     env["UV_PYTHON"] = str(runtime / "python/python.exe")
     env["PYTHONUTF8"] = "1"
     paths = [runtime / "node", runtime / "uv", directories["UV_TOOL_BIN_DIR"], directories["npm_config_prefix"]]

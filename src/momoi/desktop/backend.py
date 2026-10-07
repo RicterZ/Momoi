@@ -67,6 +67,8 @@ async def serve(args):
     if args.install_dir is not None:
         from .mcp_runtime import prepare_mcp_environment
         prepare_mcp_environment(args.install_dir.resolve(), workspace)
+        from .media_runtime import prepare_configured_media
+        await asyncio.to_thread(prepare_configured_media, workspace / "config.json")
 
     class EmbeddedServer(Server):
         def capture_signals(self):

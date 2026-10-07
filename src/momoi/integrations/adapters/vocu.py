@@ -120,9 +120,11 @@ class VocuTTSProvider(TTSProvider):
         process = None
         writer = None
         try:
+            from ...desktop.media_runtime import ffmpeg_executable
+            decoder = await asyncio.to_thread(ffmpeg_executable)
             async with asyncio.timeout(self.timeout_seconds):
                 process = await asyncio.create_subprocess_exec(
-                    "ffmpeg", "-hide_banner", "-loglevel", "error",
+                    decoder, "-hide_banner", "-loglevel", "error",
                     "-probesize", "32768", "-analyzeduration", "0",
                     "-f", "mp3", "-i", "pipe:0", "-f", "s16le",
                     "-ar", "24000", "-ac", "1", "pipe:1",
