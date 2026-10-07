@@ -4,12 +4,12 @@ import asyncio
 import base64
 import json
 import logging
-import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
 
@@ -406,9 +406,11 @@ class NapCatChannel:
                 raise ValueError("attachment directory is not configured")
             name = media_display_name(str(data.get("name") or data.get("file") or "attachment")) or "attachment"
             # Never use a sender-controlled name as a filesystem component.
-            suffix = Path(name).suffix.lower()
-            if not re.fullmatch(r"\.[a-z0-9]{1,10}", suffix):
-                suffix = ""
+            original_suffix = Path(name).suffix
+            data["original_extension"] = original_suffix
+            suffix = quote(original_suffix, safe=".")
+            if len(suffix) > 200:
+                raise ValueError("encoded file extension is too long")
             destination = directory / (uuid.uuid4().hex + suffix)
             content, _ = await self._download_media(source)
             def save() -> None:

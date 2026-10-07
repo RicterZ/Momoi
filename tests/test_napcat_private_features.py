@@ -308,7 +308,9 @@ def test_received_file_downloads_to_workspace_and_renders_local_path(tmp_path):
                     safe_path = Path(received[0]['data']['file'])
                     assert safe_path.parent == tmp_path / 'channel/napcat/files'
                     assert len(safe_path.stem) == 32
-                    assert safe_path.suffix in ('', '.txt')
+                    from urllib.parse import unquote
+                    assert unquote(safe_path.suffix) == Path(malicious).suffix
+                    assert received[0]['data']['original_extension'] == Path(malicious).suffix
                     assert safe_path.read_bytes() == b'synthetic text'
                 before = set((tmp_path / 'channel/napcat/files').iterdir())
                 object.__setattr__(config, 'media_max_bytes', 2)
