@@ -10,8 +10,16 @@ function Install-App {
     param([string]$Log)
     $Extra = @()
     if ($DownloadPrerequisites) { $Extra += '/forceprerequisites=1' }
-    $Setup = Start-Process -FilePath (Resolve-Path $Installer).Path -ArgumentList (@('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$Target`"", "/LOG=`"$Log`"") + $Extra) -PassThru -Wait
-    if ($Setup.ExitCode -ne 0) { throw "Installer failed: $($Setup.ExitCode)" }
+    $OfflinePrerequisites = Join-Path (Split-Path $Installer) 'prerequisites'
+    $HiddenPrerequisites = $OfflinePrerequisites + '.download-check'
+    $HidePrerequisites = $DownloadPrerequisites -and (Test-Path $OfflinePrerequisites)
+    if ($HidePrerequisites) { Move-Item $OfflinePrerequisites $HiddenPrerequisites }
+    try {
+        $Setup = Start-Process -FilePath (Resolve-Path $Installer).Path -ArgumentList (@('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$Target`"", "/LOG=`"$Log`"") + $Extra) -PassThru -Wait
+        if ($Setup.ExitCode -ne 0) { throw "Installer failed: $($Setup.ExitCode)" }
+    } finally {
+        if ($HidePrerequisites) { Move-Item $HiddenPrerequisites $OfflinePrerequisites }
+    }
 }
 try {
     $ComponentPackages = @(Get-ChildItem (Split-Path $Installer) -Filter 'Momoi-QQ-Components-*-x64.exe')
