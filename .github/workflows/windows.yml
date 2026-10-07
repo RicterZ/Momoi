@@ -94,6 +94,15 @@ jobs:
           $Process = Start-Process $Shell -ArgumentList @('--update-shell-smoke', ('"' + $Archive + '"')) -Wait -PassThru
           if ($Process.ExitCode -ne 0) { throw "Shell update smoke failed; inspect $Archive.smoke-error.log" }
           Get-Content "$Archive.smoke.json"
+      - name: Native application update overlay smoke
+        if: inputs.installer_run == ''
+        shell: pwsh
+        run: |
+          $Shell = (Resolve-Path dist/windows/shell/payload/Momoi.exe).Path
+          $Directory = Join-Path $env:GITHUB_WORKSPACE 'build/windows-prompt-smoke'
+          $Process = Start-Process $Shell -ArgumentList @('--update-prompt-smoke', ('"' + $Directory + '"')) -Wait -PassThru
+          if ($Process.ExitCode -ne 0) { throw "Update prompt smoke failed; inspect $Directory/prompt-error.log" }
+          Get-Content "$Directory/prompt-smoke.json"
       - uses: actions/download-artifact@v4
         if: inputs.installer_run != ''
         with:
@@ -131,6 +140,7 @@ jobs:
             dist/windows/install-test/
             build/windows-installer-files.json
             build/windows-python-trim.json
+            build/windows-prompt-smoke/
           if-no-files-found: ignore
 
   publish-release:
