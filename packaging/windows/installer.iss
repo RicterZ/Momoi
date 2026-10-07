@@ -14,7 +14,11 @@ UninstallDisplayIcon={app}\Momoi.exe
 SetupIconFile={#Root}\desktop\Momoi.Desktop\Assets\momoi.ico
 OutputDir={#Root}\dist\windows
 OutputBaseFilename=Momoi-Setup-{#AppVersion}-x64
-Compression=lzma2
+Compression=lzma2/ultra64
+LZMADictionarySize=131072
+LZMANumFastBytes=273
+LZMANumBlockThreads=1
+LZMAUseSeparateProcess=yes
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -36,7 +40,7 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 Name: "{app}\data"; Permissions: users-modify; Flags: uninsneveruninstall
 
 [Files]
-Source: "{#Root}\dist\windows\app\*"; DestDir: "{app}"; Excludes: "data\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+#include "..\..\build\windows-installer-files.iss"
 Source: "{#Root}\build\windows-prerequisites\WebView2RuntimeInstallerX64.exe"; Flags: dontcopy
 Source: "{#Root}\build\windows-prerequisites\vc_redist.x64.exe"; Flags: dontcopy
 

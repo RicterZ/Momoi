@@ -105,6 +105,7 @@ Get-ChildItem $Prerequisites -Filter *.exe | Get-FileHash -Algorithm SHA256 | Fo
 if (-not $IsccPath) {
     $IsccPath = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6/ISCC.exe"
 }
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_installer_files.py", "--stage", $Stage, "--output", "build/windows-installer-files.iss")
 Invoke-Checked $IsccPath @("/DAppVersion=$Version", "packaging/windows/installer.iss")
 $Installer = Join-Path $Root "dist/windows/Momoi-Setup-$Version-x64.exe"
 Get-FileHash $Installer -Algorithm SHA256 | Format-List

@@ -21,6 +21,7 @@ try {
         $Group = if ($Relative.StartsWith('models/')) { 'BGE model' }
         elseif ($Relative.StartsWith('runtime/python/')) { 'Python and dependencies' }
         elseif ($Relative.StartsWith('runtime/napcat/')) { 'NapCat and QQ (including Node)' }
+        elseif ($Relative.StartsWith('runtime/qq-call/')) { 'QQ call native runtime' }
         elseif ($Relative.StartsWith('runtime/node/')) { 'Node and npm' }
         elseif ($Relative.StartsWith('runtime/uv/')) { 'uv' }
         elseif ($Relative.StartsWith('releases/')) { 'Application code and dashboard' }
