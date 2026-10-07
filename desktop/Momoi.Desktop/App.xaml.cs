@@ -29,6 +29,9 @@ public partial class App : Application
     private string? authScript;
     private string? dashboardUrl;
     private Window? panel;
+    private Grid panelContent = null!;
+    private StartupView? loadingView;
+    private bool dashboardReady;
     private Forms.NotifyIcon? tray;
     private Drawing.Icon? trayImage;
     private BackendHost? backend;
@@ -112,12 +115,16 @@ public partial class App : Application
         menu.Items.Add("退出程序", null, (_, _) => Dispatcher.BeginInvoke(() => _ = ExitAsync()));
         tray = new Forms.NotifyIcon { Icon = trayImage, Text = "Momoi", ContextMenuStrip = menu, Visible = true };
         tray.DoubleClick += (_, _) => Dispatcher.BeginInvoke(ShowPanel);
+        panelContent = new Grid();
         panel = new Window
         {
-            Title = "Momoi", Width = 1240, Height = 850, MinWidth = 800, MinHeight = 600,
+            Title = "Momoi", Width = Math.Min(1440, SystemParameters.WorkArea.Width * 0.94),
+            Height = Math.Min(850, SystemParameters.WorkArea.Height * 0.94), MinWidth = 800, MinHeight = 600,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
             Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")),
-            Content = new StartupView(),
+            Content = panelContent,
         };
+        ShowLoading("正在启动…");
         MainWindow = panel;
         panel.Closing += HideOnClose;
         panel.Show();
@@ -181,12 +188,28 @@ public partial class App : Application
         }
     }
 
+    private void ShowLoading(string message)
+    {
+        if (browser is not null) browser.Visibility = Visibility.Hidden;
+        if (loadingView is not null) panelContent.Children.Remove(loadingView);
+        loadingView = new StartupView(message);
+        panelContent.Children.Add(loadingView);
+    }
+
+    private void ShowDashboard()
+    {
+        if (!dashboardReady || browser is null) return;
+        if (loadingView is not null) panelContent.Children.Remove(loadingView);
+        loadingView = null;
+        browser.Visibility = Visibility.Visible;
+    }
+
     private async Task LoadDashboardAsync(BackendReady ready)
     {
         if (browser is null)
         {
-            browser = new WebView2();
-            panel!.Content = browser;
+            browser = new WebView2 { Visibility = Visibility.Hidden };
+            panelContent.Children.Insert(0, browser);
             var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(workspace, "webview"));
             await browser.EnsureCoreWebView2Async(environment);
             browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
@@ -204,7 +227,33 @@ public partial class App : Application
         if (authScript is not null) browser.CoreWebView2.RemoveScriptToExecuteOnDocumentCreated(authScript);
         authScript = await browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
             $"if (location.origin === {JsonSerializer.Serialize(ready.Url)}) localStorage.setItem('momoi-dashboard-token', {JsonSerializer.Serialize(ready.Token)});");
-        browser.Source = new Uri(ready.Url);
+        dashboardReady = false;
+        var loaded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        ulong? navigationId = null;
+        void NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs args)
+        {
+            if (args.Uri != "about:blank") navigationId = args.NavigationId;
+        }
+        void NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs args)
+        {
+            if (args.NavigationId != navigationId) return;
+            if (args.IsSuccess) loaded.TrySetResult(true);
+            else loaded.TrySetException(new InvalidOperationException($"面板加载失败：{args.WebErrorStatus}"));
+        }
+        browser.CoreWebView2.NavigationStarting += NavigationStarting;
+        browser.CoreWebView2.NavigationCompleted += NavigationCompleted;
+        try
+        {
+            browser.Source = new Uri(ready.Url);
+            await loaded.Task.WaitAsync(TimeSpan.FromSeconds(60), lifetime.Token);
+            dashboardReady = true;
+            ShowDashboard();
+        }
+        finally
+        {
+            browser.CoreWebView2.NavigationStarting -= NavigationStarting;
+            browser.CoreWebView2.NavigationCompleted -= NavigationCompleted;
+        }
     }
 
     private async Task UpdateAsync(bool quiet = false)
@@ -221,12 +270,28 @@ public partial class App : Application
             { if (!quiet) MessageBox.Show("当前已是最新发布版本。", "Momoi"); return; }
             if (MessageBox.Show($"发现新版本 {latest.Version}（当前 {currentRelease.Manifest.Version}）。\n是否下载安装？安装完成后会重启后台并刷新面板。", "Momoi 更新", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes) return;
             installationRequested = true;
+            ShowLoading("正在更新…");
+            loadingView!.SetDetail("下载中");
             tray!.Text = "Momoi — 正在下载并验证更新";
-            CodeRelease next = await releases.DownloadAsync(latest, lifetime.Token);
+            var progress = new Progress<UpdateProgress>(value =>
+            {
+                if (switching || exiting) return;
+                string detail = value.Phase;
+                if (value.Total > 0)
+                {
+                    int percent = (int)Math.Clamp(value.Completed * 100 / value.Total, 0, 100);
+                    detail += $" · {percent}%";
+                    if (value.Phase == "下载中") detail += $" · {value.Completed / 1048576.0:F1} / {value.Total / 1048576.0:F1} MiB";
+                }
+                loadingView?.SetDetail(detail);
+            });
+            CodeRelease next = await releases.DownloadAsync(latest, lifetime.Token, progress);
+            loadingView?.SetDetail("安装中");
             tray.Text = "Momoi — 正在安装更新";
             switching = true;
             CodeRelease previous = currentRelease;
             string snapshot = Path.Combine(workspace, "update-backups", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
+            dashboardReady = false;
             browser?.CoreWebView2.Navigate("about:blank");
             await napcat!.StopAsync();
             qqPanel?.Close();
@@ -237,10 +302,12 @@ public partial class App : Application
                 await BackendHost.MaintenanceAsync(workspace, previous, snapshot, restore: false);
                 releases.Activate(next);
                 backend = new BackendHost(workspace);
+                loadingView?.SetDetail("启动中");
                 var ready = await backend.StartAsync(workspace, next, lifetime.Token);
                 currentRelease = next;
                 if (napcat!.ShouldAutoStart(out string botQQ))
                     await napcat.StartAsync(botQQ, QQEntry(), lifetime.Token);
+                loadingView?.SetDetail("加载面板中");
                 await LoadDashboardAsync(ready);
                 _ = WatchBackendAsync(backend);
                 ShowPanel();
@@ -248,6 +315,7 @@ public partial class App : Application
             }
             catch (Exception updateError)
             {
+                loadingView?.SetDetail("恢复原版本中");
                 await napcat!.StopAsync();
                 if (backend is not null) { await backend.DisposeAsync(); backend = null; }
                 // Restore data as well as code: startup may have run SQLite migrations.
@@ -271,6 +339,7 @@ public partial class App : Application
         catch (Exception error) { if (!exiting && (!quiet || installationRequested)) MessageBox.Show($"更新失败：{error.Message}", "Momoi", MessageBoxButton.OK, MessageBoxImage.Error); }
         finally
         {
+            if (!exiting) ShowDashboard();
             switching = false;
             updateBusy = false;
             if (updateMenu is not null) updateMenu.Enabled = true;

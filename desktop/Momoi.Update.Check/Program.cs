@@ -30,7 +30,12 @@ try
     var store = new ReleaseStore(install, workspace);
     var original = store.Initialize();
     if (original.Manifest.ReleaseId != "seed") throw new Exception("Bundled initialization failed");
-    var next = store.StageArchive(MakeArchive("next"));
+    var updates = new List<UpdateProgress>();
+    var next = store.StageArchive(MakeArchive("next"), new RecordedProgress(updates));
+    var extraction = updates.Where(value => value.Phase == "解压中").ToArray();
+    if (extraction.Length < 2 || extraction[0].Completed != 0 ||
+        extraction[^1].Completed != extraction[^1].Total ||
+        updates[^1].Phase != "校验中") throw new Exception("Update extraction progress is incomplete");
     if (store.Initialize().Manifest.ReleaseId != "seed") throw new Exception("Staging changed the active release");
     store.Activate(next);
     if (store.Initialize().Manifest.ReleaseId != "next") throw new Exception("Activation failed");
@@ -70,3 +75,8 @@ try
     Console.WriteLine("PASS: staging, activation, rollback, hash validation, runtime mismatch and ZIP traversal rejection, Ed25519 verification and tamper rejection.");
 }
 finally { Directory.Delete(root, true); }
+
+sealed class RecordedProgress(List<UpdateProgress> values) : IProgress<UpdateProgress>
+{
+    public void Report(UpdateProgress value) => values.Add(value);
+}

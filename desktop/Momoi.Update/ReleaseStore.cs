@@ -14,6 +14,7 @@ public sealed record ReleaseManifest(
     [property: JsonPropertyName("runtime_id")] string RuntimeId,
     [property: JsonPropertyName("files")] Dictionary<string, string> Files);
 public sealed record CodeRelease(string Directory, ReleaseManifest Manifest);
+public sealed record UpdateProgress(string Phase, long Completed = 0, long Total = 0);
 
 /// <summary>Immutable version directories and an atomic current-version pointer.</summary>
 public sealed class ReleaseStore
@@ -85,7 +86,7 @@ public sealed class ReleaseStore
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
-    public async Task<CodeRelease> DownloadAsync(LatestRelease latest, CancellationToken cancellationToken)
+    public async Task<CodeRelease> DownloadAsync(LatestRelease latest, CancellationToken cancellationToken, IProgress<UpdateProgress>? progress = null)
     {
         var url = new Uri(latest.Url);
         if (latest.RuntimeId != runtimeId) throw new InvalidDataException("此更新需要新的运行组件，请安装新版安装包。");
@@ -94,6 +95,7 @@ public sealed class ReleaseStore
         string staging = Path.Combine(releases, ".stage-" + Guid.NewGuid().ToString("N"));
         try
         {
+            progress?.Report(new("下载中", 0, latest.Size));
             using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromMinutes(5) };
             using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
@@ -109,14 +111,16 @@ public sealed class ReleaseStore
                     length += count;
                     if (length > MaxZipBytes) throw new InvalidDataException("Update archive is too large");
                     await destination.WriteAsync(buffer.AsMemory(0, count), cancellationToken);
+                    progress?.Report(new("下载中", length, latest.Size));
                 }
             }
+            progress?.Report(new("校验中"));
             using (var downloaded = File.OpenRead(archivePath))
             {
                 if (downloaded.Length != latest.Size || Convert.ToHexStringLower(SHA256.HashData(downloaded)) != latest.Sha256)
                     throw new InvalidDataException("更新 ZIP 与已签名的清单不符。");
             }
-            var release = StageArchive(archivePath, staging);
+            var release = await Task.Run(() => StageArchive(archivePath, staging, progress, cancellationToken), cancellationToken);
             if (release.Manifest.ReleaseId != latest.ReleaseId || release.Manifest.Version != latest.Version || release.Manifest.RuntimeId != latest.RuntimeId)
                 throw new InvalidDataException("Update release identity mismatch");
             return release;
@@ -129,10 +133,10 @@ public sealed class ReleaseStore
     }
 
     // Public for offline validation and deterministic update tests.
-    public CodeRelease StageArchive(string archivePath) => StageArchive(archivePath,
-        Path.Combine(releases, ".stage-" + Guid.NewGuid().ToString("N")));
+    public CodeRelease StageArchive(string archivePath, IProgress<UpdateProgress>? progress = null) => StageArchive(archivePath,
+        Path.Combine(releases, ".stage-" + Guid.NewGuid().ToString("N")), progress);
 
-    private CodeRelease StageArchive(string archivePath, string staging)
+    private CodeRelease StageArchive(string archivePath, string staging, IProgress<UpdateProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -147,8 +151,11 @@ public sealed class ReleaseStore
             System.IO.Directory.CreateDirectory(staging);
             long expanded = 0;
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            long extracted = 0;
+            progress?.Report(new("解压中", 0, archive.Entries.Count));
             foreach (var entry in archive.Entries)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (string.IsNullOrEmpty(entry.Name)) continue;
                 string name = entry.FullName;
                 if (!names.Add(name)) throw new InvalidDataException("Duplicate update path");
@@ -160,7 +167,9 @@ public sealed class ReleaseStore
                 string path = Path.Combine(staging, name.Replace('/', Path.DirectorySeparatorChar));
                 System.IO.Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 entry.ExtractToFile(path);
+                progress?.Report(new("解压中", ++extracted, archive.Entries.Count));
             }
+            progress?.Report(new("校验中"));
             var validated = Validate(staging);
             string destination = Path.Combine(releases, validated.Manifest.ReleaseId);
             if (System.IO.Directory.Exists(destination)) return Validate(destination);
