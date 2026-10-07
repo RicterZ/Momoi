@@ -123,6 +123,8 @@ jobs:
           name: Momoi-Windows-x64
           path: |
             dist/windows/Momoi-Setup-*-x64.exe
+            dist/windows/Momoi-Online-Setup-*-x64.exe
+            dist/windows/Momoi-Online-Setup-*-x64.json
             dist/windows/components/Momoi-QQ-Components-*-x64.exe
             dist/windows/components/Momoi-QQ-Components-*-x64.json
             dist/windows/Momoi-Windows-*-x64.zip
@@ -171,4 +173,4 @@ jobs:
             exit 1
           fi
           python packaging/windows/package_installer.py --directory dist/windows --version "${RELEASE_TAG#v}"
-          gh release upload "$RELEASE_TAG" "dist/windows/Momoi-Windows-${RELEASE_TAG#v}-x64.zip" --clobber
+          gh release upload "$RELEASE_TAG" "dist/windows/Momoi-Windows-${RELEASE_TAG#v}-x64.zip" "dist/windows/Momoi-Online-Setup-${RELEASE_TAG#v}-x64.exe" --clobber

@@ -1,0 +1,77 @@
+name: Windows online installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Installer version
+        default: '1.1.3'
+        required: true
+      install_test:
+        description: Install the currently published signed set on a fresh runner
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  online:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Signed sets and downloader failure checks
+        run: dotnet run --project desktop/Momoi.Update.Check -c Release
+      - name: Build self-contained online installer
+        shell: pwsh
+        env:
+          ONLINE_VERSION: ${{ inputs.version }}
+        run: |
+          uv run --locked python packaging/windows/build_online_installer.py --version $env:ONLINE_VERSION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Native installer UI preview
+        shell: pwsh
+        run: |
+          $Installer = (Get-ChildItem dist/windows/Momoi-Online-Setup-*-x64.exe | Select-Object -First 1).FullName
+          $Directory = Join-Path $env:GITHUB_WORKSPACE 'build/online-preview'
+          $Process = Start-Process $Installer -ArgumentList @('--ui-preview', ('"' + $Directory + '"')) -Wait -PassThru
+          if ($Process.ExitCode -ne 0) { throw 'Online installer UI failed' }
+      - name: Fresh online install and uninstall
+        if: inputs.install_test
+        shell: pwsh
+        run: |
+          $Installer = (Get-ChildItem dist/windows/Momoi-Online-Setup-*-x64.exe | Select-Object -First 1).FullName
+          $Directory = Join-Path $env:GITHUB_WORKSPACE 'build/在线 安装 Momoi'
+          $Process = Start-Process $Installer -ArgumentList @('--install-check', ('"' + $Directory + '"')) -Wait -PassThru
+          if ($Process.ExitCode -ne 0) { throw 'Online installation failed; inspect installer cache logs' }
+          Get-Content (Join-Path $Directory 'online-install-check.json')
+          $Python = Join-Path $Directory 'runtime/python/python.exe'
+          & $Python -I -B -X utf8 (Join-Path $Directory 'releases/bundled/app/backend_entry.py') --check-model --model-path (Join-Path $Directory 'models/bge-small-zh-v1.5')
+          if ($LASTEXITCODE -ne 0) { throw 'Installed offline BGE verification failed' }
+          $Uninstaller = Join-Path $Directory 'unins000.exe'
+          $Data = Join-Path $Directory 'data/preserve-online-test.txt'
+          Set-Content $Data 'preserve user data'
+          $Process = Start-Process $Uninstaller -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -PassThru -Wait
+          if ($Process.ExitCode -ne 0 -or -not (Test-Path $Data)) { throw 'Online uninstall failed or removed user data' }
+          if (Test-Path (Join-Path $Directory 'Momoi.exe')) { throw 'Online uninstall left the application executable' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Momoi-Windows-online
+          path: |
+            dist/windows/Momoi-Online-Setup-*-x64.exe
+            dist/windows/Momoi-Online-Setup-*-x64.json
+            build/online-preview/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Momoi-Windows-online-diagnostics
+          path: |
+            ~/AppData/Local/Momoi/Installer/*.log
+            build/在线 安装 Momoi/online-install-check.json
+          if-no-files-found: ignore

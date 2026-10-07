@@ -138,3 +138,4 @@ New-Item -ItemType Directory -Path $Components -Force | Out-Null
 Move-Item "dist/windows/Momoi-QQ-Components-*-x64.exe" $Components -Force
 Move-Item "dist/windows/Momoi-QQ-Components-*-x64.json" $Components -Force
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/package_installer.py", "--directory", "dist/windows", "--version", $Version)
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/build_online_installer.py", "--version", $Version)

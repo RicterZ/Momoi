@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF><EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Momoi.Installer</AssemblyName>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <ApplicationIcon>../Momoi.Desktop/Assets/momoi.ico</ApplicationIcon>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Momoi.Update/Momoi.Update.csproj" GlobalPropertiesToRemove="PublishSingleFile;IncludeNativeLibrariesForSelfExtract;EnableCompressionInSingleFile" />
+    <Compile Include="../Momoi.Desktop/StartupView.cs" Link="StartupView.cs" />
+    <Page Include="../Momoi.Desktop/Themes/Momoi.xaml" Link="Themes/Momoi.xaml" />
+    <Resource Include="../Momoi.Desktop/Assets/momoi.png" Link="Assets/momoi.png" />
+  </ItemGroup>
+</Project>

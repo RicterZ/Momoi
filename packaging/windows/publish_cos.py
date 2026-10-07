@@ -43,7 +43,7 @@ def verify_archive(archive):
 
 
 def upload(local, key, *, mutable=False):
-    metadata = ("Cache-Control:no-cache, no-store, must-revalidate#Content-Type:application/json"
+    metadata = ("Cache-Control:no-cache, no-store, must-revalidate#Content-Type:" + ("application/json" if Path(local).suffix == ".json" else "application/octet-stream")
                 if mutable else "Cache-Control:public, max-age=31536000, immutable")
     subprocess.run(["coscli", "cp", str(local), f"cos://{BUCKET}/{key}",
                     "--endpoint", ENDPOINT, "--disable-log", "--acl", "public-read",

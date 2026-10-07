@@ -10,6 +10,7 @@ string root = Path.Combine(Path.GetTempPath(), "Momoi-update-" + Guid.NewGuid().
 Directory.CreateDirectory(root);
 try
 {
+    await InstallerChecks.RunAsync(root);
     string install = Path.Combine(root, "install");
     string workspace = Path.Combine(root, "user");
     Directory.CreateDirectory(Path.Combine(install, "runtime"));
