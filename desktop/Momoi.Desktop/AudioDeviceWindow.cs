@@ -138,7 +138,7 @@ internal sealed class AudioDeviceWindow : Window
             bool routed = routes.Ensure(host.RootElement, devices.RootElement);
             status.Text = routed ? "设备已保存，私有 QQ 路由已应用并回读验证。请重新拨打电话。" : "设备已保存。私有 QQ 音频进程尚未就绪，启动并登录内置 QQ 后，再点击应用。";
         }
-        catch (Exception error) { status.Text = (savedConfiguration ? "设备已保存；路由应用失败：" : "应用失败：") + error.Message; LiveLog.Write("audio-route", "stderr", error.Message); }
+        catch (Exception error) { status.Text = (savedConfiguration ? "设备已保存；路由应用失败：" : "应用失败：") + error.Message; LiveLog.Write("audio-route", "stderr", error.ToString()); }
         finally { SetBusy(false); }
     }
 }

@@ -290,6 +290,7 @@ public partial class App : Application
             }
             catch (OperationCanceledException) when (exiting) { }
             catch (Exception error) { if (!exiting) MessageBox.Show($"内置 QQ 未能启动：{error.Message}\n可在消息渠道设置中重试。", "Momoi QQ", MessageBoxButton.OK, MessageBoxImage.Warning); }
+            StartAudioRouting();
             updateTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
             updateTimer.Tick += (_, _) => { updateTimer.Stop(); if (!File.Exists(UpdatePlanPath)) updateTask = CheckAllUpdatesAsync(quiet: true); };
             updateTimer.Start();
@@ -564,6 +565,7 @@ public partial class App : Application
         exiting = true;
         lifetime.Cancel();
         updateTimer?.Stop();
+        audioRouteTimer?.Stop();
         if (tray is not null) tray.Visible = false;
         try
         {

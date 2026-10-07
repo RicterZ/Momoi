@@ -105,7 +105,7 @@ internal sealed class ApplicationAudioRoute
                     foreach (int flow in new[] { 0, 1 }) foreach (int role in new[] { 0, 1, 2 })
                         original.Add(new Preference(flow, role, policy.Get(pid, flow, role), Policy.Pack(flow == 0 ? desiredOutput : desiredInput, flow)));
                 }
-                catch (COMException error) when (error.HResult == unchecked((int)0x80070057)) { continue; }
+                catch (Exception error) when (error.HResult == unchecked((int)0x80070057)) { continue; }
                 // Recover a previous shell crash or configuration switch before making a new snapshot.
                 if (ReadBackup() is not null)
                 {
@@ -142,7 +142,7 @@ internal sealed class ApplicationAudioRoute
             using (process)
             {
                 try { using var verified = Inspect(process.Id); Restore(policy, process.Id); routedPid = 0; return; }
-                catch (COMException error) when (error.HResult == unchecked((int)0x80070057)) { }
+                catch (Exception error) when (error.HResult == unchecked((int)0x80070057)) { }
                 catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception) { }
                 catch (IOException error) when (error.Message == "拒绝修改非私有 QQ 音频进程。") { }
             }
