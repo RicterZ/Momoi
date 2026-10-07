@@ -423,14 +423,15 @@ class ToolBatchExecutor:
                                                  {"text": "\n\n".join(bubbles)} if mode == "voice" else {"bubbles": bubbles})
                         dispatch = self.bubble_delivery.dispatch_voice if mode == "voice" else self.bubble_delivery.dispatch
                         call_context = next((event.delivery_context for event in reversed(request.current_events)
-                            if event.channel == target.name and event.delivery_context), {})
+                            if event.channel == target.name and event.delivery_context
+                            and not event.delivery_context.get("channel_notice")), {})
                         delivery = dispatch(delivery_call, turn_id=request.turn_id, stage=execution.stage,
                             round_number=request.round_number, delivery_channel=target,
                             heartbeat_turn=execution.heartbeat, reply_followup_turn=execution.reply_followup,
                             heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
                             previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
                             previous_channel=last_sent_channel,
-                            **({"delivery_context": call_context} if call_context else {}))
+                            **({"delivery_context": call_context} if mode == "voice" and call_context else {}))
                         if mode == "voice":
                             delivery = await delivery
                         result = {**delivery.result, "bubbles": bubbles, "mode": mode}

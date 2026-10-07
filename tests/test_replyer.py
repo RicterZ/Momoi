@@ -82,7 +82,8 @@ def test_memory_evidence_reads_reply_result_not_intent():
     assert '内部派发方向' not in evidence
 
 
-def test_planner_replyer_dispatch_and_native_writeback(tmp_path):
+@pytest.mark.parametrize("delivery_context", [{}, {"channel_notice": "message_recall"}])
+def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_context):
     from momoi.config.models import AppConfig
     from momoi.integrations.models import LLMConfig
     from momoi.channel.napcat import NapCatConfig
@@ -94,7 +95,8 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path):
         channel=NapCatConfig('ws://localhost', 'test', 1, 60, 30, 30, 20),
         transcript_turns_min=8, transcript_turns_max=32, episode_unsummarized_tail_turns=2, memory_results=2,
         soul_prompt='测试人格', system_prompt='测试规则', database=tmp_path / 'db', log_level='INFO'))
-    event = IncomingMessage('event', 'event', '测试输入', 1, 1, channel=daemon.channel.name)
+    event = IncomingMessage('event', 'event', '测试输入', 1, 1, channel=daemon.channel.name,
+                            delivery_context=delivery_context)
     daemon.store.add_event(event)
     daemon.store.begin_turn('owner-test', 'owner', ['event'])
     messages = [{'role': 'user', 'content': '测试输入'}]
