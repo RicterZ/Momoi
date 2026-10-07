@@ -19,8 +19,19 @@ internal sealed class Policy : IDisposable
         Marshal.ThrowExceptionForHR(WindowsCreateString(name, (uint)name.Length, out var text));
         try
         {
-            var iid = new Guid(Environment.OSVersion.Version.Build >= 19044 ? "ab3d4648-e242-459f-b02f-541c70306324" : "2a59116d-6c4f-45e0-a74f-707e3fef9258");
-            Marshal.ThrowExceptionForHR(RoGetActivationFactory(text, ref iid, out factory));
+            // Server editions and serviced builds need capability probing rather than
+            // a client Windows build-number assumption. Both interfaces share this ABI.
+            string[] variants = { "ab3d4648-e242-459f-b02f-541c70306324", "2a59116d-6c4f-45e0-a74f-707e3fef9258" };
+            var failures = new System.Collections.Generic.List<string>();
+            foreach (string variant in variants)
+            {
+                var iid = new Guid(variant);
+                int hr = RoGetActivationFactory(text, ref iid, out var candidate);
+                if (hr >= 0 && candidate != IntPtr.Zero) { factory = candidate; return; }
+                if (candidate != IntPtr.Zero) Marshal.Release(candidate);
+                failures.Add($"iid={variant} HRESULT=0x{hr:X8}");
+            }
+            throw new NotSupportedException($"Windows 应用音频路由接口不可用；OS={Environment.OSVersion.Version}; {string.Join("; ", failures)}。QQ 音频路由尚未应用。");
         }
         finally { WindowsDeleteString(text); }
     }
