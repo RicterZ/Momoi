@@ -52,6 +52,11 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Length == 0 && string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "Momoi-ShellUpdater", StringComparison.OrdinalIgnoreCase))
+        {
+            await RepairShellAsync();
+            return;
+        }
         if (e.Args.Length == 2 && e.Args[0] == "--update-prompt-smoke")
         {
             try { await RunUpdatePromptSmokeAsync(e.Args[1]); Shutdown(0); }
@@ -69,6 +74,11 @@ public partial class App : Application
         {
             try { await ComponentUpdateWorker.SmokeAsync(e.Args[1]); Shutdown(0); }
             catch (Exception error) { File.WriteAllText(e.Args[1] + ".smoke-error.log", error.ToString()); Shutdown(1); }
+            return;
+        }
+        if (e.Args.Length == 2 && e.Args[0] == "--apply-component-elevated")
+        {
+            Shutdown(await ComponentUpdateWorker.ApplyElevatedAsync(e.Args[1]));
             return;
         }
         if (e.Args.Length == 2 && e.Args[0] == "--install-update")

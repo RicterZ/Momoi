@@ -16,6 +16,8 @@ def build(output, version, dotnet='dotnet'):
     subprocess.run([dotnet, 'publish', str(ROOT / 'desktop/Momoi.Desktop/Momoi.Desktop.csproj'),
                     '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
                     '-p:PublishSingleFile=false', '-p:Version=' + version, '-o', str(payload)], check=True)
+    # Native recovery entry point for shells whose update command is broken.
+    shutil.copyfile(payload / "Momoi.exe", payload / "Momoi-ShellUpdater.exe")
     (payload / "licenses").mkdir(exist_ok=True)
     shutil.copyfile(ROOT / "tools/AudioRoutePoc/EarTrumpet-LICENSE.txt", payload / "licenses/EarTrumpet-LICENSE.txt")
     files = {p.relative_to(payload).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()

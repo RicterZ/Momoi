@@ -59,20 +59,19 @@ internal static class ComponentUpdateWorker
             }
             catch (ArgumentException) { }
             string directory = Path.GetDirectoryName(requestPath)!;
-            string script = Path.Combine(directory, "apply.ps1");
+
             if (request.Kind == "shell-zip")
             {
                 view.SetDetail("解压中");
                 string payload = Path.Combine(directory, "package");
                 await Task.Run(() => ExtractShell(request.Archive, payload));
-                File.WriteAllText(script, ShellScript);
-                await RunElevatedAsync(script, install, payload);
+                view.SetDetail("安装外壳中");
+                await RunElevatedAsync(requestPath);
             }
             else
             {
                 view.SetDetail("安装 NapCat / QQ 组件中");
-                File.WriteAllText(script, ComponentScript);
-                await RunElevatedAsync(script, install, request.Archive);
+                await RunElevatedAsync(requestPath);
                 string pair = File.ReadAllText(Path.Combine(install, "runtime", "qq-pair", "pair-id.txt")).Trim();
                 if (pair != artifact.Id) throw new IOException("已安装组件与签名锁定版本不符。");
                 string marker = Path.Combine(install, "data", "updates", "napcat-installed-id.txt");
@@ -137,24 +136,25 @@ internal static class ComponentUpdateWorker
         Directory.CreateDirectory(Path.Combine(install, "data"));
         File.WriteAllText(Path.Combine(install, "data", "preserve.txt"), "keep user data");
         File.WriteAllText(Path.Combine(install, "Momoi.exe"), "old shell");
-        string script = Path.Combine(directory, "apply.ps1");
-        File.WriteAllText(script, ShellScript);
-        var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false };
-        foreach (string arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-InstallDir", install, "-Package", package }) start.ArgumentList.Add(arg);
-        using var child = Process.Start(start) ?? throw new IOException("Failed to start smoke installer");
-        await child.WaitForExitAsync();
-        if (child.ExitCode != 0 || File.ReadAllText(Path.Combine(install, "data", "preserve.txt")) != "keep user data") throw new IOException("Shell install smoke failed");
+        ApplyShell(package, install);
+        if (File.ReadAllText(Path.Combine(install, "data", "preserve.txt")) != "keep user data") throw new IOException("Shell install smoke failed");
         using (var actual = File.OpenRead(Path.Combine(install, "Momoi.exe")))
         using (var expected = File.OpenRead(Path.Combine(package, "payload", "Momoi.exe")))
             if (!SHA256.HashData(actual).SequenceEqual(SHA256.HashData(expected))) throw new IOException("Shell replacement smoke failed");
         string saved = Directory.GetFiles(Path.Combine(install, "data", "shell-backups"), "Momoi.exe", SearchOption.AllDirectories).Single();
         if (File.ReadAllText(saved) != "old shell") throw new IOException("Shell backup smoke failed");
-        // A missing later payload forces rollback after the first file is replaced.
-        File.WriteAllText(Path.Combine(package, "shell-manifest.json"), "{\"files\":{\"Momoi.exe\":\"test\",\"missing.dll\":\"test\"}}");
+        // Lock a later destination to force rollback after replacing Momoi.exe.
         File.WriteAllText(Path.Combine(install, "Momoi.exe"), "rollback target");
-        using var failed = Process.Start(start) ?? throw new IOException("Failed to start rollback smoke");
-        await failed.WaitForExitAsync();
-        if (failed.ExitCode == 0 || File.ReadAllText(Path.Combine(install, "Momoi.exe")) != "rollback target") throw new IOException("Shell rollback smoke failed");
+        string later = Path.Combine(install, "blocked.dll");
+        File.WriteAllText(later, "locked original");
+        File.WriteAllText(Path.Combine(package, "payload", "blocked.dll"), "new content");
+        string hash;
+        using (var source = File.OpenRead(Path.Combine(package, "payload", "Momoi.exe"))) hash = Convert.ToHexStringLower(SHA256.HashData(source));
+        File.WriteAllText(Path.Combine(package, "shell-manifest.json"), JsonSerializer.Serialize(new { files = new System.Collections.Generic.Dictionary<string,string> { ["Momoi.exe"] = hash, ["blocked.dll"] = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("new content"))) } }));
+        bool failed = false;
+        using (var held = new FileStream(later, FileMode.Open, FileAccess.Read, FileShare.Read))
+            try { ApplyShell(package, install); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { failed = true; }
+        if (!failed || File.ReadAllText(Path.Combine(install, "Momoi.exe")) != "rollback target") throw new IOException("Shell rollback smoke failed");
         File.WriteAllText(archive + ".smoke.json", JsonSerializer.Serialize(new { ok = true, replacement = true, backup = true, rollback = true, unicode = true, userDataPreserved = true }));
         Directory.Delete(directory, true);
     }
@@ -166,52 +166,98 @@ internal static class ComponentUpdateWorker
         foreach (string directory in Directory.GetDirectories(source)) CopyDirectory(directory, Path.Combine(destination, Path.GetFileName(directory)));
     }
 
-    private static async Task RunElevatedAsync(string script, string install, string package)
+    private static async Task RunElevatedAsync(string requestPath)
     {
-        // Values come from Windows paths; quotes are forbidden in file names.
-        var start = new ProcessStartInfo("powershell.exe") {
-            UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden,
-            Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -InstallDir \"{install.TrimEnd('\\')}\" -Package \"{package}\""
+        var start = new ProcessStartInfo(Environment.ProcessPath!) {
+            UseShellExecute = true, Verb = "runas",
+            Arguments = "--apply-component-elevated \"" + requestPath + "\""
         };
         using var child = Process.Start(start) ?? throw new IOException("无法启动安装程序。");
         await child.WaitForExitAsync();
-        if (child.ExitCode != 0) throw new IOException("安装程序失败，退出码 " + child.ExitCode);
+        if (child.ExitCode != 0)
+        {
+            string errorPath = Path.Combine(Path.GetDirectoryName(requestPath)!, "apply-error.log");
+            throw new IOException(File.Exists(errorPath) ? File.ReadAllText(errorPath) : "安装程序失败，退出码 " + child.ExitCode);
+        }
     }
 
-    private const string ComponentScript = """
-param([string]$InstallDir, [string]$Package)
-$ErrorActionPreference = 'Stop'
-$p = Start-Process $Package -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', ('/DIR="' + $InstallDir + '"'), ('/LOG="' + $Package + '.install.log"')) -Wait -PassThru
-exit $p.ExitCode
-""";
-    private const string ShellScript = """
-param([string]$InstallDir, [string]$Package)
-$ErrorActionPreference = 'Stop'
-$payload = Join-Path $Package 'payload'
-$manifest = Get-Content (Join-Path $Package 'shell-manifest.json') -Raw | ConvertFrom-Json
-$backup = Join-Path $InstallDir ('data\shell-backups\' + [Guid]::NewGuid().ToString('N'))
-$changed = New-Object System.Collections.Generic.List[object]
-try {
-    foreach ($entry in $manifest.files.PSObject.Properties) {
-        $source = Join-Path $payload $entry.Name
-        $target = Join-Path $InstallDir $entry.Name
-        $old = Join-Path $backup $entry.Name
-        $existed = Test-Path $target
-        if ($existed) {
-            New-Item -ItemType Directory -Force (Split-Path $old) | Out-Null
-            Copy-Item $target $old -Force
+    internal static async Task<int> ApplyElevatedAsync(string requestPath)
+    {
+        try
+        {
+            var request = JsonSerializer.Deserialize<ComponentUpdateRequest>(File.ReadAllText(requestPath)) ?? throw new InvalidDataException("无效更新请求。");
+            string install = Path.GetFullPath(request.InstallDirectory);
+            var catalog = UpdateCatalog.Verify(File.ReadAllBytes(request.Catalog), SignedLatest.EmbeddedPublicKey());
+            var artifact = request.Kind == "shell-zip" ? catalog.Shell : request.Kind == "napcat-installer" ? catalog.NapCat : throw new InvalidDataException("未知组件。");
+            using (var stream = File.OpenRead(request.Archive))
+                if (stream.Length != artifact.Size || Convert.ToHexStringLower(SHA256.HashData(stream)) != artifact.Sha256) throw new InvalidDataException("更新文件校验失败。");
+            if (request.Kind == "shell-zip")
+            {
+                string package = Path.Combine(Path.GetDirectoryName(requestPath)!, "verified-" + Guid.NewGuid().ToString("N"));
+                try { ExtractShell(request.Archive, package); ApplyShell(package, install); }
+                finally { if (Directory.Exists(package)) Directory.Delete(package, true); }
+            }
+            else
+            {
+                var start = new ProcessStartInfo(request.Archive) { UseShellExecute = false };
+                foreach (string arg in new[] { "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=" + install, "/LOG=" + request.Archive + ".install.log" }) start.ArgumentList.Add(arg);
+                using var child = Process.Start(start) ?? throw new IOException("无法启动 QQ 组件安装程序。");
+                await child.WaitForExitAsync();
+                if (child.ExitCode != 0) throw new IOException("QQ 组件安装失败，退出码 " + child.ExitCode);
+                if (File.ReadAllText(Path.Combine(install, "runtime", "qq-pair", "pair-id.txt")).Trim() != artifact.Id) throw new IOException("已安装 QQ 组件与签名锁定版本不符。");
+            }
+            return 0;
         }
-        $changed.Add(@{path=$target;old=$old;existed=$existed})
-        New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
-        Copy-Item $source $target -Force
+        catch (Exception error)
+        {
+            File.WriteAllText(Path.Combine(Path.GetDirectoryName(requestPath)!, "apply-error.log"), error.ToString());
+            return 1;
+        }
     }
-} catch {
-    $_ | Out-String | Set-Content (Join-Path $Package 'install-error.log')
-    foreach ($item in $changed) {
-        if ($item.existed) { Copy-Item $item.old $item.path -Force }
-        else { Remove-Item $item.path -Force -ErrorAction SilentlyContinue }
+
+    internal static void ApplyShell(string package, string install)
+    {
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(package, "shell-manifest.json")));
+        var files = manifest.RootElement.GetProperty("files").EnumerateObject().ToArray();
+        // Check every source before touching the installation.
+        foreach (var entry in files)
+        {
+            string name = entry.Name;
+            if (name.Contains('\\') || name.Contains(':') || name.Split('/').Any(part => part is "" or "." or ".." || part.EndsWith('.') || part.EndsWith(' ')) ||
+                new[] { "data", "runtime", "models", "releases" }.Contains(name.Split('/')[0], StringComparer.OrdinalIgnoreCase)) throw new InvalidDataException("不安全的外壳文件路径。");
+            using var source = File.OpenRead(Path.Combine(package, "payload", name.Replace('/', Path.DirectorySeparatorChar)));
+            if (Convert.ToHexStringLower(SHA256.HashData(source)) != entry.Value.GetString()) throw new InvalidDataException("外壳文件校验失败。");
+        }
+        string backup = Path.Combine(install, "data", "shell-backups", Guid.NewGuid().ToString("N"));
+        var changed = new System.Collections.Generic.List<(string Target, string Old, bool Existed)>();
+        try
+        {
+            foreach (var entry in files)
+            {
+                string name = entry.Name.Replace('/', Path.DirectorySeparatorChar);
+                string target = Path.Combine(install, name), old = Path.Combine(backup, name);
+                bool existed = File.Exists(target);
+                if (existed) { Directory.CreateDirectory(Path.GetDirectoryName(old)!); File.Copy(target, old); }
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                string temporary = target + ".update-" + Guid.NewGuid().ToString("N");
+                try
+                {
+                    File.Copy(Path.Combine(package, "payload", name), temporary);
+                    File.Move(temporary, target, true);
+                    changed.Add((target, old, existed));
+                }
+                finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            }
+            File.WriteAllText(Path.Combine(backup, "backup.json"), JsonSerializer.Serialize(changed.Select(item => new { path = item.Target, old = item.Old, existed = item.Existed })));
+        }
+        catch (Exception installError)
+        {
+            var errors = new System.Collections.Generic.List<Exception> { installError };
+            foreach (var item in changed.AsEnumerable().Reverse())
+                try { if (item.Existed) File.Copy(item.Old, item.Target, true); else File.Delete(item.Target); }
+                catch (Exception restoreError) { errors.Add(restoreError); }
+            if (errors.Count > 1) throw new AggregateException("外壳替换失败，部分文件需要从备份恢复。", errors);
+            throw;
+        }
     }
-    exit 1
-}
-""";
 }
