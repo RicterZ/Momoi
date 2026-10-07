@@ -29,6 +29,9 @@ public partial class App : Application
     private CodeRelease? currentRelease;
     private string? authScript;
     private string? dashboardUrl;
+    private BackendReady? panelConnection;
+    private ApplicationAudioRoute? audioRoutes;
+    private AudioDeviceWindow? audioDeviceWindow;
     private Window? panel;
     private Grid panelContent = null!;
     private StartupView? loadingView;
@@ -49,6 +52,13 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Length == 2 && e.Args[0] == "--shell-ui-preview")
+        {
+            workspace = e.Args[1];
+            try { await ShellPreview.RunAsync(CreateWindowMenu(), workspace); Shutdown(0); }
+            catch (Exception error) { File.WriteAllText(Path.Combine(workspace, "preview-error.log"), error.ToString()); Shutdown(1); }
+            return;
+        }
         if (e.Args.Length == 2 && e.Args[0] == "--update-shell-smoke")
         {
             try { await ComponentUpdateWorker.SmokeAsync(e.Args[1]); Shutdown(0); }
@@ -132,8 +142,9 @@ public partial class App : Application
         panelContent = new Grid();
         var shellLayout = new DockPanel();
         var navigation = CreateWindowMenu();
-        DockPanel.SetDock(navigation, Dock.Top);
-        shellLayout.Children.Add(navigation);
+        var navigationBorder = new Border { Child = navigation, Background = System.Windows.Media.Brushes.White, BorderBrush = (System.Windows.Media.Brush)FindResource("Line"), BorderThickness = new Thickness(0, 0, 0, 1) };
+        DockPanel.SetDock(navigationBorder, Dock.Top);
+        shellLayout.Children.Add(navigationBorder);
         shellLayout.Children.Add(panelContent);
         panel = new Window
         {
@@ -169,21 +180,21 @@ public partial class App : Application
     {
         var menu = new Menu
         {
-            Padding = new Thickness(12, 5, 12, 5),
-            Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(247, 248, 251)),
+            Padding = new Thickness(12, 8, 12, 8),
+            Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255)),
             Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(32, 36, 58)),
             FontFamily = new System.Windows.Media.FontFamily("Segoe UI Variable, Segoe UI, DengXian"),
             FontSize = 13,
         };
         MenuItem Item(string label, Action action)
         {
-            var item = new MenuItem { Header = label, Padding = new Thickness(14, 7, 14, 7) };
+            var item = new MenuItem { Header = label, Padding = new Thickness(14, 9, 14, 9) };
             item.Click += (_, _) => action();
             menu.Items.Add(item);
             return item;
         }
         Item("日志", ShowLogs);
-        var qq = new MenuItem { Header = "QQ 设置", Padding = new Thickness(14, 7, 14, 7) };
+        var qq = new MenuItem { Header = "QQ 设置", Padding = new Thickness(14, 9, 14, 9) };
         var channel = new MenuItem { Header = "消息渠道设置" };
         channel.Click += async (_, _) => await OpenSettingsAsync("channel");
         var login = new MenuItem { Header = "打开 QQ 登录窗口" };
@@ -198,14 +209,27 @@ public partial class App : Application
             Directory.CreateDirectory(workspace);
             Process.Start(new ProcessStartInfo(workspace) { UseShellExecute = true });
         });
-        var audio = new MenuItem { Header = "音频", Padding = new Thickness(14, 7, 14, 7) };
-        var devices = new MenuItem { Header = "电话与虚拟设备设置" };
-        devices.Click += async (_, _) => await OpenSettingsAsync("channel");
+        var audio = new MenuItem { Header = "音频", Padding = new Thickness(14, 9, 14, 9) };
+        var devices = new MenuItem { Header = "音频设备" };
+        devices.Click += (_, _) => OpenAudioDevices();
         var voice = new MenuItem { Header = "语音识别与合成设置" };
         voice.Click += async (_, _) => await OpenSettingsAsync("voice");
         audio.Items.Add(devices); audio.Items.Add(voice); menu.Items.Add(audio);
         windowUpdateMenu = Item("检查更新", () => updateTask = CheckAllUpdatesAsync());
         return menu;
+    }
+
+    private void OpenAudioDevices()
+    {
+        if (panelConnection is null || !dashboardReady || switching || updateBusy)
+        { MessageBox.Show("面板尚未就绪，请稍后打开音频设备。", "Momoi"); return; }
+        if (audioDeviceWindow is null)
+        {
+            audioRoutes ??= new ApplicationAudioRoute(Path.Combine(workspace, "qq-call"));
+            audioDeviceWindow = new AudioDeviceWindow(panelConnection, audioRoutes) { Owner = panel };
+            audioDeviceWindow.Closed += (_, _) => audioDeviceWindow = null;
+        }
+        audioDeviceWindow.Show(); audioDeviceWindow.Activate();
     }
 
     private async Task OpenSettingsAsync(string section)
@@ -309,6 +333,7 @@ public partial class App : Application
             };
             browser.CoreWebView2.NewWindowRequested += (_, args) => { args.Handled = true; OpenExternal(args.Uri); };
         }
+        panelConnection = ready;
         dashboardUrl = ready.Url;
         if (authScript is not null) browser.CoreWebView2.RemoveScriptToExecuteOnDocumentCreated(authScript);
         authScript = await browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
@@ -545,6 +570,7 @@ public partial class App : Application
             qqPanel?.Close();
             browser?.Dispose();
             logWindow?.Close();
+            audioDeviceWindow?.Close();
         tray?.Dispose();
             trayImage?.Dispose();
             panel?.Close();

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using Momoi.Update;
@@ -14,6 +15,15 @@ internal sealed record PendingUpdates(string Catalog, string? ShellArchive, stri
 public partial class App
 {
     private string UpdatePlanPath => Path.Combine(workspace, "updates", "pending.json");
+
+    private static string ShellIdentity()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        string version = assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+        string info = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
+        var match = Regex.Match(info, @"\+([0-9a-f]{7,40})");
+        return match.Success ? version + "-" + match.Groups[1].Value[..7] : version;
+    }
 
     private IProgress<UpdateProgress> UpdateProgressView() => new Progress<UpdateProgress>(value =>
     {
@@ -32,7 +42,8 @@ public partial class App
             byte[] envelope = await UpdateCatalog.FetchEnvelopeAsync(lifetime.Token);
             var catalog = UpdateCatalog.Verify(envelope, SignedLatest.EmbeddedPublicKey());
             string shellVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
-            bool shell = Version.Parse(catalog.Shell.Version) > Version.Parse(shellVersion);
+            bool shell = Version.Parse(catalog.Shell.Version) > Version.Parse(shellVersion) ||
+                (Version.Parse(catalog.Shell.Version) == Version.Parse(shellVersion) && ShellIdentity() != catalog.Shell.Id);
             string pairPath = Path.Combine(AppContext.BaseDirectory, "runtime", "qq-pair", "pair-id.txt");
             string marker = Path.Combine(workspace, "updates", "napcat-installed-id.txt");
             string pair = File.Exists(marker) ? File.ReadAllText(marker).Trim() : File.Exists(pairPath) ? File.ReadAllText(pairPath).Trim() : "";
@@ -87,7 +98,8 @@ public partial class App
             var plan = JsonSerializer.Deserialize<PendingUpdates>(File.ReadAllText(UpdatePlanPath)) ?? throw new InvalidDataException("更新计划为空。");
             var catalog = UpdateCatalog.Verify(File.ReadAllBytes(plan.Catalog), SignedLatest.EmbeddedPublicKey());
             string shellVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
-            bool shellPending = plan.ShellArchive is not null && Version.Parse(shellVersion) < Version.Parse(catalog.Shell.Version);
+            bool shellPending = plan.ShellArchive is not null && (Version.Parse(shellVersion) < Version.Parse(catalog.Shell.Version) ||
+                (Version.Parse(shellVersion) == Version.Parse(catalog.Shell.Version) && ShellIdentity() != catalog.Shell.Id));
             string marker = Path.Combine(workspace, "updates", "napcat-installed-id.txt");
             bool napcatPending = plan.NapCatArchive is not null && (!File.Exists(marker) || File.ReadAllText(marker).Trim() != catalog.NapCat.Id);
             if (shellPending || napcatPending)

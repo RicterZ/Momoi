@@ -351,6 +351,34 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         }
         self.manager.save("app", app, snapshot["revision"])
 
+    async def test_native_audio_device_save_preserves_secrets_and_rejects_conflicts(self):
+        self.enable()
+        self.client.session.headers["Authorization"] = self.auth
+        managed = self.path.parent / "managed.json"
+        managed.write_text(json.dumps({"bridge_url": "http://127.0.0.1:43210", "bridge_token": "a" * 64}))
+        catalog = {"inputs": [{"id": "mic", "name": "Virtual mic"}],
+                   "outputs": [{"id": "speaker", "name": "Virtual speaker"}], "errors": []}
+        endpoint = "/api/settings/channels/napcat/voice-call/devices"
+        revision = self.manager.revision()
+        with patch.dict(os.environ, {"MOMOI_QQ_CALL_MANAGED": str(managed)}), patch("momoi.qq_call.windows_audio.device_catalog", return_value=catalog):
+            response = await self.client.put(endpoint, json={"revision": revision, "input_device": "mic", "output_device": "speaker"})
+            self.assertEqual(response.status, 200, await response.text())
+            voice = self.manager.read_app()["channels"]["enabled"]["napcat"]["voice_call"]
+            self.assertEqual(voice["input_device"], "mic")
+            self.assertEqual(voice["output_device"], "speaker")
+            self.assertEqual(voice["bridge_token"], "a" * 64)
+            before = self.path.read_bytes()
+            response = await self.client.put(endpoint, json={"revision": revision, "input_device": "", "output_device": ""})
+            self.assertEqual(response.status, 409)
+            self.assertEqual(self.path.read_bytes(), before)
+            response = await self.client.put(endpoint, json={"revision": self.manager.revision(), "input_device": "physical-device", "output_device": "speaker"})
+            self.assertEqual(response.status, 400)
+            self.assertEqual(self.path.read_bytes(), before)
+        with patch.dict(os.environ):
+            os.environ.pop("MOMOI_QQ_CALL_MANAGED", None)
+            response = await self.client.put(endpoint, json={"revision": self.manager.revision()})
+            self.assertEqual(response.status, 404)
+
     async def test_zero_configuration_dashboard_auth_save_and_conflict(self):
         response = await self.client.get("/api/settings/configuration")
         self.assertEqual(response.status, 401)

@@ -44,7 +44,7 @@ def publish(shell, napcat, version):
     shell_key = 'windows/shell/' + shell.name
     pair_key = 'windows/components/' + napcat.name
     payload = {'format_version': 1, 'version': version,
-               'shell': artifact(shell, version, version, shell_key, 'shell-zip'),
+               'shell': artifact(shell, version, version + '-' + manifest['commit'][:7], shell_key, 'shell-zip'),
                'napcat': artifact(napcat, pair['version'], pair['pair_id'], pair_key, 'napcat-installer')}
     with tempfile.TemporaryDirectory() as directory:
         catalog = Path(directory) / 'catalog.json'

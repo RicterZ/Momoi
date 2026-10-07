@@ -1262,7 +1262,7 @@ const channelOptions = [
 ];
 const channelDefaults = (name) =>
   name === "napcat" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : {};
-function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, qqConnected, qqCall, testCall, listCallDevices }) {
+function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, qqConnected, qqCall, testCall }) {
   const [channels, setChannels] = useState(data.app.channels || { primary: "", enabled: {} });
   const [saved, setSaved] = useState(channels);
   const [status, setStatus] = useState(null);
@@ -1374,7 +1374,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                     <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "内置组件自动生成；外部 NapCat 填写其 WebSocket 令牌。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
                     <OptionField name="owner_qq" spec={{ type: "string", label: "主人 QQ" }} value={options.owner_qq} onChange={value => edit(name, { ...options, owner_qq: value })} />
                   </Fields>
-                  <QQCallSettings managed={data.desktop_qq_call_managed} value={options.voice_call || {}} disabled={busy || loginActive} status={qqCall} onTest={testCall} onDevices={listCallDevices}
+                  <QQCallSettings managed={data.desktop_qq_call_managed} value={options.voice_call || {}} disabled={busy || loginActive} status={qqCall} onTest={testCall}
                     onChange={voice_call => edit(name, { ...options, voice_call })} />
                   <DesktopQQ botQQ={options.bot_qq} ownerQQ={options.owner_qq} connected={qqConnected} disabled={busy || loginActive} onConnection={connectDesktopQQ} />
                   </div>
@@ -1776,7 +1776,6 @@ export default function ConfigurationSettings({
                       data={data}
                       save={save}
                       login={runtime?.weixin_login}
-                      listCallDevices={() => call("/api/settings/channels/napcat/voice-call/devices")}
                       testCall={document => call("/api/settings/channels/napcat/voice-call/test", { method: "POST", body: document })}
                       qqConnected={runtime?.qq_connected} qqCall={runtime?.qq_call}
                       action={action}
@@ -1828,24 +1827,9 @@ export default function ConfigurationSettings({
 }
 
 
-function QQCallSettings({ value, managed, disabled, status, onChange, onTest, onDevices }) {
+function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) {
   const [test, setTest] = useState(null);
   const [testing, setTesting] = useState(false);
-  const [devices, setDevices] = useState({ inputs: [], outputs: [] });
-  const [deviceBusy, setDeviceBusy] = useState(false);
-  async function refreshDevices() {
-    setDeviceBusy(true);
-    try { setDevices(await onDevices()); }
-    catch (error) { setDevices({ inputs: [], outputs: [], errors: [error.message] }); }
-    finally { setDeviceBusy(false); }
-  }
-  useEffect(() => {
-    if (!managed || !value.enabled) return;
-    let active = true;
-    onDevices().then(result => { if (active) setDevices(result); })
-      .catch(error => { if (active) setDevices({ inputs: [], outputs: [], errors: [error.message] }); });
-    return () => { active = false; };
-  }, [managed, value.enabled]);
   async function probe() {
     setTesting(true);
     try {
@@ -1866,24 +1850,7 @@ function QQCallSettings({ value, managed, disabled, status, onChange, onTest, on
     {value.enabled && <div className="settings-disclosure-body">
     {managed && <p className="settings-channel-note settings-qq-call-managed-note">连接地址和认证信息由桌面程序自动管理，无需填写。</p>}
     <Fields as="div" disabled={disabled}>
-      {managed && <>
-        {[["input_device", "inputs", "QQ 输入设备", "发给 QQ 的 Momoi 语音"], ["output_device", "outputs", "QQ 输出设备", "接收 QQ 通话声音，供 Momoi 识别"]].map(([key, group, label, hint]) => {
-          const choices = devices[group] || [];
-          const selected = value[key] || "";
-          return <label className="settings-field" key={key}>
-            <span>{label}</span>
-            <select value={selected} disabled={disabled || deviceBusy} onChange={event => edit(key, event.target.value)}>
-              <option value="">自动选择 Steam 虚拟设备</option>
-              {selected && !choices.some(device => device.id === selected) && <option value={selected}>已选择的设备不可用，请重新选择</option>}
-              {choices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}
-            </select>
-            <small>{hint}</small>
-          </label>;
-        })}
-        <button type="button" className="quiet-button settings-button" disabled={disabled || deviceBusy} onClick={refreshDevices}>{deviceBusy ? "读取中…" : "刷新设备"}</button>
-        <p className="settings-channel-note">当前支持 Steam 虚拟音频线路，选择按设备标识保存。保存后重新连接语音服务；设备缺失时停止接听。</p>
-        {devices.errors?.length > 0 && <p className="settings-channel-note" role="status">{devices.errors.join("；")}</p>}
-      </>}
+      {managed && <p className="settings-channel-note">输入与输出设备请在桌面顶部的「音频 → 音频设备」中设置。</p>}
       {!managed && <>
       <OptionField name="bridge_url" spec={{ type: "string", label: "Bridge 地址", default: "" }} value={value.bridge_url} onChange={v => edit("bridge_url", v)} />
       <OptionField name="bridge_token" spec={{ type: "string", label: "认证 Token", secret: true }} value={value.bridge_token} onChange={v => edit("bridge_token", v)} />

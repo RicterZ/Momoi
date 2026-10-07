@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,10 +16,13 @@ def build(output, version, dotnet='dotnet'):
     subprocess.run([dotnet, 'publish', str(ROOT / 'desktop/Momoi.Desktop/Momoi.Desktop.csproj'),
                     '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
                     '-p:PublishSingleFile=false', '-p:Version=' + version, '-o', str(payload)], check=True)
+    (payload / "licenses").mkdir(exist_ok=True)
+    shutil.copyfile(ROOT / "tools/AudioRoutePoc/EarTrumpet-LICENSE.txt", payload / "licenses/EarTrumpet-LICENSE.txt")
     files = {p.relative_to(payload).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
              for p in sorted(payload.rglob('*')) if p.is_file()}
     manifest = {'version': version, 'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'files': files}
-    archive = output / f'Momoi-Shell-{version}-x64.zip'
+    content_id = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()[:16]
+    archive = output / f'Momoi-Shell-{version}-{content_id}-x64.zip'
     with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
         bundle.writestr('shell-manifest.json', json.dumps(manifest, indent=2))
         for name in files:

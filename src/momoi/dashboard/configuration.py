@@ -222,6 +222,33 @@ def register_configuration_routes(app, configuration, runtime):
         except (OSError, ImportError, RuntimeError):
             return web.json_response({"inputs": [], "outputs": [], "errors": ["暂时无法读取虚拟音频设备，请检查驱动安装后刷新"]}, status=503)
 
+    async def save_qq_call_devices(request):
+        if not os.environ.get("MOMOI_QQ_CALL_MANAGED"):
+            raise web.HTTPNotFound()
+        value = await body(request)
+        selected = {key: value.get(key, "") for key in ("input_device", "output_device")}
+        if any(not isinstance(item, str) for item in selected.values()):
+            raise web.HTTPBadRequest(text="设备标识无效")
+        from pathlib import Path
+        from ..qq_call.windows_audio import device_catalog
+        catalog = device_catalog(Path(__file__).resolve().parents[2] / "qq_call_bridge")
+        for key, group in (("input_device", "inputs"), ("output_device", "outputs")):
+            if selected[key] and selected[key] not in {item["id"] for item in catalog[group]}:
+                raise web.HTTPBadRequest(text="所选虚拟音频设备不可用，请刷新设备列表")
+        current = configuration.read_app()
+        channel = current.get("channels", {}).get("enabled", {}).get("napcat")
+        if not isinstance(channel, dict):
+            raise web.HTTPBadRequest(text="请先在 QQ 设置中启用 QQ 渠道")
+        channel["voice_call"] = {**channel.get("voice_call", {}), **selected}
+        try:
+            result = configuration.save_runtime({"channels": current["channels"]}, value.get("revision"))
+        except RevisionConflict as error:
+            raise web.HTTPConflict(text=str(error)) from None
+        except (ValueError, OSError) as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        runtime.request_apply()
+        return web.json_response(result)
+
     async def test_qq_call(request):
         from ..channel.napcat.config import QQCallConfig
         from ..config.manager import restore_secrets
@@ -262,6 +289,7 @@ def register_configuration_routes(app, configuration, runtime):
     app.router.add_put("/api/settings/providers", save)
     app.router.add_patch("/api/settings/configuration/app", save)
     app.router.add_get("/api/settings/channels/napcat/voice-call/devices", qq_call_devices)
+    app.router.add_put("/api/settings/channels/napcat/voice-call/devices", save_qq_call_devices)
     app.router.add_post("/api/settings/channels/napcat/voice-call/test", test_qq_call)
     app.router.add_get("/api/settings/runtime", status)
     app.router.add_post("/api/settings/apply", apply)
