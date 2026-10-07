@@ -79,9 +79,10 @@ begin
   if RegGetSubkeyNames(HKLM64, Base, Keys) then
     for I := 0 to GetArrayLength(Keys) - 1 do
       if RegQueryDWordValue(HKLM64, Base + '\' + Keys[I], 'DeviceState', State) then
-        if (State and 15) = 1 then
-          if RegQueryStringValue(HKLM64, Base + '\' + Keys[I] + '\Properties', '{a45c254e-df1c-4efd-8020-67d146a850e0},14', LabelText) then
-            CableDevices.Lines.Add(Flow + ': ' + LabelText);
+        if RegQueryStringValue(HKLM64, Base + '\' + Keys[I] + '\Properties', '{a45c254e-df1c-4efd-8020-67d146a850e0},14', LabelText) then begin
+          if (State and 15) <> 1 then LabelText := LabelText + ' (unavailable)';
+          CableDevices.Lines.Add(Flow + ': ' + LabelText);
+        end;
 end;
 
 procedure InitializeWizard;

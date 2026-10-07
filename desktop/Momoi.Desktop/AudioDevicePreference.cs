@@ -24,9 +24,9 @@ internal static class AudioDevicePreference
             {
                 using var device = root.OpenSubKey(key);
                 using var properties = root.OpenSubKey(key + @"\Properties");
-                if (device?.GetValue("DeviceState") is not int state || (state & 15) != 1) continue;
+                if (device?.GetValue("DeviceState") is not int state) continue;
                 string name = properties?.GetValue("{a45c254e-df1c-4efd-8020-67d146a850e0},14") as string ?? key;
-                yield return (flow == "Capture" ? "输入：" : "输出：") + name;
+                yield return (flow == "Capture" ? "输入：" : "输出：") + name + ((state & 15) == 1 ? "" : "（不可用）");
             }
         }
     }
