@@ -56,7 +56,9 @@ def test_close_cancels_current_and_prefetched_synthesis():
     asyncio.run(scenario())
 
 
-def test_prefetch_failure_is_raised_in_playback_order():
+def test_prefetch_failure_does_not_abort_preceding_audio(monkeypatch):
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr("momoi.qq_call.speech.asyncio.sleep", AsyncMock())
     async def scenario():
         class Provider:
             async def stream_pcm(self, text):
@@ -68,10 +70,10 @@ def test_prefetch_failure_is_raised_in_playback_order():
             assert await anext(stream) == b'a'
             try:
                 await anext(stream)
-            except ValueError as error:
-                assert str(error) == 'synthesis failed'
+            except StopAsyncIteration:
+                pass
             else:
-                assert False, 'Must surface synthesis failure'
+                assert False, 'Failed final bubble must finish without replaying audio'
 
     asyncio.run(scenario())
 

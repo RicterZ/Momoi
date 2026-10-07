@@ -199,3 +199,45 @@ def test_channel_preserves_synthesis_error_in_streaming_failure():
                 assert False, 'Must preserve synthesis error'
 
     asyncio.run(scenario())
+
+
+def test_bubble_tts_retries_three_times_and_continues_other_bubbles(monkeypatch):
+    from unittest.mock import AsyncMock
+    from momoi.qq_call.speech import bubble_pcm
+    from momoi.integrations.contracts.tts import TTSError
+    delay = AsyncMock()
+    monkeypatch.setattr('momoi.qq_call.speech.asyncio.sleep', delay)
+    attempts = {}
+    class Provider:
+        async def stream_pcm(self, text):
+            attempts[text] = attempts.get(text, 0) + 1
+            if text == 'failed' or (text == 'retry' and attempts[text] < 4):
+                raise TTSError('synthetic error')
+            yield b'\x01\x00'
+    async def scenario():
+        audio = b''.join([chunk async for chunk in bubble_pcm(Provider(), 'failed\n\nretry\n\nsuccess')])
+        assert audio == b'\x01\x00' * 2
+        assert attempts == {'failed': 4, 'retry': 4, 'success': 1}
+        assert sorted(call.args[0] for call in delay.await_args_list) == [1, 1, 2, 2, 3, 3]
+        import pytest
+        with pytest.raises(TTSError):
+            _ = [chunk async for chunk in bubble_pcm(Provider(), 'failed')]
+    asyncio.run(scenario())
+
+
+def test_bubble_partial_failure_never_replays_audio_and_continues():
+    from momoi.qq_call.speech import bubble_pcm
+    from momoi.integrations.contracts.tts import TTSError
+    calls = []
+    class Provider:
+        async def stream_pcm(self, text):
+            calls.append(text)
+            yield b'\x01\x00'
+            if text == 'partial':
+                raise TTSError('synthetic partial failure')
+    async def scenario():
+        chunks = [chunk async for chunk in bubble_pcm(Provider(), 'partial\n\nnext')]
+        assert chunks[0] == chunks[-1] == b'\x01\x00'
+        assert sum(chunk.count(b'\x01') for chunk in chunks) == 2
+        assert calls == ['partial', 'next']
+    asyncio.run(scenario())
