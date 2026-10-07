@@ -105,7 +105,14 @@ Get-ChildItem $Prerequisites -Filter *.exe | Get-FileHash -Algorithm SHA256 | Fo
 if (-not $IsccPath) {
     $IsccPath = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6/ISCC.exe"
 }
-Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_installer_files.py", "--stage", $Stage, "--output", "build/windows-installer-files.iss")
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_qq_pair.py", "--stage", $Stage, "--output", "build/windows-qq-pin.iss")
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_installer_files.py", "--stage", $Stage, "--component", "qq", "--output", "build/windows-qq-files.iss")
+Invoke-Checked $IsccPath @("packaging/windows/qq_components.iss")
+$Pair = Get-Content (Join-Path $Stage "runtime/qq-pair/components.json") -Raw | ConvertFrom-Json
+$QQInstallers = @(Get-ChildItem "dist/windows/Momoi-QQ-Components-$($Pair.version)-*-x64.exe" | Sort-Object LastWriteTime -Descending)
+$QQInstaller = $QQInstallers[0].FullName
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_qq_pair.py", "--stage", $Stage, "--output", "build/windows-qq-pin.iss", "--archive", $QQInstaller)
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_installer_files.py", "--stage", $Stage, "--component", "main", "--output", "build/windows-installer-files.iss")
 Invoke-Checked $IsccPath @("/DAppVersion=$Version", "packaging/windows/installer.iss")
 $Installer = Join-Path $Root "dist/windows/Momoi-Setup-$Version-x64.exe"
 Get-FileHash $Installer -Algorithm SHA256 | Format-List

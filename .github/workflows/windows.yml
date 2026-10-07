@@ -77,6 +77,8 @@ jobs:
           name: Momoi-Windows-x64
           path: |
             dist/windows/Momoi-Setup-*-x64.exe
+            dist/windows/Momoi-QQ-Components-*-x64.exe
+            dist/windows/Momoi-QQ-Components-*-x64.json
             dist/windows/releases/Momoi-Code-*.zip
             dist/windows/releases/runtime.json
           if-no-files-found: error
@@ -116,4 +118,4 @@ jobs:
             echo "Expected exactly one tested Windows installer" >&2
             exit 1
           fi
-          gh release upload "$RELEASE_TAG" "${installers[0]}" --clobber
+          gh release upload "$RELEASE_TAG" "${installers[0]}" dist/windows/Momoi-QQ-Components-*-x64.exe dist/windows/Momoi-QQ-Components-*-x64.json --clobber

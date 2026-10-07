@@ -12,7 +12,13 @@ function Install-App {
     if ($Setup.ExitCode -ne 0) { throw "Installer failed: $($Setup.ExitCode)" }
 }
 try {
+    $ComponentPackages = @(Get-ChildItem (Split-Path $Installer) -Filter 'Momoi-QQ-Components-*-x64.exe')
+    if ($ComponentPackages.Count -ne 1) { throw 'Expected one frozen QQ component package beside main installer' }
+    $ComponentMetadata = Get-Content ([IO.Path]::ChangeExtension($ComponentPackages[0].FullName, '.json')) -Raw | ConvertFrom-Json
+    if ((Get-FileHash $ComponentPackages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ComponentMetadata.sha256) { throw 'Component artifact hash mismatch' }
     Install-App (Join-Path $Evidence 'install.log')
+    $InstalledPair = (Get-Content (Join-Path $Target 'runtime/qq-pair/pair-id.txt') -Raw).Trim()
+    if ($InstalledPair -ne $ComponentMetadata.pair_id) { throw 'Installed QQ pair differs from lock' }
     # Record logical file sizes before startup creates user data and caches.
     $Sizes = @{}
     $SizeRoot = (Get-Item $Target).FullName
@@ -108,11 +114,23 @@ try {
     Set-Content $Sentinel 'Momoi user data survives upgrades and uninstall'
     $Expected = (Get-FileHash $Sentinel).Hash
     Set-Content (Join-Path $QQApp 'major.node') 'obsolete-native-module'
+    Remove-Item (Join-Path $Target 'runtime/qq-pair/pair-id.txt')
+    # Force component reinstall to verify old-file cleanup.
     Install-App (Join-Path $Evidence 'reinstall.log')
     if (Test-Path (Join-Path $QQApp 'major.node')) { throw 'Upgrade did not remove obsolete QQ voice module' }
     if ((Get-FileHash $Sentinel).Hash -ne $Expected) { throw 'Reinstall changed user data' }
+    $HiddenPackage = $ComponentPackages[0].FullName + '.offline-check'
+    Move-Item $ComponentPackages[0].FullName $HiddenPackage
+    try {
+        Install-App (Join-Path $Evidence 'reuse-components.log')
+    } finally {
+        Move-Item $HiddenPackage $ComponentPackages[0].FullName
+    }
+    if ((Get-FileHash $Sentinel).Hash -ne $Expected) { throw 'Reusing components changed user data' }
     $Uninstall = Start-Process -FilePath (Join-Path $Target 'unins000.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$(Join-Path $Evidence 'uninstall.log')`"") -PassThru -Wait
     if ($Uninstall.ExitCode -ne 0) { throw "Uninstaller failed: $($Uninstall.ExitCode)" }
+    if (Test-Path (Join-Path $Target 'runtime/napcat')) { throw 'Uninstall left QQ components' }
+    if (Test-Path (Join-Path $Target 'runtime/qq-call')) { throw 'Uninstall left voice components' }
     if (Test-Path (Join-Path $Target 'Momoi.exe')) { throw 'Uninstall left the native application installed' }
     if ((Get-FileHash $Sentinel).Hash -ne $Expected) { throw 'Uninstall removed user data' }
     'PASS: real silent installation, Users data ACL, installed backend/BGE/MCP, native QQ/WebUI startup and child cleanup, native shell window/startup/shutdown, reinstall and uninstall data retention.' | Set-Content (Join-Path $Evidence 'result.txt')

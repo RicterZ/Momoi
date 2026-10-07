@@ -1,0 +1,29 @@
+{
+  "version": "1.1.2",
+  "layout": "trimmed-avsdk-v1",
+  "napcat": {
+    "version": "v4.18.30",
+    "url": "https://github.com/NapNeko/NapCatQQ/releases/download/v4.18.30/NapCat.Shell.Windows.Node.zip",
+    "sha256": "f41fc5880a4abbf83c380e2b85fd15289319dc6ee17cc06da56c0edc8396158b",
+    "qq_native": {
+      "version": "9.9.31-49738",
+      "url": "https://github.com/Rodert/qq-versions/releases/download/qq-packages-20260528-3e8913a2/QQ_9.9.31_260528_x64_01.exe",
+      "sha256": "0beb5cb4ff776cba822caa0abadbd53f5892f12628a86dabea1b372c82c086bc"
+    }
+  },
+  "qq_call": {
+    "qq": {
+      "version": "9.9.31-49738",
+      "url": "https://github.com/Rodert/qq-versions/releases/download/qq-packages-20260528-3e8913a2/QQ_9.9.31_260528_x64_01.exe",
+      "sha256": "0beb5cb4ff776cba822caa0abadbd53f5892f12628a86dabea1b372c82c086bc"
+    },
+    "loader": {
+      "version": "v4.18.30",
+      "base_url": "https://raw.githubusercontent.com/NapNeko/NapCatQQ/v4.18.30/packages/napcat-shell-loader/",
+      "files": {
+        "NapCatWinBootMain.exe": "bd8ec316582bfb25e3b9b7f27a22c91437584f29879950462f789fd7bb111949",
+        "NapCatWinBootHook.dll": "962bd5caf59e9792c37eed99c9130bf1464d619d0209820be570874017d66925"
+      }
+    }
+  }
+}

@@ -2,6 +2,7 @@
   #define AppVersion "1.1.2"
 #endif
 #define Root "..\.."
+#include "..\..\build\windows-qq-pin.iss"
 
 [Setup]
 AppId={{9043C31D-8A34-49ED-81BB-2AE3057FEBA7}
@@ -44,15 +45,6 @@ Name: "{app}\data"; Permissions: users-modify; Flags: uninsneveruninstall
 Source: "{#Root}\build\windows-prerequisites\WebView2RuntimeInstallerX64.exe"; Flags: dontcopy
 Source: "{#Root}\build\windows-prerequisites\vc_redist.x64.exe"; Flags: dontcopy
 
-[InstallDelete]
-; Remove obsolete native files left by older installers; user data is separate.
-Type: filesandordirs; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\wmpfsdk"
-Type: filesandordirs; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\miniapp"
-Type: filesandordirs; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\QQScreenShot"
-Type: files; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\major.node"
-Type: files; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\wrapper.node"
-Type: files; Name: "{app}\runtime\qq-call\qq\Files\versions\9.9.31-49738\resources\app\application.asar"
-
 [Icons]
 Name: "{group}\Momoi"; Filename: "{app}\Momoi.exe"
 Name: "{autodesktop}\Momoi"; Filename: "{app}\Momoi.exe"; Tasks: desktopicon
@@ -60,7 +52,58 @@ Name: "{autodesktop}\Momoi"; Filename: "{app}\Momoi.exe"; Tasks: desktopicon
 [Run]
 Filename: "{app}\Momoi.exe"; Description: "Launch Momoi"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\runtime\napcat"
+Type: filesandordirs; Name: "{app}\runtime\qq-call"
+Type: filesandordirs; Name: "{app}\runtime\qq-pair"
+
 [Code]
+var
+  QQDownloadPage: TDownloadWizardPage;
+
+procedure InitializeWizard;
+begin
+  QQDownloadPage := CreateDownloadPage('Installing QQ components', 'Downloading the version locked to this Momoi installer.', nil);
+end;
+
+procedure StopMomoi; forward;
+
+function InstallQQPair: String;
+var
+  PackagePath, Marker: String;
+  Code: Integer;
+begin
+  Result := '';
+  Marker := '';
+  if LoadStringFromFile(ExpandConstant('{app}\runtime\qq-pair\pair-id.txt'), Marker) then
+    if (Trim(Marker) = '{#QQPairId}') and
+       FileExists(ExpandConstant('{app}\runtime\napcat\wrapper.node')) and
+       FileExists(ExpandConstant('{app}\runtime\qq-call\qq\Files\QQ.exe')) then exit;
+  try
+    PackagePath := ExpandConstant('{src}\{#QQPackageName}');
+    if not FileExists(PackagePath) then begin
+      QQDownloadPage.Clear;
+      QQDownloadPage.Add('{#QQPackageURL}', '{#QQPackageName}', '{#QQPackageSHA256}');
+      QQDownloadPage.Show;
+      try
+        QQDownloadPage.Download;
+      finally
+        QQDownloadPage.Hide;
+      end;
+      PackagePath := ExpandConstant('{tmp}\{#QQPackageName}');
+    end;
+    if CompareText(GetSHA256OfFile(PackagePath), '{#QQPackageSHA256}') <> 0 then
+      RaiseException('QQ component package checksum mismatch.');
+    if not Exec(PackagePath, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="' + ExpandConstant('{app}') + '"', '', SW_HIDE, ewWaitUntilTerminated, Code) then
+      RaiseException('Could not start QQ component installer.');
+    if Code <> 0 then RaiseException(Format('QQ component installation failed (%d).', [Code]));
+    if not LoadStringFromFile(ExpandConstant('{app}\runtime\qq-pair\pair-id.txt'), Marker) then
+      RaiseException('QQ component version marker missing.');
+    if Trim(Marker) <> '{#QQPairId}' then RaiseException('QQ component version mismatch.');
+  except
+    Result := GetExceptionMessage;
+  end;
+end;
 function WebViewInstalled: Boolean;
 var
   Version: String;
@@ -87,11 +130,16 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
+  StopMomoi;
   if not InstallPrerequisite('vc_redist.x64.exe', '/install /quiet /norestart', Result) then exit;
   if not WebViewInstalled then begin
     if not InstallPrerequisite('WebView2RuntimeInstallerX64.exe', '/silent /install', Result) then exit;
-    if not WebViewInstalled then Result := 'WebView2 Runtime installation could not be verified.';
+    if not WebViewInstalled then begin
+      Result := 'WebView2 Runtime installation could not be verified.';
+      exit;
+    end;
   end;
+  Result := InstallQQPair;
 end;
 
 procedure StopMomoi;

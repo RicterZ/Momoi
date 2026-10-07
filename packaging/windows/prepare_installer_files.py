@@ -9,9 +9,11 @@ def quoted(value):
     return '"' + str(value).replace('"', '""') + '"'
 
 
-def prepare(stage: Path, output: Path):
+def prepare(stage: Path, output: Path, component="all"):
     stage = stage.resolve()
     files = sorted(p for p in stage.rglob('*') if p.is_file() and p.relative_to(stage).parts[0] != 'data')
+    if component != "all":
+        files = [p for p in files if (p.relative_to(stage).as_posix().startswith(("runtime/napcat/", "runtime/qq-call/", "runtime/qq-pair/"))) == (component == "qq")]
     sources = {}
     entries = []
     duplicates = []
@@ -38,6 +40,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--stage', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--component', choices=['all', 'main', 'qq'], default='all')
     args = parser.parse_args()
-    report = prepare(args.stage, args.output)
+    report = prepare(args.stage, args.output, args.component)
     print(json.dumps({key: value for key, value in report.items() if key != 'duplicates'}))
