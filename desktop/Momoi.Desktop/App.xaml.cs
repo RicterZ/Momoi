@@ -188,13 +188,13 @@ public partial class App : Application
         };
         MenuItem Item(string label, Action action)
         {
-            var item = new MenuItem { Header = label, Padding = new Thickness(14, 9, 14, 9) };
+            var item = new MenuItem { Header = label, Padding = new Thickness(16, 10, 16, 10) };
             item.Click += (_, _) => action();
             menu.Items.Add(item);
             return item;
         }
         Item("日志", ShowLogs);
-        var qq = new MenuItem { Header = "QQ 设置", Padding = new Thickness(14, 9, 14, 9) };
+        var qq = new MenuItem { Header = "QQ 设置", Padding = new Thickness(16, 10, 16, 10) };
         var channel = new MenuItem { Header = "消息渠道设置" };
         channel.Click += async (_, _) => await OpenSettingsAsync("channel");
         var login = new MenuItem { Header = "打开 QQ 登录窗口" };
@@ -209,7 +209,7 @@ public partial class App : Application
             Directory.CreateDirectory(workspace);
             Process.Start(new ProcessStartInfo(workspace) { UseShellExecute = true });
         });
-        var audio = new MenuItem { Header = "音频", Padding = new Thickness(14, 9, 14, 9) };
+        var audio = new MenuItem { Header = "音频", Padding = new Thickness(16, 10, 16, 10) };
         var devices = new MenuItem { Header = "音频设备" };
         devices.Click += (_, _) => OpenAudioDevices();
         var voice = new MenuItem { Header = "语音识别与合成设置" };

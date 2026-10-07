@@ -5,6 +5,8 @@
     <SolidColorBrush x:Key="Canvas" Color="#f7f8fb"/>
     <SolidColorBrush x:Key="Pink" Color="#ff658d"/>
     <SolidColorBrush x:Key="PinkSoft" Color="#fff0f4"/>
+    <Geometry x:Key="ChevronDown">M 1,1 L 6,4.5 L 11,1</Geometry>
+    <Geometry x:Key="ChevronRight">M 1,1 L 4.5,6 L 1,11</Geometry>
     <Style TargetType="Menu">
         <Setter Property="Background" Value="White"/>
         <Setter Property="Foreground" Value="{StaticResource Ink}"/>
@@ -27,7 +29,7 @@
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="Arrow" Grid.Column="1" Text="⌄" Margin="8,0,0,0" Foreground="{StaticResource Muted}" Visibility="Collapsed" VerticalAlignment="Center"/>
+                                <Path x:Name="Arrow" Grid.Column="1" Data="{StaticResource ChevronDown}" Width="12" Height="6" Margin="10,0,0,0" Stroke="{StaticResource Muted}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Visibility="Collapsed" VerticalAlignment="Center"/>
                             </Grid>
                         </Border>
                         <Popup x:Name="PART_Popup" Placement="Bottom" HorizontalOffset="0" VerticalOffset="6" AllowsTransparency="True" Focusable="False" IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}" PopupAnimation="Fade">
@@ -42,7 +44,7 @@
                         <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource PinkSoft}"/></Trigger>
                         <Trigger Property="IsSubmenuOpen" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource PinkSoft}"/><Setter Property="Foreground" Value="{StaticResource Pink}"/></Trigger>
                         <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
-                        <Trigger Property="Role" Value="SubmenuHeader"><Setter TargetName="PART_Popup" Property="Placement" Value="Right"/><Setter TargetName="Arrow" Property="Text" Value="›"/></Trigger>
+                        <Trigger Property="Role" Value="SubmenuHeader"><Setter TargetName="PART_Popup" Property="Placement" Value="Right"/><Setter TargetName="Arrow" Property="Data" Value="{StaticResource ChevronRight}"/><Setter TargetName="Arrow" Property="Width" Value="6"/><Setter TargetName="Arrow" Property="Height" Value="12"/></Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
@@ -65,7 +67,7 @@
                 <Grid>
                     <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
                         <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border CornerRadius="10" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1"><ContentPresenter/></Border></ControlTemplate></ToggleButton.Template>
-                        <Grid Margin="12,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="⌄" Margin="12,0,0,0" Foreground="{StaticResource Muted}"/></Grid>
+                        <Grid Margin="12,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" VerticalAlignment="Center"/><Path Grid.Column="1" Data="{StaticResource ChevronDown}" Width="12" Height="6" Margin="12,0,0,0" Stroke="{StaticResource Muted}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" VerticalAlignment="Center"/></Grid>
                     </ToggleButton>
                     <Popup Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" IsOpen="{TemplateBinding IsDropDownOpen}" PopupAnimation="Fade">
                         <Border Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="10" Padding="5" Margin="0,5,0,0" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"><ScrollViewer MaxHeight="240"><ItemsPresenter/></ScrollViewer></Border>
