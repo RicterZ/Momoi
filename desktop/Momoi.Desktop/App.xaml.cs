@@ -284,13 +284,20 @@ public partial class App : Application
     {
         try
         {
+            loadingView?.SetDetail("1/5 · 检查运行环境");
             // Fail early with a useful installer message if WebView2 is missing.
             CoreWebView2Environment.GetAvailableBrowserVersionString();
             releases = new ReleaseStore(AppContext.BaseDirectory, workspace);
             currentRelease = releases.Initialize();
             backend = new BackendHost(workspace);
+            backend.StartupProgress += detail => Dispatcher.BeginInvoke(() =>
+            {
+                if (!exiting && !dashboardReady && !updateBusy) loadingView?.SetDetail(detail);
+            });
+            loadingView?.SetDetail("2/5 · 启动后台");
             var ready = await backend.StartAsync(workspace, currentRelease, lifetime.Token);
             if (exiting) return;
+            loadingView?.SetDetail("5/5 · 打开面板");
             await LoadDashboardAsync(ready);
             _ = WatchBackendAsync(backend);
             try

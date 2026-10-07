@@ -55,9 +55,11 @@ async def serve(args):
             pass  # Event loop has already exited.
 
     threading.Thread(target=watch_parent, daemon=True).start()
+    print(json.dumps({"event": "startup_progress", "stage": "model"}), flush=True)
     encoder = await asyncio.to_thread(load_encoder, args.model_path.resolve())
     if stop.is_set():
         return
+    print(json.dumps({"event": "startup_progress", "stage": "workspace"}), flush=True)
     prepare_workspace(workspace, f"http://127.0.0.1:{args.embedding_port}/v1/embeddings")
     from .emotions import seed_emotions
 
@@ -103,6 +105,7 @@ async def serve(args):
                     await asyncio.sleep(0.1)
         raise TimeoutError("dashboard did not become ready")
 
+    print(json.dumps({"event": "startup_progress", "stage": "services"}), flush=True)
     async with asyncio.TaskGroup() as group:
         group.create_task(embedding_service())
         group.create_task(stop_embedding())

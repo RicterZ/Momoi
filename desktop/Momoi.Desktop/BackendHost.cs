@@ -22,6 +22,7 @@ internal sealed class BackendHost : IAsyncDisposable
     private readonly TaskCompletionSource<BackendReady> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly string logPath;
     private readonly object logGate = new();
+    public event Action<string>? StartupProgress;
     public Task Completion => process?.WaitForExitAsync() ?? Task.CompletedTask;
 
     public BackendHost(string workspace)
@@ -87,6 +88,21 @@ internal sealed class BackendHost : IAsyncDisposable
             {
                 using var document = JsonDocument.Parse(line);
                 var root = document.RootElement;
+                if (root.TryGetProperty("event", out var progressEvent) && progressEvent.GetString() == "startup_progress")
+                {
+                    if (root.TryGetProperty("stage", out var stage))
+                    {
+                        string? detail = stage.GetString() switch
+                        {
+                            "model" => "2/5 · 加载本地模型",
+                            "workspace" => "3/5 · 初始化配置",
+                            "services" => "4/5 · 启动服务",
+                            _ => null,
+                        };
+                        if (detail is not null) StartupProgress?.Invoke(detail);
+                    }
+                    continue;
+                }
                 if (root.TryGetProperty("event", out var eventName) && eventName.GetString() == "ready")
                 {
                     string url = root.GetProperty("url").GetString()!;
