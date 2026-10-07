@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -404,8 +405,11 @@ class NapCatChannel:
             if directory is None:
                 raise ValueError("attachment directory is not configured")
             name = media_display_name(str(data.get("name") or data.get("file") or "attachment")) or "attachment"
-            # Isolate every transfer; preserve the filename without trusting its directories.
-            destination = directory / uuid.uuid4().hex / name
+            # Never use a sender-controlled name as a filesystem component.
+            suffix = Path(name).suffix.lower()
+            if not re.fullmatch(r"\.[a-z0-9]{1,10}", suffix):
+                suffix = ""
+            destination = directory / (uuid.uuid4().hex + suffix)
             content, _ = await self._download_media(source)
             def save() -> None:
                 destination.parent.mkdir(parents=True, exist_ok=True)

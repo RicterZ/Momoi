@@ -296,15 +296,26 @@ def test_received_file_downloads_to_workspace_and_renders_local_path(tmp_path):
                     'file': '../../sample.txt', 'file_id': 'synthetic-id'}},))
                 path = Path(segments[0]['data']['file'])
                 assert path.read_bytes() == b'synthetic text'
-                assert path.name == 'sample.txt'
+                assert path.suffix == '.txt'
+                assert len(path.stem) == 32
+                assert segments[0]['data']['name'] == 'sample.txt'
                 assert path.is_relative_to(tmp_path / 'channel/napcat/files')
                 assert str(path) in render_segments(segments)
                 item._request_action.assert_awaited_once_with('get_private_file_url', {'file_id': 'synthetic-id'})
+                for malicious in ('../..', '../../evil.txt:stream', '../../evil.ＴＸＴ', 'evil.abcdefghijk', '/tmp/test.TXT'):
+                    received = await item._enrich_segments(({'type': 'file', 'data': {
+                        'file': malicious, 'url': f'http://127.0.0.1:{port}/asset'}},))
+                    safe_path = Path(received[0]['data']['file'])
+                    assert safe_path.parent == tmp_path / 'channel/napcat/files'
+                    assert len(safe_path.stem) == 32
+                    assert safe_path.suffix in ('', '.txt')
+                    assert safe_path.read_bytes() == b'synthetic text'
+                before = set((tmp_path / 'channel/napcat/files').iterdir())
                 object.__setattr__(config, 'media_max_bytes', 2)
                 failed = await item._enrich_segments(({'type': 'file', 'data': {
                     'file': 'large.txt', 'url': f'http://127.0.0.1:{port}/asset'}},))
                 assert 'source=unavailable' in render_segments(failed)
-                assert len(list((tmp_path / 'channel/napcat/files').glob('*/*'))) == 1
+                assert set((tmp_path / 'channel/napcat/files').iterdir()) == before
         finally:
             await runner.cleanup()
     asyncio.run(scenario())
