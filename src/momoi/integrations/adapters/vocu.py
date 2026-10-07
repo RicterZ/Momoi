@@ -102,6 +102,11 @@ class VocuTTSProvider(TTSProvider):
                         yield chunk
                     if not total:
                         raise self._error("Vocu TTS returned empty audio")
+        except aiohttp.ClientConnectorCertificateError as error:
+            certificate = error.certificate_error
+            reason = getattr(certificate, "verify_message", "certificate verification failed")
+            raise self._error(f"Vocu TLS certificate verification failed for {error.host}: {reason}",
+                              category=ErrorCategory.CONNECTION) from None
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:
             # URLs and server bodies may contain signed tokens, API keys or input text.
             raise self._error(f"Vocu TTS request failed: {type(error).__name__}",

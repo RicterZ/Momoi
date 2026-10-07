@@ -1,7 +1,16 @@
 from contextlib import asynccontextmanager
 import sys
+import ssl
 
 import aiohttp
+import certifi
+
+
+def client_tls_context():
+    context = ssl.create_default_context()
+    # Keep OS/custom trust roots and supplement clean Windows installations.
+    context.load_verify_locations(cafile=certifi.where())
+    return context
 
 
 class HTTPTransport:
@@ -15,7 +24,10 @@ class HTTPTransport:
         self._session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self):
-        self._session = aiohttp.ClientSession(trust_env=sys.platform == "win32")
+        self._session = aiohttp.ClientSession(
+            trust_env=sys.platform == "win32",
+            connector=aiohttp.TCPConnector(ssl=client_tls_context()),
+        )
         return self
 
     async def __aexit__(self, *_exc):
@@ -30,6 +42,7 @@ class HTTPTransport:
         else:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=timeout_seconds),
-                trust_env=sys.platform == "win32"
+                trust_env=sys.platform == "win32",
+                connector=aiohttp.TCPConnector(ssl=client_tls_context()),
             ) as session:
                 yield session
