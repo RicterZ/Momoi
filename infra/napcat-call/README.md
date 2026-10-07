@@ -1,7 +1,20 @@
-# NapCat 通话版镜像
+# NapCat Voice Call Bridge
 
-为 Momoi 提供 QQ 语音电话能力的 Linux Docker 镜像，在 NapCat 的消息收发功能上加入通话 Bridge。
+A Linux Docker image that adds QQ voice calls to NapCat for Momoi. It combines NapCat, the QQ AVSDK bridge, and an audio broker while retaining NapCat's existing messaging support.
 
-支持自动接听主人来电，将通话语音识别成文字交给 Momoi，再把回复合成为语音播放。电话与普通 QQ 聊天共用对话历史，可以延续之前的话题。
+## Features
 
-回复支持流式播放和分段预合成。主人插话时停止当前回复，挂断后取消剩余语音。Momoi 可通过网络连接 Bridge，支持与通话服务分开部署。
+- Automatically answers incoming calls from the configured owner when Momoi is ready.
+- Routes incoming speech through Momoi's ASR, Planner, and Replyer, then plays synthesized replies back into the call.
+- Shares conversation history with regular QQ messages.
+- Streams reply audio and prefetches subsequent speech bubbles for sequential playback.
+- Interrupts playback when the owner speaks and cancels pending audio when the call ends.
+- Supports running Momoi and the bridge on separate hosts.
+
+## Components
+
+- **NapCat:** QQ messaging and call events.
+- **AVSDK bridge:** Native QQ call handling and audio routing, based on `RicterZ/maibot-qq-voice-call`.
+- **Audio broker:** Authenticated connection to Momoi for incoming audio, playback, and call status.
+
+Momoi supplies speech recognition, reply generation, and speech synthesis. This image contains the Linux call infrastructure; it does not provide standalone conversational behavior.
