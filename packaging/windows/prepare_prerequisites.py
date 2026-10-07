@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+from urllib.parse import urlparse
 
 
 def prepare(source, destination, include):
@@ -15,7 +16,13 @@ def prepare(source, destination, include):
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         filename = path.stem + '-' + digest[:16] + '.exe'
         shutil.copy2(path, destination / filename)
-        url = 'https://momoi-1253047877.cos.ap-guangzhou.myqcloud.com/windows/prerequisites/' + filename
+        origin = json.loads(path.with_name(path.name + '.origin.json').read_text(encoding='utf-8-sig'))
+        url = origin['url']
+        host = urlparse(url).hostname or ''
+        if urlparse(url).scheme != 'https' or not (host == 'microsoft.com' or host.endswith('.microsoft.com')):
+            raise ValueError('Prerequisite download must use Microsoft HTTPS origin')
+        if origin['sha256'] != digest:
+            raise ValueError('Prerequisite differs from captured official download')
         specs.append({'key': key, 'filename': filename, 'sha256': digest, 'bytes': path.stat().st_size, 'url': url})
     include.write_text('\n'.join(f'#define {item["key"]}{suffix} "{item[field]}"' for item in specs
         for suffix, field in [('Name', 'filename'), ('SHA256', 'sha256'), ('URL', 'url')])+'\n', encoding='utf-8')

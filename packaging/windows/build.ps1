@@ -81,13 +81,21 @@ New-Item -ItemType Directory -Path $Prerequisites -Force | Out-Null
 function Get-MicrosoftInstaller {
     param([string]$Provided, [string]$Url, [string]$Name)
     $Destination = Join-Path $Prerequisites $Name
-    if ($Provided) { Copy-Item $Provided $Destination -Force }
-    elseif (-not (Test-Path $Destination)) {
+    $OriginPath = "$Destination.origin.json"
+    if ($Provided) {
+        Copy-Item $Provided $Destination -Force
+        $ProvidedOrigin = "$Provided.origin.json"
+        if (-not (Test-Path $ProvidedOrigin)) { throw "Provided prerequisite requires its official origin metadata: $ProvidedOrigin" }
+        Copy-Item $ProvidedOrigin $OriginPath -Force
+    }
+    elseif (-not (Test-Path $Destination) -or -not (Test-Path $OriginPath)) {
         $Partial = "$Destination.partial"
         for ($Attempt = 1; $Attempt -le 4; $Attempt++) {
             try {
-                Invoke-WebRequest -Uri $Url -OutFile $Partial
+                $Response = Invoke-WebRequest -Uri $Url -OutFile $Partial -PassThru
+                $OfficialURL = $Response.BaseResponse.RequestMessage.RequestUri.AbsoluteUri
                 Move-Item $Partial $Destination -Force
+                @{url=$OfficialURL; sha256=(Get-FileHash $Destination -Algorithm SHA256).Hash.ToLowerInvariant()} | ConvertTo-Json | Set-Content $OriginPath -Encoding UTF8
                 break
             }
             catch {

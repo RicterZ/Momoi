@@ -30,6 +30,7 @@ def test_prerequisite_manifest_binds_offline_files_and_downloads(tmp_path):
     source.mkdir()
     for name in ('WebView2RuntimeInstallerX64.exe', 'vc_redist.x64.exe'):
         (source / name).write_bytes(name.encode())
+        (source / (name + '.origin.json')).write_text(json.dumps({'url': 'https://download.microsoft.com/pinned/' + name, 'sha256': hashlib.sha256(name.encode()).hexdigest()}))
     include = tmp_path / 'pin.iss'
     result = module.prepare(source, destination, include)
     assert len(result) == 2
@@ -38,5 +39,5 @@ def test_prerequisite_manifest_binds_offline_files_and_downloads(tmp_path):
         shipped = destination / item['filename']
         assert hashlib.sha256(shipped.read_bytes()).hexdigest() == item['sha256']
         assert item['sha256'][:16] in shipped.name
-        assert item['url'].endswith(shipped.name)
+        assert item['url'].startswith('https://download.microsoft.com/pinned/')
         assert item['sha256'] in include.read_text()
