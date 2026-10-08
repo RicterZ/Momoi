@@ -58,7 +58,7 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "read_file",
         "description": (
-            '按行范围或返回的字符偏移量读取 UTF-8 文本。返回编号行的数组；偏移量指原始文件文本中的位置。'
+            '按行范围或返回的字符偏移量读取 UTF-8 文本。返回原文 content 和起止行号；默认最多 200 行，偏移量指原始文件文本中的位置。'
         ),
         "input_schema": {
             "type": "object",
@@ -79,7 +79,7 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 4000,
-                    "default": 1000,
+                    "default": 200,
                 },
             },
             "required": ["path"],

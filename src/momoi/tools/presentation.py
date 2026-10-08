@@ -117,6 +117,12 @@ def fit_result(value, budget, *, string_limit=1000):
 
 def project_tool_result(result, name):
     """Tool-specific semantics are projected after saving the complete snapshot."""
+    if name == 'read_file' and isinstance(result.get('lines'), list):
+        lines = result.pop('lines')
+        result['content'] = ''.join(item['text'] for item in lines)
+        if lines:
+            result['start_line'] = lines[0]['line']
+            result['end_line'] = lines[-1]['line']
     if name in {'goal_create', 'goal_update', 'goal_finish', 'goal_cancel', 'goal_review'} and isinstance(result.get('goal'), dict):
         goal = result.pop('goal')
         result.update(goal_id=goal['id'], status=goal['status'])

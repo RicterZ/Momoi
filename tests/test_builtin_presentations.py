@@ -80,3 +80,23 @@ def test_goal_write_preserves_staged_state_and_calculated_schedule(tmp_path):
         assert shown['next_review_at'] == 12345 and shown['schedule'] == goal['schedule']
         assert 'goal' not in shown and 'source_event_id' not in shown
         assert snapshots.historical_payload(shown['result_ref'])['goal'] == goal
+
+
+def test_file_projection_preserves_exact_text_hash_and_resume_offsets(tmp_path):
+    from momoi.tools.builtin import BuiltinTools
+    from momoi.runtime.agent.budget import ToolResultFitter
+    path = tmp_path / 'note'
+    path.write_text('line\n' * 250)
+    tools = BuiltinTools(tmp_path)
+    raw = tools._read_file({'path': 'note'})
+    assert len(raw['lines']) == 200 and raw['next_content_offset'] == 1000
+    shown, snapshots = normalized(tmp_path, 'read_file', raw)
+    assert 'lines' not in shown
+    assert shown['content'] == 'line\n' * 200
+    assert (shown['start_line'], shown['end_line']) == (1, 200)
+    assert shown['sha256'] == raw['sha256']
+    fitted = json.loads(ToolResultFitter().fit(json.dumps(shown), 700))
+    resumed = tools._read_file({'path': 'note', 'content_offset': fitted['next_content_offset']})
+    assert fitted['content'] + ''.join(item['text'] for item in resumed['lines']) == path.read_text()
+    assert fitted['end_line'] <= 200
+    assert snapshots.historical_payload(shown['result_ref'])['lines'] == raw['lines']

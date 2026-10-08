@@ -147,6 +147,7 @@ class ToolResultFitter:
                 "provenance",
                 "path",
                 "total_lines",
+                "start_line",
                 "sha256",
                 "content_offset",
                 "next_content_offset",
@@ -162,6 +163,8 @@ class ToolResultFitter:
                 "content": visible,
                 "next_content_offset": content_offset + len(visible),
             }
+            if "start_line" in base and visible:
+                result["end_line"] = int(base["start_line"]) + len(visible.splitlines()) - 1
             return result
 
         low, high = 0, len(content)

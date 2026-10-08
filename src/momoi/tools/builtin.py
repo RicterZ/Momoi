@@ -149,7 +149,7 @@ class BuiltinTools:
             if content_offset > len(content):
                 raise ValueError("content_offset exceeds file length")
             start = content.count("\n", 0, content_offset) + 1
-        limit = min(4000, max(1, int(arguments.get("max_lines", 1000))))
+        limit = min(4000, max(1, int(arguments.get("max_lines", 200))))
         remaining_lines = content[content_offset:].splitlines(keepends=True)
         selected = "".join(remaining_lines[:limit])
         char_truncated = len(selected) > 200_000
