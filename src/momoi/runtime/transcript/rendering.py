@@ -107,6 +107,7 @@ def render_messages(
     labels: Mapping[str, str] | None = None,
     native_exchanges: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
     history_format: int = 4,
+    result_store=None,
 ) -> list[dict[str, object]]:
     """Render groups as provider-neutral ``role`` / ``content`` messages."""
 
@@ -159,7 +160,7 @@ def render_messages(
                 if (native_exchanges and native_exchanges.get(turn_id)
                         and turn_id not in speech_turns
                         and turn_id not in replayed_turns):
-                    extend(render_exchanges(native_exchanges.get(turn_id, ()), history_format=history_format, timezone=timezone, has_speech=turn_id in speech_turns, mark_silence=group.role == "user"))
+                    extend(render_exchanges(native_exchanges.get(turn_id, ()), history_format=history_format, timezone=timezone, has_speech=turn_id in speech_turns, mark_silence=group.role == "user", result_store=result_store))
                     replayed_turns.add(turn_id)
             if group.role != "event" and history_format >= 2:
                 append(text_message("user", "\n".join(lines)))
@@ -179,7 +180,7 @@ def render_messages(
             ]
             if pending or any(turn_id in replayed_turns for turn_id in group.turn_ids):
                 for turn_id in pending:
-                    extend(render_exchanges(native_exchanges[turn_id], history_format=history_format, timezone=timezone, has_speech=turn_id in speech_turns, mark_silence=group.role == "user"))
+                    extend(render_exchanges(native_exchanges[turn_id], history_format=history_format, timezone=timezone, has_speech=turn_id in speech_turns, mark_silence=group.role == "user", result_store=result_store))
                     replayed_turns.add(turn_id)
                 # Keep the cached old window until its next compaction boundary.
                 if history_format < 2 and group.parts:
@@ -197,7 +198,7 @@ def render_messages(
             for turn_id in group.turn_ids:
                 if (native_exchanges.get(turn_id) and turn_id not in speech_turns
                         and turn_id not in replayed_turns):
-                    extend(render_exchanges(native_exchanges.get(turn_id, ()), history_format=history_format, timezone=timezone, has_speech=turn_id in speech_turns, mark_silence=group.role == "user"))
+                    extend(render_exchanges(native_exchanges.get(turn_id, ()), history_format=history_format, timezone=timezone, has_speech=turn_id in speech_turns, mark_silence=group.role == "user", result_store=result_store))
                     replayed_turns.add(turn_id)
         previous = group
     return messages

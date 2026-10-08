@@ -10,12 +10,12 @@ from .results import historical_results
 def render_exchanges(
     exchanges: Sequence[Mapping[str, object]],
     *, history_format: int = 4, timezone: ZoneInfo = ZoneInfo("UTC"),
-    has_speech: bool = False, mark_silence: bool = True,
+    has_speech: bool = False, mark_silence: bool = True, result_store=None,
 ) -> list[dict[str, object]]:
     """Replay model text, tool calls, then the observations the model received."""
     exchanges = deepcopy(list(exchanges))
     project_dialogue(exchanges, timezone=timezone, has_speech=has_speech, mark_silence=mark_silence)
-    historical_results(exchanges, history_format=history_format)
+    historical_results(exchanges, history_format=history_format, result_store=result_store)
     messages: list[dict[str, object]] = []
     for exchange in exchanges:
         content = exchange.get("content")

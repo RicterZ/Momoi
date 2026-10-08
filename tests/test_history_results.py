@@ -230,3 +230,34 @@ def test_existing_recall_observation_drops_nested_hash_without_clipping_evidence
     evidence = result['episodes'][0]['turns'][0]['execution'][0]['tools'][0]['result']
     assert evidence == {'content': body}
     assert source == original
+
+
+def test_mcp_preview_uses_text_result_without_outer_ref():
+    source = [exchange('m', 'mcp__example__read', {
+        'ok': True, 'result_ref': 'tr_example',
+        'result': {'content': [{'type': 'text', 'text': '开始' * 80 + '正文' * 1000 + '结束' * 80}], 'isError': False},
+    })]
+    result = results(render_exchanges(source))[0]
+    assert result['preview'].startswith('开始') and result['preview'].endswith('结束')
+    assert 'tr_example' not in result['preview'] and '"content"' not in result['preview']
+
+
+def test_partial_snapshot_preview_uses_saved_result_not_incomplete_json(tmp_path):
+    from momoi.runtime.agent.result_store import ToolResultStore
+    snapshots = ToolResultStore(tmp_path / 'results')
+    text = '开始' * 80 + '正文' * 2000 + '结束' * 80
+    ref = snapshots.save(json.dumps({'ok': True, 'result': {'content': [{'type': 'text', 'text': text}], 'isError': False}}, ensure_ascii=False))
+    chunk = snapshots.read(ref, None, max_chars=1000, provenance={})
+    original = deepcopy(chunk)
+    source = [exchange('m', 'mcp__example__read', chunk)]
+    result = results(render_exchanges(source, result_store=snapshots))[0]
+    assert result['preview'].startswith('开始') and result['preview'].endswith('结束')
+    assert ref not in result['preview'] and '"result"' not in result['preview']
+    assert chunk == original
+
+
+def test_unstructured_recall_observation_remains_verbatim():
+    source = [exchange('r', 'recall', {})]
+    source[0]['results'][0]['content'] = '历史原文观察'
+    replay = render_exchanges(source)
+    assert replay[1]['content'][0]['content'] == '历史原文观察'

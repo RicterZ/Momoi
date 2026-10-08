@@ -58,7 +58,41 @@ def list_excerpt(payload: Mapping) -> dict | None:
     return None
 
 
-def historical_results(exchanges: list[dict], *, history_format: int = 3) -> None:
+def result_body(payload):
+    """Unwrap result/structuredContent and text-only MCP blocks structurally."""
+    value = payload
+    for _ in range(12):
+        if isinstance(value, str):
+            try:
+                decoded = json.loads(value)
+            except (ValueError, TypeError):
+                return value
+            if not isinstance(decoded, (dict, list)):
+                return value
+            value = decoded
+        elif isinstance(value, dict):
+            if "result" in value:
+                value = value["result"]
+            elif "structuredContent" in value:
+                value = value["structuredContent"]
+            elif "content" in value:
+                value = value["content"]
+            else:
+                return {key: item for key, item in value.items() if key not in {
+                    "ok", "provenance", "result_ref", "sha256", "format", "original_chars",
+                    "chunk_start", "chunk_end", "next_cursor", "has_more", "truncated",
+                }}
+        elif isinstance(value, list) and value and all(
+            isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str)
+            for item in value
+        ):
+            value = "\n".join(item["text"] for item in value)
+        else:
+            return value
+    return value
+
+
+def historical_results(exchanges: list[dict], *, history_format: int = 3, result_store=None) -> None:
     """Edit a private replay copy; never alter the journal or live observations.
 
     Error runs are summarized in the first result, with paired references in
@@ -123,7 +157,7 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3) -> Non
             name = calls.get(block.get("tool_use_id"), "")
             # Recall evidence supports reuse; reply bubbles are the actual
             # conversation. Preserve both in full, including failure details.
-            if name == "recall":
+            if name == "recall" and payload:
                 payload = without_hashes(payload)
                 block["content"] = json.dumps(payload, ensure_ascii=False)
             if name in {"recall", "reply"}:
@@ -171,27 +205,12 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3) -> Non
                 "ok", "error", "result_ref", "original_chars",
                 "chunk_start", "chunk_end", "has_more",
             ) if key in payload}
-            body = payload.get("content")
-            if body is None:
-                body = {key: value for key, value in payload.items() if key not in {
-                    "ok", "error", "provenance", "result_ref", "sha256", "format",
-                    "original_chars", "chunk_start", "chunk_end", "next_cursor",
-                    "has_more", "truncated",
-                }}
-            # A complete serialized snapshot can itself contain the same
-            # transport envelope. Peel it structurally, never by text matching.
-            if isinstance(body, str):
-                try:
-                    nested = json.loads(body)
-                except (ValueError, TypeError):
-                    nested = None
-                if isinstance(nested, dict) and nested.get("result_ref") == payload.get("result_ref"):
-                    body = nested.get("content", nested.get("result", {
-                        key: value for key, value in nested.items() if key not in {
-                            "ok", "error", "result_ref", "sha256", "format", "provenance",
-                            "original_chars", "chunk_start", "chunk_end", "next_cursor", "has_more", "truncated",
-                        }
-                    }))
+            source = payload
+            if "chunk_start" in payload and result_store is not None:
+                snapshot = result_store.historical_payload(str(payload.get("result_ref") or ""))
+                if isinstance(snapshot, dict):
+                    source = snapshot
+            body = result_body(source)
             if not isinstance(body, str):
                 body = json.dumps(body, ensure_ascii=False)
             if history_format >= 3 and name == "read_file":

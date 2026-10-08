@@ -223,16 +223,22 @@ class ContextWindow:
                     ("goal_directory", snapshot["goals"]), required=True,
                 )
                 prefix["content"] = replacement["content"]
-                self.store.fold_transcript_memory(snapshot["revision"])
+                retained_order = list(dict.fromkeys(
+                    str(identifier) for message in messages[:history_messages]
+                    for identifier in message.get("_history_turn_ids", ())
+                ))
+                self.store.fold_transcript_memory(snapshot["revision"], retained_turn_ids=retained_order)
+                from ..transcript.recall import compact_recall_messages
+                compact_recall_messages(messages[:history_messages], retained_order[:-6])
                 removed = sum(bool(m.get("_memory_change")) for m in messages[:history_messages])
                 messages[:] = [m for m in messages if not m.get("_memory_change")]
                 history_messages -= removed
                 estimated = size()
         if estimated > compaction_limit:
-            reply_ids = {
+            evidence_ids = {
                 block.get("id") for message in messages
                 for block in (message.get("content") if isinstance(message.get("content"), list) else [])
-                if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "reply"
+                if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") in {"reply", "recall"}
             }
             for message in messages:
                 content = message.get("content")
@@ -243,7 +249,7 @@ class ContextWindow:
                         estimated <= compaction_limit
                         or not isinstance(block, dict)
                         or block.get("type") != "tool_result"
-                        or block.get("tool_use_id") in reply_ids
+                        or block.get("tool_use_id") in evidence_ids
                     ):
                         continue
                     result = block.get("content")

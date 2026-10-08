@@ -118,7 +118,10 @@ class ContextService:
             timezone=self.store.timezone, tool_activity=activity,
             native_exchanges={identifier: exchanges.get(identifier, []) for identifier in ids},
             history_format=memory_state["history_format"],
+            result_store=self.tool_results,
         )
+        from ..transcript.recall import compact_recall_messages
+        compact_recall_messages(history, memory_state["recall_compacted_turn_ids"])
         memories = {int(key): value for key, value in memory_state["observed"].items()
                     if value["activation"] == "always"}
         snapshot = [value for value in memory_state["snapshot"].values()

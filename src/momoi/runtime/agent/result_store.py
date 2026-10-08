@@ -130,6 +130,13 @@ class ToolResultStore:
             }
         return result
 
+    def historical_payload(self, reference: str):
+        """Read an existing snapshot for historical presentation, without execution."""
+        try:
+            return json.loads(self._path(reference).read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError):
+            return None
+
     def refit(self, value: str, *, max_chars: int) -> str | None:
         try:
             parsed = json.loads(value)
