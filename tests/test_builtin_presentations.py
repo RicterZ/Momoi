@@ -68,3 +68,15 @@ def test_plan_writes_return_version_status_and_identity_not_full_plan(tmp_path):
         assert snapshots.historical_payload(shown['result_ref'])['steps'] == raw['steps']
     shown, _ = normalized(tmp_path, 'plan_get', raw)
     assert shown['steps'] == raw['steps']
+
+
+def test_goal_write_preserves_staged_state_and_calculated_schedule(tmp_path):
+    goal = {'id': 'g', 'title': 'remind', 'status': 'active', 'next_review_at': 12345,
+            'schedule': {'kind': 'interval', 'every_seconds': 3600}, 'source_event_id': 'private-event',
+            'success_criteria': 'long criteria', 'waiting_for': '', 'latest_result': ''}
+    for name in ['goal_create', 'goal_update', 'goal_finish', 'goal_cancel', 'goal_review']:
+        shown, snapshots = normalized(tmp_path, name, {'ok': True, 'state': 'staged', 'goal': goal})
+        assert shown['goal_id'] == 'g' and shown['state'] == 'staged'
+        assert shown['next_review_at'] == 12345 and shown['schedule'] == goal['schedule']
+        assert 'goal' not in shown and 'source_event_id' not in shown
+        assert snapshots.historical_payload(shown['result_ref'])['goal'] == goal

@@ -117,6 +117,13 @@ def fit_result(value, budget, *, string_limit=1000):
 
 def project_tool_result(result, name):
     """Tool-specific semantics are projected after saving the complete snapshot."""
+    if name in {'goal_create', 'goal_update', 'goal_finish', 'goal_cancel', 'goal_review'} and isinstance(result.get('goal'), dict):
+        goal = result.pop('goal')
+        result.update(goal_id=goal['id'], status=goal['status'])
+        for key in ('title', 'next_review_at', 'schedule'):
+            if goal.get(key) is not None:
+                result[key] = goal[key]
+        result['omitted_fields'] = ['goal (full staged object)']
     if name in {'plan_create', 'plan_submit', 'plan_start', 'plan_update', 'plan_cancel', 'plan_resume'}:
         fields = {'ok', 'state', 'plan_id', 'title', 'status', 'version', 'step_index', 'resume_safety',
                   'requires_owner_decision', 'result_ref', 'truncated', 'omitted_fields'}
