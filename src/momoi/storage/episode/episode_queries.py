@@ -489,6 +489,7 @@ class EpisodeQueryStore:
         episode_id: str,
         token_budget: int = 30000,
         *,
+        include_execution: bool = True,
         before_ordinal: int | None = None,
         after: float | None = None,
         before: float | None = None,
@@ -496,15 +497,31 @@ class EpisodeQueryStore:
         episode = self.episode(episode_id)
         if episode is None:
             return None
+        # Select dialogue Turns before loading message bodies or execution evidence.
+        after_ordinal = 0
+        older_dialogue = False
+        if not include_execution:
+            ordinals = self._db.execute(
+                """SELECT DISTINCT et.ordinal FROM episode_turns et
+                   JOIN messages m ON m.turn_id=et.turn_id
+                   WHERE et.episode_id=? AND (? IS NULL OR et.ordinal<?)
+                     AND (? IS NULL OR m.created_at>=?) AND (? IS NULL OR m.created_at<?)
+                   ORDER BY et.ordinal DESC LIMIT 4""",
+                (episode_id, before_ordinal, before_ordinal, after, after, before, before),
+            ).fetchall()
+            older_dialogue = len(ordinals) > 3
+            if ordinals:
+                after_ordinal = int(ordinals[min(2, len(ordinals) - 1)]['ordinal']) - 1
         archived = self._db.execute(
             """SELECT et.ordinal, m.content FROM episode_turns AS et
                JOIN messages AS m ON m.turn_id=et.turn_id
-               WHERE et.episode_id=?
+               WHERE et.episode_id=? AND et.ordinal>?
                  AND (? IS NULL OR et.ordinal<?)
                  AND (? IS NULL OR m.created_at>=?)
                  AND (? IS NULL OR m.created_at<?)""",
             (
                 episode_id,
+                after_ordinal,
                 before_ordinal,
                 before_ordinal,
                 after,
@@ -517,11 +534,12 @@ class EpisodeQueryStore:
             episode_id,
             token_budget,
             before_ordinal=before_ordinal,
+            after_ordinal=after_ordinal,
             include_nondelivered=True,
             after=after,
             before=before,
         )
-        omitted_messages = len(messages) < len(archived)
+        omitted_messages = older_dialogue or len(messages) < len(archived)
         content_truncated = (
             sum(estimate_tokens(str(row["content"])) for row in archived) > token_budget
         )
@@ -533,9 +551,10 @@ class EpisodeQueryStore:
         return {
             **episode,
             "messages": messages,
-            **execution_turns(self, episode_id, limit=10, tool_limit=12,
-                              after=after, before=before, before_ordinal=before_ordinal,
-                              selected_messages=messages),
+            **(execution_turns(self, episode_id, limit=10, tool_limit=12,
+                               after=after, before=before, before_ordinal=before_ordinal,
+                               selected_messages=messages) if include_execution else
+               {"next_execution_cursor": 0}),
             "truncated": omitted_messages or content_truncated,
             "next_before_ordinal": next_before_ordinal,
             "window_first_timestamp": min(

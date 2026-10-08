@@ -436,6 +436,7 @@ class MemoryTools:
             return {"ok": True, "message": message}
         episode = self.store.conversation_episode(
             episode_id.strip(),
+            include_execution=False,
             before_ordinal=before_ordinal,
             after=after,
             before=before,

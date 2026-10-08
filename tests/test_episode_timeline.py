@@ -194,3 +194,34 @@ def test_execution_budget_pages_all_exchanges_without_splitting_pairs():
         assert cursor == units[-1]['sequence']
         assert fit_result(fitted, 4000) == fitted
     assert seen == list(range(1, 13))
+
+
+def test_default_dialogue_pages_three_turns_at_query_boundary(tmp_path, monkeypatch):
+    store = Store(tmp_path / 'db')
+    try:
+        for i in range(1, 8):
+            setup(store, turn=f't{i}', ordinal=i)
+            with store._db:
+                store._db.execute(
+                    "INSERT INTO messages(turn_id,role,content,created_at,source_event_ids_json) "
+                    "VALUES (?,'user',?,?,'[]')", (f't{i}', f'message {i}', i))
+        original = store.episode_messages
+        boundaries = []
+        def capture(*args, **kwargs):
+            boundaries.append(kwargs['after_ordinal'])
+            return original(*args, **kwargs)
+        monkeypatch.setattr(store, 'episode_messages', capture)
+        tools, cursor, pages = MemoryTools(store), None, []
+        while True:
+            args = {'episode_id': 'e'}
+            if cursor is not None:
+                args['before_ordinal'] = cursor
+            page = tools._episode_read(args)['episode']
+            pages.append([m['ordinal'] for m in page['messages']])
+            cursor = page['next_before_ordinal']
+            if cursor is None:
+                break
+        assert pages == [[5, 6, 7], [2, 3, 4], [1]]
+        assert boundaries == [4, 1, 0]
+    finally:
+        store.close()
