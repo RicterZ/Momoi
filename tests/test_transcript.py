@@ -53,6 +53,7 @@ def test_turn_labels_are_stable_for_each_runtime_turn():
         assert document.find("bubble").attrib == {
             "time": "2026-08-31T20:00:00+08:00",
             "turn": label,
+            **({"from": "user"} if message["role"] == "user" else {}),
         }
         assert "turn=" not in (document.text or "")
 

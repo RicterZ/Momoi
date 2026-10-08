@@ -15,6 +15,7 @@ def render_bubble(
     delivery_state: str = "delivered",
     turn: str = "",
     time: str = "",
+    sender: str = "",
 ) -> str:
     if text == QQ_POKE_MARKER:
         text = "[QQ 动作：戳一戳用户]"
@@ -23,6 +24,8 @@ def render_bubble(
         attributes += f" time={quoteattr(time)}"
     if turn:
         attributes += f" turn={quoteattr(turn)}"
+    if sender == "user":
+        attributes += f" from={quoteattr(sender)}"
     if delivery_state == "queued":
         attributes += ' delivery="queued"'
     return f"<bubble{attributes}>\n{escape(text)}\n</bubble>"
@@ -77,7 +80,7 @@ def part_bubble(
     moment = group.part_times[index] if index < len(group.part_times) else 0.0
     timestamp = context_timestamp(moment, timezone) if moment > 0 else ""
     return render_bubble(
-        group.parts[index], delivery_state=state, turn=turn, time=timestamp
+        group.parts[index], delivery_state=state, turn=turn, time=timestamp, sender=group.role
     )
 
 

@@ -83,7 +83,7 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
                 ZoneInfo("UTC"),
             ) if role == "event" else (
                 render_review(role, part, message_ids[index], part_times[index], ZoneInfo("UTC"))
-                if role in {"goal", "heartbeat", "plan_step"} else render_bubble(part, delivery_state=part_states[index])
+                if role in {"goal", "heartbeat", "plan_step"} else render_bubble(part, delivery_state=part_states[index], sender=role)
             )
             for index, part in enumerate(parts)
         )
