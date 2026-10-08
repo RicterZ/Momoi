@@ -131,7 +131,6 @@ public partial class App : Application
         componentPage.Children.Add(localASR);
         componentPage.Children.Add(new TextBlock { Text = "使用 CPU 识别语音，无需云端 ASR；安装后也可以切换到腾讯云。", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 24) });
         completionPage = new StackPanel { Visibility = Visibility.Collapsed };
-        completionPage.Children.Add(new TextBlock { Text = "安装完成", FontSize = 22, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 12) });
         completionMessage = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), LineHeight = 22, Margin = new Thickness(0, 0, 0, 24) };
         completionPage.Children.Add(completionMessage);
         content.Children.Add(completionPage);
