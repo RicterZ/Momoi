@@ -2689,7 +2689,7 @@ function PromptSettings({ items, token, navigation }) {
       {progress && <ApplyDialog progress={progress} onClose={() => setProgress(null)} />}
       <div className="settings-form-body settings-persona">
         <div className="prompt-grid">
-          {items.map(item => <PromptEditor key={item.id} item={item} value={drafts[item.id]} disabled={saving} onChange={value => { setDrafts(current => ({ ...current, [item.id]: value })); setStatus(null); }} />)}
+          {[...items].sort((a, b) => ["soul", "replyer", "planner", "heartbeat"].indexOf(a.id) - ["soul", "replyer", "planner", "heartbeat"].indexOf(b.id)).map(item => <PromptEditor key={item.id} item={item} value={drafts[item.id]} disabled={saving} onChange={value => { setDrafts(current => ({ ...current, [item.id]: value })); setStatus(null); }} />)}
         </div>
       </div>
       <SaveBar {...navigation} busy={saving || navigation.busy} dirty={dirtyItems.length > 0} status={status} hint="" />
