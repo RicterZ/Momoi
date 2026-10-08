@@ -138,3 +138,16 @@ def test_web_fetch_metadata_is_conditional_and_failures_remain_explainable(tmp_p
             assert shown[key] == value
         assert 'extract_mode' not in shown
         assert present_result(shown, tool_name='web_fetch') == shown
+
+
+def test_skill_load_keeps_complete_instructions_and_directory_without_resource_dump(tmp_path):
+    content = '---\nname: sample\ndescription: sample guidance\n---\nRead references/details.md. Run scripts/run.py.'
+    resources = [f'references/file{i}.md' for i in range(500)]
+    raw = {'ok': True, 'name': 'sample', 'description': 'sample guidance',
+           'content': content, 'directory': '/skills/sample', 'resources': resources}
+    shown, snapshots = normalized(tmp_path, 'skill_load', raw)
+    assert shown['content'] == content and shown['directory'] == '/skills/sample'
+    assert not {'name', 'description', 'resources'} & shown.keys()
+    assert shown['omitted_fields'] == ['description', 'name', 'resources']
+    assert snapshots.historical_payload(shown['result_ref'])['resources'] == resources
+    assert present_result(shown, tool_name='skill_load') == shown

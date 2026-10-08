@@ -3,7 +3,7 @@
 SKILL_TOOL_SPECS = [
     {
         "name": "skill_load",
-        "description": "按名称读取标准 SKILL.md 完整指引，返回绝对目录和资源列表；按需通过文件工具或 exec 读取引用文档、运行脚本。加载不会自动执行脚本。",
+        "description": "按名称读取标准 SKILL.md 完整指引，返回绝对目录；资源清单按需用 list_dir / glob_files 查看，原始加载结果可用 result_ref 深读。按需通过文件工具或 exec 读取引用文档、运行脚本。加载不会自动执行脚本。",
         "input_schema": {
             "type": "object", "properties": {"name": {"type": "string", "minLength": 1}},
             "required": ["name"], "additionalProperties": False,
