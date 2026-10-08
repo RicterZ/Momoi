@@ -51,9 +51,14 @@ def recent_episode_lines(
         attributes = _attributes({
             "id": episode["id"], "turns": episode_labels,
             "last_activity": episode.get("last_activity_timestamp"),
+            "summary_state": episode.get("summary_state") if episode.get("summary_state") != "ready" else None,
         })
         summary = str(episode.get("narrative_summary") or "").strip()
         body = f"<title>{escape(str(episode['title'])[:120])}</title>"
+        if episode.get("summary_state") == "partial":
+            summary = "此话题的早期对话已移出 transcript，后续对话仍在近期记录中；需要早期细节时用 episode_read 读取。"
+        elif episode.get("summary_state") == "pending":
+            summary = "话题摘要尚未生成，原始对话仍可通过 episode_read 读取。"
         body += f"<summary>{escape(summary)}</summary>"
         lines.append(f"<episode{attributes}>{body}</episode>")
     return "\n".join(lines)

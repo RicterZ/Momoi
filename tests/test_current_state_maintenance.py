@@ -634,7 +634,11 @@ def test_state_batch_uses_committed_transcript_including_turns_outside_window(da
         calls += 1
         rendered = str(messages)
         for index in range(count):
-            assert rendered.count(f"CURRENT-{index}") == 1
+            # Pending provenance repeats exact sources that are also retained
+            # in the canonical transcript; neither copy may be silently lost.
+            copies_in_history = str(messages[:-1]).count(f"CURRENT-{index}")
+            assert rendered.count(f"CURRENT-{index}") == 1 + copies_in_history
+            assert messages[-1]["content"].count(f"CURRENT-{index}") == 1
         root = ElementTree.fromstring(
             "<request>" + messages[-1]["content"] + "</request>"
         )

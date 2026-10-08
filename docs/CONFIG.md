@@ -297,7 +297,11 @@ compaction watermark; it has no separate token setting.
 The same window covers conversation, Webhook events, Goal reviews and Heartbeat
 records, including completed Turns with records but no outgoing messages. Their
 ID indexes are derived from the retained transcript and have no separate history
-limit. Goal and Webhook Turns do not run automatic pre-retrieval.
+limit.
+
+Episodes outside the transcript remain discoverable in the frozen episode index. Completed summaries are included; pending summaries retain the title and ID with an explicit pending marker. Episodes spanning the boundary expose a lookup entry for their earlier turns without repeating the retained dialogue. Events that require no LLM call, such as pokes, do not truncate earlier conversations. The index refreshes at the next compaction.
+
+Goal and Webhook Turns do not run automatic pre-retrieval.
 Always-on and active recent memories are injected in full. Query recall is bounded
 by `memory_results`, not by a separate memory token budget.
 

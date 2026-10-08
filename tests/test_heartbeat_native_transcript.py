@@ -290,7 +290,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("<recent_episodes>", str(provider.first_messages[1]["content"]))
             self.assertEqual(
                 [message["role"] for message in provider.first_messages],
-                ["user", "user", "user"],
+                ["user", "user", "user", "user", "user"],
             )
             self.assertNotIn("我到家了", rendered)
             self.assertNotIn("终于回来了", rendered)
@@ -298,9 +298,9 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("<recent_heartbeats>", latest)
             self.assertNotIn("recent_heartbeat_activities", rendered)
             for index, identifier in enumerate(heartbeat_ids):
-                self.assertNotIn(f'<heartbeat id="{identifier}"', rendered)
-                self.assertNotIn(f"Activity: 历史活动{index}", rendered)
-                self.assertNotIn(f"Result: 历史结果{index}", rendered)
+                self.assertEqual(rendered.count(f'<heartbeat id="{identifier}"'), 1)
+                self.assertIn(f"Activity: 历史活动{index}", rendered)
+                self.assertIn(f"Result: 历史结果{index}", rendered)
                 self.assertNotIn(f"Activity: 历史活动{index}", latest)
             self.assertNotIn("<heartbeat id=", str(provider.first_messages[0]["content"]))
             daemon.store.close()

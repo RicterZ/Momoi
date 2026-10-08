@@ -79,7 +79,7 @@ class ConversationViewStore:
         *,
         before_timestamp: float | None = None,
     ) -> list[dict[str, object]]:
-        """Summarized episodes wholly before the retained transcript boundary."""
+        """Index completed historical episode portions, including pending summaries."""
         if limit <= 0:
             return []
         retained = list(dict.fromkeys(str(value) for value in retained_turn_ids if value))
@@ -98,42 +98,42 @@ class ConversationViewStore:
             boundary = min(float(boundary), before_timestamp)
         if boundary is None:
             return []
+        # Select only completed turns outside the replay window. Episodes that
+        # span the boundary still need an index entry for their missing prefix.
         excluded = ""
         parameters: list[object] = []
         if retained:
             placeholders = ",".join("?" for _ in retained)
-            excluded = (
-                "AND NOT EXISTS (SELECT 1 FROM episode_turns AS kept "
-                "WHERE kept.episode_id=e.id "
-                f"AND kept.turn_id IN ({placeholders}))"
-            )
+            excluded = f"AND t.id NOT IN ({placeholders})"
             parameters.extend(retained)
         rows = self._db.execute(
-            f"""SELECT e.*, MAX(t.updated_at) AS last_activity_at
+            f"""SELECT e.*, MAX(t.updated_at) AS last_activity_at,
+                       (SELECT COUNT(*) FROM episode_turns AS all_turns
+                        WHERE all_turns.episode_id=e.id) AS total_turns,
+                       COUNT(*) AS outside_turns
                 FROM conversation_episodes AS e
                 JOIN episode_turns AS et ON et.episode_id=e.id
                 JOIN turns AS t ON t.id=et.turn_id
-                WHERE TRIM(COALESCE(e.narrative_summary, '')) != ''
-                  AND {runtime_archive_kind_sql('e')} IS NULL
+                WHERE {runtime_archive_kind_sql('e')} IS NULL
+                  AND t.state='completed' AND t.updated_at < ?
                   {excluded}
                 GROUP BY e.id
-                HAVING MAX(t.updated_at) < ?
-                   AND SUM(CASE WHEN t.state='completed' THEN 0 ELSE 1 END)=0
                 ORDER BY last_activity_at DESC, e.id DESC LIMIT ?""",
-            [*parameters, boundary, limit],
+            [boundary, *parameters, limit],
         ).fetchall()
-        return [
-            {
+        result = []
+        for row in reversed(rows):
+            partial = int(row["outside_turns"]) < int(row["total_turns"])
+            summary = "" if partial else str(row["narrative_summary"] or "")
+            result.append({
                 "id": str(row["id"]),
                 "title": str(row["title"]),
-                "narrative_summary": str(row["narrative_summary"]),
-                "last_activity_timestamp": self.context_timestamp(
-                    row["last_activity_at"]
-                ),
+                "narrative_summary": summary,
+                "summary_state": "partial" if partial else ("ready" if summary.strip() else "pending"),
+                "last_activity_timestamp": self.context_timestamp(row["last_activity_at"]),
                 "turn_ids": [],
-            }
-            for row in reversed(rows)
-        ]
+            })
+        return result
 
     def episode_directory_for_turns(
         self,

@@ -447,13 +447,13 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 if block.get("type") == "text"
                 and "<current_webhook_task>" in block["text"]
             )
-            self.assertNotIn("<recent_events>\n", current_context)
+            self.assertIn("<recent_events>\n", current_context)
             self.assertNotIn("历史事件", current_context)
             for tag in ("episode_directory", "recall_memories", "reflection_memories"):
                 self.assertNotIn(f"<{tag}>", current_context)
             for event_id in event_ids:
                 self.assertEqual(
-                    str(provider.conversations[0]).count(f'<event id="{event_id}"'), 0,
+                    str(provider.conversations[0]).count(f'<event id="{event_id}"'), 1,
                 )
             self.assertNotIn("<conversation_state>", context_text)
             self.assertIn("<recent_episodes>", str(provider.conversations[0][1]["content"]))

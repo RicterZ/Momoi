@@ -97,11 +97,14 @@ class ContextService:
         rows = self.store.retained_transcript_rows(self._recent_conversation_rows(cutoff))
         ids = list(dict.fromkeys(str(row["turn_id"]) for row in rows))
         exchanges = self.store.turn_exchanges(ids)
-        # Old Turns have no native exchange journal. Start at the contiguous
-        # native suffix rather than mixing legacy bubbles/recall text with the
-        # current protocol. Older episodes remain eligible for summary injection.
+        # Only unreplayable historical assistant speech marks a legacy boundary.
+        # Runtime events and silent turns legitimately have no LLM exchange.
+        legacy_speech = {str(row["turn_id"]) for row in rows
+                         if row["role"] == "assistant"
+                         and row.get("delivery_state") != "internal"
+                         and not exchanges.get(str(row["turn_id"]))}
         last_legacy = max(
-            (index for index, identifier in enumerate(ids) if not exchanges.get(identifier)),
+            (index for index, identifier in enumerate(ids) if identifier in legacy_speech),
             default=-1,
         )
         ids = ids[last_legacy + 1:]
@@ -113,7 +116,7 @@ class ContextService:
         history = render_messages(
             [*transcript.orphaned, *transcript.groups],
             timezone=self.store.timezone, tool_activity=activity,
-            native_exchanges={identifier: exchanges[identifier] for identifier in ids},
+            native_exchanges={identifier: exchanges.get(identifier, []) for identifier in ids},
             history_format=memory_state.get("history_format", 2),
         )
         memories = {int(key): value for key, value in memory_state["observed"].items()
@@ -297,7 +300,7 @@ class ContextService:
     def episode_context_message(
         self, turn_ids: list[str], *, before_timestamp: float
     ) -> dict[str, object]:
-        """Summarize only episodes fully outside the retained transcript."""
+        """Index episodes with historical turns outside the retained transcript."""
         summaries = recent_episode_lines(
             self.store.compacted_episode_directory(
                 turn_ids, self.config.summary_results, before_timestamp=before_timestamp
