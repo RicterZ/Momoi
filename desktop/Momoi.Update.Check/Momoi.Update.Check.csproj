@@ -7,4 +7,5 @@
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../Momoi.Update/Momoi.Update.csproj" /></ItemGroup>
   <ItemGroup><Compile Include="../Momoi.Desktop/QQCallStatusFile.cs" Link="QQCallStatusFile.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../Momoi.Desktop/AudioDevicePreference.cs" Link="AudioDevicePreference.cs" /></ItemGroup>
 </Project>

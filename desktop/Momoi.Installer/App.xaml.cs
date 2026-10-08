@@ -19,6 +19,9 @@ public partial class App : Application
     private TextBlock message = null!;
     private Button installButton = null!, chooseButton = null!, cancelButton = null!;
     private StartupView? loading;
+    private StackPanel locationPage = null!, componentPage = null!;
+    private Button backButton = null!;
+    private bool componentsVisible;
     private CheckBox localASR = new();
     private CheckBox cable = null!;
     private CancellationTokenSource? operation;
@@ -46,11 +49,15 @@ public partial class App : Application
             await Task.Delay(250);
             Directory.CreateDirectory(e.Args[1]);
             SavePreview(surface, Path.Combine(e.Args[1], "online-installer.png"));
+            ShowComponents(true);
+            await Task.Delay(250);
+            SavePreview(surface, Path.Combine(e.Args[1], "online-installer-components.png"));
             Shutdown(0);
         }
         else if (e.Args.Length == 2 && e.Args[0] == "--install-check")
         {
             directory.Text = e.Args[1];
+            ShowComponents(true);
             await InstallAsync();
             if (installed) File.WriteAllText(Path.Combine(e.Args[1], "online-install-check.json"), "{\"ok\":true,\"nativeInstaller\":true,\"runtimeVerified\":true,\"qqPairVerified\":true}");
             Shutdown(installed ? 0 : 1);
@@ -73,30 +80,65 @@ public partial class App : Application
         content.Children.Add(new TextBlock { Text = "MOMOI  /  在线安装", Foreground = (Brush)FindResource("Pink"), FontWeight = FontWeights.SemiBold });
         content.Children.Add(new TextBlock { Text = "安装 Momoi", FontSize = 28, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 14, 0, 16) });
         content.Children.Add(new TextBlock { Text = "自动下载所需运行组件、BGE 模型和 QQ。已有本地组件将优先使用，安装后无需配置运行环境。", FontSize = 14, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 26) });
-        content.Children.Add(new TextBlock { Text = "安装位置", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
+        locationPage = new StackPanel();
+        content.Children.Add(locationPage);
+        locationPage.Children.Add(new TextBlock { Text = "安装位置", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
         var row = new Grid(); row.ColumnDefinitions.Add(new ColumnDefinition()); row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         directory = new TextBox { Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Momoi"), Padding = new Thickness(12), BorderBrush = (Brush)FindResource("Line"), Background = Brushes.White, VerticalContentAlignment = VerticalAlignment.Center };
         chooseButton = Button("选择", false); chooseButton.Margin = new Thickness(12, 0, 0, 0); Grid.SetColumn(chooseButton, 1);
         chooseButton.Click += (_, _) => { var chooser = new Microsoft.Win32.OpenFolderDialog { Title = "选择安装目录", InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) }; if (chooser.ShowDialog(window) == true) directory.Text = chooser.FolderName; };
-        row.Children.Add(directory); row.Children.Add(chooseButton); content.Children.Add(row);
+        row.Children.Add(directory); row.Children.Add(chooseButton); locationPage.Children.Add(row);
         message = new TextBlock { Text = "安装期间需要联网，并可能请求管理员授权。配置和用户数据保存在安装目录的 data 文件夹。", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 16, 0, 22), LineHeight = 22 };
-        content.Children.Add(message);
-        cable = new CheckBox { Content = "安装 VB-CABLE（语音通话组件；已有 Steam 音频设备可跳过）", IsChecked = false, Margin = new Thickness(0, 0, 0, 8) };
-        content.Children.Add(cable);
-        localASR = new CheckBox { Content = "安装本地语音识别（可选，使用 CPU，无需云端 ASR）", IsChecked = false, Margin = new Thickness(0, 8, 0, 8) };
-        content.Children.Add(localASR);
-        content.Children.Add(new TextBlock { Text = "VB-Audio · www.vb-cable.com · Donationware，欢迎捐赠支持。", Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 8) });
-        var audioList = new TextBlock { Text = string.Join("\n", AudioDevicePreference.Installed()), TextWrapping = TextWrapping.Wrap };
-        content.Children.Add(new ScrollViewer { Content = audioList, Height = 90, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 0, 0, 16) });
+        locationPage.Children.Add(message);
+        componentPage = new StackPanel { Visibility = Visibility.Collapsed };
+        content.Children.Add(componentPage);
+        componentPage.Children.Add(new TextBlock { Text = "选择安装组件", FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 16) });
+        componentPage.Children.Add(new TextBlock { Text = "已安装的音频设备", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
+        var devices = AudioDevicePreference.InstalledDevices().ToArray();
+        var lists = new Grid { Margin = new Thickness(0, 0, 0, 14) };
+        lists.ColumnDefinitions.Add(new ColumnDefinition());
+        lists.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
+        lists.ColumnDefinitions.Add(new ColumnDefinition());
+        for (int column = 0; column < 2; column++)
+        {
+            bool input = column == 0;
+            var group = new StackPanel();
+            group.Children.Add(new TextBlock { Text = input ? "输入设备" : "输出设备", Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 8) });
+            var list = new ListBox { Height = 150, Background = Brushes.White, BorderBrush = (Brush)FindResource("Line"), Padding = new Thickness(6) };
+            ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
+            ScrollViewer.SetVerticalScrollBarVisibility(list, ScrollBarVisibility.Auto);
+            foreach (var device in devices.Where(d => d.Input == input).OrderBy(d => !d.Available).ThenBy(d => d.Name))
+                list.Items.Add(new TextBlock { Text = device.Name + (device.Available ? "" : "（不可用）"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4, 6, 4, 6) });
+            if (list.Items.Count == 0) list.Items.Add(new TextBlock { Text = "未发现音频设备", Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(4, 6, 4, 6) });
+            group.Children.Add(list); Grid.SetColumn(group, column * 2); lists.Children.Add(group);
+        }
+        componentPage.Children.Add(lists);
+        cable = new CheckBox { Content = "安装 VB-CABLE（语音通话组件）", IsChecked = false, Margin = new Thickness(0, 0, 0, 8) };
+        componentPage.Children.Add(cable);
+        componentPage.Children.Add(new TextBlock { Text = "如果列表里有 CABLE 或 Stream，可以不勾选安装。", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 8) });
+        componentPage.Children.Add(new TextBlock { Text = "VB-Audio · www.vb-cable.com · Donationware，欢迎捐赠支持。", Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 18) });
+        localASR = new CheckBox { Content = "安装本地语音识别", IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
+        componentPage.Children.Add(localASR);
+        componentPage.Children.Add(new TextBlock { Text = "使用 CPU 识别语音，无需云端 ASR；安装后也可以切换到腾讯云。", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 24) });
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         cancelButton = Button("关闭", false); cancelButton.Margin = new Thickness(0, 0, 12, 0);
-        installButton = Button("安装", true);
+        installButton = Button("下一步", true);
+        backButton = Button("上一步", false); backButton.Margin = new Thickness(0, 0, 12, 0); backButton.Visibility = Visibility.Collapsed;
+        backButton.Click += (_, _) => ShowComponents(false);
         cancelButton.Click += (_, _) => { if (operation is not null) operation.Cancel(); else Shutdown(); };
-        installButton.Click += async (_, _) => { if (installed) { if (LaunchInstalled()) Shutdown(); } else await InstallAsync(); };
-        buttons.Children.Add(cancelButton); buttons.Children.Add(installButton); content.Children.Add(buttons);
+        installButton.Click += async (_, _) => { if (installed) { if (LaunchInstalled()) Shutdown(); } else if (!componentsVisible) ShowComponents(true); else await InstallAsync(); };
+        buttons.Children.Add(cancelButton); buttons.Children.Add(backButton); buttons.Children.Add(installButton); content.Children.Add(buttons);
         surface.Children.Add(content);
         window = new Window { Title = "Momoi 在线安装", Width = 640, Height = 690, ResizeMode = ResizeMode.NoResize, Content = surface, WindowStartupLocation = WindowStartupLocation.CenterScreen, FontFamily = new FontFamily("Segoe UI Variable, Segoe UI, DengXian"), FontSize = 13, Foreground = (Brush)FindResource("Ink"), Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")) };
         window.Closing += (_, e) => { if (operation is not null) { e.Cancel = true; if (!installing) operation.Cancel(); } else Shutdown(); };
+    }
+    private void ShowComponents(bool show)
+    {
+        componentsVisible = show;
+        locationPage.Visibility = show ? Visibility.Collapsed : Visibility.Visible;
+        componentPage.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        backButton.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        installButton.Content = show ? "安装" : "下一步";
     }
     private Button Button(string label, bool primary)
     {
@@ -107,7 +149,7 @@ public partial class App : Application
     private void Log(string value) => File.AppendAllText(log, $"{DateTimeOffset.Now:O} {value}{Environment.NewLine}");
     private void SetBusy(bool busy)
     {
-        installButton.IsEnabled = chooseButton.IsEnabled = directory.IsEnabled = cable.IsEnabled = localASR.IsEnabled = !busy;
+        backButton.IsEnabled = installButton.IsEnabled = chooseButton.IsEnabled = directory.IsEnabled = cable.IsEnabled = localASR.IsEnabled = !busy;
         cancelButton.Content = busy ? "取消下载" : "关闭";
         if (busy)
         {

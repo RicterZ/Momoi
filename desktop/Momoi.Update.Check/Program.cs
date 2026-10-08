@@ -6,6 +6,10 @@ using Momoi.Update;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
 
+if (Momoi.Desktop.AudioDevicePreference.FriendlyName(null, "CABLE Output", null) != "CABLE Output" ||
+    Momoi.Desktop.AudioDevicePreference.FriendlyName("{12345678-1234-1234-1234-123456789abc}", "Steam Streaming Speakers", null) != "Steam Streaming Speakers" ||
+    Momoi.Desktop.AudioDevicePreference.FriendlyName(null, null, null) != "未命名音频设备")
+    throw new Exception("Audio endpoint friendly-name fallback failed");
 string root = Path.Combine(Path.GetTempPath(), "Momoi-update-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try
