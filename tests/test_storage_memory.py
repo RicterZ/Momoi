@@ -11,7 +11,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 from xml.etree import ElementTree
 
-from momoi.storage.core.migrations import MIGRATIONS, SCHEMA_VERSION, _normalize_owner_message_received_at
+from momoi.storage.core.migrations import MIGRATIONS, _normalize_owner_message_received_at
 from momoi.tools.agenda import AgendaTools
 from momoi.tools.builtin import BuiltinTools
 from momoi.channel.napcat import NapCatConfig

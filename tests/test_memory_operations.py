@@ -24,7 +24,7 @@ from momoi.runtime.agent.harness import TurnHarness
 from momoi.runtime.workflows.memory_operation.parsing import parse_decisions
 from momoi.storage import Store
 from momoi.storage.memory.memory_operations import MEMORY_OPERATION_MAX_ATTEMPTS
-from momoi.storage.core.migrations import SCHEMA_VERSION, MIGRATIONS
+from momoi.storage.core.migrations import MIGRATIONS
 from momoi.tools.memory import MemoryTools
 from tests.support import provider_catalog, seed_memory
 

@@ -397,7 +397,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             store.start_task_plan(plan['id'], channel)
         self.assertIsNone(store.claim_task_plan())
-        submitted = store.submit_task_plan(plan['id'], channel, 1, '方案', '依据', '验收', 'proposal')
+        store.submit_task_plan(plan['id'], channel, 1, '方案', '依据', '验收', 'proposal')
         self.assertIsNone(store.claim_task_plan())
         for approval in [None, {'event_id': 'e', 'quote': '同意', 'turn_id': 'proposal', 'received_at': time.time()+1},
                          {'event_id': 'e', 'quote': '同意', 'turn_id': 'owner2', 'received_at': 0}]:
@@ -547,7 +547,6 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_soft_audit_then_hard_pause_and_owner_resume(self):
         import asyncio
-        import json
         daemon, channel = self.daemon, self.daemon.channel.name
         plan = daemon.store.create_task_plan({'title': 'audit', 'request': 'verify target',
             'steps': [{'task': 'find evidence', 'on_failure': 'stop'}]}, self.owner_turn, channel)

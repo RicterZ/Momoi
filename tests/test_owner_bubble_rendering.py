@@ -1,5 +1,4 @@
 from zoneinfo import ZoneInfo
-from xml.etree import ElementTree
 
 from momoi.models import IncomingMessage
 from momoi.runtime.turn_support import owner_content_blocks

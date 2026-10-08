@@ -1,4 +1,3 @@
-from dataclasses import replace
 import pytest
 from momoi.channel.napcat.config import NapCatConfig, QQCallConfig
 from momoi.config.manager import redact, restore_secrets

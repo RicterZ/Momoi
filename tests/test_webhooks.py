@@ -8,7 +8,6 @@ import unittest
 import time
 from pathlib import Path
 from unittest.mock import patch
-from xml.etree import ElementTree
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig, WebhookConfig

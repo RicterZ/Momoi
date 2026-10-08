@@ -1,7 +1,5 @@
 import asyncio
-import io
 from types import SimpleNamespace
-import wave
 
 import pytest
 from aiohttp import web, WSMessage, WSMsgType

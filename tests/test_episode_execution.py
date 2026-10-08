@@ -1,7 +1,7 @@
 import json
 
 from momoi.storage import Store
-from momoi.storage.episode.execution_evidence import execution_turns, eligible
+from momoi.storage.episode.execution_evidence import execution_turns
 from momoi.storage.episode.episode_ranking import EpisodeRecallQuery
 from momoi.runtime.context.rendering import episode_recall_records
 
