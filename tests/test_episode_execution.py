@@ -253,3 +253,15 @@ def test_old_batched_qq_evidence_retains_native_quote_targets_without_new_column
         assert store.message_quote_targets(identifier) == expected[1:]
     finally:
         store.close()
+
+
+def test_recalled_file_result_omits_hash_without_modifying_journal(tmp_path):
+    store = Store(tmp_path / 'db')
+    setup(store)
+    payload = {'ok': True, 'path': '/example.md', 'sha256': 'a' * 64, 'content': '示例正文'}
+    record(store, 'read_file', result=payload)
+    result = execution_turns(store, 'e')['turns'][0]['execution'][0]['tools'][0]['result']
+    assert 'sha256' not in result
+    assert result['content'] == '示例正文'
+    assert json.loads(store.turn_exchanges(['t'])['t'][0]['results'][0]['content']) == payload
+    store.close()

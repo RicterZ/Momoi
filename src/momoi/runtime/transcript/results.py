@@ -8,6 +8,15 @@ EDGE_CHARS = 80
 SMALL_RESULT_CHARS = 600
 
 
+def without_hashes(value):
+    """Remove historical checksums, including recall's nested execution evidence."""
+    if isinstance(value, dict):
+        return {key: without_hashes(item) for key, item in value.items() if key != "sha256"}
+    if isinstance(value, list):
+        return [without_hashes(item) for item in value]
+    return value
+
+
 def preview(text: str) -> str:
     if len(text) <= EDGE_CHARS * 2:
         return text
@@ -114,6 +123,9 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3) -> Non
             name = calls.get(block.get("tool_use_id"), "")
             # Recall evidence supports reuse; reply bubbles are the actual
             # conversation. Preserve both in full, including failure details.
+            if name == "recall":
+                payload = without_hashes(payload)
+                block["content"] = json.dumps(payload, ensure_ascii=False)
             if name in {"recall", "reply"}:
                 flush()
                 run_name = ""
@@ -124,6 +136,11 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3) -> Non
                 payload = dict(payload)
                 payload.pop("sha256", None)
                 payload.pop("next_cursor", None)
+                raw = json.dumps(payload, ensure_ascii=False)
+                block["content"] = raw
+            if "sha256" in payload:
+                payload = dict(payload)
+                payload.pop("sha256")
                 raw = json.dumps(payload, ensure_ascii=False)
                 block["content"] = raw
             if name and payload.get("ok") is False:

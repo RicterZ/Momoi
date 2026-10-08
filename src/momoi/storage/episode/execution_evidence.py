@@ -93,7 +93,7 @@ def historical_result(value):
     """Remove transport metadata only from the historical presentation."""
     if not isinstance(value, dict):
         return value
-    value = {k: v for k, v in value.items() if k != 'provenance'}
+    value = {k: v for k, v in value.items() if k not in {'provenance', 'sha256'}}
     if value.get('error', '') is None:
         value.pop('error', None)
     if value.get('stderr_tail') == '':

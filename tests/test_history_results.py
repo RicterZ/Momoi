@@ -153,7 +153,7 @@ def test_real_file_lines_preserve_text_and_continuation():
     assert result['preview'] == '开' * 80 + '\n[...truncated...]\n' + '尾' * 80
     assert (result['start_line'], result['end_line']) == (10, 12)
     assert result['next_content_offset'] == 2000 and result['truncated']
-    assert result['sha256'] == 'abc'
+    assert 'sha256' not in result
 
 
 def test_non_feed_list_does_not_drop_unknown_business_fields():
@@ -218,3 +218,15 @@ def test_wrapped_mcp_preview_excludes_duplicate_outer_reference():
     assert result['result_ref'] == 'tr_example'
     assert 'tr_example' not in result['preview']
     assert '正文' in result['preview']
+
+
+def test_existing_recall_observation_drops_nested_hash_without_clipping_evidence():
+    body = '原文证据' * 1000
+    source = [exchange('r', 'recall', {'ok': True, 'episodes': [{'turns': [
+        {'execution': [{'tools': [{'name': 'read_file', 'result': {'sha256': 'hash', 'content': body}}]}]}
+    ]}]})]
+    original = deepcopy(source)
+    result = results(render_exchanges(source))[0]
+    evidence = result['episodes'][0]['turns'][0]['execution'][0]['tools'][0]['result']
+    assert evidence == {'content': body}
+    assert source == original
