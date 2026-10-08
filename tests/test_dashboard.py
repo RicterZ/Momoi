@@ -994,6 +994,20 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item["description"], "挥手")
         self.assertNotIn("path", item)
 
+        replacement = FormData()
+        replacement.add_field("file", BytesIO(b"GIF89a-new"), filename="wave.gif",
+                              content_type="image/gif")
+        response = await self.client.patch("/api/emotions/wave", data=replacement,
+                                           headers=self._auth())
+        self.assertEqual(response.status, 200)
+        replaced = await response.json()
+        self.assertNotEqual(item["asset_url"], replaced["asset_url"])
+        asset = await self.client.get(replaced["asset_url"], headers=self._auth())
+        self.assertEqual(await asset.read(), b"GIF89a-new")
+        listed = await (await self.client.get("/api/emotions", headers=self._auth())).json()
+        self.assertEqual(next(row for row in listed["items"] if row["slug"] == "wave")
+                         ["asset_url"], replaced["asset_url"])
+
         patched = await (
             await self.client.patch(
                 "/api/emotions/wave",

@@ -84,7 +84,7 @@ async def _json_body(request: web.Request) -> dict[str, object]:
 
 def _public_emotion(item: dict[str, object]) -> dict[str, object]:
     public = {key: value for key, value in item.items() if key != "path"}
-    public["asset_url"] = f"/api/emotions/{item['slug']}/asset"
+    public["asset_url"] = f"/api/emotions/{item['slug']}/asset?v={Path(str(item['path'])).stem}"
     return public
 
 
