@@ -117,6 +117,13 @@ def fit_result(value, budget, *, string_limit=1000):
 
 def project_tool_result(result, name):
     """Tool-specific semantics are projected after saving the complete snapshot."""
+    if name in {'plan_create', 'plan_submit', 'plan_start', 'plan_update', 'plan_cancel', 'plan_resume'}:
+        fields = {'ok', 'state', 'plan_id', 'title', 'status', 'version', 'step_index', 'resume_safety',
+                  'requires_owner_decision', 'result_ref', 'truncated', 'omitted_fields'}
+        omitted = [key for key in result if key not in fields]
+        result = {key: value for key, value in result.items() if key in fields}
+        if omitted:
+            result['omitted_fields'] = sorted(set(result.get('omitted_fields', []) + omitted))
     if name == 'episode_read' and isinstance(result.get('episode'), dict):
         episode = result['episode']
         fields = {'id', 'title', 'status', 'messages', 'truncated', 'next_before_ordinal', 'next_execution_cursor'}

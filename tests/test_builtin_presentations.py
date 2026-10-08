@@ -54,3 +54,17 @@ def test_episode_default_shows_message_pages_and_execution_entry(tmp_path):
     assert all('created_at' not in item for item in page['messages'])
     assert snapshots.historical_payload(shown['result_ref'])['episode'] == episode
     assert present_result(shown, tool_name='episode_read') == shown
+
+
+def test_plan_writes_return_version_status_and_identity_not_full_plan(tmp_path):
+    raw = {'ok': True, 'plan_id': 'p', 'title': 'work', 'status': 'awaiting_approval', 'version': 2,
+           'step_index': 0, 'resume_safety': 'requires_review', 'request': 'long request',
+           'steps': [{'task': 'long task'}], 'review': {'validation': 'long review'}}
+    for name in ['plan_create', 'plan_submit', 'plan_start', 'plan_update', 'plan_cancel', 'plan_resume']:
+        shown, snapshots = normalized(tmp_path, name, raw)
+        assert shown['status'] == 'awaiting_approval' and shown['version'] == 2
+        assert shown['plan_id'] == 'p' and shown['resume_safety'] == 'requires_review'
+        assert not {'request', 'steps', 'review'} & shown.keys()
+        assert snapshots.historical_payload(shown['result_ref'])['steps'] == raw['steps']
+    shown, _ = normalized(tmp_path, 'plan_get', raw)
+    assert shown['steps'] == raw['steps']
