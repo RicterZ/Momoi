@@ -240,9 +240,9 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
                                            else clip(entry['assistant_text'], terms=terms))
             calls = []
             batch = entry.get("tools", [])
-            if turn_id and selected and len(batch) > remaining:
+            if (turn_id is not None or after_turn_ordinal is not None) and selected and len(batch) > remaining:
                 break
-            if not turn_id:
+            if turn_id is None and after_turn_ordinal is None:
                 ranked = sorted(enumerate(batch), key=lambda pair: (
                     -sum(term in json.dumps(pair[1], ensure_ascii=False).casefold() for term in terms), pair[0]))
                 batch = [call for _, call in sorted(ranked[:remaining])]
@@ -272,6 +272,8 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
             remaining -= max(1, len(calls))
             selected.append((sequence, value))
         item = {'id': turn['id'], 'time': turn['time']}
+        if after_turn_ordinal is not None:
+            item['ordinal'] = turn['ordinal']
         msgs = [{'role': 'owner' if m['role'] == 'user' else m['role'], 'text': clip(m['content']),
                  **({'quote_targets': targets} if (targets := store.message_quote_targets(m.get('id'))) else {})}
                 for m in selected_messages if str(m['turn_id']) == turn['id']][:3]
@@ -290,7 +292,7 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
         shown = sum(len(v.get('tools', [])) for _, v in selected)
         if total > shown:
             item['omitted_tool_calls'] = total - shown
-        if turn_id and selected and len(selected) < len(entries):
+        if (turn_id is not None or after_turn_ordinal is not None) and selected and len(selected) < len(entries):
             item['next_after_sequence'] = max(seq for seq, _ in selected)
         if turn['journal_missing']:
             item['journal_available'] = False

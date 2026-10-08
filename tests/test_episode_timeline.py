@@ -136,3 +136,61 @@ def test_nondelivered_assistant_text_is_not_presented_as_delivered_speech():
         {'id': 1, 'ordinal': 1, 'role': 'assistant', 'content': 'pending speech',
          'delivery_state': 'pending', 'timestamp': 'time'}]}})['episode']
     assert 'ASSISTANT [pending]: pending speech' in page['transcript']
+
+
+def test_execution_refitting_never_splits_pairs_or_advances_hidden_turns():
+    from momoi.tools.presentation import fit_result
+    turns = [{'id': f't{i}', 'ordinal': i,
+              'timeline': 'TOOL_CALL #1: {}\nTOOL_RESULT #1: ' + 'x' * 500}
+             for i in range(1, 5)]
+    observation = {'ok': True, 'episode_id': 'e', 'result_ref': 'tr_' + 'a' * 32,
+                   'turns': turns, 'next_execution_cursor': 4}
+    fitted = fit_result(observation, 1500)
+    assert 0 < len(fitted['turns']) < 4
+    assert fitted['next_execution_cursor'] == fitted['turns'][-1]['ordinal']
+    assert fitted['turns'] == turns[:len(fitted['turns'])]
+    assert len(json.dumps(fitted, ensure_ascii=False)) <= 1500
+    tiny = fit_result(observation, 500)
+    assert 'turns' not in tiny and 'next_execution_cursor' not in tiny
+    assert tiny['result_ref'] == observation['result_ref']
+    assert fit_result(fitted, 1500) == fitted
+
+
+def test_default_episode_read_does_not_fetch_execution(tmp_path, monkeypatch):
+    import momoi.storage.episode.episode_queries as queries
+    store = Store(tmp_path / 'db')
+    try:
+        setup(store)
+        def forbidden(*args, **kwargs):
+            raise AssertionError('default dialogue read fetched execution')
+        monkeypatch.setattr(queries, 'execution_turns', forbidden)
+        result = MemoryTools(store)._episode_read({'episode_id': 'e'})
+        assert result['ok'] and 'turns' not in result['episode']
+        assert result['episode']['next_execution_cursor'] == 0
+    finally:
+        store.close()
+
+
+def test_execution_budget_pages_all_exchanges_without_splitting_pairs():
+    from momoi.tools.presentation import fit_result
+    entries = [{'sequence': i, 'tools': [{'name': 'exec', 'arguments': {'i': i},
+        'result': {'ok': True, 'content': str(i) * 300},
+        'timing': {'called_at': i, 'finished_at': 100 - i}}]} for i in range(1, 13)]
+    seen, cursor = [], 0
+    while cursor < 12:
+        observation = project_episode({'ok': True, 'episode_id': 'e',
+            'result_ref': 'tr_' + 'a' * 32, 'turns': [{'id': 't', 'ordinal': 1,
+            'execution': [entry for entry in entries if entry['sequence'] > cursor]}]})
+        fitted = fit_result(observation, 4000)
+        assert len(json.dumps(fitted, ensure_ascii=False)) <= 4000
+        turn = fitted['turns'][0]
+        units = turn['execution_units']
+        for unit in units:
+            seq = unit['sequence']
+            assert f'TOOL_CALL #{seq}.1 ' in turn['timeline']
+            assert f'TOOL_RESULT #{seq}.1:' in turn['timeline']
+            seen.append(seq)
+        cursor = turn.get('next_after_sequence', 12)
+        assert cursor == units[-1]['sequence']
+        assert fit_result(fitted, 4000) == fitted
+    assert seen == list(range(1, 13))

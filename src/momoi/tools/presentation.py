@@ -73,7 +73,10 @@ def fit_result(value, budget, *, string_limit=1000):
     encode = lambda item: json.dumps(item, ensure_ascii=False, default=str)
     if len(encode(value)) <= budget:
         return value
-    from .episode_timeline import fit_dialogue_result
+    from .episode_timeline import fit_dialogue_result, fit_execution_result
+    execution = fit_execution_result(value, budget)
+    if execution is not None:
+        return execution
     dialogue = fit_dialogue_result(value, budget)
     if dialogue is not None:
         return dialogue
