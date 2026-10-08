@@ -100,3 +100,23 @@ def test_file_projection_preserves_exact_text_hash_and_resume_offsets(tmp_path):
     assert fitted['content'] + ''.join(item['text'] for item in resumed['lines']) == path.read_text()
     assert fitted['end_line'] <= 200
     assert snapshots.historical_payload(shown['result_ref'])['lines'] == raw['lines']
+
+
+def test_relation_pages_keep_connected_nodes_and_complete_graph_snapshot(tmp_path):
+    graph = {'root_episode_id': 'root', 'depth': 1,
+             'nodes': [{'id': i, 'summary': 'summary' * 100} for i in ['root', 'a', 'b', 'c']],
+             'edges': [{'source_episode_id': 'root', 'target_episode_id': i, 'type': 'context'}
+                       for i in ['a', 'b', 'c']]}
+    seen = []
+    cursor = 0
+    while cursor is not None:
+        shown, snapshots = normalized(tmp_path, 'episode_relations',
+                                      {'ok': True, **graph, 'cursor': cursor, 'limit': 2})
+        seen.extend(item['target_episode_id'] for item in shown['edges'])
+        connected = {'root', *(item['target_episode_id'] for item in shown['edges'])}
+        assert {node['id'] for node in shown['nodes']} == connected
+        assert all(len(node['summary']) <= 240 for node in shown['nodes'])
+        assert snapshots.historical_payload(shown['result_ref'])['edges'] == graph['edges']
+        assert present_result(shown, tool_name='episode_relations') == shown
+        cursor = shown['next_cursor']
+    assert seen == ['a', 'b', 'c']

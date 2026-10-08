@@ -331,7 +331,8 @@ class ToolBatchExecutor:
                     ))
             elif call.name == "episode_relations":
                 try:
-                    result = {"ok": True, **self.store.episode_relation_graph(
+                    result = {"ok": True, "cursor": call.arguments.get("cursor", 0),
+                              "limit": call.arguments.get("limit", 20), **self.store.episode_relation_graph(
                         str(call.arguments["episode_id"]),
                         call.arguments.get("depth", 1),
                     )}

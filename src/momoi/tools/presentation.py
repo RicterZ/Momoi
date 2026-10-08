@@ -117,6 +117,25 @@ def fit_result(value, budget, *, string_limit=1000):
 
 def project_tool_result(result, name):
     """Tool-specific semantics are projected after saving the complete snapshot."""
+    if name == 'episode_relations' and isinstance(result.get('edges'), list) and isinstance(result.get('nodes'), list):
+        if 'cursor' in result or 'limit' in result or 'next_cursor' not in result:
+            cursor = result.pop('cursor', 0)
+            limit = result.pop('limit', 20)
+            edges = result['edges']
+            result['edges'] = edges[cursor:cursor + limit]
+            ids = {result['root_episode_id']}
+            for edge in result['edges']:
+                ids.update((edge['source_episode_id'], edge['target_episode_id']))
+            nodes = []
+            for item in result['nodes']:
+                if item['id'] in ids:
+                    node = dict(item)
+                    summary = str(node.get('summary') or '')
+                    node['summary'] = summary[:240]
+                    nodes.append(node)
+            result.update(nodes=nodes, total_relations=len(edges),
+                          next_cursor=cursor + limit if cursor + limit < len(edges) else None)
+            result['omitted_fields'] = ['nodes.*.summary (excerpt)', 'edges/nodes (outside page)']
     if name == 'read_file' and isinstance(result.get('lines'), list):
         lines = result.pop('lines')
         result['content'] = ''.join(item['text'] for item in lines)
