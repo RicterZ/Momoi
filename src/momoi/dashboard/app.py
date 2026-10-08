@@ -205,7 +205,7 @@ def create_dashboard_app(
     configuration=None,
     runtime=None,
 ) -> web.Application:
-    app = web.Application(middlewares=[_auth, _headers])
+    app = web.Application(middlewares=[_auth, _headers], client_max_size=6 * 1024 * 1024)
     app[DASHBOARD_TOKEN] = token
     app[BALANCE_PROVIDER] = balance_provider
     if configuration is not None and runtime is not None:
@@ -598,10 +598,16 @@ def create_dashboard_app(
             elif name == "description":
                 description = (await part.text()).strip()
             elif name == "file":
-                data = await part.read(decode=False)
+                data = bytearray()
+                while chunk := await part.read_chunk():
+                    data.extend(chunk)
+                    if len(data) > 5 * 1024 * 1024:
+                        raise web.HTTPRequestEntityTooLarge(
+                            max_size=5 * 1024 * 1024, actual_size=len(data)
+                        )
                 filename = part.filename or "emotion.bin"
                 try:
-                    managed = managed_emotion_bytes(workspace, data, filename)
+                    managed = managed_emotion_bytes(workspace, bytes(data), filename)
                 except ValueError as error:
                     raise web.HTTPBadRequest(text=str(error)) from None
         if require_file and managed is None:

@@ -964,6 +964,17 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cancelled["status"], "cancelled")
         self.assertEqual(cancelled["latest_result"], "先不做了")
 
+    async def test_emotion_upload_accepts_five_mib_and_rejects_larger_files(self) -> None:
+        for size, expected in ((5 * 1024 * 1024, 201), (5 * 1024 * 1024 + 1, 413)):
+            form = FormData()
+            form.add_field("slug", "large-wave")
+            form.add_field("description", "挥手")
+            form.add_field("file", BytesIO(b"x" * size), filename="wave.gif",
+                           content_type="image/gif")
+            response = await self.client.post("/api/emotions", data=form, headers=self._auth())
+            self.assertEqual(response.status, expected)
+            await response.read()
+
     async def test_emotion_create_update_and_delete(self) -> None:
         form = FormData()
         form.add_field("slug", "wave")
