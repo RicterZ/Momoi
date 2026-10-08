@@ -23,8 +23,9 @@ internal sealed class UpdatePromptView : Grid
         Focusable = true;
         KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Cycle);
         var content = new StackPanel();
-        content.Children.Add(new TextBlock { Text = "MOMOI  /  更新", FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = (Brush)Application.Current.FindResource("Pink"), Margin = new Thickness(0, 0, 0, 14) });
+        content.Children.Add(new TextBlock { Text = "MOMOI // UPDATE", FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = (Brush)Application.Current.FindResource("Pink"), Margin = new Thickness(0, 0, 0, 14) });
         content.Children.Add(new TextBlock { Text = title, FontSize = 24, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap });
+        content.Children.Add(new TextBlock { Text = "GAME DEV DEPT.", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = (Brush)Application.Current.FindResource("Muted"), Margin = new Thickness(0, 8, 0, 0) });
         content.Children.Add(new ScrollViewer { MaxHeight = 280, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = new TextBlock { Text = message, FontSize = 14, LineHeight = 24, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.FindResource("Muted") }, Margin = new Thickness(0, 16, 0, 26) });
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         if (cancel is not null)

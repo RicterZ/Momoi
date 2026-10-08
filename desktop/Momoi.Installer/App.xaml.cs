@@ -77,8 +77,9 @@ public partial class App : Application
     {
         surface = new Grid { Background = (Brush)FindResource("Canvas") };
         var content = new StackPanel { Margin = new Thickness(32), VerticalAlignment = VerticalAlignment.Center };
-        content.Children.Add(new TextBlock { Text = "MOMOI  /  在线安装", Foreground = (Brush)FindResource("Pink"), FontWeight = FontWeights.SemiBold });
-        content.Children.Add(new TextBlock { Text = "安装 Momoi", FontSize = 28, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 14, 0, 16) });
+        content.Children.Add(new TextBlock { Text = "MOMOI // SETUP", Foreground = (Brush)FindResource("Pink"), FontWeight = FontWeights.SemiBold });
+        content.Children.Add(new TextBlock { Text = "Momoi Online Setup", FontSize = 28, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 14, 0, 16) });
+        content.Children.Add(new TextBlock { Text = "GAME DEV DEPT.", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, -8, 0, 18) });
         content.Children.Add(new TextBlock { Text = "自动下载所需运行组件、BGE 模型和 QQ。已有本地组件将优先使用，安装后无需配置运行环境。", FontSize = 14, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 26) });
         locationPage = new StackPanel();
         content.Children.Add(locationPage);
@@ -129,7 +130,7 @@ public partial class App : Application
         installButton.Click += async (_, _) => { if (installed) { if (LaunchInstalled()) Shutdown(); } else if (!componentsVisible) ShowComponents(true); else await InstallAsync(); };
         buttons.Children.Add(cancelButton); buttons.Children.Add(backButton); buttons.Children.Add(installButton); content.Children.Add(buttons);
         surface.Children.Add(content);
-        window = new Window { Title = "Momoi 在线安装", Width = 640, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize, Content = surface, WindowStartupLocation = WindowStartupLocation.CenterScreen, FontFamily = new FontFamily("Segoe UI Variable, Segoe UI, DengXian"), FontSize = 13, Foreground = (Brush)FindResource("Ink"), Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")) };
+        window = new Window { Title = "Momoi Online Setup", Width = 640, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize, Content = surface, WindowStartupLocation = WindowStartupLocation.CenterScreen, FontFamily = new FontFamily("Segoe UI Variable, Segoe UI, DengXian"), FontSize = 13, Foreground = (Brush)FindResource("Ink"), Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")) };
         window.Closing += (_, e) => { if (operation is not null) { e.Cancel = true; if (!installing) operation.Cancel(); } else Shutdown(); };
     }
     private void ShowComponents(bool show)
