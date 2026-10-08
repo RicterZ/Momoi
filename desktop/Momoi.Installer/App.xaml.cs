@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Media.Animation;
 using Momoi.Desktop;
 using Momoi.Update;
 
@@ -16,7 +17,8 @@ public partial class App : Application
     private Window window = null!;
     private Grid surface = null!;
     private TextBox directory = null!;
-    private TextBlock message = null!;
+    private TextBlock message = null!, introduction = null!, completionMessage = null!;
+    private StackPanel completionPage = null!;
     private Button installButton = null!, chooseButton = null!, cancelButton = null!;
     private StartupView? loading;
     private StackPanel locationPage = null!, componentPage = null!;
@@ -46,12 +48,18 @@ public partial class App : Application
         window.Show();
         if (e.Args.Length == 2 && e.Args[0] == "--ui-preview")
         {
-            await Task.Delay(250);
+            await Task.Delay(350);
             Directory.CreateDirectory(e.Args[1]);
             SavePreview(surface, Path.Combine(e.Args[1], "online-installer.png"));
             ShowComponents(true);
-            await Task.Delay(250);
+            await Task.Delay(350);
             SavePreview(surface, Path.Combine(e.Args[1], "online-installer-components.png"));
+            installed = true;
+            message.Text = "Momoi 已安装，可以打开并完成首次设置。之后从应用内检查更新即可。";
+            ShowCompletion();
+            AnimatePageHeight();
+            await Task.Delay(350);
+            SavePreview(surface, Path.Combine(e.Args[1], "online-installer-complete.png"));
             Shutdown(0);
         }
         else if (e.Args.Length == 2 && e.Args[0] == "--install-check")
@@ -78,9 +86,10 @@ public partial class App : Application
         surface = new Grid { Background = (Brush)FindResource("Canvas") };
         var content = new StackPanel { Margin = new Thickness(32), VerticalAlignment = VerticalAlignment.Center };
         content.Children.Add(new TextBlock { Text = "MOMOI // SETUP", Foreground = (Brush)FindResource("Pink"), FontWeight = FontWeights.SemiBold });
-        content.Children.Add(new TextBlock { Text = "Momoi Online Setup", FontSize = 28, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 14, 0, 16) });
+        content.Children.Add(new TextBlock { Text = "Momoi", FontSize = 28, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 14, 0, 16) });
         content.Children.Add(new TextBlock { Text = "GAME DEV DEPT.", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, -8, 0, 18) });
-        content.Children.Add(new TextBlock { Text = "自动下载所需运行组件、BGE 模型和 QQ。已有本地组件将优先使用，安装后无需配置运行环境。", FontSize = 14, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 26) });
+        introduction = new TextBlock { Text = "自动下载所需运行组件、BGE 模型和 QQ。已有本地组件将优先使用，安装后无需配置运行环境。", FontSize = 14, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 26) };
+        content.Children.Add(introduction);
         locationPage = new StackPanel();
         content.Children.Add(locationPage);
         locationPage.Children.Add(new TextBlock { Text = "安装位置", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
@@ -121,6 +130,11 @@ public partial class App : Application
         localASR = new CheckBox { Content = "安装本地语音识别", IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
         componentPage.Children.Add(localASR);
         componentPage.Children.Add(new TextBlock { Text = "使用 CPU 识别语音，无需云端 ASR；安装后也可以切换到腾讯云。", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 24) });
+        completionPage = new StackPanel { Visibility = Visibility.Collapsed };
+        completionPage.Children.Add(new TextBlock { Text = "安装完成", FontSize = 22, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 12) });
+        completionMessage = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), LineHeight = 22, Margin = new Thickness(0, 0, 0, 24) };
+        completionPage.Children.Add(completionMessage);
+        content.Children.Add(completionPage);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         cancelButton = Button("关闭", false); cancelButton.Margin = new Thickness(0, 0, 12, 0);
         installButton = Button("下一步", true);
@@ -135,12 +149,42 @@ public partial class App : Application
     }
     private void ShowComponents(bool show)
     {
+        if (installed) return;
         componentsVisible = show;
         locationPage.Visibility = show ? Visibility.Collapsed : Visibility.Visible;
         componentPage.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         backButton.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         installButton.Content = show ? "安装" : "下一步";
+        AnimatePageHeight();
     }
+    private void ShowCompletion()
+    {
+        locationPage.Visibility = componentPage.Visibility = backButton.Visibility = introduction.Visibility = Visibility.Collapsed;
+        completionPage.Visibility = Visibility.Visible;
+        completionMessage.Text = message.Text;
+        installButton.Content = "打开 Momoi";
+    }
+
+    private void AnimatePageHeight()
+    {
+        if (!window.IsLoaded) return;
+        double height = window.ActualHeight, center = window.Top + height / 2;
+        double chrome = Math.Max(0, height - surface.ActualHeight);
+        window.BeginAnimation(Window.HeightProperty, null);
+        window.BeginAnimation(Window.TopProperty, null);
+        window.SizeToContent = SizeToContent.Manual;
+        surface.Measure(new Size(surface.ActualWidth, double.PositiveInfinity));
+        double target = Math.Max(200, surface.DesiredSize.Height + chrome);
+        var easing = new CubicEase { EasingMode = EasingMode.EaseInOut };
+        var duration = TimeSpan.FromMilliseconds(260);
+        var resize = new DoubleAnimation(height, target, duration) { EasingFunction = easing, FillBehavior = FillBehavior.Stop };
+        var move = new DoubleAnimation(center - height / 2, center - target / 2, duration) { EasingFunction = easing, FillBehavior = FillBehavior.Stop };
+        window.Height = target;
+        window.Top = center - target / 2;
+        window.BeginAnimation(Window.HeightProperty, resize, HandoffBehavior.SnapshotAndReplace);
+        window.BeginAnimation(Window.TopProperty, move, HandoffBehavior.SnapshotAndReplace);
+    }
+
     private Button Button(string label, bool primary)
     {
         var button = new Button { Content = label, MinWidth = 100, Style = (Style)FindResource("MomoiButton") };
@@ -164,7 +208,18 @@ public partial class App : Application
         {
             while (surface.Children.Count > 1) surface.Children.RemoveAt(1);
             loading = null; surface.Children[0].Visibility = Visibility.Visible;
+            if (installed) ShowCompletion();
+            else
+            {
+                // Errors and cancellation must remain visible on the retry page.
+                locationPage.Visibility = Visibility.Visible;
+                componentPage.Visibility = Visibility.Collapsed;
+                backButton.Visibility = Visibility.Collapsed;
+                componentsVisible = false;
+                installButton.Content = "下一步";
+            }
         }
+        AnimatePageHeight();
     }
     private async Task InstallAsync()
     {
