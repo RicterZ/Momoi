@@ -62,9 +62,6 @@ class RepositoryFacade:
     def purge_expired_memories(self, *, now: float | None=None) -> int:
         return self.memory_inventory.purge_expired_memories(now=now)
 
-    def _memory_rows(self, activation: str, *, now: float | None=None) -> list[sqlite3.Row]:
-        return self.memory_inventory._memory_rows(activation, now=now)
-
     def always_memory_context(self) -> str:
         return self.memory_inventory.always_memory_context()
 

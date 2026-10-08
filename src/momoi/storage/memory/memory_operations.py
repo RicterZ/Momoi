@@ -23,11 +23,6 @@ class MemoryOperationStore:
         ).fetchall()
         return {int(row["id"]): dict(row) for row in rows}
 
-    def injected_memory_snapshots(self) -> dict[int, dict[str, object]]:
-        self.purge_expired_memories()
-        ids = [int(row["id"]) for row in self._memory_rows("always")]
-        return self.memory_snapshots(ids)
-
     def _queue_memory_operations(
         self,
         source_turn_id: str,

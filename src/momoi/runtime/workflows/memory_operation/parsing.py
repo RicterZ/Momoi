@@ -1,5 +1,4 @@
 import re
-import time
 from typing import Any
 
 from ....storage.memory.memory_values import (
@@ -26,7 +25,6 @@ def parse_decisions(
     resolved: set[str] = set()
     modified: set[int] = set()
     keys: set[tuple[str, str]] = set()
-    now = time.time()
     for item in arguments["decisions"]:
         if not isinstance(item, dict):
             raise ValueError("each decision must be an object")
