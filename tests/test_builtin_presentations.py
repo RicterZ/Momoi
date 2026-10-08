@@ -151,3 +151,23 @@ def test_skill_load_keeps_complete_instructions_and_directory_without_resource_d
     assert shown['omitted_fields'] == ['description', 'name', 'resources']
     assert snapshots.historical_payload(shown['result_ref'])['resources'] == resources
     assert present_result(shown, tool_name='skill_load') == shown
+
+
+def test_secondary_fitting_keeps_message_prefix_and_valid_paging(tmp_path):
+    from momoi.tools.presentation import fit_result
+    messages = [{'id': i, 'ordinal': i, 'turn_id': f't{i}', 'role': 'user',
+                 'content': '0123456789' * 600, 'content_offset': 100,
+                 'next_content_offset': 6100} for i in range(1, 4)]
+    observation = {'ok': True, 'result_ref': 'tr_' + 'a' * 32,
+                   'episode': {'id': 'e', 'messages': messages, 'next_before_ordinal': None}}
+    fitted = fit_result(observation, 1500)
+    assert len(json.dumps(fitted, ensure_ascii=False)) <= 1500
+    page = fitted['episode']
+    for message in page['messages']:
+        assert '[...truncated...]' not in message['content']
+        assert message['next_content_offset'] == message['content_offset'] + len(message['content'])
+        assert 'ordinal' in message and 'id' in message
+    if len(page['messages']) < 3:
+        assert page['next_before_ordinal'] == min(m['ordinal'] for m in page['messages'])
+        assert page['messages'][-1]['ordinal'] == 3
+    assert fit_result(fitted, 1500) == fitted

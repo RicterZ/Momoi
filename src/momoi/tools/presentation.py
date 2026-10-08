@@ -63,7 +63,9 @@ def present_result(value, *, historical=False, tool_name=None):
 _OUTCOME_KEYS = ('ok', 'error', 'message', 'state', 'status', 'delivery_state',
                  'exit_code', 'ambiguous', 'id', 'plan_id', 'operation_id',
                  'path', 'source', 'destination', 'version', 'next_cursor',
-                 'has_more', 'next_content_offset', 'result_ref', 'result')
+                 'has_more', 'next_content_offset', 'result_ref', 'result', 'episode', 'messages',
+                 'ordinal', 'turn_id', 'message_id', 'content_offset',
+                 'next_before_ordinal', 'next_execution_cursor', 'next_after_sequence')
 
 
 def fit_result(value, budget, *, string_limit=1000):
@@ -91,14 +93,31 @@ def fit_result(value, budget, *, string_limit=1000):
                 if depth >= 12:
                     omitted.append(path)
                     return {}
-                return {k: reduce(item[k], f'{path}.{k}'.lstrip('.'), depth + 1) for k in selected}
+                if isinstance(item.get('content'), str) and 'next_content_offset' in item and 'content' not in selected:
+                    selected.append('content')
+                reduced = {k: reduce(item[k], f'{path}.{k}'.lstrip('.'), depth + 1) for k in selected}
+                if isinstance(item.get('content'), str) and 'next_content_offset' in item and len(item['content']) > width:
+                    reduced['content'] = item['content'][:width]
+                    reduced['content_offset'] = item.get('content_offset', 0)
+                    reduced['next_content_offset'] = reduced['content_offset'] + width
+                messages = reduced.get('messages')
+                if isinstance(messages, list) and len(messages) < len(item.get('messages', [])):
+                    ordinals = [m['ordinal'] for m in messages if isinstance(m, dict) and 'ordinal' in m]
+                    if ordinals:
+                        reduced['next_before_ordinal'] = min(ordinals)
+                        reduced['truncated'] = True
+                return reduced
             if isinstance(item, list):
                 if depth >= 12:
                     omitted.append(path)
                     return []
-                if len(item) > count:
-                    omitted.append(f'{path}[{count}:]')
-                return [reduce(v, f'{path}[{i}]', depth + 1) for i, v in enumerate(item[:count])]
+                selected = list(enumerate(item[:count]))
+                if path.endswith('messages') and all(isinstance(v, dict) and 'ordinal' in v for v in item):
+                    ordinals = sorted({v['ordinal'] for v in item})[-count:]
+                    selected = [(i, v) for i, v in enumerate(item) if v['ordinal'] in ordinals]
+                if len(selected) < len(item):
+                    omitted.append(f'{path} (entries outside excerpt)')
+                return [reduce(v, f'{path}[{i}]', depth + 1) for i, v in selected]
             return item
 
         result = reduce(value)
