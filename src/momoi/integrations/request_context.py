@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Iterator
 
-THINKING_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+THINKING_EFFORTS = ("off", "low", "medium", "high", "xhigh", "max")
 
 _THINKING_EFFORT: ContextVar[str | None] = ContextVar("thinking_effort", default=None)
 

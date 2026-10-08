@@ -3,6 +3,7 @@ import json
 import logging
 from pathlib import Path
 from time import time
+from urllib.parse import urlsplit
 from typing import Any, Callable
 
 import aiohttp
@@ -205,7 +206,15 @@ class OpenAIProvider:
             "temperature": config.temperature,
         }
         effort = thinking_effort(config)
-        if effort:
+        if effort == "off":
+            # Native OpenAI uses `none`; DeepSeek-compatible APIs use their
+            # thinking switch and reject a simultaneous reasoning_effort.
+            native_openai = urlsplit(config.base_url).hostname == "api.openai.com" or config.model.lower().startswith(("gpt-", "chatgpt-", "o1", "o3", "o4"))
+            if native_openai:
+                payload["reasoning_effort"] = "none"
+            else:
+                payload["thinking"] = {"type": "disabled"}
+        elif effort:
             payload.pop("temperature", None)
             payload["thinking"] = {"type": "enabled"}
             payload["reasoning_effort"] = effort

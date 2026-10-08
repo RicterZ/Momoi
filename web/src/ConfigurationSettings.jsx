@@ -961,7 +961,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
                   const effort = spec.properties.effort;
                   return <SelectField key={`${value.adapter}-${key}`} label={effort.label || "默认思考强度"}
                     value={value.options.thinking?.effort ?? effort.default ?? ""}
-                    options={effort.enum.map(option => ({ value: option, label: option === "" ? "服务商默认" : option }))}
+                    options={effort.enum.map(option => ({ value: option, label: option === "" ? "服务商默认" : option === "off" ? "关闭" : option }))}
                     onChange={next => update({ ...value, options: { ...value.options,
                       thinking: { ...value.options.thinking, effort: next },
                     } })}
@@ -1170,7 +1170,7 @@ function RuntimePropertyFields({ spec, value, onChange }) {
         const update = next => onChange({ ...value, [key]: next });
         if (child.properties) return <RuntimePropertyFields key={key} spec={child} value={value?.[key]} onChange={update} />;
         return <SelectField key={key} label={child.label || key} value={value?.[key] ?? child.default}
-          options={child.enum.map(option => ({ value: option, label: option === "" ? "跟随模型" : option }))} onChange={update} />;
+          options={child.enum.map(option => ({ value: option, label: option === "" ? "跟随模型" : option === "off" ? "关闭" : option }))} onChange={update} />;
       })}
     </div>
   );

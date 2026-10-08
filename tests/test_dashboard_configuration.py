@@ -715,11 +715,11 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         snapshot = await response.json()
         fields = snapshot["app_fields"]["thinking"]["fields"]["stages"]
         self.assertFalse(fields["advanced"])
-        self.assertEqual(fields["properties"]["episode_anneal"]["enum"], ["", "low", "medium", "high", "xhigh", "max"])
+        self.assertEqual(fields["properties"]["episode_anneal"]["enum"], ["", "off", "low", "medium", "high", "xhigh", "max"])
         for adapter in snapshot["adapters"]:
             if adapter["capability"] == "llm" and adapter["adapter"] in {"openai", "anthropic"}:
                 self.assertEqual(set(adapter["fields"]["thinking"]["properties"]), {"effort"})
-                self.assertEqual(adapter["fields"]["thinking"]["properties"]["effort"]["enum"], ["", "low", "medium", "high", "xhigh", "max"])
+                self.assertEqual(adapter["fields"]["thinking"]["properties"]["effort"]["enum"], ["", "off", "low", "medium", "high", "xhigh", "max"])
         providers_before = self.manager.provider_path.read_bytes()
 
         async def save(stages):
@@ -737,7 +737,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(self.manager.validate().thinking_stages, {"reply_followup": "low", "topic_selection": "low", "replyer": "low"})
         self.assertEqual(self.manager.provider_path.read_bytes(), providers_before)
-        for effort in ("low", "medium", "high", "xhigh", "max", ""):
+        for effort in ("off", "low", "medium", "high", "xhigh", "max", ""):
             response = await save({"owner": effort})
             self.assertEqual(response.status, 200)
             self.assertEqual(self.manager.validate().thinking_stages.get("owner", ""), effort)

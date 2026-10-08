@@ -79,6 +79,40 @@ class ModelRequestTest(unittest.IsolatedAsyncioTestCase):
                 last = payloads[-1]
                 self.assertEqual(last.get("reasoning_effort", last.get("output_config", {}).get("effort")), "high")
 
+    async def test_off_is_explicit_and_different_from_provider_default(self):
+        payloads = []
+        async def handler(request):
+            payloads.append(await request.json())
+            if request.path == "/v1/messages":
+                return web.json_response({"content": [{"type": "text", "text": "OK"}]})
+            return web.json_response({"choices": [{"message": {"content": "OK"}}]})
+        app = web.Application()
+        app.router.add_post("/v1/messages", handler)
+        app.router.add_post("/v1/chat/completions", handler)
+        async with TestServer(app) as server:
+            for cls, model in ((OpenAIProvider, "deepseek-flash"), (AnthropicProvider, "claude-test"), (OpenAIProvider, "gpt-test")):
+                for effort in ("off", ""):
+                    config = LLMConfig(base_url=str(server.make_url("/v1")), api_key="test", model=model,
+                        max_tokens=100, temperature=.6, timeout_seconds=2, max_retries=0,
+                        thinking=ThinkingConfig(effort=effort))
+                    async with cls(config) as provider:
+                        await provider.complete("", [{"role": "user", "content": "Hello"}])
+                        payload = payloads[-1]
+                        self.assertNotIn("output_config", payload)
+                        if not effort:
+                            self.assertNotIn("thinking", payload)
+                            self.assertNotIn("reasoning_effort", payload)
+                        elif model == "gpt-test":
+                            self.assertEqual(payload["reasoning_effort"], "none")
+                            self.assertNotIn("thinking", payload)
+                        else:
+                            self.assertEqual(payload["thinking"], {"type": "disabled"})
+                            self.assertNotIn("reasoning_effort", payload)
+                        with model_request(thinking_effort="off"):
+                            await provider.complete("", [{"role": "user", "content": "Stage override"}])
+                        self.assertEqual(payloads[-1].get("thinking", {}).get("type", payloads[-1].get("reasoning_effort")),
+                                         "none" if model == "gpt-test" else "disabled")
+
     async def test_overrides_are_isolated_across_concurrent_requests_and_child_tasks(self):
         runner = self.runner({"episode_anneal": "low", "reply_followup": "max"})
         ready = asyncio.Event()

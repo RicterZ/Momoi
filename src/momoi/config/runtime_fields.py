@@ -44,7 +44,7 @@ _FIELDS = {
                         "enum": ["", *THINKING_EFFORTS],
                         "default": "low" if stage in {"topic_selection", "replyer"} else "",
                         "advanced": False,
-                        "description": ("Replyer 留空时使用 low。" if stage == "replyer" else "空字符串表示跟随模型；") + "low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。",
+                        "description": ("Replyer 留空时使用 low。" if stage == "replyer" else "空字符串表示跟随模型；") + "off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。",
                     }
                     for stage, label in THINKING_STAGES.items()
                 },

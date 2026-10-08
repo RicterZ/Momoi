@@ -94,7 +94,9 @@ class AnthropicProvider:
             "temperature": config.temperature,
         }
         effort = thinking_effort(config)
-        if effort:
+        if effort == "off":
+            payload["thinking"] = {"type": "disabled"}
+        elif effort:
             payload.pop("temperature", None)
             payload["output_config"] = {"effort": effort}
         if tools:
