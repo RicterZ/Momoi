@@ -72,8 +72,10 @@ def _goal_directory_lines(items: object) -> str:
     return "\n".join(
         f"<goal id={quoteattr(str(item['id']))} "
         f"title={quoteattr(truncate_tokens(str(item.get('title') or ''), 80))} />"
-        for item in items
-        if isinstance(item, dict) and item.get("id")
+        for item in sorted(
+            (item for item in items if isinstance(item, dict) and item.get("id")),
+            key=lambda item: str(item["id"]),
+        )
     )
 
 

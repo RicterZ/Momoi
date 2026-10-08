@@ -1633,3 +1633,14 @@ def test_recall_tool_context_keeps_memory_and_reflection_as_records(tmp_path):
     assert context['recall_status']['queries'][0]['hits'] == ['memory', 'reflection']
     assert '<memory' in context['recall_memories']
     store.close()
+
+
+def test_goal_directory_stays_identical_when_execution_reorders_goals():
+    goals = [
+        {"id": "goal-b", "title": "task B", "updated_at": 1},
+        {"id": "goal-a", "title": "task A", "updated_at": 2},
+    ]
+    before = _goal_directory_lines(goals)
+    after = _goal_directory_lines([goals[1] | {"updated_at": 3}, goals[0]])
+    assert before == after
+    assert before.index('id="goal-a"') < before.index('id="goal-b"')
