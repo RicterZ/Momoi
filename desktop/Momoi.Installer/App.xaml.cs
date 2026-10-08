@@ -284,7 +284,7 @@ public partial class App : Application
             Log("Requesting elevated native installer launch: " + core);
             using var child = Process.Start(start) ?? throw new IOException("无法启动安装程序。");
             Log($"Native installer started PID={child.Id}; log={nativeLog}");
-            loading?.SetDetail("安装中 · 正在安装运行组件（无需再次授权）");
+            loading?.SetDetail("安装中 · 正在安装运行组件");
             await child.WaitForExitAsync();
             Log("Native installer exit code " + child.ExitCode);
             if (child.ExitCode is not (0 or 3010)) throw new IOException($"安装未完成（退出码 {child.ExitCode}）。日志：{nativeLog}");
