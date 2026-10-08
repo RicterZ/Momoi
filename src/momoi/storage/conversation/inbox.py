@@ -107,7 +107,6 @@ class InboxStore:
             text += f"原消息发送时间：{self.context_timestamp(original['occurred_at'])}。"
         elif notice.author == "owner":
             text += "原消息未收到，内容未知。"
-        text += "\n这条消息已撤回，不再作为当前请求或待执行指令；已执行的操作不代表已经回滚。"
         now = time.time()
         payload = {"channel": notice.channel, "notice_type": "message_recall", "author": notice.author}
         with self._db:

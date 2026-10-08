@@ -151,7 +151,9 @@ def test_recall_is_durable_event_without_rewriting_owner_text(tmp_path):
         assert store.pending_events() == []
         blocks = owner_content_blocks([update], lambda _: [], ZoneInfo('UTC'))
         text = ''.join(block['text'] for block in blocks)
-        assert '<event source="napcat:message_recall">' in text
+        assert "<event>" in text
+        assert 'source="napcat:message_recall"' not in text
+        assert "不再作为当前请求" not in text
         assert '<message ' not in text
         assert store.turn_workflow_kind(notice.event_id) == 'channel_event'
     finally:

@@ -32,8 +32,11 @@ def render_event(
     text: str, identifier: int, source: str, received_at: float, timezone: ZoneInfo
 ) -> str:
     timestamp = datetime.fromtimestamp(received_at, timezone).isoformat(timespec="seconds")
+    if source == "napcat:message_recall":
+        text = text.replace("\n这条消息已撤回，不再作为当前请求或待执行指令；已执行的操作不代表已经回滚。", "")
+    source_attr = "" if source == "napcat:message_recall" else f" source={quoteattr(source)}"
     return (
-        f'<event id="E{identifier}" source={quoteattr(source)} received_at="{timestamp}">\n'
+        f'<event id="E{identifier}"{source_attr} received_at="{timestamp}">\n'
         f'{escape(text)}\n</event>'
     )
 
