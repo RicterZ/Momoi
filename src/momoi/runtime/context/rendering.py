@@ -269,8 +269,7 @@ def _episode_context(
 
 
 def episode_recall_records(store, episodes, budget):
-    """Structured historical evidence; never inserted as live tool exchanges."""
-    from ...storage.episode.execution_evidence import execution_turns
+    """Return topic summaries and relation pointers; details live in episode_read."""
     records = []
     selected = [e for e in episodes or [] if not e.get("is_new")]
     neighbors = store.episode_relation_neighbors(
@@ -284,29 +283,17 @@ def episode_recall_records(store, episodes, budget):
         summary, _ = _episode_summary(episode)
         record = {"id": episode["id"], "title": episode["title"],
                   "summary": truncate_tokens(summary, max(1, per_episode // 3)),
-                  **execution_turns(store, episode["id"], item.get("matched_keywords", []),
-                                    selected_messages=item.get("matches", []))}
-        record["relations"] = neighbors.get(episode["id"], [])
-        # Keep JSON valid and invocation/result pairs intact when fitting the budget.
+                  "details_omitted": True,
+                  "relations": [
+                      {key: relation[key] for key in ("episode_id", "title", "type", "direction")}
+                      for relation in neighbors.get(episode["id"], [])
+                  ]}
         while estimate_tokens(json.dumps(record, ensure_ascii=False)) > per_episode:
-            if record.get("relations"):
+            if record["relations"]:
                 record["relations"].pop()
                 continue
-            turns = record["turns"]
-            if not turns:
-                record["summary"] = truncate_tokens(record["summary"], max(1, per_episode // 8))
-                break
-            turn = turns[-1]
-            if turn.get("execution"):
-                removed = turn["execution"].pop()
-                count = len(removed.get("tools", []))
-                if count:
-                    turn["omitted_tool_calls"] = turn.get("omitted_tool_calls", 0) + count
-                if not turn["execution"]:
-                    del turn["execution"]
-            else:
-                turns.pop()
-                record["omitted_turns"] = record.get("omitted_turns", 0) + 1
+            record["summary"] = truncate_tokens(record["summary"], max(1, per_episode // 8))
+            break
         records.append(record)
     return records
 

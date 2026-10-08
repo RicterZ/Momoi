@@ -32,12 +32,14 @@ def test_execution_only_keyword_admits_topic_and_returns_paired_evidence(tmp_pat
     assert [h['id'] for h in hits] == ['e']
     assert hits[0]['execution_evidence']['turns'][0]['execution'][0]['tools'][0]['name'] == 'write_file'
     records = episode_recall_records(store, [{'episode_id': 'e', 'matched_keywords': ['diet.md']}], 3000)
-    call = records[0]['turns'][0]['execution'][0]['tools'][0]
+    assert 'turns' not in records[0]
+    assert records[0]['details_omitted'] is True
+    call = store.conversation_episode('e')['turns'][0]['execution'][0]['tools'][0]
     assert call['arguments']['path'] == '/diet.md'
     assert call['arguments_truncated']
     assert call['result']['result_ref'] == 'tr_x'
     assert 'call_id' not in call
-    assert '热量账' in records[0]['turns'][0]['execution'][0]['assistant_text']
+    assert '热量账' in store.conversation_episode('e')['turns'][0]['execution'][0]['assistant_text']
     assert store.search_topic_queries([EpisodeRecallQuery('热量账')], 5, minimum_confidence=0)
     store.close()
 
@@ -142,7 +144,8 @@ def test_legacy_evidence_search_pairing_filtering_and_pagination(tmp_path):
     assert store.search_topic_queries([EpisodeRecallQuery('玉米库存扣减')], 5, minimum_confidence=0)
     assert not store.search_topic_queries([EpisodeRecallQuery('排除的检索内容')], 5, minimum_confidence=0)
     recalled = episode_recall_records(store, [{'episode_id': 'e', 'matched_keywords': ['玉米']}], 3000)
-    assert recalled[0]['turns'][0]['execution'][0]['tools'][0]['name'] == 'mcp__wms__record_issue'
+    assert 'turns' not in recalled[0]
+    assert store.conversation_episode('e')['turns'][0]['execution'][0]['tools'][0]['name'] == 'mcp__wms__record_issue'
     assert not store.turn_exchanges(['t'])
     store.close()
 
@@ -247,7 +250,8 @@ def test_old_batched_qq_evidence_retains_native_quote_targets_without_new_column
         assert hits['matches'][0]['quote_targets'] == expected
         records = episode_recall_records(store, [{'episode_id': 'e', 'matched_keywords': ['alpha'],
             'matches': [{'id': identifier, 'turn_id': 'old-turn', 'role': 'user', 'content': 'synthetic alpha'}]}], 3000)
-        assert records[0]['turns'][0]['messages'][0]['quote_targets'] == expected
+        assert 'turns' not in records[0]
+        assert store.conversation_episode('e')['messages'][0]['quote_targets'] == expected
         store.record_message_recall(MessageRecalled('recall-old', '101', 3, 'napcat'))
         assert not store.qq_quote_target_available('101')
         assert store.message_quote_targets(identifier) == expected[1:]

@@ -95,7 +95,12 @@ def test_relation_recall_shape_includes_both_directions():
                 store, [{"episode_id": "old", "matched_keywords": []}], 6000
             )
             assert incoming[0]["relations"][0]["direction"] == "incoming"
-            assert "turns" in records[0]
+            assert "turns" not in records[0]
+            assert records[0]["details_omitted"] is True
+            assert records[0]["relations"] == [{
+                "episode_id": "old", "title": "项目启动",
+                "type": "follows_up", "direction": "outgoing",
+            }]
         finally:
             store.close()
 
