@@ -1,19 +1,12 @@
 services:
   asr:
-    profiles: [asr]
+    extends:
+      file: docker-compose.yml
+      service: asr
     image: momoi-asr:local
     build:
       context: .
       dockerfile: infra/asr/Dockerfile
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/healthz', timeout=3)"]
-      interval: 10s
-      timeout: 5s
-      start_period: 20s
-      retries: 6
-    ports:
-      - "127.0.0.1:${MOMOI_ASR_PORT:-8003}:8003"
-    restart: unless-stopped
   embedding:
     extends:
       file: docker-compose.yml

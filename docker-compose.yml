@@ -1,4 +1,17 @@
 services:
+  asr:
+    profiles: [asr]
+    image: ricterz/momoi-asr:latest
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+    ports:
+      - "127.0.0.1:${MOMOI_ASR_PORT:-8003}:8003"
+    restart: unless-stopped
+
   embedding:
     image: ricterz/momoi-embedding:latest
     container_name: momoi-embedding

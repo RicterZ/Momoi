@@ -6,6 +6,14 @@ switch to Tencent occurs on local service failure.
 
 ## Container deployment
 
+Published image (available after the Docker publishing workflow runs):
+
+```sh
+docker compose -f docker-compose.yml --profile asr up -d asr
+```
+
+Build from source:
+
 ```sh
 docker compose -f compose.yaml --profile asr build asr
 docker compose -f compose.yaml --profile asr up -d --no-deps asr
@@ -16,7 +24,7 @@ Compose network set `endpoint` to `http://asr:8003`; leave `model_path` empty.
 For a host process use `http://127.0.0.1:8003`. Only the loopback port is published.
 The service has no authentication and must remain on a trusted private network.
 
-The container loads the model once at startup. It owns inference and model files;
+The container loads the model at startup and reloads the recognizer when inference settings change. It owns inference and model files;
 Momoi's main container does not install sherpa-onnx or load the model.
 Inference threads and endpoint silence come from the Momoi ASR provider configuration (`num_threads`, default 2; `trailing_silence`, default 0.8 seconds). Both local loading and container requests use these settings. The container does not read ASR tuning environment variables. Updated settings apply to new recognition requests; active streams retain their original settings.
 
