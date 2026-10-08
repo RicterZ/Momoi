@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 """Historical chat projection must preserve delivery evidence and tool protocol."""
 import copy
 import json
@@ -149,3 +151,20 @@ def test_context_pressure_does_not_clip_reply_receipt():
     window = ContextWindow(SimpleNamespace(max_input_tokens=800, context_compaction_ratio=1), None, None)
     window.fit([], messages, [], 0)
     assert json.loads(results(messages)[0]['content'])['bubbles'] == [text]
+
+
+def test_replay_pairs_results_and_preserves_orphan_evidence_as_text():
+    item = {'content': [
+        {'type': 'tool_use', 'id': name, 'name': 'exec', 'input': {}}
+        for name in ('a', 'b', 'a')], 'results': [
+        {'type': 'tool_result', 'tool_use_id': name, 'content': json.dumps({'ok': True, 'value': name})}
+        for name in ('b', 'orphan', 'a', 'a')]}
+    original = deepcopy(item)
+    messages = render_exchanges([item])
+    native_calls = calls(messages)
+    native_results = results(messages)
+    assert [c['id'] for c in native_calls] == ['a', 'b']
+    assert [r['tool_use_id'] for r in native_results] == ['a', 'b']
+    assert 'unpaired historical tool result' in str(messages)
+    assert 'orphan' in str(messages)
+    assert item == original

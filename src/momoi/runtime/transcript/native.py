@@ -1,6 +1,7 @@
 """Replay native assistant/tool journals without synthesizing legacy speech."""
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
+import json
 from zoneinfo import ZoneInfo
 
 from .dialogue import project_dialogue
@@ -28,22 +29,43 @@ def render_exchanges(
         results = exchange.get("results")
         if not isinstance(results, list):
             continue
-        result_ids = {
-            str(block.get("tool_use_id") or "") for block in results
-            if isinstance(block, dict) and block.get("type") == "tool_result"
-        }
+        call_ids = set()
+        if isinstance(content, list):
+            unique = []
+            for block in content:
+                if isinstance(block, dict) and block.get('type') == 'tool_use':
+                    identifier = str(block.get('id') or '')
+                    if not identifier or identifier in call_ids:
+                        unique.append({'type': 'text', 'text': '[invalid historical tool call] ' + json.dumps(block, ensure_ascii=False)})
+                        continue
+                    call_ids.add(identifier)
+                unique.append(block)
+            content = unique
+            calls = [block for block in content if isinstance(block, dict) and block.get('type') == 'tool_use']
+        paired, residue = {}, []
+        for block in results:
+            if not isinstance(block, dict) or block.get('type') != 'tool_result':
+                residue.append(block)
+                continue
+            identifier = str(block.get('tool_use_id') or '')
+            if identifier not in call_ids or identifier in paired:
+                residue.append({'type': 'text', 'text': '[unpaired historical tool result; execution evidence only] ' + json.dumps(block, ensure_ascii=False)})
+            else:
+                paired[identifier] = block
         # A Turn can end before every tool in a batch runs. Keep the historical
         # API exchange valid without claiming the operation never ran.
-        complete_results = list(results)
+        complete_results = []
         for call in calls:
             identifier = str(call.get("id") or "")
-            if identifier and identifier not in result_ids:
+            if identifier in paired:
+                complete_results.append(paired[identifier])
+            elif identifier:
                 complete_results.append({
                     "type": "tool_result", "tool_use_id": identifier,
                     "content": '{"ok":false,"error":"execution_result_unknown","ambiguous":true}',
                 })
         if content:
             messages.append({"role": "assistant", "content": content})
-        if complete_results:
-            messages.append({"role": "user", "content": complete_results})
+        if complete_results or residue:
+            messages.append({"role": "user", "content": [*complete_results, *residue]})
     return messages
