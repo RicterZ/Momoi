@@ -1,0 +1,43 @@
+import json
+from copy import deepcopy
+from types import SimpleNamespace
+
+from momoi.models import ToolCall
+from momoi.tools.presentation import mcp_body, present_result
+from momoi.runtime.agent.result_store import ToolResultStore
+from momoi.runtime.agent.tool_executor import ToolExecutor
+from momoi.runtime.turn_support import tool_result_block
+from momoi.runtime.transcript.native import render_exchanges
+from momoi.storage.episode.execution_evidence import historical_result
+
+
+def test_mcp_projection_matches_live_history_and_execution_without_changing_raw(tmp_path):
+    raw = {'ok': True, 'error': None, 'truncated': False, 'result': {
+        'content': [{'type': 'text', 'text': json.dumps({'quantity': 0, 'updated': False})}],
+        'isError': False}}
+    original = deepcopy(raw)
+    snapshots = ToolResultStore(tmp_path / 'results')
+    executor = ToolExecutor(SimpleNamespace(workspace=tmp_path, database=tmp_path / 'db',
+                           tool_result_max_chars=12000), None, None, None, None, snapshots)
+    result = executor.normalize(ToolCall('c', 'mcp__stock__read', {}), raw, 'mcp')
+    live = json.loads(tool_result_block('c', result)['content'])
+    assert live['result'] == {'quantity': 0, 'updated': False}
+    assert 'error' not in live and 'truncated' not in live
+    assert snapshots.historical_payload(result['result_ref'])['result'] == raw['result']
+    exchange = {'content': [{'type': 'tool_use', 'id': 'c', 'name': 'mcp__stock__read', 'input': {}}],
+                'results': [tool_result_block('c', result)]}
+    history = render_exchanges([exchange])[-1]['content'][0]
+    assert json.loads(history['content']) == live
+    assert historical_result(result) == live
+    assert raw == original
+
+
+def test_mcp_plain_text_invalid_json_and_mixed_media_are_preserved():
+    for text in ['hello', '{"broken":', '42']:
+        assert mcp_body({'content': [{'type': 'text', 'text': text}]}) == text
+    blocks = [{'type': 'text', 'text': '{"a": 1}'}, {'type': 'image', 'data': 'binary'}]
+    assert mcp_body({'content': blocks}) == {'content': blocks}
+    assert mcp_body({'content': [{'type': 'text', 'text': 'one'},
+                                 {'type': 'text', 'text': 'two'}]}) == ['one', 'two']
+    business = {'content': 'description', 'quantity': 0, 'status': 'accepted'}
+    assert present_result({'ok': True, 'result': business})['result'] == business

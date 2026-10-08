@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ...tools.presentation import present_result
 from ...contracts import ToolResult
 from ...observability.events import log_event
 from ...observability.values import compact_log_value, safe_preview
@@ -284,6 +285,9 @@ class ToolExecutor:
         # in the internal envelope, outside the model-visible snapshot.
         serialized = json.dumps({key: value for key, value in envelope.items() if key != "provenance"}, ensure_ascii=False, default=str)
         result_ref = self.tool_results.save(serialized)
+        if source == "mcp":
+            envelope = {**present_result(envelope), "provenance": provenance}
+            serialized = json.dumps(present_result(envelope), ensure_ascii=False, default=str)
         budget = self.config.tool_result_max_chars - RESULT_REF_OVERHEAD
         if len(serialized) <= budget:
             return {**envelope, "result_ref": result_ref}

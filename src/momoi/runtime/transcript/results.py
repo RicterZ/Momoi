@@ -1,6 +1,7 @@
 """Stable, compact observations for completed-turn replay only."""
 
 import json
+from ...tools.presentation import present_result
 from collections.abc import Mapping
 
 
@@ -146,14 +147,19 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3, result
             try:
                 payload = json.loads(raw)
             except (ValueError, TypeError):
-                payload = {}
+                flush()
+                continue
             if not isinstance(payload, Mapping):
-                payload = {}
+                flush()
+                continue
             if "provenance" in payload:
                 payload = dict(payload)
                 payload.pop("provenance")
                 raw = json.dumps(payload, ensure_ascii=False)
                 block["content"] = raw
+            payload = present_result(dict(payload), historical=True)
+            raw = json.dumps(payload, ensure_ascii=False)
+            block["content"] = raw
             name = calls.get(block.get("tool_use_id"), "")
             # Recall evidence supports reuse; reply bubbles are the actual
             # conversation. Preserve both in full, including failure details.

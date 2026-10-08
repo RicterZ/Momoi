@@ -1,5 +1,6 @@
 """Bounded historical execution evidence from native and legacy journals."""
 import json
+from ...tools.presentation import present_result
 from itertools import groupby
 
 EXCLUDED = {'recall', 'end_turn', 'heartbeat_end_turn', 'reply', 'send_bubbles', 'send_voice'}
@@ -93,11 +94,7 @@ def historical_result(value):
     """Remove transport metadata only from the historical presentation."""
     if not isinstance(value, dict):
         return value
-    value = {k: v for k, v in value.items() if k not in {'provenance', 'sha256'}}
-    if value.get('error', '') is None:
-        value.pop('error', None)
-    if value.get('stderr_tail') == '':
-        value.pop('stderr_tail')
+    value = present_result(value, historical=True)
     if value.get('result_ref') and 'chunk_start' in value and 'content' in value:
         for key in ('format', 'sha256', 'original_chars', 'chunk_start', 'chunk_end',
                     'next_cursor', 'has_more'):
