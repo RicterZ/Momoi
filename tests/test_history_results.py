@@ -161,8 +161,9 @@ def test_non_feed_list_does_not_drop_unknown_business_fields():
                'items': [{'id': 'item', 'name': '药品', 'quantity': 0,
                           'warnings': '重要警告' * 300}]}
     result = results(render_exchanges([exchange('i', 'inventory', payload)]))[0]
-    assert 'items' not in result
-    assert 'preview' in result and result['result_ref'] == 'tr_inventory'
+    assert result['items'][0]['quantity'] == 0
+    assert '重要警告' in result['items'][0]['warnings']
+    assert result['omitted_fields'] and result['result_ref'] == 'tr_inventory'
 
 
 def test_exec_preserves_exit_and_both_output_streams():

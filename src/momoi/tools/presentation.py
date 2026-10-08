@@ -89,6 +89,9 @@ def fit_result(value, budget, *, string_limit=1000):
                     return {}
                 return {k: reduce(item[k], f'{path}.{k}'.lstrip('.'), depth + 1) for k in selected}
             if isinstance(item, list):
+                if depth >= 12:
+                    omitted.append(path)
+                    return []
                 if len(item) > count:
                     omitted.append(f'{path}[{count}:]')
                 return [reduce(v, f'{path}[{i}]', depth + 1) for i, v in enumerate(item[:count])]
@@ -103,6 +106,6 @@ def fit_result(value, budget, *, string_limit=1000):
         if len(encode(result)) <= budget:
             return result
     # Extremely wide objects still retain outcome fields and a deep-read pointer.
-    result = {k: result[k] for k in _OUTCOME_KEYS if k in result}
+    result = {k: result[k] for k in ('ok', 'error', 'state', 'status', 'exit_code', 'ambiguous', 'result_ref') if k in result}
     result.update(truncated=True, omitted_fields=['business_body'])
     return result

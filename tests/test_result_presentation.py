@@ -64,3 +64,21 @@ def test_large_mcp_write_preserves_pending_outcome_and_business_values(tmp_path)
     historical = fit_result(present_result(raw), 800, string_limit=160)
     assert historical['result']['quantity'] == 0
     assert historical['result']['status'] == 'accepted'
+
+
+def test_structured_history_stays_fixed_as_later_turns_arrive():
+    from momoi.runtime.transcript.native import render_exchanges
+    source = {'content': [{'type': 'tool_use', 'id': 'a', 'name': 'inventory', 'input': {}}],
+              'results': [tool_result_block('a', {'ok': True, 'state': 'accepted', 'result_ref': 'tr_inventory',
+                  'items': [{'quantity': 0, 'operation_id': 'op', 'notes': 'long ' * 3000}]})]}
+    original = deepcopy(source)
+    prefix = render_exchanges([source])
+    later = {'content': [{'type': 'tool_use', 'id': 'b', 'name': 'inventory', 'input': {}}],
+             'results': [tool_result_block('b', {'ok': True, 'state': 'committed'})]}
+    assert render_exchanges([source, later])[:len(prefix)] == prefix
+    assert render_exchanges([source]) == prefix
+    result = json.loads(prefix[-1]['content'][0]['content'])
+    assert result['state'] == 'accepted'
+    assert result['items'][0]['quantity'] == 0
+    assert result['items'][0]['operation_id'] == 'op'
+    assert source == original

@@ -8,6 +8,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from ...tools.presentation import fit_result, present_result
+
 
 _RESULT_REF = re.compile(r"^tr_[0-9a-f]{32}$")
 _CLEANUP_INTERVAL_SECONDS = 60 * 60
@@ -152,6 +154,15 @@ class ToolResultStore:
         ):
             return None
         result_ref = str(parsed["result_ref"])
+        if "chunk_start" not in parsed:
+            snapshot = self.historical_payload(result_ref)
+            if snapshot is None:
+                return None
+            projected = present_result(snapshot)
+            if not isinstance(projected, dict):
+                projected = {"content": projected}
+            projected["result_ref"] = result_ref
+            return json.dumps(fit_result(projected, max_chars), ensure_ascii=False, default=str)
         offset = int(start)
         cursor = None if offset == 0 else self._encode_cursor(result_ref, offset)
         result = self.read(

@@ -220,8 +220,14 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3, result
             # pending states, pagination), rather than serializing them as a preview.
             source = present_result(source, historical=True)
             business = source.get("result")
-            if history_format >= 3 and isinstance(business, (dict, list)) and not (name.startswith("mcp__weibo__") and list_excerpt(source) is not None):
+            structured = isinstance(business, (dict, list)) or (
+                business is None and not isinstance(source.get("content"), str)
+                and name not in {"read_file", "exec"}
+            )
+            if history_format >= 3 and structured and not (name.startswith("mcp__weibo__") and list_excerpt(source) is not None):
                 projected = present_result(source, historical=True)
+                if payload.get("result_ref"):
+                    projected["result_ref"] = payload["result_ref"]
                 compact = fit_result(projected, 800, string_limit=160)
                 compact["history_truncated"] = True
                 block["content"] = json.dumps(compact, ensure_ascii=False)

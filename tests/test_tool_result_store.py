@@ -139,15 +139,17 @@ class ToolResultStoreTest(unittest.TestCase):
             self.assertLessEqual(len(str(refitted)), 900)
             self.assertEqual(shrunk["result_ref"], result_ref)
             self.assertTrue(shrunk["truncated"])
-            self.assertTrue(shrunk["next_cursor"])
+            self.assertIn("items", shrunk)
+            self.assertIn("omitted_fields", shrunk)
+            self.assertNotIn("chunk_start", shrunk)
             # The omitted part is recoverable, unlike a truncated body.
             rest = store.read(
                 result_ref,
-                shrunk["next_cursor"],
+                None,
                 max_chars=10000,
                 provenance={"source": "runtime", "tool": "read_tool_result"},
             )
-            self.assertEqual(shrunk["content"] + rest["content"], body)
+            self.assertEqual(rest["content"], body)
 
     def test_builtin_file_tools_cannot_see_private_store(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
