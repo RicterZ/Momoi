@@ -122,6 +122,8 @@ class ContextService:
         )
         from ..transcript.recall import compact_recall_messages
         compact_recall_messages(history, ids, result_store=self.tool_results)
+        from ..transcript.recall import remove_folded_memory_evidence
+        remove_folded_memory_evidence(history, memory_state.get("folded_overrides", {}))
         memories = {int(key): value for key, value in memory_state["observed"].items()
                     if value["activation"] == "always"}
         snapshot = [value for value in memory_state["snapshot"].values()

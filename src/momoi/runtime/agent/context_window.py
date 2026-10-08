@@ -141,7 +141,7 @@ class ContextWindow:
                 messages.append({
                     "role": "user",
                     "content": "<memory_changes>\n"
-                    + "\n".join(state["overrides"].values()) + "\n"
+                    + "\n".join({**state.get("folded_overrides", {}), **state["overrides"]}.values()) + "\n"
                     + effective + "\n</memory_changes>",
                     "_memory_change": state["revision"], "_context_prefix": True,
                 })
@@ -219,10 +219,13 @@ class ContextWindow:
                 snapshot = prefix["_memory_snapshot"]
                 replacement = context_data_message(
                     ("long_term_memories", snapshot["current"]),
-                    ("memory_overrides", snapshot["overrides"]),
+                    ("memory_overrides", ""),
                     ("goal_directory", snapshot["goals"]), required=True,
                 )
                 prefix["content"] = replacement["content"]
+                from ..transcript.recall import remove_folded_memory_evidence
+                state = self.store.transcript_memory_context(snapshot["turn_ids"], track_boundary=False)
+                remove_folded_memory_evidence(messages, {**state.get("folded_overrides", {}), **state["overrides"]})
                 self.store.fold_transcript_memory(snapshot["revision"])
                 removed = sum(bool(m.get("_memory_change")) for m in messages[:history_messages])
                 messages[:] = [m for m in messages if not m.get("_memory_change")]

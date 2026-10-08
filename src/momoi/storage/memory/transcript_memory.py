@@ -125,6 +125,11 @@ class TranscriptMemoryStore:
             state = json.loads(raw[0]) if raw else None
             if state is not None:
                 self._only_always_memory_changes(state)
+                folded = state.get("snapshot_overrides", {})
+                state.setdefault("folded_overrides", {}).update(folded)
+                state["snapshot_overrides"] = {}
+                state["overrides"] = {k: v for k, v in state.get("overrides", {}).items()
+                                      if folded.get(k) != v}
             boundary = turn_ids[0] if turn_ids else ""
             if track_boundary and state and state.pop("pending_compact", False):
                 compact = True
@@ -171,7 +176,9 @@ class TranscriptMemoryStore:
                 state["history_format"] = 4
                 state["snapshot_revision"] = state["revision"]
                 state["snapshot"] = current
-                state["snapshot_overrides"] = dict(state["overrides"])
+                state.setdefault("folded_overrides", {}).update(state["overrides"])
+                state["overrides"] = {}
+                state["snapshot_overrides"] = {}
                 state["events"] = []
             if track_boundary:
                 state["boundary"] = boundary
@@ -196,7 +203,9 @@ class TranscriptMemoryStore:
             state["history_format"] = 4
             state["snapshot_revision"] = state["revision"]
             state["snapshot"] = state["observed"]
-            state["snapshot_overrides"] = dict(state["overrides"])
+            state.setdefault("folded_overrides", {}).update(state["overrides"])
+            state["overrides"] = {}
+            state["snapshot_overrides"] = {}
             state["events"] = []
             self._db.execute(
                 "UPDATE transcript_memory_state SET data_json=? WHERE id=1",

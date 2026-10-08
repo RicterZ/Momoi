@@ -62,7 +62,9 @@ def test_dashboard_replace_delete_and_restart_preserve_snapshot(store):
     folded = other.transcript_memory_context(["b"], compact=True)
     assert not folded["snapshot"]
     assert not folded["events"]
-    assert '<delete' in folded["snapshot_overrides"][str(identifier)]
+    assert not folded["snapshot_overrides"]
+    assert not folded["overrides"]
+    assert '<delete' in folded["folded_overrides"][str(identifier)]
     other.close()
 
 
@@ -252,3 +254,26 @@ def test_request_compaction_does_not_restore_dropped_turns_in_next_context(store
     store.transcript_episode_snapshot("frozen")
     store.transcript_memory_context(["b", "c"])
     assert store.transcript_episode_snapshot("new summaries") == "frozen"
+
+
+def test_folded_deletes_do_not_accumulate_in_prefix_and_clean_recall(store):
+    from momoi.runtime.transcript.recall import remove_folded_memory_evidence
+    import json
+    identifier = add(store, 'old fact')
+    state = store.transcript_memory_context(['a'])
+    store.forget_memory_by_id(identifier, 'delete')
+    changed = store.transcript_memory_context(['a'])
+    assert changed['snapshot'] == state['snapshot']
+    assert '<delete' in changed['events'][0]['content']
+    store.fold_transcript_memory(changed['revision'])
+    folded = store.transcript_memory_context(['a'])
+    assert not folded['events'] and not folded['snapshot_overrides'] and not folded['overrides']
+    for memory in ([{'id': identifier, 'content': 'old fact'}, {'id': 999, 'content': 'valid'}],
+                   f'<memory id="{identifier}">old fact</memory><memory id="999">valid</memory>'):
+        messages = [{'content': [{'type': 'tool_use', 'id': 'r', 'name': 'recall'}]},
+                    {'content': [{'type': 'tool_result', 'tool_use_id': 'r',
+                                  'content': json.dumps({'ok': True, 'memory': memory, 'episodes': ['keep']})}]}]
+        remove_folded_memory_evidence(messages, folded['folded_overrides'])
+        assert 'old fact' not in messages[-1]['content'][0]['content']
+        assert 'valid' in messages[-1]['content'][0]['content']
+        assert 'keep' in messages[-1]['content'][0]['content']
