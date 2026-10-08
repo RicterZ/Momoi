@@ -49,7 +49,7 @@ def test_history_preview_keeps_edges_reference_and_does_not_mutate_live_result()
     result = results(replay)[0]
     assert result['preview'] == '开' * 80 + '\n[...truncated...]\n' + '尾' * 80
     assert result['result_ref'] == 'tr_original'
-    assert result['chunk_start'] == 100 and result['next_cursor'] == 'cursor'
+    assert result['chunk_start'] == 100 and 'next_cursor' not in result
     assert source == original
     assert replay == render_exchanges(source)
     assert replay[0]['content'] == source[0]['content']
@@ -194,3 +194,27 @@ def test_large_web_and_plan_results_keep_outcome_metadata():
         result = results(render_exchanges([exchange('x', name, payload)]))[0]
         for key, value in fields.items():
             assert result[key] == value
+
+
+def test_paged_history_omits_hash_cursor_and_previews_content_not_envelope():
+    source = [exchange('p', 'read_tool_result', {
+        'ok': True, 'result_ref': 'tr_example', 'sha256': 'a' * 64,
+        'chunk_start': 0, 'chunk_end': 2000, 'next_cursor': 'encoded-cursor',
+        'has_more': True, 'content': '正文' * 1000,
+    })]
+    result = results(render_exchanges(source))[0]
+    assert 'sha256' not in result and 'next_cursor' not in result
+    assert result['result_ref'] == 'tr_example'
+    assert 'tr_example' not in result['preview']
+    assert '正文' in result['preview']
+
+
+def test_wrapped_mcp_preview_excludes_duplicate_outer_reference():
+    source = [exchange('m', 'mcp__example__read', {
+        'ok': True, 'result_ref': 'tr_example',
+        'result': {'content': [{'type': 'text', 'text': '正文' * 1000}]},
+    })]
+    result = results(render_exchanges(source))[0]
+    assert result['result_ref'] == 'tr_example'
+    assert 'tr_example' not in result['preview']
+    assert '正文' in result['preview']

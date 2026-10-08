@@ -118,6 +118,14 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3) -> Non
                 flush()
                 run_name = ""
                 continue
+            # Paging metadata belongs to live continuation, not historical
+            # excerpts. File hashes remain available for optimistic writes.
+            if "chunk_start" in payload:
+                payload = dict(payload)
+                payload.pop("sha256", None)
+                payload.pop("next_cursor", None)
+                raw = json.dumps(payload, ensure_ascii=False)
+                block["content"] = raw
             if name and payload.get("ok") is False:
                 if run_name != name:
                     flush()
@@ -144,9 +152,29 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3) -> Non
                 continue
             compact = {key: payload[key] for key in (
                 "ok", "error", "result_ref", "original_chars",
-                "chunk_start", "chunk_end", "next_cursor", "has_more",
+                "chunk_start", "chunk_end", "has_more",
             ) if key in payload}
-            body = payload.get("content", raw)
+            body = payload.get("content")
+            if body is None:
+                body = {key: value for key, value in payload.items() if key not in {
+                    "ok", "error", "provenance", "result_ref", "sha256", "format",
+                    "original_chars", "chunk_start", "chunk_end", "next_cursor",
+                    "has_more", "truncated",
+                }}
+            # A complete serialized snapshot can itself contain the same
+            # transport envelope. Peel it structurally, never by text matching.
+            if isinstance(body, str):
+                try:
+                    nested = json.loads(body)
+                except (ValueError, TypeError):
+                    nested = None
+                if isinstance(nested, dict) and nested.get("result_ref") == payload.get("result_ref"):
+                    body = nested.get("content", nested.get("result", {
+                        key: value for key, value in nested.items() if key not in {
+                            "ok", "error", "result_ref", "sha256", "format", "provenance",
+                            "original_chars", "chunk_start", "chunk_end", "next_cursor", "has_more", "truncated",
+                        }
+                    }))
             if not isinstance(body, str):
                 body = json.dumps(body, ensure_ascii=False)
             if history_format >= 3 and name == "read_file":
