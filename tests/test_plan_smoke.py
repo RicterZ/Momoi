@@ -321,7 +321,8 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         async def complete(system, messages, request_tools, **kwargs):
             nonlocal calls
             calls += 1
-            self.assertEqual(request_tools, tools)
+            self.assertEqual({s["name"] for s in request_tools},
+                             {s["name"] for s in tools} | {s["name"] for s in daemon.tool_surface.discovery_groups()["builtin_plans"]} | {"plan_step_finish"})
             if calls == 1:
                 call = ToolCall("forbidden", "plan_create", {
                     "title": "must not exist", "request": "nested",

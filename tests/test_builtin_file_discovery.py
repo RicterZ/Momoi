@@ -52,3 +52,24 @@ class BuiltinFileDiscoveryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_plan_tools_are_discoverable_and_enabled_until_compaction():
+    from types import SimpleNamespace
+    from momoi.runtime.agent.tool_surface import ToolSurface
+    from momoi.runtime.tool_contracts.plan import PLAN_TOOLS
+    enabled = []
+    surface = ToolSurface(SimpleNamespace(tool_specs=[]), {'napcat': object()},
+                          store=SimpleNamespace(transcript_enabled_tools=lambda: enabled))
+    plan_names = {spec['name'] for spec in PLAN_TOOLS}
+    defaults = {spec['name'] for spec in surface.conversation_specs()}
+    assert not defaults.intersection(plan_names | {'plan_step_finish'})
+    catalog = surface.discovery_groups()['builtin_plans']
+    assert {spec['name'] for spec in catalog} == plan_names
+    assert 'builtin_plans' in surface.tool_index()
+    assert plan_names <= surface.permitted_names('owner')
+    enabled.extend(['plan_create', 'plan_get'])
+    visible = {spec['name'] for spec in surface.conversation_specs()}
+    assert visible.intersection(plan_names) == {'plan_create', 'plan_get'}
+    enabled.clear()
+    assert not {spec['name'] for spec in surface.conversation_specs()}.intersection(plan_names)

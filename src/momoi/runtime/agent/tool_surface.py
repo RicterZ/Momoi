@@ -40,6 +40,7 @@ BUILTIN_GROUP_DESCRIPTIONS = {
     "builtin_history": "查询记忆、历史话题与关联话题，查看过去的思考记录。",
     "builtin_files": "写入、修改、移动、删除文件和创建目录。",
     "builtin_qq_messages": "撤回机器人已经发送到 QQ 私聊的消息。",
+    "builtin_plans": "创建、审核、启动、查询、修订、暂停后恢复或取消多步骤 Plan；需要时加载。",
     "builtin_calls": "查询 QQ 语音电话的当前状态和基础服务是否就绪。",
 }
 
@@ -79,6 +80,7 @@ class ToolSurface:
         groups = self.mcp_server_groups()
         if getattr(self.mcp, "path", None) is not None:
             groups["builtin_mcp_management"] = self.public_specs([MCP_RELOAD_SPEC])
+        groups["builtin_plans"] = self.public_specs(PLAN_TOOLS)
         groups["builtin_history"] = self.public_specs([
             spec for spec in [*MEMORY_TOOL_SPECS, *THINKING_TOOL_SPECS, EPISODE_RELATIONS_TOOL_SPEC]
             if spec["name"] in DEFERRED_TOOLS
@@ -174,8 +176,6 @@ class ToolSurface:
             *copy.deepcopy([spec for spec in MEMORY_TOOL_SPECS if spec["name"] not in DEFERRED_TOOLS]),
             *copy.deepcopy(IMAGE_TOOL_SPECS),
             *self.public_specs(AGENDA_TOOL_SPECS),
-            *self.public_specs(PLAN_TOOLS),
-            copy.deepcopy(PLAN_STEP_FINISH),
             *self.public_specs([spec for spec in self.builtin_specs if spec["name"] not in DEFERRED_TOOLS]),
             *[
                 spec for specs in groups.values() for spec in specs

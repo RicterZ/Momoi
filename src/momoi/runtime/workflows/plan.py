@@ -9,6 +9,7 @@ from ...observability.events import log_event
 from ..agent import AgentWorkflow, TurnExecutionSpec
 from ..turn_support import TurnBudgetExceeded
 from .plan_context import frozen_plan_messages
+from ..tool_contracts.plan import PLAN_TOOLS, PLAN_STEP_FINISH
 from .plan_audit import audit_plan_step
 from ..context.current_state import pack_current_turn_context
 from ..context.presentation import heartbeat_self_state_lines
@@ -92,6 +93,7 @@ class PlanWorkflow:
             )})
             tools = self.tool_surface.conversation_specs()
             self.tool_surface.append_visible(tools, copy.deepcopy(context["tools"]))
+            self.tool_surface.append_visible(tools, copy.deepcopy([*PLAN_TOOLS, PLAN_STEP_FINISH]))
             workflow = AgentWorkflow(
                 preserve_transcript=False, stage="plan_step", tool_names=frozenset({"plan_step_finish"}), execute_tool=finish,
                 is_complete=stopped_or_revised, completion_result=lambda: completed,
