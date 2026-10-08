@@ -7,18 +7,6 @@ from ..core.scheduling import next_schedule_at, normalize_schedule
 from ..core.timestamps import context_timestamp
 
 
-def _schedule_brief(schedule: object) -> str:
-    if not isinstance(schedule, dict):
-        return "none"
-    kind = str(schedule.get("kind") or "")
-    if kind == "interval":
-        return f"interval/{schedule.get('every_seconds')}s"
-    if kind == "daily":
-        times = ",".join(str(item) for item in schedule.get("times") or [])
-        return f"daily@{times}"
-    return "none"
-
-
 class GoalStore:
     """Goal persistence, scheduling, claims, and Turn-draft mutations."""
 
@@ -158,27 +146,6 @@ class GoalStore:
     def commit_goal_draft(self, draft: TurnDraft) -> None:
         with self._db:
             self._apply_goal_mutations(draft, time.time())
-
-    def active_goals_context(self) -> str:
-        rows = self._db.execute(
-            """SELECT * FROM goals
-               WHERE status IN ('active', 'waiting', 'blocked')
-               ORDER BY COALESCE(next_review_at, 1e30), updated_at DESC
-               LIMIT 20"""
-        ).fetchall()
-        if not rows:
-            return ""
-        lines = []
-        for row in rows:
-            goal = self._goal_dict(row)
-            lines.append(
-                f"- id={goal['id']} status={goal['status']} title={goal['title']} "
-                f"next_action={goal['next_action'] or 'none'} "
-                f"next_review_at={goal.get('next_review_timestamp') or 'none'} "
-                f"retry_at={goal.get('retry_timestamp') or 'none'} "
-                f"schedule={_schedule_brief(goal['schedule'])}"
-            )
-        return "\n".join(lines)
 
     def _goal_dict(self, row: sqlite3.Row) -> dict[str, object]:
         goal = dict(row)
