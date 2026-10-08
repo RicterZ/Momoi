@@ -20,13 +20,3 @@ CUE_ARCHIVE_CONTRACT = EVENT_RETRIEVAL_CONTRACT + (
     "attribution, corrections, negation, and the distinction between dreams, plans, "
     "and actual events."
 )
-
-CUE_QUERY_CONTRACT = EVENT_RETRIEVAL_CONTRACT + (
-    "Based on the current conversation, write a natural-language query describing "
-    "the historical information needed now. Archived cues describe future scenarios "
-    "in which a memory might be needed; the current query expresses that need itself. "
-    "Both are matched semantically through the same scenarios, intents, and related "
-    "content. Use only known context to narrow the query and resolve references. "
-    "Do not guess unknown answers; knowing the original cue wording is unnecessary. "
-    "The query searches both episode summaries and individually embedded CUES."
-)
