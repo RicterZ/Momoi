@@ -55,7 +55,7 @@ class QQCallChannel:
     def message_current(self, event):
         return self.context_valid(event.delivery_context)
 
-    async def end_session(self):
+    async def end_session(self, *, reason='call_ended'):
         old = self.session_id
         self.session_id = ''
         self.generation += 1
@@ -67,7 +67,8 @@ class QQCallChannel:
                 await self.asr_stream.close()
             self.asr_stream = None
         if old:
-            log_event(logger, logging.INFO, 'qq_call_session_ended', channel=self.name, session_id=old)
+            log_event(logger, logging.INFO, 'qq_call_session_ended', channel=self.name,
+                      session_id=old, reason=reason)
             if self.interrupt:
                 self.interrupt('call_ended')
         while not self.queue.empty():
@@ -97,7 +98,11 @@ class QQCallChannel:
                     raise ValueError('Unsupported QQ call protocol')
                 sid = str(value.get('session_id') or '')
                 if sid != self.session_id:
-                    await self.end_session()
+                    log_event(logger, logging.INFO, 'qq_call_session_changed', channel=self.name,
+                              previous_session_id=self.session_id, session_id=sid,
+                              phase=value.get('phase'), ready=value.get('ready'),
+                              dependencies=value.get('dependencies'), error=value.get('error'))
+                    await self.end_session(reason='session_replaced' if sid else 'bridge_session_ended')
                     self.session_id = sid
                     self.generation = int(value.get('generation') or 0)
                 self.status = {k: value[k] for k in ('phase', 'ready', 'error', 'dependencies') if k in value}
@@ -203,13 +208,16 @@ class QQCallChannel:
                         await ws.send_json({'type': 'ready', 'owner_qq': self.owner_qq, 'ready': True})
                         worker = asyncio.create_task(self.transcribe(on_event))
                         await self.receive_audio(on_event)
-                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
+                    log_event(logger, logging.WARNING, 'qq_call_bridge_connection_failed',
+                              channel=self.name, session_id=self.session_id,
+                              error_type=type(error).__name__)
                     self.status = {'phase': 'unavailable', 'error': '通话 Bridge 连接中断'}
                 finally:
                     if worker:
                         worker.cancel()
                         await asyncio.gather(worker, return_exceptions=True)
-                    await self.end_session()
+                    await self.end_session(reason='channel_stopped' if stop.is_set() else 'bridge_disconnected')
                     self.ws = None
                     if self.pending_stop:
                         self.pending_stop.cancel()

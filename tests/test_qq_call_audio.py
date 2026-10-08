@@ -315,3 +315,43 @@ def test_speech_detection_only_queues_audio_until_recognition():
         assert interruptions == []
         assert channel.pending_stop is None
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('next_session,reason', [
+    ('second', 'session_replaced'), ('', 'bridge_session_ended'),
+])
+def test_session_change_logs_bridge_state_and_invalidates_old_audio(caplog, next_session, reason):
+    import json
+    from aiohttp import WSMessage, WSMsgType
+
+    async def scenario():
+        class Socket:
+            def __aiter__(self):
+                async def messages():
+                    yield WSMessage(WSMsgType.TEXT, json.dumps({
+                        'type': 'status', 'protocol_version': 1,
+                        'session_id': next_session, 'phase': 'connected' if next_session else 'unavailable',
+                        'ready': bool(next_session), 'dependencies': {'audio': bool(next_session)},
+                    }), '')
+                return messages()
+        interruptions = []
+        channel = QQCallChannel(SimpleNamespace(), '123', object(), tts_enabled=True,
+                                interrupt=interruptions.append)
+        channel.session_id = 'first'
+        channel.status = {'phase': 'connected'}
+        old_context = channel.routing_context()
+        channel.queue.put_nowait((old_context, 'old audio'))
+        channel.ws = Socket()
+        with caplog.at_level('INFO', logger='momoi.qq_call'):
+            await channel.receive_audio(None)
+        assert channel.session_id == next_session
+        assert not channel.context_valid(old_context)
+        assert channel.queue.empty()
+        assert interruptions == ['call_ended']
+        records = {r.momoi_event: r.momoi_fields for r in caplog.records}
+        assert records['qq_call_session_ended']['reason'] == reason
+        change = records['qq_call_session_changed']
+        assert change['previous_session_id'] == 'first'
+        assert change['session_id'] == next_session
+        assert change['dependencies'] == {'audio': bool(next_session)}
+    asyncio.run(scenario())
