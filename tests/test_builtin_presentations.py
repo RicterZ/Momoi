@@ -38,3 +38,19 @@ def test_thinking_read_keeps_excerpts_and_full_trace_in_snapshot(tmp_path):
     assert 'trace' not in shown['calls'][0] and 'assistant_text' not in shown['calls'][0]
     assert snapshots.historical_payload(shown['result_ref'])['calls'] == [call]
     assert present_result(shown, tool_name='thinking_read') == shown
+
+
+def test_episode_default_shows_message_pages_and_execution_entry(tmp_path):
+    messages = [{'id': i, 'ordinal': i, 'turn_id': f't{i}', 'role': 'user',
+                 'timestamp': 'today', 'created_at': i, 'content': str(i) * 4000} for i in range(1, 6)]
+    episode = {'id': 'e', 'title': 'topic', 'status': 'closed', 'narrative_summary': 'large' * 1000,
+               'messages': messages, 'turns': [{'execution': 'large'}], 'next_before_ordinal': None}
+    shown, snapshots = normalized(tmp_path, 'episode_read', {'ok': True, 'episode': episode})
+    page = shown['episode']
+    assert 'turns' not in page and 'narrative_summary' not in page
+    assert page['next_execution_cursor'] == 0 and page['next_before_ordinal'] == 3
+    assert [item['ordinal'] for item in page['messages']] == [3, 4, 5]
+    assert all(item['next_content_offset'] == len(item['content']) == 2000 for item in page['messages'])
+    assert all('created_at' not in item for item in page['messages'])
+    assert snapshots.historical_payload(shown['result_ref'])['episode'] == episode
+    assert present_result(shown, tool_name='episode_read') == shown

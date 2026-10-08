@@ -117,6 +117,37 @@ def fit_result(value, budget, *, string_limit=1000):
 
 def project_tool_result(result, name):
     """Tool-specific semantics are projected after saving the complete snapshot."""
+    if name == 'episode_read' and isinstance(result.get('episode'), dict):
+        episode = result['episode']
+        fields = {'id', 'title', 'status', 'messages', 'truncated', 'next_before_ordinal', 'next_execution_cursor'}
+        omitted = set(result.get('omitted_fields', []))
+        omitted.update(f'episode.{key}' for key in episode if key not in fields)
+        page = {key: value for key, value in episode.items() if key in fields}
+        if episode.get('turns'):
+            page['next_execution_cursor'] = 0
+        messages = episode.get('messages', [])
+        ordinals = sorted({item['ordinal'] for item in messages})[-3:]
+        selected = [item for item in messages if item['ordinal'] in ordinals]
+        if len(selected) < len(messages):
+            page['next_before_ordinal'] = min(ordinals)
+            page['truncated'] = True
+            omitted.add('episode.messages (older turns)')
+        shown = []
+        width = max(1, 6000 // max(1, len(selected)))
+        for item in selected:
+            message = {key: value for key, value in item.items() if key != 'created_at'}
+            content = str(message.get('content') or '')
+            if len(content) > width:
+                message['content'] = content[:width]
+                message['content_offset'] = message.get('content_offset', 0)
+                message['next_content_offset'] = message['content_offset'] + width
+                page['truncated'] = True
+                omitted.add('episode.messages.*.content (prefix)')
+            shown.append(message)
+        page['messages'] = shown
+        result['episode'] = page
+        if omitted:
+            result['omitted_fields'] = sorted(omitted)
     if name == 'thinking_read' and isinstance(result.get('calls'), list):
         from ..storage import truncate_tokens
         fields = {'turn_id', 'call_id', 'created_at', 'stage', 'round', 'tools', 'reasoning_chars', 'reasoning'}
