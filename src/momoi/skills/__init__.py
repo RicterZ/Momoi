@@ -69,38 +69,19 @@ class Skills:
                       and not path.is_symlink() and path.resolve().is_relative_to(directory.resolve())
                       and ".git" not in path.relative_to(directory).parts)
 
-    def search(self, query, limit=5):
-        if not isinstance(query, str) or not query.strip() or type(limit) is not int or not 1 <= limit <= 20:
-            raise ValueError("query must be nonempty and limit must be 1–20")
+    def catalog(self):
         self.initialize()
-        query = " ".join(query.casefold().split())
-        terms = query.split()
-        matches = []
+        items = []
         for directory in sorted(self.root.iterdir()):
             if not directory.is_dir() or directory.is_symlink() or directory.name.startswith("."):
                 continue
             try:
                 item = read_skill(directory)
-                if item["name"] != directory.name:
-                    continue
-                texts = [item["content"]]
-                for path in self.resources(directory):
-                    if path.suffix.lower() == ".md" and path.name != "SKILL.md":
-                        try:
-                            texts.append(path.read_text(encoding="utf-8"))
-                        except (OSError, UnicodeError):
-                            continue
+                if item["name"] == directory.name:
+                    items.append({"name": item["name"], "description": item["description"]})
             except (OSError, UnicodeError, ValueError):
                 continue
-            document = "\n".join(texts).casefold()
-            hits = sum(term in document for term in terms)
-            if not hits:
-                continue
-            score = hits + 10 * (query in document) + 20 * (query in item["description"].casefold()) + 30 * (query == item["name"])
-            matches.append((score, item))
-        matches.sort(key=lambda match: (-match[0], match[1]["name"]))
-        return {"ok": True, "skills": [{"name": item["name"], "description": item["description"][:200]}
-                                       for _, item in matches[:limit]], "total": len(matches), "has_more": len(matches) > limit}
+        return items
 
     def load(self, name):
         self.initialize()

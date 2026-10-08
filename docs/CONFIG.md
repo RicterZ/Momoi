@@ -410,9 +410,8 @@ Unlike `config.json`, MCP environment values, URLs, and headers expand
 ## Skills
 
 Standard skills live in `<workspace>/skills/<name>/SKILL.md` with YAML `name` and `description`.
-`skill_search` searches Markdown document content and returns names and short descriptions;
-`skill_load` reads full instructions and resource paths on demand. Skill catalogs are not injected
-into the system prompt or tool index. `skill_install` accepts local directories or HTTPS Git
+Skill names and descriptions are injected alongside the MCP tool index in the system prompt.
+`skill_load` reads full instructions and resource paths on demand. `skill_install` accepts local directories or HTTPS Git
 repositories (with optional `subdirectory` and branch/tag `ref`); `skill_uninstall` removes a skill
 directory. Neither installing nor loading executes scripts. Momoi ships the `mcp-install` skill.
 See the [skill workflow documentation](./SKILLS.zh-CN.md).

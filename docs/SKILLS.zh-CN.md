@@ -4,21 +4,13 @@ Skill 使用标准目录格式，存放在 `<workspace>/skills/<name>/`。入口
 YAML frontmatter 的 `name`、`description` 和 Markdown 指引，支持附带 `references/`、
 `scripts/`、`assets/` 等资源。安装和加载不会执行其中的脚本。
 
-Skill 名称、描述和正文不会预先加入 system 或 tool index。Momoi 默认只暴露 `skill_search` 和
-`skill_load`，配合简短使用指引让 agent 主动按任务搜索；选定 skill 后，完整指引作为工具结果进入当前
-对话，按需读取其他资源。加载 skill 不改变执行权限；安装 MCP 依赖仍需开启命令执行。
+Skill 名称和描述按名称稳定排序，与 MCP 工具索引一起注入 system。完整正文不预先注入；
+根据索引选择适用 skill，用 `skill_load` 按需加载，完整指引作为工具结果进入当前对话。
+加载 skill 不改变执行权限；安装 MCP 依赖仍需开启命令执行。
 
-## 搜索和加载
+## 索引和加载
 
-调用 `skill_search`：
-
-```json
-{"query": "安装 MCP", "limit": 5}
-```
-
-搜索扫描 `SKILL.md` 的完整内容和 skill 内其他 Markdown 文档，包括引用文档。匹配
-按相关性排序，返回名称和最多 200 字符的简短描述，不返回正文片段或整个目录索引。
-不匹配脚本代码和二进制资源。每次搜索读取当前文件，新安装或手工修改后立即生效。
+索引读取当前工作区中的标准 Skill，新安装、卸载或修改名称描述后在下一次构建提示词时更新。
 
 调用 `skill_load`：
 
@@ -61,7 +53,7 @@ Skill 名称、描述和正文不会预先加入 system 或 tool index。Momoi �
 
 也可以直接把标准 skill 文件夹放进工作区 `skills/`。名称应与文件夹名称相同：
 小写字母、数字、单个连字符，最多 64 字符。description 必填，最多 1024 字符；
-其他标准元数据保留。格式无效的 skill 不参与搜索，直接加载时返回错误。
+其他标准元数据保留。格式无效的 skill 不参与索引，直接加载时返回错误。
 
 ## 卸载
 
@@ -74,13 +66,13 @@ Skill 名称、描述和正文不会预先加入 system 或 tool index。Momoi �
 ```
 
 删除该 skill 的整个目录。不会删除它曾安装的 MCP 服务、依赖或产出的文件。
-已加载的指引仍保留在当前对话文本中，后续搜索和加载不再包含被卸载的 skill。
+已加载的指引仍保留在当前对话文本中，后续索引和加载不再包含被卸载的 skill。
 更新可先卸载再安装，也可通过已有文件工具修改目录。
 
 ## Momoi 内置 MCP 安装 Skill
 
 [mcp-install](../src/momoi/skills/builtin/mcp-install/SKILL.md) 随 Momoi 包分发。
-首次使用任一 skill 工具时复制到工作区 `skills/mcp-install/`，已有同名目录保持原样。
+首次构建 Skill 索引或使用 skill 工具时复制到工作区 `skills/mcp-install/`，已有同名目录保持原样。
 初始化标记 `skills/.momoi-builtins` 保证用户卸载后不会在下次启动时自动装回。
 
 它包括 Windows 附带 uv/Node、Linux/Docker 环境、固定安装目录

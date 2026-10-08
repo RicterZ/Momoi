@@ -250,30 +250,28 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 self.calls += 1
                 names = {spec["name"] for spec in tools}
                 if self.calls == 1:
-                    test.assertNotIn("mcp-install", str(system))
-                    call = ToolCall("search-workflow", "skill_search", {"query": "安装 MCP"})
-                elif self.calls == 2:
-                    test.assertIn("mcp-install", str(messages))
+                    test.assertIn("mcp-install", str(system))
+                    test.assertNotIn("skill_search", names)
                     call = ToolCall("load-workflow", "skill_load", {"name": "mcp-install"})
-                elif self.calls == 3:
+                elif self.calls == 2:
                     test.assertIn("PowerShell", str(messages))
                     test.assertIn("tools/mcp", str(messages))
                     test.assertNotIn("mcp_reload", names)
                     call = ToolCall("enable-reload", "tool_enable", {"tools": ["mcp_reload"]})
-                elif self.calls == 4:
+                elif self.calls == 3:
                     test.write({"added": {"command": "working", "description": "查询新增数据"}})
                     call = ToolCall("reload", "mcp_reload", {})
-                elif self.calls == 5:
+                elif self.calls == 4:
                     test.assertTrue(any("查询新增数据" in str(item) for item in messages))
                     call = ToolCall("find", "tool_search", {"query": "查询新增数据"})
-                elif self.calls == 6:
+                elif self.calls == 5:
                     test.assertIn("mcp__added__work", str(messages))
                     call = ToolCall("enable-new", "tool_enable", {"tools": ["mcp__added__work"]})
-                elif self.calls == 7:
+                elif self.calls == 6:
                     test.assertIn("mcp__added__work", names)
                     call = ToolCall("use-new", "mcp__added__work", {})
                 else:
-                    test.assertEqual(self.calls, 8)
+                    test.assertEqual(self.calls, 7)
                     test.assertIn("result", str(messages))
                     call = ToolCall("end", "end_turn", {
                         "reply_wait": {"wait": False},
@@ -292,7 +290,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 source_event_id=event.event_id, turn_id=turn_id, delivery_channel=daemon.channel,
             )
         self.assertIsInstance(result, AgentReply)
-        self.assertEqual(provider.calls, 8)
+        self.assertEqual(provider.calls, 7)
 
     async def test_reload_waits_for_inflight_call(self):
         self.write({"before": {"command": "working"}})

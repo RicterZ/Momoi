@@ -382,8 +382,8 @@ Bash 命令遵循系统命令本身的语义，不自动继承文件工具的哈
 ## Skills
 
 标准 skill 存放在 `<workspace>/skills/<name>/SKILL.md`，frontmatter 包含 name 和 description。
-通过 `skill_search` 搜索文档内容，只返回名称和简短描述；`skill_load` 按需读取完整指引和资源路径。
-不预先注入 skill 清单。`skill_install` 支持本地目录和 HTTPS Git 仓库，`skill_uninstall` 删除 skill 目录。
+名称和描述与 MCP 工具索引一起注入 system；`skill_load` 按需读取完整指引和资源路径。
+`skill_install` 支持本地目录和 HTTPS Git 仓库，`skill_uninstall` 删除 skill 目录。
 安装与加载均不执行脚本。Momoi 自带 MCP 安装 skill，详见 [Skill 使用说明](./SKILLS.zh-CN.md)。
 
 ## 单轮预算

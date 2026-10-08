@@ -21,7 +21,7 @@ def write_skill(root, name="paper-reading", description="Read research papers", 
     return directory
 
 
-def test_install_search_document_content_and_load_resources(tmp_path):
+def test_install_catalog_and_load_resources(tmp_path):
     source = write_skill(tmp_path / "source")
     (source / "references").mkdir()
     (source / "references/details.md").write_text("校准星际望远镜的方法", encoding="utf-8")
@@ -32,8 +32,8 @@ def test_install_search_document_content_and_load_resources(tmp_path):
     service = Skills(tmp_path / "workspace")
     installed = service.install_directory(source)
     assert Path(installed["directory"]) == tmp_path / "workspace/skills/paper-reading"
-    found = service.search("星际望远镜")
-    assert found["skills"] == [{"name": "paper-reading", "description": "Read research papers"}]
+    found = {"skills": service.catalog()}
+    assert {"name": "paper-reading", "description": "Read research papers"} in found["skills"]
     assert "content" not in found["skills"][0]
     loaded = service.load("paper-reading")
     assert loaded["resources"] == ["references/details.md", "scripts/run.py"]
@@ -44,24 +44,24 @@ def test_install_search_document_content_and_load_resources(tmp_path):
         service.install_directory(source)
 
 
-def test_builtin_skill_is_searchable_without_index_and_can_be_uninstalled(tmp_path):
+def test_builtin_skill_index_and_uninstall(tmp_path):
     service = Skills(tmp_path)
-    found = service.search("安装 MCP")
+    found = {"skills": service.catalog()}
     assert found["skills"][0]["name"] == "mcp-install"
     loaded = service.load("mcp-install")
     assert "tools/mcp" in loaded["content"]
     assert "PowerShell" in loaded["content"] and "Docker" in loaded["content"]
     assert "description" in loaded["content"] and "mcp_reload" in loaded["content"]
     assert Path(loaded["directory"]) == tmp_path / "skills/mcp-install"
-    surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {})
-    assert "mcp-install" not in surface.tool_index()
+    surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {}, skills=service)
+    assert "mcp-install" in surface.tool_index()
     assert "mcp-install" not in json.dumps(surface.conversation_specs())
-    assert {"skill_search", "skill_load"} <= {
+    assert {"skill_load"} <= {
         spec["name"] for spec in surface.conversation_specs()
     }
     assert service.uninstall("mcp-install")["uninstalled"]
-    assert service.search("安装 MCP")["skills"] == []
-    assert Skills(tmp_path).search("安装 MCP")["skills"] == []
+    assert service.catalog() == []
+    assert Skills(tmp_path).catalog() == []
 
 
 def test_initialization_preserves_custom_builtin(tmp_path):
@@ -77,7 +77,7 @@ def test_invalid_skills_are_skipped_and_invalid_names_cannot_delete_outside(tmp_
     bad.mkdir()
     (bad / "SKILL.md").write_text("Not a standard skill")
     service = Skills(tmp_path)
-    assert [item["name"] for item in service.search("papers")["skills"]] == ["paper-reading"]
+    assert [item["name"] for item in [item for item in service.catalog() if item["name"] == "paper-reading"]] == ["paper-reading"]
     for name in ("../paper-reading", "/tmp", "paper/reading", "..", "UPPER"):
         with pytest.raises(ValueError):
             service.uninstall(name)
@@ -100,7 +100,7 @@ def test_symlinks_do_not_read_or_remove_external_files(tmp_path):
     with pytest.raises(FileNotFoundError):
         service.uninstall("paper-reading")
     assert outside.exists()
-    assert service.search("research papers")["skills"] == []
+    assert [item for item in service.catalog() if item["name"] == "paper-reading"] == []
     source = write_skill(tmp_path / "source", name="linked")
     (source / "private.md").symlink_to(outside / "SKILL.md")
     with pytest.raises(ValueError, match="symbolic"):
@@ -145,9 +145,6 @@ async def builtin_dispatch_install_search_load_and_uninstall(tmp_path):
     install = ToolCall("install", "skill_install", {"source": "downloads/paper-reading"})
     assert tools.capability(install) == "write"
     assert (await tools.execute(install))["ok"]
-    search = ToolCall("search", "skill_search", {"query": "Analyze a paper"})
-    assert tools.capability(search) == "read"
-    assert (await tools.execute(search))["skills"][0]["name"] == "paper-reading"
     loaded = await tools.execute(ToolCall("load", "skill_load", {"name": "paper-reading"}))
     assert "Analyze a paper." in loaded["content"]
     assert (await tools.execute(ToolCall("remove", "skill_uninstall", {"name": "paper-reading"})))["ok"]
@@ -178,7 +175,8 @@ def test_skill_management_requires_tool_search_and_enable():
     for exec_enabled in (False, True):
         surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {}, exec_enabled=exec_enabled)
         tools = surface.conversation_specs()
-        assert {"skill_search", "skill_load"} <= {spec["name"] for spec in tools}
+        assert {"skill_load"} <= {spec["name"] for spec in tools}
+        assert "skill_search" not in {spec["name"] for spec in tools}
         assert not {"skill_install", "skill_uninstall"} & {spec["name"] for spec in tools}
         groups = surface.discovery_groups()
         assert {spec["name"] for spec in groups["builtin_skill_management"]} == {"skill_install", "skill_uninstall"}

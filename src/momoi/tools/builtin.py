@@ -64,7 +64,7 @@ class BuiltinTools:
 
     @staticmethod
     def capability(call: ToolCall) -> str:
-        if call.name in {"read_file", "list_dir", "glob_files", "skill_search", "skill_load"}:
+        if call.name in {"read_file", "list_dir", "glob_files", "skill_load"}:
             return "read"
         if call.name in {
             "write_file",
@@ -83,8 +83,6 @@ class BuiltinTools:
         try:
             if not builtin_tool_enabled(call.name, exec_enabled=self.exec_enabled):
                 return {"ok": False, "error": "tool_not_allowed"}
-            if call.name == "skill_search":
-                return await asyncio.to_thread(self.skills.search, call.arguments.get("query"), call.arguments.get("limit", 5))
             if call.name == "skill_load":
                 return await asyncio.to_thread(self.skills.load, call.arguments.get("name"))
             if call.name == "skill_install":

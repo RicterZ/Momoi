@@ -47,9 +47,10 @@ BUILTIN_GROUP_DESCRIPTIONS = {
 class ToolSurface:
     """Projects the tool catalog exposed to each workflow."""
 
-    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False, exec_enabled: bool = False, emotion_catalog: Callable[[], bool] | None = None, store: Any = None):
+    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False, exec_enabled: bool = False, emotion_catalog: Callable[[], bool] | None = None, store: Any = None, skills: Any = None):
         self.mcp = mcp
         self.store = store
+        self.skills = skills
         self.channel_names = list(channels)
         self.voice_channels = [name for name, channel in channels.items()
                                if callable(getattr(channel, "send_voice", None))]
@@ -109,11 +110,17 @@ class ToolSurface:
 
     def tool_index(self) -> str:
         groups = self.discovery_groups()
-        if not groups:
-            return ""
-        return "工具索引：\n" + "\n".join(
-            f"- {group}: {self.mcp_group_description(group)}" for group in groups
-        ) + "\n通过 tool_search 查找候选名称与描述，再用 tool_enable 批量加载选定工具。"
+        sections = []
+        if groups:
+            sections.append("工具索引：\n" + "\n".join(
+                f"- {group}: {self.mcp_group_description(group)}" for group in groups
+            ) + "\n通过 tool_search 查找候选名称与描述，再用 tool_enable 批量加载选定工具。")
+        skills = self.skills.catalog() if self.skills is not None else []
+        if skills:
+            sections.append("Skill 索引：\n" + "\n".join(
+                f"- {item['name']}: {item['description']}" for item in skills
+            ) + "\n通过 skill_load 按名称加载适用的完整指引。")
+        return "\n\n".join(sections)
 
     @staticmethod
     def _schema_tokens(specs: list[dict[str, Any]]) -> int:

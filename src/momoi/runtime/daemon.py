@@ -162,6 +162,7 @@ class MomoiDaemon(
             exec_enabled=config.exec_enabled,
             emotion_catalog=lambda: bool(self.store.emotion_context().strip()),
             store=self.store,
+            skills=self.builtin_tools.skills,
         )
         self.delivery_policy = DeliveryPolicy(config, self.store)
         self.tool_executor = ToolExecutor(
