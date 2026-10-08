@@ -347,4 +347,4 @@ def test_current_qq_messages_expose_quote_ids():
     events = [IncomingMessage('one', '42', '第一条', 1, 1, channel='napcat'),
               IncomingMessage('two', '43', '第二条', 2, 2, channel='napcat')]
     text = ''.join(block['text'] for block in owner_content_blocks(events, lambda _: [], ZoneInfo('UTC')))
-    assert 'message_id="42"' in text and 'message_id="43"' in text
+    assert '[ID:42]' in text and '[ID:43]' in text

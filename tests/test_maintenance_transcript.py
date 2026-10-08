@@ -15,15 +15,11 @@ def test_maintenance_references_follow_transcript_order_and_cover_runtime_record
     messages, labels = maintenance_transcript(store, rows, ["new", "old", "heartbeat", "silent"])
     assert labels == {"old": "T-1", "heartbeat": "T-2", "new": "T-3", "silent": "T-4"}
     bodies = [message["content"][0]["text"] for message in messages[:-1]]
-    first = ElementTree.fromstring(bodies[0])
-    assert first.attrib == {"time": "1970-01-01T00:00:01+00:00", "turn": "T-1", "from": "user"}
-    assert first.text.strip() == "old evidence"
+    assert bodies[0] == '[message][1970-01-01T00:00:01+00:00][user][turn:T-1] old evidence'
     runtime = ElementTree.fromstring("<record>" + bodies[1] + "</record>")
     assert runtime.find("turn").attrib == {"id": "T-2"}
     assert runtime.find("heartbeat").text.strip() == "activity result"
-    third = ElementTree.fromstring(bodies[2])
-    assert third.attrib == {"time": "1970-01-01T00:00:03+00:00", "turn": "T-3", "from": "user"}
-    assert third.text.strip() == "new evidence"
+    assert bodies[2] == '[message][1970-01-01T00:00:03+00:00][user][turn:T-3] new evidence'
     assert ElementTree.fromstring(messages[-1]["content"]).attrib == {"id": "T-4", "evidence": "none"}
 
 

@@ -20,6 +20,6 @@ def visible_dialogue(rows, *, timezone="UTC"):
             text = "[QQ 动作：戳一戳用户]"
         if role == "user":
             timestamp = datetime.fromtimestamp(float(row["created_at"]), ZoneInfo(str(timezone))).isoformat()
-            text = f'<message time="{timestamp}" from="user">\n{escape(text)}\n</message>'
+            text = f'[message][{timestamp}][user] {escape(text)}'
         selected.append({"role": role, "content": text})
     return selected

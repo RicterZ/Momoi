@@ -12,15 +12,10 @@ def test_each_owner_message_has_its_own_bubble_and_keeps_internal_newlines():
     ]
     blocks = owner_content_blocks(events, lambda _: [], ZoneInfo('UTC'), 'runtime')
     text = ''.join(block['text'] for block in blocks)
-    root = ElementTree.fromstring(text.removeprefix('runtime\n\n'))
-    bubbles = root.findall('message')
-    assert [bubble.attrib for bubble in bubbles] == [
-        {'time': '1970-01-01T00:00:01+00:00'},
-        {'time': '1970-01-01T00:00:02+00:00'},
-    ]
-    assert [bubble.text for bubble in bubbles] == [
-        '\n第一行\n第二行\n', '\n另一条 </bubble> & 消息\n',
-    ]
+    assert text == ('runtime\n\n<current_messages>\n'
+                    '[1970-01-01T00:00:01+00:00] 第一行\n第二行\n\n'
+                    '[1970-01-01T00:00:02+00:00] 另一条 &lt;/bubble&gt; &amp; 消息\n\n'
+                    '</current_messages>')
 
 
 def test_owner_attachment_stays_inside_its_message_bubble():
@@ -30,9 +25,9 @@ def test_owner_attachment_stays_inside_its_message_bubble():
         IncomingMessage('2', '2', '然后看这句话', 2, 2),
     ]
     blocks = owner_content_blocks(events, lambda segments: [image] if segments else [], ZoneInfo('UTC'))
-    assert '<message time="1970-01-01T00:00:01+00:00">\n' in blocks[0]['text']
+    assert '[1970-01-01T00:00:01+00:00] ' in blocks[0]['text']
     assert '看这张图' in blocks[0]['text']
     assert blocks[1] == image
-    assert blocks[2]['text'] == '\n</message>\n'
-    assert blocks[3]['text'].startswith('<message time="1970-01-01T00:00:02+00:00">\n')
+    assert blocks[2]['text'] == '\n\n'
+    assert blocks[3]['text'].startswith('[1970-01-01T00:00:02+00:00] ')
     assert '然后看这句话' in blocks[3]['text']

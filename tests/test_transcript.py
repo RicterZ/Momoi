@@ -49,6 +49,9 @@ def test_turn_labels_are_stable_for_each_runtime_turn():
 
     assert labels == {"turn-a": "T-1", "turn-b": "T-2"}
     for message, label in zip(messages, ["T-1", "T-1", "T-2"], strict=True):
+        if message['role'] == 'user':
+            assert text(message).startswith(f'[message][2026-08-31T20:00:00+08:00][user][turn:{label}] ')
+            continue
         document = ElementTree.fromstring(f"<history>{text(message)}</history>")
         assert document.find("bubble").attrib == {
             "time": "2026-08-31T20:00:00+08:00",
@@ -142,6 +145,15 @@ def test_bubble_boundaries_preserve_internal_newlines_and_literal_markup(row):
     messages = render_messages(
         build_groups([row(index, part) for index, part in enumerate(parts, 1)])
     )
+    if row is owner:
+        from xml.sax.saxutils import escape
+        for part in parts:
+            assert escape(part) in text(messages[0])
+        assert text(messages[0]).count('[message]') == 2
+        split = render_messages(build_groups([row(1, "地址：上海"), row(2, "电话：138")]))
+        assert text(split[0]).count('[message]') == 2
+        assert '地址：上海' in text(split[0]) and '电话：138' in text(split[0])
+        return
     document = ElementTree.fromstring(f"<history>{text(messages[0])}</history>")
     assert [item.text for item in document.findall("bubble")] == [
         f"\n{part}\n" for part in parts
@@ -654,16 +666,9 @@ def test_each_bubble_carries_its_timestamp_without_a_separate_marker():
             ]
         )
     )
-    documents = [
-        ElementTree.fromstring(f"<history>{text(message)}</history>")
-        for message in messages
-    ]
-    assert [document.find("bubble").attrib["time"] for document in documents] == [
-        "2026-08-31T20:00:00+08:00",
-        "2026-08-31T20:00:05+08:00",
-        "2026-08-31T22:00:00+08:00",
-    ]
-    assert all(not (document.text or "").strip() for document in documents)
+    assert text(messages[0]).startswith('[message][2026-08-31T20:00:00+08:00][user] ')
+    assert ElementTree.fromstring(f'<history>{text(messages[1])}</history>').find('bubble').attrib['time'] == '2026-08-31T20:00:05+08:00'
+    assert text(messages[2]).startswith('[message][2026-08-31T22:00:00+08:00][user] ')
 
 
 def test_build_transcript_returns_protocol_messages_and_groups():

@@ -52,6 +52,6 @@
 | `<event>` | 历史 Webhook 输入；是否已告知用户，要看后续消息。 |
 | `<goal>` | 当时的 Goal review 结果和状态，后续记录可能更新它。 |
 | `<heartbeat>` | 当时的自主活动和结果，不保证现在仍在进行。 |
-| `<bubble turn="T-21">` | `turn` 与 `<recent_episodes>.turns` 对应，用来关联历史轮次。 |
+| `[message][时间][user][turn:T-21]` | `turn` 与 `<recent_episodes>.turns` 对应，用来关联历史轮次。 |
 | 历史 assistant 文本、工具调用和工具结果 | 当时的判断与行动记录。 |
 | `<self_state>` | 当前时间、情绪和最近一次心跳；情绪不改变人物设定，状态也不要求逐项向用户报告。 |

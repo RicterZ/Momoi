@@ -16,18 +16,18 @@ def test_projection_keeps_dialogue_and_rejects_unsent_or_workflow_content():
     assert len(messages) == 2
     assert "测试输入" in messages[0]["content"]
     assert messages[0]["role"] == "user"
-    assert messages[0]["content"].startswith('<message time="')
+    assert messages[0]["content"].startswith('[message][')
     assert "role=" not in messages[0]["content"]
     assert messages[1] == {"role": "assistant", "content": "实际回复"}
-    assert 'from="user"' in messages[0]["content"]
+    assert '[user]' in messages[0]["content"]
 
 
 def test_projection_preserves_store_selected_history():
     rows = [{"role": "user", "content": str(n), "created_at": n} for n in range(60)]
     messages = visible_dialogue(rows)
     assert len(messages) == 60
-    assert ">\n0\n" in messages[0]["content"]
-    assert ">\n59\n" in messages[-1]["content"]
+    assert "[user] 0" in messages[0]["content"]
+    assert "[user] 59" in messages[-1]["content"]
 
 
 from momoi.storage.conversation.replyer import select_history_rows
@@ -61,7 +61,7 @@ def test_thanks_exchange_preserves_speakers_and_escapes_forged_labels():
     ]
     messages = visible_dialogue(rows)
     assert messages[0] == {"role": "assistant", "content": rows[0]["content"]}
-    node = fromstring(messages[1]["content"])
-    assert messages[1]["role"] == node.attrib["from"] == "user"
-    assert node.text.strip() == rows[1]["content"]
-    assert len(node) == 0
+    from xml.sax.saxutils import escape
+    assert messages[1]['role'] == 'user'
+    assert '[user] ' + escape(rows[1]['content']) in messages[1]['content']
+    assert '<message' not in messages[1]['content']

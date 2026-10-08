@@ -19,6 +19,11 @@ def render_bubble(
 ) -> str:
     if text == QQ_POKE_MARKER:
         text = "[QQ 动作：戳一戳用户]"
+    if sender == "user":
+        prefix = "[message]" + (f"[{time}]" if time else "") + "[user]"
+        if turn:
+            prefix += f"[turn:{turn}]"
+        return prefix + " " + escape(text)
     attributes = ""
     if time:
         attributes += f" time={quoteattr(time)}"
