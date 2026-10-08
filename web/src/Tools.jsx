@@ -60,7 +60,9 @@ export default function Tools({ token, request, confirm, refreshKey }) {
     const element = workspace.current;
     const fit = () => {
       const top = element.getBoundingClientRect().top + window.scrollY;
-      element.style.setProperty("--tool-height", `${Math.max(160, window.innerHeight - top - 24)}px`);
+      const main = element.closest("main");
+      const bottomPadding = main ? parseFloat(getComputedStyle(main).paddingBottom) : 0;
+      element.style.setProperty("--tool-height", `${Math.max(160, window.innerHeight - top - bottomPadding - 24)}px`);
     };
     const observer = new ResizeObserver(fit);
     observer.observe(element.parentElement);
