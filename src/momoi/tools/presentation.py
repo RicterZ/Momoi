@@ -42,7 +42,7 @@ def present_result(value, *, historical=False, tool_name=None):
     provenance = value.get('provenance') or {}
     tool_name = tool_name or provenance.get('tool', '')
     result = {key: item for key, item in value.items() if key != 'provenance'}
-    if result.get('ok') is True:
+    if result.get('ok') is True or tool_name == 'web_fetch':
         result = project_tool_result(result, tool_name)
     if isinstance(result.get('result'), dict) and (
         'content' in result['result'] or 'structuredContent' in result['result']
@@ -117,6 +117,23 @@ def fit_result(value, budget, *, string_limit=1000):
 
 def project_tool_result(result, name):
     """Tool-specific semantics are projected after saving the complete snapshot."""
+    if name == 'web_fetch':
+        omitted = []
+        if result.get('requested_url') == result.get('url'):
+            omitted.append('requested_url')
+        if result.get('ok') is True and result.get('status') == 200:
+            omitted.append('status')
+        if result.get('ok') is True and result.get('content_type') in {'text/html', 'text/plain', 'application/xhtml+xml'}:
+            omitted.append('content_type')
+        if not result.get('source_truncated'):
+            omitted.append('source_truncated')
+        if not result.get('truncated'):
+            omitted.append('content_length')
+        if not result.get('title'):
+            omitted.append('title')
+        omitted.append('extract_mode')
+        for key in omitted:
+            result.pop(key, None)
     if name == 'episode_relations' and isinstance(result.get('edges'), list) and isinstance(result.get('nodes'), list):
         if 'cursor' in result or 'limit' in result or 'next_cursor' not in result:
             cursor = result.pop('cursor', 0)

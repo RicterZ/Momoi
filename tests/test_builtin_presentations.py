@@ -120,3 +120,21 @@ def test_relation_pages_keep_connected_nodes_and_complete_graph_snapshot(tmp_pat
         assert present_result(shown, tool_name='episode_relations') == shown
         cursor = shown['next_cursor']
     assert seen == ['a', 'b', 'c']
+
+
+def test_web_fetch_metadata_is_conditional_and_failures_remain_explainable(tmp_path):
+    raw = {'ok': True, 'url': 'https://example.org/', 'requested_url': 'https://example.org/',
+           'status': 200, 'content_type': 'text/html', 'extract_mode': 'markdown', 'title': None,
+           'content': 'body', 'truncated': False, 'source_truncated': False, 'content_length': 4}
+    shown, snapshots = normalized(tmp_path, 'web_fetch', raw)
+    assert set(shown) == {'ok', 'url', 'content', 'result_ref'}
+    assert snapshots.historical_payload(shown['result_ref'])['extract_mode'] == 'markdown'
+    for changes in ({'requested_url': 'https://example.org/redirect'},
+                    {'truncated': True, 'source_truncated': True, 'content_length': 2000000},
+                    {'ok': False, 'error': 'http_error', 'status': 404},
+                    {'ok': False, 'error': 'unsupported_content_type', 'content_type': 'image/png'}):
+        shown, _ = normalized(tmp_path, 'web_fetch', {**raw, **changes})
+        for key, value in changes.items():
+            assert shown[key] == value
+        assert 'extract_mode' not in shown
+        assert present_result(shown, tool_name='web_fetch') == shown
