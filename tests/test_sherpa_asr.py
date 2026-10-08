@@ -121,12 +121,23 @@ def test_dashboard_switches_asr_without_cloud_credentials(tmp_path):
 
 
 def test_windows_optional_component_defaults_without_loading(monkeypatch, tmp_path):
+    monkeypatch.setattr('momoi.integrations.adapters.sherpa.sys.platform', 'win32')
     monkeypatch.setenv('MOMOI_INSTALL_DIR', str(tmp_path))
     provider = SherpaASRProvider()
     assert provider.endpoint == ''
     assert provider.model_path == str(tmp_path / 'models' / 'asr')
     assert provider._engine is None
     remote = SherpaASRProvider(endpoint='http://asr:8003')
+    assert remote.endpoint == ''
+    assert remote.model_path == str(tmp_path / 'models' / 'asr')
+    assert remote._engine is None
+
+
+def test_linux_remote_endpoint_is_preserved(monkeypatch, tmp_path):
+    monkeypatch.setattr('momoi.integrations.adapters.sherpa.sys.platform', 'linux')
+    monkeypatch.setenv('MOMOI_INSTALL_DIR', str(tmp_path))
+    remote = SherpaASRProvider(endpoint='http://asr:8003')
+    assert remote.endpoint == 'http://asr:8003'
     assert remote.model_path == ''
     with pytest.raises(ValueError):
         SherpaASRProvider(endpoint='http://asr:8003', model_path='/models')
