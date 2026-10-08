@@ -121,7 +121,7 @@ class ContextService:
             result_store=self.tool_results,
         )
         from ..transcript.recall import compact_recall_messages
-        compact_recall_messages(history, memory_state["recall_compacted_turn_ids"])
+        compact_recall_messages(history, ids, result_store=self.tool_results)
         memories = {int(key): value for key, value in memory_state["observed"].items()
                     if value["activation"] == "always"}
         snapshot = [value for value in memory_state["snapshot"].values()

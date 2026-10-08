@@ -1,4 +1,4 @@
-"""Frozen recall excerpts, changed only at a shared compaction boundary."""
+"""Compact recalled evidence when replaying previous turns."""
 import json
 
 EDGE = 80
@@ -33,8 +33,8 @@ def compact_recall(payload):
     return result
 
 
-def compact_recall_messages(messages, turn_ids):
-    """Apply the persisted boundary to provider-neutral replay messages in place."""
+def compact_recall_messages(messages, turn_ids, *, result_store=None):
+    """Clip historical turns in place; current-turn calls are outside this replay."""
     selected = set(turn_ids)
     ids = {block.get('id') for message in messages if selected.intersection(message.get('_history_turn_ids', ()))
            for block in (message.get('content') if isinstance(message.get('content'), list) else [])
@@ -49,4 +49,16 @@ def compact_recall_messages(messages, turn_ids):
                 except (TypeError, ValueError):
                     continue
                 if isinstance(payload, dict) and not payload.get('history_truncated'):
-                    block['content'] = json.dumps(compact_recall(payload), ensure_ascii=False)
+                    if payload.get('ok') is not False and 'chunk_start' in payload:
+                        original = (result_store.historical_payload(str(payload.get('result_ref') or ''))
+                                    if result_store is not None else None)
+                        if isinstance(original, dict):
+                            payload = original
+                        else:
+                            payload = {key: payload[key] for key in ('ok', 'result_ref') if key in payload} | {
+                                'preview': excerpt(str(payload.get('content') or '')),
+                            }
+                    compact = compact_recall(payload)
+                    if 'preview' in payload:
+                        compact['preview'] = payload['preview']
+                    block['content'] = json.dumps(compact, ensure_ascii=False)

@@ -223,13 +223,7 @@ class ContextWindow:
                     ("goal_directory", snapshot["goals"]), required=True,
                 )
                 prefix["content"] = replacement["content"]
-                retained_order = list(dict.fromkeys(
-                    str(identifier) for message in messages[:history_messages]
-                    for identifier in message.get("_history_turn_ids", ())
-                ))
-                self.store.fold_transcript_memory(snapshot["revision"], retained_turn_ids=retained_order)
-                from ..transcript.recall import compact_recall_messages
-                compact_recall_messages(messages[:history_messages], retained_order[:-6])
+                self.store.fold_transcript_memory(snapshot["revision"])
                 removed = sum(bool(m.get("_memory_change")) for m in messages[:history_messages])
                 messages[:] = [m for m in messages if not m.get("_memory_change")]
                 history_messages -= removed

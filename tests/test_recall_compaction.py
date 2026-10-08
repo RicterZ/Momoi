@@ -1,10 +1,8 @@
-"""Recall evidence changes at compaction, never by a sliding age threshold."""
+"""Previous-turn recalls are excerpts; current-turn evidence stays complete."""
 import copy
 import json
-from types import SimpleNamespace
 
 from momoi.runtime.transcript.recall import compact_recall_messages
-from momoi.storage import Store
 
 
 def messages(turn_ids):
@@ -29,35 +27,22 @@ def result(rows, turn_id):
     return json.loads(row['content'][0]['content'])
 
 
-def test_boundary_freezes_old_excerpts_and_preserves_recent_six_across_append_and_restart(tmp_path):
-    path = tmp_path / 'db'
-    store = Store(path)
-    ids = [str(i) for i in range(10)]
-    store.transcript_memory_context(ids)
-    state = store.transcript_memory_context(ids, compact=True)
-    assert state['recall_compacted_turn_ids'] == ids[:-6]
-    before = messages(ids)
-    compact_recall_messages(before, state['recall_compacted_turn_ids'])
-    clipped = result(before, '0')
-    assert clipped['history_truncated'] and clipped['result_ref'] == 'tr_0'
-    assert clipped['episodes'][0]['id'] == 'episode'
-    assert 'turns' not in clipped['episodes'][0]
-    assert '[...truncated...]' in clipped['memory'][0]['content']
-    assert 'history_truncated' not in result(before, '4')
-    frozen = copy.deepcopy(before)
-    store.close()
-    store = Store(path)
-    grown = ids + ['10', '11', '12']
-    state = store.transcript_memory_context(grown)
-    after = messages(grown)
-    compact_recall_messages(after, state['recall_compacted_turn_ids'])
-    assert after[:len(before)] == frozen
-    state = store.transcript_memory_context(grown, compact=True)
-    assert state['recall_compacted_turn_ids'] == grown[:-6]
-    compact_recall_messages(after, state['recall_compacted_turn_ids'])
-    assert result(after, '4')['history_truncated']
-    assert 'history_truncated' not in result(after, '7')
-    store.close()
+def test_previous_turns_are_clipped_but_current_turn_stays_complete():
+    history = messages(['old', 'recent'])
+    current = messages(['current'])
+    rows = history + current
+    compact_recall_messages(rows, ['old', 'recent'])
+    for identifier in ['old', 'recent']:
+        clipped = result(rows, identifier)
+        assert clipped['history_truncated']
+        assert clipped['result_ref'] == 'tr_' + identifier
+        assert 'turns' not in clipped['episodes'][0]
+        assert '[...truncated...]' in clipped['memory'][0]['content']
+    assert 'history_truncated' not in result(rows, 'current')
+    frozen = copy.deepcopy(rows[:len(history)])
+    compact_recall_messages(rows, ['old', 'recent', 'current'])
+    assert rows[:len(history)] == frozen
+    assert result(rows, 'current')['history_truncated']
 
 
 def test_recall_failure_remains_exact_and_multiple_calls_in_turn_are_clipped():
@@ -79,10 +64,22 @@ def test_recall_failure_remains_exact_and_multiple_calls_in_turn_are_clipped():
     assert json.loads(rows[5]['content'][0]['content']) == failure
 
 
-def test_token_compaction_updates_same_frozen_recall_boundary(tmp_path):
-    store = Store(tmp_path / 'db')
-    ids = [str(i) for i in range(12)]
-    state = store.transcript_memory_context(ids)
-    store.fold_transcript_memory(state['revision'], retained_turn_ids=ids[2:])
-    assert store.transcript_memory_context(ids[2:], track_boundary=False)['recall_compacted_turn_ids'] == ids[2:-6]
-    store.close()
+def test_paged_recall_resolves_original_or_keeps_small_preview(tmp_path):
+    original = result(messages(['old']), 'old')
+    from unittest.mock import Mock
+    snapshots = Mock()
+    snapshots.historical_payload.return_value = original
+    paged = {'ok': True, 'result_ref': 'tr_old', 'chunk_start': 0,
+             'content': json.dumps(original)[:500], 'next_cursor': 'cursor'}
+    for source in [snapshots, None]:
+        rows = messages(['old'])
+        rows[1]['content'][0]['content'] = json.dumps(paged)
+        compact_recall_messages(rows, ['old'], result_store=source)
+        clipped = result(rows, 'old')
+        assert clipped['history_truncated']
+        assert clipped['result_ref'] == 'tr_old'
+        assert 'next_cursor' not in clipped and 'content' not in clipped
+        if source is not None:
+            assert clipped['episodes'][0]['id'] == 'episode'
+        else:
+            assert len(clipped['preview']) < 200

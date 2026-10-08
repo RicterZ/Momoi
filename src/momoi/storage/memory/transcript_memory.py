@@ -166,9 +166,7 @@ class TranscriptMemoryStore:
                         + '>\n' + "\n".join(changes) + '\n</memory_changes>',
                     })
                 state["observed"] = current
-            state.setdefault("recall_compacted_turn_ids", [])
             if compact:
-                state["recall_compacted_turn_ids"] = list(dict.fromkeys(turn_ids))[:-6]
                 state.pop("episode_snapshot", None)
                 state["history_format"] = 4
                 state["snapshot_revision"] = state["revision"]
@@ -184,7 +182,7 @@ class TranscriptMemoryStore:
             )
         return state
 
-    def fold_transcript_memory(self, revision, *, retained_turn_ids=None):
+    def fold_transcript_memory(self, revision):
         """Fold only a request's observed revision; never consume concurrent updates."""
         with transaction(self._db):
             row = self._db.execute(
@@ -195,8 +193,6 @@ class TranscriptMemoryStore:
             state = json.loads(row[0])
             if state["revision"] != revision:
                 return
-            if retained_turn_ids is not None:
-                state["recall_compacted_turn_ids"] = list(dict.fromkeys(retained_turn_ids))[:-6]
             state["history_format"] = 4
             state["snapshot_revision"] = state["revision"]
             state["snapshot"] = state["observed"]
