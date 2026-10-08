@@ -129,7 +129,7 @@ class ToolResultStoreTest(unittest.TestCase):
                     "truncated": False,
                     "provenance": {"source": "builtin", "tool": "curl"},
                     "result_ref": result_ref,
-                    "body": body,
+                    "items": ["x" * 200 for _ in range(20)],
                 },
                 ensure_ascii=False,
             )

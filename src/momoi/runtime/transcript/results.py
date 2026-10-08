@@ -157,7 +157,8 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3, result
                 payload.pop("provenance")
                 raw = json.dumps(payload, ensure_ascii=False)
                 block["content"] = raw
-            payload = present_result(dict(payload), historical=True)
+            name = calls.get(block.get("tool_use_id"), "")
+            payload = present_result(dict(payload), historical=True, tool_name=name)
             raw = json.dumps(payload, ensure_ascii=False)
             block["content"] = raw
             name = calls.get(block.get("tool_use_id"), "")
@@ -218,7 +219,7 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3, result
                     source = snapshot
             # Preserve arbitrary business fields (zero quantities, operation IDs,
             # pending states, pagination), rather than serializing them as a preview.
-            source = present_result(source, historical=True)
+            source = present_result(source, historical=True, tool_name=name)
             business = source.get("result")
             structured = isinstance(business, (dict, list)) or (
                 business is None and not isinstance(source.get("content"), str)

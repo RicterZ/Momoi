@@ -36,10 +36,14 @@ def mcp_body(value):
     return value
 
 
-def present_result(value, *, historical=False):
+def present_result(value, *, historical=False, tool_name=None):
     if not isinstance(value, dict):
         return value
+    provenance = value.get('provenance') or {}
+    tool_name = tool_name or provenance.get('tool', '')
     result = {key: item for key, item in value.items() if key != 'provenance'}
+    if result.get('ok') is True:
+        result = project_tool_result(result, tool_name)
     if isinstance(result.get('result'), dict) and (
         'content' in result['result'] or 'structuredContent' in result['result']
     ):
@@ -108,4 +112,18 @@ def fit_result(value, budget, *, string_limit=1000):
     # Extremely wide objects still retain outcome fields and a deep-read pointer.
     result = {k: result[k] for k in ('ok', 'error', 'state', 'status', 'exit_code', 'ambiguous', 'result_ref') if k in result}
     result.update(truncated=True, omitted_fields=['business_body'])
+    return result
+
+
+def project_tool_result(result, name):
+    """Tool-specific semantics are projected after saving the complete snapshot."""
+    if name == 'memory_search' and isinstance(result.get('results'), list):
+        fields = {'id', 'kind', 'key', 'content', 'source', 'local_date', 'confidence',
+                  'evidence', 'evidence_quote', 'updated_at', 'activation', 'authority'}
+        removed = sorted({key for item in result['results'] if isinstance(item, dict)
+                          for key in item if key not in fields})
+        result['results'] = [{key: value for key, value in item.items() if key in fields}
+                             if isinstance(item, dict) else item for item in result['results']]
+        if removed:
+            result['omitted_fields'] = [f'results.*.{key}' for key in removed]
     return result

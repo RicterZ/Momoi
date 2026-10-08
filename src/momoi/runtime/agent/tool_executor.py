@@ -282,9 +282,9 @@ class ToolExecutor:
         # in the internal envelope, outside the model-visible snapshot.
         serialized = json.dumps({key: value for key, value in envelope.items() if key != "provenance"}, ensure_ascii=False, default=str)
         result_ref = self.tool_results.save(serialized)
-        if source == "mcp":
-            envelope = {**present_result(envelope), "provenance": provenance}
-            serialized = json.dumps(present_result(envelope), ensure_ascii=False, default=str)
+        envelope = {**present_result(envelope), "provenance": provenance,
+                    "error": error, "truncated": bool(raw.get("truncated", False))}
+        serialized = json.dumps(present_result(envelope), ensure_ascii=False, default=str)
         budget = self.config.tool_result_max_chars - RESULT_REF_OVERHEAD
         if len(serialized) <= budget:
             return {**envelope, "result_ref": result_ref}
@@ -292,9 +292,10 @@ class ToolExecutor:
             isinstance(payload.get("content"), str)
             or isinstance(payload.get("lines"), list)
         ):
-            fitted_budget = budget - len(json.dumps({"provenance": provenance}, ensure_ascii=False))
+            fitted_budget = budget - len(json.dumps({"provenance": provenance, "error": error}, ensure_ascii=False))
             return {
                 **json.loads(truncate_tool_result_json(serialized, fitted_budget)),
+                "error": error,
                 "provenance": provenance,
                 "result_ref": result_ref,
             }

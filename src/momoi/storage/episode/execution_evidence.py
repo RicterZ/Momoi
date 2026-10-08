@@ -93,11 +93,11 @@ def bounded_result(value, terms=(), budget=800):
     return result
 
 
-def historical_result(value):
+def historical_result(value, tool_name=None):
     """Remove transport metadata only from the historical presentation."""
     if not isinstance(value, dict):
         return value
-    value = present_result(value, historical=True)
+    value = present_result(value, historical=True, tool_name=tool_name)
     if value.get('result_ref') and 'chunk_start' in value and 'content' in value:
         for key in ('format', 'sha256', 'original_chars', 'chunk_start', 'chunk_end',
                     'next_cursor', 'has_more'):
@@ -221,7 +221,7 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
                     -sum(term in json.dumps(pair[1], ensure_ascii=False).casefold() for term in terms), pair[0]))
                 batch = [call for _, call in sorted(ranked[:remaining])]
             for call in batch:
-                result = historical_result(call['result'])
+                result = historical_result(call['result'], call['name'])
                 reduced = {'name': call['name'], 'arguments': bounded(call['arguments'], terms=terms),
                            'result': bounded_result(result, terms=terms)}
                 if reduced['arguments'] != call['arguments']:
