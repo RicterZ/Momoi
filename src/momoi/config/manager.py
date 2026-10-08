@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -250,6 +251,7 @@ class ConfigurationManager:
                 str(error) if isinstance(error, ConfigError) else type(error).__name__
             )
         return {
+            "desktop_asr_managed": sys.platform == "win32" and bool(os.environ.get("MOMOI_INSTALL_DIR")),
             "desktop_qq_call_managed": bool(os.environ.get("MOMOI_QQ_CALL_MANAGED")),
             "revision": self.revision(),
             "providers": copy.deepcopy(providers),

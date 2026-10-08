@@ -449,7 +449,7 @@ function SecretField({ label, value, onChange }) {
   );
 }
 
-function OptionField({ name, spec, value, onChange }) {
+function OptionField({ name, spec, value, onChange, disabled = false }) {
   const id = useId();
   const hint = spec.label === "本地 ASR 服务地址"
     ? spec.description
@@ -519,8 +519,9 @@ function OptionField({ name, spec, value, onChange }) {
             autoComplete="off"
             spellCheck={false}
             value={value ?? ""}
+            disabled={disabled}
             placeholder={String(
-              spec.default ??
+              spec.placeholder ?? spec.default ??
                 (name === "base_url" ? "https://api.example.com/v1" : ""),
             )}
             aria-describedby={hint ? `${id}-hint` : undefined}
@@ -934,7 +935,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
               const fields = Object.entries(
                 adapters.find((adapter) => adapter.adapter === value.adapter)
                   ?.fields || {},
-              );
+              ).filter(([key]) => !(name === "asr" && value.adapter === "sherpa" && key === "model_path"));
               const basic = fields.filter(([key]) =>
                 primaryFields[name]?.includes(key),
               );
@@ -951,6 +952,11 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
               const update = (next) =>
                 change({ ...draft, values: { ...draft.values, [name]: next } });
               const renderField = ([key, spec]) => {
+                if (name === "asr" && value.adapter === "sherpa" && key === "endpoint" && data.desktop_asr_managed) {
+                  return <OptionField key={`${value.adapter}-${key}`} name={key}
+                    spec={{ ...spec, placeholder: "由桌面程序管理", description: "使用内置本地模型，无需填写地址或模型目录。" }}
+                    value="" disabled onChange={() => {}} />;
+                }
                 if (name === "llm" && key === "thinking" && spec.properties?.effort?.enum) {
                   const effort = spec.properties.effort;
                   return <SelectField key={`${value.adapter}-${key}`} label={effort.label || "默认思考强度"}

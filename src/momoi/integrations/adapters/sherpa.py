@@ -96,8 +96,13 @@ class SherpaASRProvider(ASRProvider):
 
     def __init__(self, *, endpoint='', model_path='', num_threads=2,
                  trailing_silence=0.8, timeout_seconds=30):
-        if not endpoint and not model_path and os.environ.get('MOMOI_INSTALL_DIR'):
-            model_path = str(Path(os.environ['MOMOI_INSTALL_DIR']).resolve() / 'models' / 'asr')
+        install = os.environ.get('MOMOI_INSTALL_DIR')
+        if install and sys.platform == 'win32':
+            # The Windows shell owns the optional component and its fixed model path.
+            endpoint = ''
+            model_path = str(Path(install).resolve() / 'models' / 'asr')
+        elif not endpoint and not model_path and install:
+            model_path = str(Path(install).resolve() / 'models' / 'asr')
         if bool(endpoint) == bool(model_path):
             raise ValueError('本地 ASR 必须填写 endpoint 或 model_path，二选一')
         from ..validation import url, number

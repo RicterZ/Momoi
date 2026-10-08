@@ -44,7 +44,7 @@ public partial class App
         if (!snapshot.RootElement.TryGetProperty("capabilities", out var capabilities) || !capabilities.TryGetProperty("asr", out var asr)) return false;
         if (!asr.TryGetProperty("adapter", out var adapter) || adapter.GetString() != "sherpa" ||
             (asr.TryGetProperty("enabled", out var enabled) && enabled.ValueKind == JsonValueKind.False)) return false;
-        return !asr.TryGetProperty("options", out var options) || !options.TryGetProperty("endpoint", out var endpoint) || string.IsNullOrWhiteSpace(endpoint.GetString());
+        return true; // Windows always uses the shell-owned ASR component, even with a saved container URL.
     }
 
     private async Task CheckAllUpdatesAsync(bool quiet = false)
