@@ -63,7 +63,23 @@ internal sealed class QQCallHost : IAsyncDisposable
     }
     private void Status(string state, string message = "")
     {
+        bool changed = phase != state || error != message;
         phase = state; error = message;
+        if (changed)
+        {
+            string stateDiagnostic = $"event=qq_call_service_state phase={state} error={message.Replace(token, "[redacted]")}";
+            LiveLog.Write("voice-service", string.IsNullOrEmpty(message) ? "shell" : "stderr", stateDiagnostic);
+            string logs = Path.Combine(data, "logs");
+            try
+            {
+                Directory.CreateDirectory(logs);
+                lock (logGate) File.AppendAllText(Path.Combine(logs, "service.log"), $"{DateTimeOffset.Now:O} {stateDiagnostic}{Environment.NewLine}", Encoding.UTF8);
+            }
+            catch (Exception logFailure) when (logFailure is IOException or UnauthorizedAccessException)
+            {
+                LiveLog.Write("voice-service", "stderr", "语音状态日志写入失败：" + logFailure.Message);
+            }
+        }
         string path = Path.Combine(data, "status.json");
         if (QQCallStatusFile.TryWrite(path, phase, error, out var failure))
         {

@@ -114,6 +114,7 @@ internal sealed class AudioDeviceWindow : Window
     }
     private async Task ApplyAsync()
     {
+        LiveLog.Write("audio-route", "shell", "event=audio_route_apply_started");
         SetBusy(true); status.Text = "正在保存并应用…";
         bool savedConfiguration = false;
         try
@@ -123,12 +124,14 @@ internal sealed class AudioDeviceWindow : Window
             var effectiveInput = selectedInput.Id == "" ? inputs.OrderBy(item => AudioDevicePreference.Rank(item.Name, true)).FirstOrDefault() : inputs.FirstOrDefault(item => item.Id == selectedInput.Id);
             var effectiveOutput = selectedOutput.Id == "" ? outputs.OrderBy(item => AudioDevicePreference.Rank(item.Name, false)).FirstOrDefault() : outputs.FirstOrDefault(item => item.Id == selectedOutput.Id);
             if (effectiveInput is null || effectiveOutput is null) throw new InvalidOperationException("所选音频设备不可用；请手动选择或刷新。");
+            LiveLog.Write("audio-route", "shell", $"event=audio_route_selection input={effectiveInput.Name} input_id={effectiveInput.Id} output={effectiveOutput.Name} output_id={effectiveOutput.Id}");
             using var client = Client();
             string payload = JsonSerializer.Serialize(new { input_device = selectedInput.Id, output_device = selectedOutput.Id, revision });
             using var response = await client.PutAsync("/api/settings/channels/napcat/voice-call/devices", new StringContent(payload, Encoding.UTF8, "application/json"));
             string body = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException(response.StatusCode == System.Net.HttpStatusCode.Conflict ? "配置已被修改，请刷新后重新应用。" : response.StatusCode == System.Net.HttpStatusCode.MethodNotAllowed ? "主体程序尚未更新，请先点击检查更新完成升级。" : body);
             savedConfiguration = true;
+            LiveLog.Write("audio-route", "shell", "event=audio_route_configuration_saved");
             using (var saved = JsonDocument.Parse(body)) revision = saved.RootElement.GetProperty("revision").GetString()!;
             var processes = new List<object>();
             foreach (var process in Process.GetProcessesByName("QQ"))
@@ -142,6 +145,7 @@ internal sealed class AudioDeviceWindow : Window
             using var host = JsonDocument.Parse(JsonSerializer.Serialize(new { audioProcesses = processes }));
             using var devices = JsonDocument.Parse(JsonSerializer.Serialize(new { audio_devices = new { input_device = new { id = effectiveInput.Id }, output_device = new { id = effectiveOutput.Id } } }));
             bool routed = routes.Ensure(host.RootElement, devices.RootElement);
+            LiveLog.Write("audio-route", "shell", $"event=audio_route_apply_completed routed={routed}");
             status.Text = routed ? "设备已保存，私有 QQ 路由已应用并回读验证。请重新拨打电话。" : "设备已保存。私有 QQ 音频进程尚未就绪，启动并登录内置 QQ 后，再点击应用。";
             status.Text += " 实体设备可能外放或回声。";
         }
