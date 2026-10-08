@@ -109,10 +109,7 @@ def journal_rows(db, episode_id=None, after=None, before=None, before_ordinal=No
     rows = db.execute('''SELECT et.episode_id, et.turn_id, et.ordinal, t.started_at,
         j.sequence, j.created_at AS journal_created_at, j.payload_json, j.item_type FROM episode_turns et JOIN turns t ON t.id=et.turn_id
         LEFT JOIN turn_journal j ON j.turn_id=et.turn_id AND (
-            j.item_type='assistant_exchange' OR (
-                j.item_type IN ('tool_call', 'tool_result') AND NOT EXISTS (
-                    SELECT 1 FROM turn_journal native WHERE native.turn_id=et.turn_id
-                    AND native.item_type='assistant_exchange')))
+            j.item_type IN ('assistant_exchange', 'tool_call', 'tool_result'))
         WHERE (? IS NULL OR et.episode_id=?) AND (? IS NULL OR et.ordinal<?)
         AND (? IS NULL OR t.started_at>=?) AND (? IS NULL OR t.started_at<?)
         ORDER BY et.episode_id, et.ordinal, j.sequence''',
@@ -120,9 +117,19 @@ def journal_rows(db, episode_id=None, after=None, before=None, before_ordinal=No
     output = []
     for _, records in groupby(rows, key=lambda row: (row['episode_id'], row['turn_id'])):
         records = list(records)
-        if records[0]['item_type'] in (None, 'assistant_exchange'):
+        if records[0]['item_type'] is None:
             output.extend(records)
             continue
+        native_ids = set()
+        for row in records:
+            if row['item_type'] == 'assistant_exchange':
+                try:
+                    payload = json.loads(row['payload_json'])
+                    native_ids.update(block.get('id') for block in payload.get('content', [])
+                                      if isinstance(block, dict) and block.get('type') == 'tool_use')
+                except (TypeError, ValueError):
+                    pass
+                output.append(row)
         # Pair by ID, never adjacency: concurrent calls may finish out of order.
         results = {}
         for row in records:
@@ -135,6 +142,8 @@ def journal_rows(db, episode_id=None, after=None, before=None, before_ordinal=No
                 continue
             call = json.loads(row['payload_json'])
             identifier = call.get('tool_call_id')
+            if identifier in native_ids:
+                continue
             result = results.get(identifier)
             exchange = {'content': [{'type': 'tool_use', 'id': identifier,
                          'name': call.get('name'), 'input': call.get('arguments', {}),

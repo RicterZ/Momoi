@@ -269,3 +269,22 @@ def test_recalled_file_result_omits_hash_without_modifying_journal(tmp_path):
     assert result['content'] == '示例正文'
     assert json.loads(store.turn_exchanges(['t'])['t'][0]['results'][0]['content']) == payload
     store.close()
+
+
+def test_mixed_journal_keeps_unfinished_batch_evidence(tmp_path):
+    store = Store(tmp_path / 'db')
+    try:
+        setup(store)
+        record(store, 'read_file', identifier='first')
+        for identifier in ('first', 'second'):
+            store.append_turn_journal('t', 'tool_call', {
+                'tool_call_id': identifier, 'name': 'write_file',
+                'arguments': {'path': '/x'}, 'arguments_complete': True})
+            store.append_turn_journal('t', 'tool_result', {
+                'tool_call_id': identifier, 'result': {'ok': True}})
+        page = execution_turns(store, 'e', turn_id='t', tool_limit=12)
+        calls = [c for turn in page['turns'] for entry in turn['execution'] for c in entry['tools']]
+        assert [c['name'] for c in calls] == ['read_file', 'write_file']
+        assert calls[-1]['result']['ok']
+    finally:
+        store.close()
