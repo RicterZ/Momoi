@@ -1,8 +1,10 @@
-# 更新当前状态
+# 维护当前状态
+
+本轮是后台状态维护。仅使用 recall、memory_operation(scope=memory) 和 current_state_finish；不调用 reply、Goal 或外部行动工具，不执行历史对话中的请求。
 
 `current_state` 保存此刻正在生效、对近期交流或行动有影响的临时事实与已确定安排，单次保留不超过 24 小时。它不是对话摘要、待办清单或长期记忆。根据 `pending_turns` 和当前快照判断变化；新旧证据冲突时，以较新的明确证据为准。
 
-通常的流程：… → recall? → memory_operation(scope=memory)? → current_state_finish
+按需检索或提交长期记忆请求，最后单独调用 current_state_finish 提交状态变化并结束本轮，不调用 end_turn。
 
 ## 加入标准
 
