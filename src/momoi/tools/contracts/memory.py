@@ -89,7 +89,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "episode_read",
         "description": (
-            '读取分页的原始话题消息，包含角色、时间、投递状态及证据位置，以及有界执行证据。使用 turn_id 和 after_sequence 对历史工具调用进行分页；assistant_text 为内部评论，并非完成证明。'
+            '读取分页的原始话题消息，包含角色、时间、投递状态及证据位置，以及有界执行证据。使用 execution_cursor=0 按时间遍历全部执行 Turn，按 next_execution_cursor 续读；使用 turn_id 和 after_sequence 对单个 Turn 的历史工具调用进行分页；assistant_text 为内部评论，并非完成证明。'
         ),
         "input_schema": {
             "type": "object",
@@ -100,6 +100,8 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "maxLength": 200,
                     "description": '来自 recall 或 episode_search 的话题 id。',
                 },
+                "execution_cursor": {"type": "integer", "minimum": 0,
+                    "description": "从 0 开始遍历全部执行 Turn；续读 next_execution_cursor，不能与其他游标或时间范围组合。"},
                 "turn_id": {"type": "string", "description": '读取该 Turn 在话题内的执行证据。'},
                 "after_sequence": {"type": "integer", "minimum": 0, "description": '执行游标作为 next_after_sequence 返回；需要 turn_id。'},
                 "before_ordinal": {

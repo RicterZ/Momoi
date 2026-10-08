@@ -92,6 +92,7 @@ def _episode_match_excerpt(episode: dict[str, object]) -> str:
 _MEMORY_ERROR_MESSAGES = {
     "tool_not_allowed": "This memory tool is not available in the current Turn.",
     "query_required": "Provide a non-empty search query.",
+    "invalid_execution_page": "execution_cursor must be a non-negative integer and cannot be combined with other cursors or time_range.",
     "turn_id_required": "after_sequence requires turn_id.",
     "invalid_execution_cursor": "turn_id must be a string and after_sequence a non-negative integer.",
     "conflicting_execution_cursor": "Execution cursors cannot be combined with message or time cursors.",
@@ -358,6 +359,18 @@ class MemoryTools:
         episode_id = arguments.get("episode_id")
         if not isinstance(episode_id, str) or not episode_id.strip():
             return _memory_error("invalid_episode_id")
+        if "execution_cursor" in arguments:
+            cursor = arguments["execution_cursor"]
+            if (isinstance(cursor, bool) or not isinstance(cursor, int) or cursor < 0
+                    or any(key in arguments for key in ("turn_id", "after_sequence", "message_id",
+                                                        "content_offset", "before_ordinal", "time_range"))):
+                return _memory_error("invalid_execution_page")
+            if self.store.episode(episode_id.strip()) is None:
+                return _memory_error("episode_not_found")
+            from ..storage.episode.execution_evidence import execution_turns
+            return {"ok": True, "episode_id": episode_id.strip(),
+                    **execution_turns(self.store, episode_id.strip(), limit=10, tool_limit=12,
+                                      after_turn_ordinal=cursor)}
         if "after_sequence" in arguments and not arguments.get("turn_id"):
             return _memory_error("turn_id_required")
         if arguments.get("turn_id") is not None:

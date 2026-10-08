@@ -166,12 +166,14 @@ def search_fields(rows):
 
 def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
                     after=None, before=None, before_ordinal=None, selected_messages=(),
-                    turn_id=None, after_sequence=0):
+                    turn_id=None, after_sequence=0, after_turn_ordinal=None):
     rows = journal_rows(store._db, episode_id, after, before, before_ordinal)
     turns = {}
     terms = [str(t).casefold() for t in keywords if t]
     message_turns = {str(m['turn_id']) for m in selected_messages}
     for row in rows:
+        if after_turn_ordinal is not None and row['ordinal'] <= after_turn_ordinal:
+            continue
         if turn_id and row['turn_id'] != turn_id:
             continue
         if row['sequence'] is not None and row['sequence'] <= after_sequence:
@@ -191,7 +193,10 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
     # Summary-only / semantic-only hits still offer recent execution context.
     if not candidates:
         candidates = list(turns.values())
-    candidates.sort(key=lambda t: (t['id'] in message_turns, t['score'], t['ordinal']), reverse=True)
+    if after_turn_ordinal is not None:
+        candidates.sort(key=lambda t: t['ordinal'])
+    else:
+        candidates.sort(key=lambda t: (t['id'] in message_turns, t['score'], t['ordinal']), reverse=True)
     chosen = sorted(candidates[:limit], key=lambda t: t['ordinal'])
     output = []
     for turn in chosen:
@@ -247,4 +252,10 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
         if turn['journal_missing']:
             item['journal_available'] = False
         output.append(item)
-    return {'turns': output, **({'omitted_turns': len(candidates) - len(chosen)} if len(candidates) > len(chosen) else {})}
+    result = {'turns': output}
+    if len(candidates) > len(chosen):
+        result['omitted_turns'] = len(candidates) - len(chosen)
+        # Default evidence is ranked; restart chronological browsing to cover
+        # every Turn, including those with no archived chat messages.
+        result['next_execution_cursor'] = chosen[-1]['ordinal'] if after_turn_ordinal is not None else 0
+    return result
