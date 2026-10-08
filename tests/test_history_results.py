@@ -101,7 +101,7 @@ def test_recall_search_reuse_and_errors_are_never_compacted():
         assert replay[i * 2 + 1]['content'] == item['results']
 
 
-def test_simple_receipts_keep_pairs_and_old_format_unchanged():
+def test_simple_receipts_keep_send_pair_but_remove_successful_end_turn():
     source = [exchange('s', 'send_bubbles', {
         'ok': True, 'error': None, 'truncated': False, 'state': 'committed',
         'channel': 'napcat', 'bubbles': 3, 'result_ref': 'tr_send',
@@ -109,7 +109,7 @@ def test_simple_receipts_keep_pairs_and_old_format_unchanged():
     }), exchange('e', 'end_turn', {'ok': True, 'state': 'completed', 'result_ref': 'tr_end'})]
     original = deepcopy(source)
     assert results(render_exchanges(source)) == [
-        {'ok': True, 'state': 'committed', 'bubbles': 3}, {'ok': True, 'state': 'completed'}]
+        {'ok': True, 'state': 'committed', 'bubbles': 3}]
     assert results(render_exchanges(source, history_format=2))[0]['result_ref'] == 'tr_send'
     assert source == original
 

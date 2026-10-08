@@ -1,15 +1,20 @@
 """Replay native assistant/tool journals without synthesizing legacy speech."""
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
+from zoneinfo import ZoneInfo
+
+from .dialogue import project_dialogue
 
 from .results import historical_results
 
 def render_exchanges(
     exchanges: Sequence[Mapping[str, object]],
-    *, history_format: int = 3,
+    *, history_format: int = 4, timezone: ZoneInfo = ZoneInfo("UTC"),
+    has_speech: bool = False, mark_silence: bool = True,
 ) -> list[dict[str, object]]:
     """Replay model text, tool calls, then the observations the model received."""
     exchanges = deepcopy(list(exchanges))
+    project_dialogue(exchanges, timezone=timezone, has_speech=has_speech, mark_silence=mark_silence)
     historical_results(exchanges, history_format=history_format)
     messages: list[dict[str, object]] = []
     for exchange in exchanges:
@@ -37,7 +42,8 @@ def render_exchanges(
                     "type": "tool_result", "tool_use_id": identifier,
                     "content": '{"ok":false,"error":"not_executed"}',
                 })
-        messages.append({"role": "assistant", "content": content})
+        if content:
+            messages.append({"role": "assistant", "content": content})
         if complete_results:
             messages.append({"role": "user", "content": complete_results})
     return messages

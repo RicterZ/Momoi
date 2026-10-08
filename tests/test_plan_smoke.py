@@ -99,7 +99,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         pending = [row[0] for row in daemon.store._db.execute("SELECT text FROM outbox ORDER BY id")]
         self.assertEqual(pending[-3:], [f"{user} latest post" for user in "ABC"])
         last = str(requests[-1])
-        self.assertEqual(last.count("A latest post"), 2)  # One reference and one generated result.
+        self.assertEqual(last.count("A latest post"), 1)  # Actual speech; reply planning is omitted.
         self.assertNotIn("[message delivery confirmation]", last)
         self.assertIn("A queued", last)
         self.assertIn("B queued", last)

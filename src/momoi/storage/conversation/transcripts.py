@@ -58,7 +58,7 @@ _MESSAGE_TIME_SQL = """CASE WHEN m.role='event' THEN COALESCE(wr.created_at, m.c
 
 
 class TranscriptStore:
-    def turn_exchanges(self, turn_ids: list[str], *, window=None) -> dict[str, list[dict[str, object]]]:
+    def turn_exchanges(self, turn_ids: list[str], *, window=None, include_reply_messages=False) -> dict[str, list[dict[str, object]]]:
         """Return completed native assistant/tool exchanges for transcript replay."""
         ordered_ids = [str(turn_id) for turn_id in dict.fromkeys(turn_ids) if turn_id]
         if not ordered_ids:
@@ -108,6 +108,7 @@ class TranscriptStore:
             tuple(ordered_ids),
         ).fetchall()
         exchanges: dict[str, list[dict[str, object]]] = {}
+        executor_exchanges = []
         for row in rows:
             try:
                 payload = json.loads(str(row["payload_json"]))
@@ -115,6 +116,37 @@ class TranscriptStore:
                 continue
             if isinstance(payload, dict) and isinstance(payload.get("content"), (str, list)):
                 exchanges.setdefault(parent_ids[str(row["turn_id"])], []).append(payload)
+                executor_exchanges.append((str(row["turn_id"]), payload))
+        if include_reply_messages and any(
+            block.get("type") == "tool_use" and block.get("name") == "reply"
+            for items in exchanges.values() for item in items
+            for block in item["content"] if isinstance(item["content"], list) and isinstance(block, dict)
+        ):
+            speech = {}
+            records = self._db.execute(
+                f"""SELECT p.turn_id, p.tool_call_id, m.content, m.created_at,
+                           m.delivery_state, o.kind
+                    FROM turn_progress p
+                    JOIN outbox o ON o.dedupe_key = 'turn:' || p.turn_id || ':progress:' ||
+                         p.tool_call_id || ':' || p.part_index
+                    JOIN messages m ON m.outbox_id=o.id AND m.role='assistant'
+                    WHERE p.turn_id IN ({placeholders})
+                    ORDER BY p.turn_id, p.tool_call_id, p.part_index""",
+                tuple(ordered_ids),
+            ).fetchall()
+            for row in records:
+                speech.setdefault((str(row["turn_id"]), str(row["tool_call_id"])), []).append({
+                    key: row[key] for key in ("content", "created_at", "delivery_state", "kind")
+                })
+            for executor, item in executor_exchanges:
+                # Call IDs are local to an executor, including follow-ups
+                # archived under the original owner Turn.
+                calls = item["content"] if isinstance(item["content"], list) else []
+                item["_reply_messages"] = {
+                    block["id"]: speech[(executor, block["id"])]
+                    for block in calls if isinstance(block, dict) and block.get("name") == "reply"
+                    and (executor, block.get("id")) in speech
+                }
         return exchanges
 
     def transcript_window_turn_limit(

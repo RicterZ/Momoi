@@ -96,7 +96,7 @@ class ContextService:
         cutoff = float(self.store.turn_usage(turn_id)["started_at"])
         rows = self.store.retained_transcript_rows(self._recent_conversation_rows(cutoff))
         ids = list(dict.fromkeys(str(row["turn_id"]) for row in rows))
-        exchanges = self.store.turn_exchanges(ids)
+        exchanges = self.store.turn_exchanges(ids, include_reply_messages=True)
         # Only unreplayable historical assistant speech marks a legacy boundary.
         # Runtime events and silent turns legitimately have no LLM exchange.
         legacy_speech = {str(row["turn_id"]) for row in rows
@@ -117,7 +117,7 @@ class ContextService:
             [*transcript.orphaned, *transcript.groups],
             timezone=self.store.timezone, tool_activity=activity,
             native_exchanges={identifier: exchanges.get(identifier, []) for identifier in ids},
-            history_format=memory_state.get("history_format", 2),
+            history_format=memory_state["history_format"],
         )
         memories = {int(key): value for key, value in memory_state["observed"].items()
                     if value["activation"] == "always"}

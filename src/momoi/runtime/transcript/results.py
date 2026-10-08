@@ -166,7 +166,7 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3) -> Non
                     if any(key in compact for key in ("stdout_tail", "stderr_tail", "stdout", "stderr")):
                         compact.pop("preview", None)
                 # Preserve control/outcome metadata independently of excerpt size.
-                for key in ("state", "status", "exit_code", "ambiguous", "connection_recovered",
+                for key in ("state", "status", "delivery_state", "exit_code", "ambiguous", "connection_recovered",
                             "upstream_error_type", "plan_id", "step_id", "plan_status", "step_index",
                             "version", "operation_id", "image_id", "count", "pattern", "title",
                             "requested_url", "content_type", "extract_mode", "source_truncated",
