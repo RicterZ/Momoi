@@ -71,7 +71,7 @@ def test_unconfirmed_replies_keep_original_call_and_observation(mode):
     assert calls(messages)[0]['input']['intent'] == '策划内容'
     assert '<sent_reply>' not in str(messages)
     if mode == 'missing_result':
-        assert json.loads(results(messages)[0]['content'])['error'] == 'not_executed'
+        assert json.loads(results(messages)[0]['content'])['error'] == 'execution_result_unknown'
     if mode == 'delivery_failed':
         assert json.loads(results(messages)[0]['content'])['delivery_state'] == 'failed'
 

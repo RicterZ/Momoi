@@ -33,18 +33,17 @@ def render_exchanges(
             if isinstance(block, dict) and block.get("type") == "tool_result"
         }
         # A Turn can end before every tool in a batch runs. Keep the historical
-        # API exchange valid and mark those calls as interrupted.
+        # API exchange valid without claiming the operation never ran.
         complete_results = list(results)
         for call in calls:
             identifier = str(call.get("id") or "")
             if identifier and identifier not in result_ids:
                 complete_results.append({
                     "type": "tool_result", "tool_use_id": identifier,
-                    "content": '{"ok":false,"error":"not_executed"}',
+                    "content": '{"ok":false,"error":"execution_result_unknown","ambiguous":true}',
                 })
         if content:
             messages.append({"role": "assistant", "content": content})
         if complete_results:
             messages.append({"role": "user", "content": complete_results})
     return messages
-
