@@ -112,10 +112,14 @@ internal sealed class AudioDeviceWindow : Window
         catch (Exception error) { status.Text = error.Message; }
         finally { SetBusy(false); }
     }
+    private static string DeviceError(string message) =>
+        message.Contains("0x80070490", StringComparison.OrdinalIgnoreCase) || message.Contains("0x88890004", StringComparison.OrdinalIgnoreCase)
+            ? "所选设备在当前 Windows 会话不可用，请刷新设备或选择其他设备。" : message;
+
     private async Task ApplyAsync()
     {
         LiveLog.Write("audio-route", "shell", "event=audio_route_apply_started");
-        SetBusy(true); status.Text = "正在保存并应用…";
+        SetBusy(true); apply.Content = "应用中…"; status.Text = "正在保存所选设备…";
         bool savedConfiguration = false;
         try
         {
@@ -144,12 +148,25 @@ internal sealed class AudioDeviceWindow : Window
             }
             using var host = JsonDocument.Parse(JsonSerializer.Serialize(new { audioProcesses = processes }));
             using var devices = JsonDocument.Parse(JsonSerializer.Serialize(new { audio_devices = new { input_device = new { id = effectiveInput.Id }, output_device = new { id = effectiveOutput.Id } } }));
+            status.Text = "选择已保存，正在应用 QQ 音频路由…";
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
             bool routed = routes.Ensure(host.RootElement, devices.RootElement);
             LiveLog.Write("audio-route", "shell", $"event=audio_route_apply_completed routed={routed}");
-            status.Text = routed ? "设备已保存，私有 QQ 路由已应用并回读验证。请重新拨打电话。" : "设备已保存。私有 QQ 音频进程尚未就绪，启动并登录内置 QQ 后，再点击应用。";
-            status.Text += " 实体设备可能外放或回声。";
+            if (!routed)
+            {
+                status.Text = $"{DateTime.Now:HH:mm:ss} · 选择已保存，QQ 音频进程尚未就绪，请登录内置 QQ 后重试。";
+                return;
+            }
+            status.Text = "路由已应用，正在检查语音设备连接…";
+            using var probe = await client.PostAsync("/api/settings/channels/napcat/voice-call/test", new StringContent("{}", Encoding.UTF8, "application/json"));
+            probe.EnsureSuccessStatusCode();
+            using var result = JsonDocument.Parse(await probe.Content.ReadAsStringAsync());
+            bool ready = result.RootElement.GetProperty("ok").GetBoolean();
+            string reason = result.RootElement.TryGetProperty("error", out var failure) ? failure.GetString() ?? "语音服务尚未就绪" : "语音服务尚未就绪";
+            LiveLog.Write("audio-route", ready ? "shell" : "stderr", $"event=audio_route_connection_checked ready={ready} error={(ready ? "" : reason)}");
+            status.Text = $"{DateTime.Now:HH:mm:ss} · " + (ready ? "设备已保存并应用，语音连接已就绪。请重新拨打电话。" : "选择已保存，设备尚未连通：" + DeviceError(reason));
         }
-        catch (Exception error) { status.Text = (savedConfiguration ? "设备已保存；路由应用失败：" : "应用失败：") + error.Message; LiveLog.Write("audio-route", "stderr", error.ToString()); }
-        finally { SetBusy(false); }
+        catch (Exception error) { status.Text = $"{DateTime.Now:HH:mm:ss} · " + (savedConfiguration ? "选择已保存，连接失败：" : "应用失败：") + DeviceError(error.Message); LiveLog.Write("audio-route", "stderr", error.ToString()); }
+        finally { apply.Content = "应用"; SetBusy(false); }
     }
 }

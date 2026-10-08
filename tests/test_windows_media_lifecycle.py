@@ -182,3 +182,43 @@ def test_probe_timeout_does_not_terminate_ready_audio(monkeypatch, caplog):
         assert audio.backend.ready
         assert audio.missing_checks == 0
     asyncio.run(scenario())
+
+
+def test_device_configuration_change_retries_immediately_and_clears_stale_error(capsys):
+    async def scenario():
+        class Audio:
+            ready = False
+            changed = True
+            attempts = 0
+            device_ids = {"input_device": "new-mic", "output_device": "new-speaker"}
+            capture_command = ("capture",)
+            playback_command = ("playback",)
+            def configuration_changed(self):
+                return self.changed
+            def reload_configuration(self):
+                self.changed = False
+            async def prepare(self, *args):
+                self.attempts += 1
+                self.ready = True
+            def close(self):
+                self.ready = False
+        audio = Audio()
+        broker = MediaBroker('a' * 64, audio=audio)
+        broker.audio_retry_at = float('inf')
+        broker.audio_error = "previous device unavailable"
+        async def dependencies():
+            return {'bridge': True, 'av_host': True, 'audio': audio.ready}, {}
+        broker.dependencies = dependencies
+        await broker.startup(None)
+        try:
+            for _ in range(100):
+                if broker.status.get('ready'):
+                    break
+                await asyncio.sleep(.01)
+            assert audio.attempts == 1
+            assert broker.status['ready']
+            assert broker.audio_error == ''
+        finally:
+            await broker.cleanup(None)
+    asyncio.run(scenario())
+    assert 'qq_call_audio_configuration_changed' in capsys.readouterr().err

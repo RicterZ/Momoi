@@ -1849,17 +1849,23 @@ export default function ConfigurationSettings({
 function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) {
   const [test, setTest] = useState(null);
   const [testing, setTesting] = useState(false);
+  const [checkedAt, setCheckedAt] = useState("");
+  const deviceError = message => /0x(?:80070490|88890004)/i.test(message || "")
+    ? "所选音频设备在当前 Windows 会话不可用，请刷新设备或选择其他设备。"
+    : message;
   async function probe() {
+    setTest(null);
+    setCheckedAt("");
     setTesting(true);
     try {
       const result = await onTest(value);
-      setTest(result.ok ? ["Bridge、AV Host 和音频设备可用；测试没有接听或播放。", ...(result.warnings || [])].join(" ") : result.error || "Bridge 未就绪");
-    } catch (error) { setTest(error.message); }
-    finally { setTesting(false); }
+      setTest(result.ok ? ["Bridge、AV Host 和音频设备可用；测试没有接听或播放。", ...(result.warnings || [])].join(" ") : deviceError(result.error) || "Bridge 未就绪");
+    } catch (error) { setTest(deviceError(error.message)); }
+    finally { setCheckedAt(new Date().toLocaleTimeString([], { hour12: false })); setTesting(false); }
   }
-  function edit(key, next) { setTest(null); onChange({ ...value, [key]: next }); }
+  function edit(key, next) { setTest(null); setCheckedAt(""); onChange({ ...value, [key]: next }); }
   const serviceMessage = managed && status?.desktop_service
-    ? status.desktop_service.phase === "ready" ? "本机语音服务已就绪" : status.desktop_service.error || "语音服务未启动"
+    ? status.desktop_service.phase === "ready" ? "本机语音服务已就绪" : deviceError(status.desktop_service.error) || "语音服务未启动"
     : null;
   return <section className={`settings-disclosure settings-qq-call${managed ? " is-managed" : ""}`}>
     <header className="settings-qq-call-heading">
@@ -1878,8 +1884,11 @@ function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) 
         <button type="button" className="quiet-button settings-button" disabled={disabled || testing} onClick={probe}>{testing ? "测试中…" : "测试连接"}</button>
       </div>
     </Fields>
-    {serviceMessage && <p className="settings-channel-note" role="status">{serviceMessage}</p>}
-    {test && test !== serviceMessage && <p className="settings-channel-note" role="status">{test}</p>}
+    <div role="status" aria-live="polite" aria-atomic="true">
+      {testing ? <p className="settings-channel-note">正在检查 Bridge、QQ 和音频设备…</p>
+        : test ? <p className="settings-channel-note">{checkedAt} · {test}</p>
+        : serviceMessage && <p className="settings-channel-note">{serviceMessage}</p>}
+    </div>
     </div>}
   </section>;
 }

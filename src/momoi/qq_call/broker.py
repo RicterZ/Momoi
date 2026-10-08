@@ -118,6 +118,10 @@ class MediaBroker:
             if self.audio is not None and hasattr(self.audio, "configuration_changed") and self.audio.configuration_changed():
                 await self.invalidate()
                 self.audio.reload_configuration()
+                self.audio_retry_at = 0
+                self.audio_error = ''
+                print(json.dumps({"event": "qq_call_audio_configuration_changed",
+                    "devices": getattr(self.audio, "device_ids", {})}, ensure_ascii=False), file=sys.stderr, flush=True)
             if self.audio is not None and self.audio.ready and hasattr(self.audio, "check_endpoints"):
                 if not await self.audio.check_endpoints():
                     await self.invalidate()

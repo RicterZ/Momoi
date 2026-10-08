@@ -3,6 +3,8 @@
 import asyncio
 import base64
 import io
+import logging
+from time import monotonic
 import os
 
 import qrcode
@@ -276,6 +278,9 @@ def register_configuration_routes(app, configuration, runtime):
             config = QQCallConfig.from_mapping({**options, "enabled": True})
         except (ValueError, TypeError):
             return web.json_response({"ok": False, "error": "请填写有效的 Bridge 地址和认证 Token"}, status=400)
+        started = monotonic()
+        logger = logging.getLogger(__name__)
+        logger.info("event=qq_call_connection_check_started")
         result = await probe(config)
         if not result['ok'] and os.environ.get('MOMOI_QQ_CALL_MANAGED'):
             from pathlib import Path
@@ -287,6 +292,9 @@ def register_configuration_routes(app, configuration, runtime):
                     result['error'] = status['error']
             except (OSError, ValueError):
                 pass
+        logger.info("event=qq_call_connection_check_finished ok=%s elapsed_ms=%s error=%s",
+                    result.get('ok'), round((monotonic() - started) * 1000),
+                    str(result.get('error', '')).replace(config.bridge_token, '[redacted]') if config.bridge_token else result.get('error', ''))
         return web.json_response(result)
 
     async def cleanup(app):
