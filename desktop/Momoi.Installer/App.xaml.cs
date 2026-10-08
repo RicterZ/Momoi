@@ -129,7 +129,7 @@ public partial class App : Application
         installButton.Click += async (_, _) => { if (installed) { if (LaunchInstalled()) Shutdown(); } else if (!componentsVisible) ShowComponents(true); else await InstallAsync(); };
         buttons.Children.Add(cancelButton); buttons.Children.Add(backButton); buttons.Children.Add(installButton); content.Children.Add(buttons);
         surface.Children.Add(content);
-        window = new Window { Title = "Momoi 在线安装", Width = 640, Height = 690, ResizeMode = ResizeMode.NoResize, Content = surface, WindowStartupLocation = WindowStartupLocation.CenterScreen, FontFamily = new FontFamily("Segoe UI Variable, Segoe UI, DengXian"), FontSize = 13, Foreground = (Brush)FindResource("Ink"), Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")) };
+        window = new Window { Title = "Momoi 在线安装", Width = 640, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize, Content = surface, WindowStartupLocation = WindowStartupLocation.CenterScreen, FontFamily = new FontFamily("Segoe UI Variable, Segoe UI, DengXian"), FontSize = 13, Foreground = (Brush)FindResource("Ink"), Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/momoi.png")) };
         window.Closing += (_, e) => { if (operation is not null) { e.Cancel = true; if (!installing) operation.Cancel(); } else Shutdown(); };
     }
     private void ShowComponents(bool show)
@@ -153,8 +153,8 @@ public partial class App : Application
         cancelButton.Content = busy ? "取消下载" : "关闭";
         if (busy)
         {
-            loading = new StartupView("正在安装…") { Margin = new Thickness(0, 0, 0, 70) };
-            surface.Children[0].Visibility = Visibility.Hidden;
+            loading = new StartupView("正在安装…") { MinHeight = 240, Margin = new Thickness(0, 0, 0, 70) };
+            surface.Children[0].Visibility = Visibility.Collapsed;
             surface.Children.Add(loading);
             // Keep a separate cancel button reachable while the welcome form is covered.
             surface.Children.Add(new Border { Child = new Button { Content = "取消下载", Style = (Style)FindResource("MomoiButton"), Command = new CancelCommand(() => operation?.Cancel(), () => !installing) }, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 30) });
