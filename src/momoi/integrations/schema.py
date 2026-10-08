@@ -141,7 +141,7 @@ def builtin_schema(name, capability):
         "asr": {"secret_id", "secret_key"} if name == "tencent" else set(),
         "tts": {"api_key", "voice_id" if name == "vocu" else "reference_id"},
         "embedding": set(),
-        "balance": {"api_key"},
+        "balance": set(),
     }
     for key in required[capability]:
         fields[key]["required"] = True
@@ -153,6 +153,7 @@ def builtin_schema(name, capability):
         fields["num_threads"]["label"] = "CPU 推理线程数"
         fields["trailing_silence"]["label"] = "断句静音（秒）"
     if (name, capability) == ("deepseek", "balance"):
+        fields["api_key"]["description"] = "可留空：仅估算费用，不查询账户余额。填写后启用余额查询。"
         fields["accounting"]["description"] = "按 DeepSeek 用量和官方价格估算模型费用；模型使用其他服务商时请关闭。关闭后仍可查询余额并记录通用 Token 用量。"
     if (name, capability) == ("openai", "embedding"):
         fields["endpoint"]["description"] = "完整请求地址，例如 https://api.example.com/v1/embeddings；不会自动追加路径。"

@@ -37,7 +37,7 @@ class DeepSeekBalanceProvider:
     def __init__(
         self,
         *,
-        api_key: str,
+        api_key: str = "",
         base_url: str = "https://api.deepseek.com",
         timeout_seconds: float = 10,
         accounting: bool = True,
@@ -52,6 +52,8 @@ class DeepSeekBalanceProvider:
         self.timeout_seconds = float(timeout_seconds)
 
     async def balance(self) -> Balance:
+        if not self.api_key.strip():
+            return {"source": "disabled", "currency": "CNY", "is_available": False, "total_balance": "0"}
         try:
             timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
             async with self.transport.session(

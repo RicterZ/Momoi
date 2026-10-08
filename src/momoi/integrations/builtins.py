@@ -108,7 +108,7 @@ def register_builtins():
 
     def validate_balance(options):
         fields(options, {"api_key", "base_url", "timeout_seconds", "accounting"})
-        text(options, "api_key")
+        text(options, "api_key", "", empty=True)
         url(options, "base_url", "https://api.deepseek.com")
         number(options, "timeout_seconds", 10)
         DeepSeekBalanceProvider(**options)

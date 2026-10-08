@@ -154,6 +154,15 @@ class CatalogTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             self.load(raw)
 
+    def test_balance_can_enable_accounting_without_key(self):
+        raw = catalog_data()
+        raw["services"]["account"] = {"adapter": "deepseek"}
+        for options in [{}, {"api_key": ""}]:
+            raw["bindings"]["balance"]["options"] = options
+            provider = ServiceRegistry(self.load(raw)).balance
+            self.assertIsInstance(provider.accounting, DeepSeekAccounting)
+            self.assertEqual(provider.api_key, "")
+
     def test_embedding_has_one_explicit_address_without_path_inference(self):
         from momoi.integrations.registry import adapter_definition
 
@@ -308,6 +317,15 @@ class CatalogTest(unittest.TestCase):
 
 
 class IntegrationLifecycleTest(unittest.IsolatedAsyncioTestCase):
+    async def test_balance_without_key_never_opens_transport(self):
+        from unittest.mock import Mock
+        transport = Mock()
+        for key in ["", "   "]:
+            provider = DeepSeekBalanceProvider(api_key=key, transport=transport)
+            self.assertEqual((await provider.balance())["source"], "disabled")
+            self.assertIsInstance(provider.accounting, DeepSeekAccounting)
+        transport.session.assert_not_called()
+
     async def asyncSetUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
