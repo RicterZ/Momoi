@@ -86,13 +86,6 @@ Idle container memory after test: approximately 292MiB; service process RSS abou
 Cold model load in separate benchmark process: 5.21s initially, 1.96s subsequently.
 Warm-up is required before accepting live audio.
 
-Manual verification tools live in [`tools/asr`](../../tools/asr/README.md).
-Mount that directory and official test WAVs into the test container; audio paths
-and endpoints are explicit command-line arguments. The temporary server deployment
-is `/tmp/momoi-asr-poc-20261008/compose.yaml`, project/container
-`momoi-asr-poc-20261008`, port `127.0.0.1:18003`, 1 CPU / 1GiB limit.
-It does not change existing Momoi/NapCat containers or credentials.
-
 Next validation: real QQ recordings, names/mixed-language/noise, longer calls,
 endpoint false splits, and whole-call business delivery. Windows optional component
 installation and configuration-driven native startup require a separate Windows
@@ -100,7 +93,7 @@ implementation/verification pass.
 
 ## Business and UI verification
 
-`tools/asr/call_smoke.py` runs in a separate test Momoi container. It replays the official
+The integration verification used a separate test Momoi container to replay the official
 16kHz WAV through a WebSocket Bridge, the real `QQCallChannel`, and the separate
 ASR service. It verifies final owner text, `qq_call` delivery context, playback
 interruption, generation increment, and stream cleanup. This does not replace a
