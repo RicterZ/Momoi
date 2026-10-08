@@ -18,7 +18,7 @@ public partial class App : Application
     private Grid surface = null!;
     private TextBox directory = null!;
     private TextBlock message = null!, introduction = null!, completionMessage = null!;
-    private StackPanel completionPage = null!;
+    private StackPanel completionPage = null!, heading = null!, buttons = null!;
     private Button installButton = null!, chooseButton = null!, cancelButton = null!;
     private StartupView? loading;
     private StackPanel locationPage = null!, componentPage = null!;
@@ -55,7 +55,7 @@ public partial class App : Application
             await Task.Delay(350);
             SavePreview(surface, Path.Combine(e.Args[1], "online-installer-components.png"));
             installed = true;
-            message.Text = "Momoi 已安装，可以打开并完成首次设置。之后从应用内检查更新即可。";
+            message.Text = "已准备就绪，打开 Momoi 开始首次设置。";
             ShowCompletion();
             AnimatePageHeight();
             await Task.Delay(350);
@@ -85,9 +85,11 @@ public partial class App : Application
     {
         surface = new Grid { Background = (Brush)FindResource("Canvas") };
         var content = new StackPanel { Margin = new Thickness(32), VerticalAlignment = VerticalAlignment.Center };
-        content.Children.Add(new TextBlock { Text = "MOMOI // SETUP", Foreground = (Brush)FindResource("Pink"), FontWeight = FontWeights.SemiBold });
-        content.Children.Add(new TextBlock { Text = "Momoi", FontSize = 28, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 14, 0, 16) });
-        content.Children.Add(new TextBlock { Text = "GAME DEV DEPT.", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, -8, 0, 18) });
+        heading = new StackPanel();
+        content.Children.Add(heading);
+        heading.Children.Add(new TextBlock { Text = "MOMOI // SETUP", Foreground = (Brush)FindResource("Pink"), FontWeight = FontWeights.SemiBold });
+        heading.Children.Add(new TextBlock { Text = "Momoi", FontSize = 28, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 14, 0, 16) });
+        heading.Children.Add(new TextBlock { Text = "GAME DEV DEPT.", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, -8, 0, 18) });
         introduction = new TextBlock { Text = "自动下载所需运行组件、BGE 模型和 QQ。已有本地组件将优先使用，安装后无需配置运行环境。", FontSize = 14, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 26) };
         content.Children.Add(introduction);
         locationPage = new StackPanel();
@@ -130,11 +132,20 @@ public partial class App : Application
         localASR = new CheckBox { Content = "安装本地语音识别", IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
         componentPage.Children.Add(localASR);
         componentPage.Children.Add(new TextBlock { Text = "使用 CPU 识别语音，无需云端 ASR；安装后也可以切换到腾讯云。", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 24) });
-        completionPage = new StackPanel { Visibility = Visibility.Collapsed };
-        completionMessage = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), LineHeight = 22, Margin = new Thickness(0, 0, 0, 24) };
+        completionPage = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 8, 0, 0) };
+        completionPage.Children.Add(new Border
+        {
+            Width = 56, Height = 56, CornerRadius = new CornerRadius(28),
+            HorizontalAlignment = HorizontalAlignment.Center, Background = new SolidColorBrush(Color.FromRgb(255, 234, 241)),
+            Margin = new Thickness(0, 0, 0, 18),
+            Child = new TextBlock { Text = "\uE73E", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 24, Foreground = (Brush)FindResource("Pink"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+        });
+        completionPage.Children.Add(new TextBlock { Text = "Momoi", FontSize = 28, FontWeight = FontWeights.Bold, TextAlignment = TextAlignment.Center });
+        completionPage.Children.Add(new TextBlock { Text = "GAME DEV DEPT.", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Muted"), TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 6, 0, 20) });
+        completionMessage = new TextBlock { TextAlignment = TextAlignment.Center, MaxWidth = 440, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), LineHeight = 22, Margin = new Thickness(0, 0, 0, 24) };
         completionPage.Children.Add(completionMessage);
         content.Children.Add(completionPage);
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         cancelButton = Button("关闭", false); cancelButton.Margin = new Thickness(0, 0, 12, 0);
         installButton = Button("下一步", true);
         backButton = Button("上一步", false); backButton.Margin = new Thickness(0, 0, 12, 0); backButton.Visibility = Visibility.Collapsed;
@@ -158,7 +169,8 @@ public partial class App : Application
     }
     private void ShowCompletion()
     {
-        locationPage.Visibility = componentPage.Visibility = backButton.Visibility = introduction.Visibility = Visibility.Collapsed;
+        locationPage.Visibility = componentPage.Visibility = backButton.Visibility = introduction.Visibility = heading.Visibility = Visibility.Collapsed;
+        buttons.HorizontalAlignment = HorizontalAlignment.Center;
         completionPage.Visibility = Visibility.Visible;
         completionMessage.Text = message.Text;
         installButton.Content = "打开 Momoi";
@@ -280,7 +292,7 @@ public partial class App : Application
             if (runtime.RootElement.GetProperty("runtime_id").GetString() != catalog.RuntimeId || File.ReadAllText(Path.Combine(destination, "runtime", "qq-pair", "pair-id.txt")).Trim() != catalog.QQPairId || !File.Exists(Path.Combine(destination, "Momoi.exe"))) throw new IOException("安装后的运行组件版本不匹配，请重试。");
             if (localASR.IsChecked == true && (catalog.ASR is null || File.ReadAllText(Path.Combine(destination, "runtime", "asr", "component-id.txt")).Trim() != catalog.ASR.Id)) throw new IOException("本地 ASR 组件安装校验失败。");
             installed = true; installButton.Content = "打开 Momoi";
-            message.Text = child.ExitCode == 3010 ? "Momoi 已安装。Windows 前置组件需要重启系统，请重启后打开 Momoi。" : "Momoi 已安装，可以打开并完成首次设置。之后从应用内检查更新即可。";
+            message.Text = child.ExitCode == 3010 ? "Momoi 已安装。Windows 前置组件需要重启系统，请重启后打开 Momoi。" : "已准备就绪，打开 Momoi 开始首次设置。";
             Log("Installation verified");
         }
         catch (OperationCanceledException) { Log("Download canceled; resumable partials retained"); message.Text = "下载已取消，已下载内容保留。点击安装可继续。"; }
