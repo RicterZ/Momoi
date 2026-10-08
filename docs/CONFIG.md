@@ -343,7 +343,7 @@ See [Provider configuration](./PROVIDERS.md#embedding) for options and setup. Co
 | Field | Default | Description |
 | --- | --- | --- |
 | `mcp_config` | `mcp.json` | MCP server configuration path; `null` or `""` disables MCP loading |
-| `exec_enabled` | `false` | Expose the `exec` command tool to the model; editable in Settings → MCP tools |
+| `exec_enabled` | `false` | Expose the `exec` command tool to the model; editable in Tools → MCP tools |
 | `result_max_chars` | `12000` | Maximum model-visible tool-result chunk size; minimum `1000` characters |
 | `result_retention_days` | `30` | Days to retain private large-result snapshots; `0` disables age-based cleanup |
 

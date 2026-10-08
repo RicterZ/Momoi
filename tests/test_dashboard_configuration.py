@@ -487,6 +487,33 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status, 400)
 
+    async def test_tools_skill_management_requires_auth_and_roundtrips(self):
+        response = await self.client.get("/api/tools/skills")
+        self.assertEqual(response.status, 401)
+        self.client.session.headers["Authorization"] = self.auth
+        listing = await (await self.client.get("/api/tools/skills")).json()
+        self.assertIn("mcp-install", {item["name"] for item in listing["skills"]})
+        self.assertNotIn("content", listing["skills"][0])
+        source = self.path.parent / "downloads/research"
+        source.mkdir(parents=True)
+        (source / "SKILL.md").write_text("---\nname: research\ndescription: Research public documents\n---\nRead the source.\n")
+        response = await self.client.post("/api/tools/skills", json={"source": str(source)})
+        self.assertEqual(response.status, 200, await response.text())
+        loaded = await (await self.client.get("/api/tools/skills/research")).json()
+        self.assertIn("Read the source", loaded["content"])
+        response = await self.client.post("/api/tools/skills", json={"source": str(source)})
+        self.assertEqual(response.status, 409)
+        response = await self.client.delete("/api/tools/skills/research")
+        self.assertEqual(response.status, 200)
+        self.assertFalse((self.path.parent / "skills/research").exists())
+        response = await self.client.get("/api/tools/skills/research")
+        self.assertEqual(response.status, 404)
+
+    async def test_tools_mcp_status_and_reload_without_runtime(self):
+        self.client.session.headers["Authorization"] = self.auth
+        self.assertEqual(await (await self.client.get("/api/tools/mcp")).json(), {"servers": []})
+        self.assertEqual((await self.client.post("/api/tools/mcp/reload", json={})).status, 409)
+
     async def test_mcp_get_returns_raw_config_and_patch_saves_and_requests_apply(self):
         path = self.path.parent / "mcp.json"
         content = '{\n  "mcpServers": {"test": {"disabled": true, "env": {"TOKEN": "${UNSET_TOKEN}"}}}\n}\n'

@@ -6,7 +6,7 @@ description: 安装、配置或修复 MCP 工具服务。检查 Windows 或 Linu
 # 安装 MCP 工具
 
 安装依赖需要开启
-设置 → MCP 工具 → 命令执行。Windows 的 `exec` 使用 PowerShell，Linux 使用 Bash。
+工具 → MCP 工具 → 命令执行。Windows 的 `exec` 使用 PowerShell，Linux 使用 Bash。
 每个服务必须填写 `description`：说明提供什么工具、能做什么，供 tool index 检索。
 旧配置（包括禁用条目）缺少此字段时，需要补齐后再重载。
 

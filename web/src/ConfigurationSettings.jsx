@@ -55,7 +55,6 @@ const modules = [
     tip: "关闭后停止余额查询与费用估算，本地请求量与通用 Token 用量统计仍然保留。",
   },
   { id: "runtime", label: "运行设置" },
-  { id: "mcp", label: "MCP 工具" },
 ];
 const adapterLabels = {
   openai: "OpenAI",
@@ -1064,94 +1063,6 @@ function SectionHeader({ module, control }) {
   );
 }
 
-function McpSection({ module, request, token, active, busy, previous, next, data, save }) {
-  const [content, setContent] = useState(null);
-  const [draft, setDraft] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [execEnabled, setExecEnabled] = useState(data.app.tools?.exec_enabled ?? false);
-  const [savedExec, setSavedExec] = useState(execEnabled);
-  const [submitting, setSubmitting] = useState(false);
-  const submitLock = useRef(false);
-  const dirty = (content !== null && draft !== content) || execEnabled !== savedExec;
-  const locked = busy || submitting;
-  async function submit(event) {
-    event.preventDefault();
-    if (!dirty || locked || submitLock.current) return;
-    submitLock.current = true;
-    setSubmitting(true);
-    setError("");
-    try {
-      if (content !== null && draft !== content) {
-        let document;
-        try { document = JSON.parse(draft); } catch { throw new Error("mcp.json 必须是有效的 JSON 对象。"); }
-        if (!document || Array.isArray(document) || typeof document !== "object") throw new Error("mcp.json 必须是有效的 JSON 对象。");
-        await save("/api/settings/mcp", document, "PATCH");
-        setContent(draft);
-      }
-      if (execEnabled !== savedExec) {
-        await save("/api/settings/configuration/app", { tools: { exec_enabled: execEnabled } }, "PATCH");
-        setSavedExec(execEnabled);
-      }
-    } catch (problem) { setError(problem.message); }
-    finally { submitLock.current = false; setSubmitting(false); }
-  }
-  useEffect(() => {
-    if (!active || content !== null) return;
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    request("/api/settings/mcp", { token, responseType: "text", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]) })
-      .then(value => {
-        if (controller.signal.aborted) return;
-        if (typeof value !== "string") throw new Error("无法读取 mcp.json，请刷新后重试。");
-        setDraft(value);
-        setContent(value);
-        setLoading(false);
-      })
-      .catch(problem => {
-        if (!controller.signal.aborted) { setError(problem.message); setLoading(false); }
-      });
-    return () => controller.abort();
-  }, [active, content, request, token]);
-  return (
-    <form onSubmit={submit} data-dirty={dirty} data-config-dirty={dirty}>
-      <SectionHeader module={module} />
-      <div className="settings-form-body settings-persona settings-mcp">
-        <div className="settings-exec-control">
-          <div>
-            <div className="settings-exec-heading"><h3>命令执行</h3><span className="panel-label">TOOLS // EXEC</span></div>
-            <p id="exec-warning" className="settings-exec-warning">开启后，Momoi 可通过系统 Shell 执行命令（Windows 使用 PowerShell，其他系统使用 Bash），拥有服务进程的权限，可读写或删除文件、访问凭据及网络。此工具不提供沙箱隔离，请仅在可信环境中启用。</p>
-            <p className="prompt-description">开启时由系统 Shell 统一处理文件读取、写入、查找、目录列表、目录创建、移动和删除；关闭时恢复独立文件工具。网页抓取和补丁编辑工具始终保留。</p>
-          </div>
-          <div aria-describedby="exec-warning">
-            <Toggle checked={execEnabled} disabled={locked} hideLabel onChange={value => { setExecEnabled(value); setError(""); }}>启用命令执行</Toggle>
-          </div>
-        </div>
-        <div className="prompt-card">
-          <p className="prompt-description">连接外部 MCP 服务，为 Momoi 提供更多工具。</p>
-          <label className="prompt-field">
-            <span>mcp.json</span>
-            <textarea
-              className="dash-input"
-              aria-label="mcp.json"
-              value={draft}
-              placeholder={loading ? "正在读取 mcp.json…" : ""}
-              spellCheck={false}
-              autoCapitalize="off"
-              autoCorrect="off"
-              disabled={locked || loading || content === null}
-              aria-busy={loading}
-              onChange={event => setDraft(event.target.value)}
-            />
-          </label>
-        </div>
-      </div>
-      <SaveBar busy={locked} dirty={dirty} status={error ? { text: error, error: true } : null} previous={previous} next={next} />
-    </form>
-  );
-}
-
 function TimeField({ label, value, onChange, allowDisabled = false }) {
   const options = Array.from({ length: 48 }, (_, index) => {
     const text = `${String(Math.floor(index / 2)).padStart(2, "0")}:${index % 2 ? "30" : "00"}`;
@@ -1787,8 +1698,7 @@ export default function ConfigurationSettings({
                       <SectionHeader module={module} />
                       {promptContent({ next, previous, busy: saving || actionBusy })}
                     </>
-                  ) : module.id === "mcp" ? (
-                    <McpSection module={module} data={data} save={save} request={request} token={token} active={activeSection === module.id} busy={saving || loading || actionBusy} previous={previous} next={next} />
+
                   ) : module.id === "runtime" ? (
                     <RuntimeSection key={generation} module={module} data={data} save={save} saving={saving || loading || actionBusy} previous={previous} next={next} />
                   ) : module.id === "channel" ? (
@@ -1898,3 +1808,5 @@ function QQCallSettings({ value, managed, disabled, status, onChange, onTest }) 
     </div>}
   </section>;
 }
+
+export { Toggle, SelectField, Icon };

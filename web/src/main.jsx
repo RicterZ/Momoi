@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import RequestMetrics from "./RequestMetrics.jsx";
 import Loading from "./Loading.jsx";
+import Tools from "./Tools.jsx";
 import EmotionContent from "./EmotionContent.jsx";
 import ConfigurationSettings, { ApplyDialog, SaveBar } from "./ConfigurationSettings.jsx";
 
@@ -20,6 +21,7 @@ const pages = {
   goals: ["任务", "MOMOI // QUESTS"],
   thinking: ["思考记录", "MOMOI // THINKING"],
   metrics: ["请求监控", "MOMOI // METRICS"],
+  tools: ["工具", "MOMOI // TOOLBOX"],
   settings: ["设置", "MOMOI // SETTINGS"],
 };
 
@@ -32,7 +34,8 @@ const navItems = [
   ["emotions", "06", "表情"],
   ["goals", "07", "任务"],
   ["metrics", "08", "监控"],
-  ["settings", "09", "设置"],
+  ["tools", "09", "工具"],
+  ["settings", "10", "设置"],
 ];
 
 const thinkingStageLabels = {
@@ -2706,6 +2709,11 @@ function Settings({ refreshKey, token, setupMode, onSetupComplete }) {
   );
 }
 
+function ToolsPage(props) {
+  const confirm = useConfirm();
+  return <Tools {...props} request={api} confirm={confirm} />;
+}
+
 const viewComponents = {
   overview: Overview,
   conversations: Conversations,
@@ -2715,6 +2723,7 @@ const viewComponents = {
   goals: Goals,
   thinking: Thinking,
   metrics: (props) => <RequestMetrics {...props} api={api} />,
+  tools: ToolsPage,
   settings: Settings,
 };
 
@@ -2814,7 +2823,7 @@ function App() {
   const isRecord = !setupMode && (view === "conversations" || view === "thinking");
 
   async function allowSettingsLeave() {
-    if ((!setupMode && view !== "settings") || !document.querySelector('.settings-studio [data-dirty="true"]')) return true;
+    if ((!setupMode && !["settings", "tools"].includes(view)) || !document.querySelector('.settings-studio [data-dirty="true"]')) return true;
     return confirm({
       title: "还有修改没有保存",
       message: "离开或刷新页面会丢弃配置与提示词的草稿。",
@@ -2865,7 +2874,7 @@ function App() {
         className={`shell${setupMode !== false ? " is-setup" : ""}${locked ? " is-locked" : ""}${isRecord ? " is-record" : ""}`}
         onClickCapture={async (event) => {
           const link = event.target.closest('a[href^="#"]');
-          if (view !== "settings" || !link || link.hash === location.hash || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          if (!["settings", "tools"].includes(view) || !link || link.hash === location.hash || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           if (!document.querySelector('.settings-studio [data-dirty="true"]')) return;
           event.preventDefault();
           if (await allowSettingsLeave()) location.hash = link.hash;

@@ -16,6 +16,7 @@ from ..channel.weixin.config import WeixinConfig
 from ..config.manager import RevisionConflict
 from ..config.models import ConfigError
 from ..integrations.testing import failure, test_connection
+from ..skills import Skills
 
 
 class ChannelLogin:
@@ -140,6 +141,57 @@ def register_configuration_routes(app, configuration, runtime):
         except OSError:
             raise web.HTTPInternalServerError(text="Cannot read MCP configuration") from None
         return web.Response(body=content, content_type="application/json", headers=headers)
+
+    skills = Skills(configuration.path.parent)
+
+    async def skill_list(request):
+        def listing():
+            skills.initialize()
+            items = []
+            for directory in sorted(skills.root.iterdir()):
+                if not directory.is_dir() or directory.name.startswith(".") or directory.is_symlink():
+                    continue
+                try:
+                    item = skills.load(directory.name)
+                    items.append({key: item[key] for key in ("name", "description", "directory", "resources")})
+                except (OSError, ValueError, UnicodeError):
+                    continue
+            return {"skills": items}
+        return web.json_response(await asyncio.to_thread(listing))
+
+    async def skill_item(request):
+        try:
+            if request.method == "GET":
+                result = await asyncio.to_thread(skills.load, request.match_info["name"])
+            elif request.method == "DELETE":
+                result = await asyncio.to_thread(skills.uninstall, request.match_info["name"])
+            else:
+                value = await body(request)
+                result = await skills.install(value.get("source"), value.get("subdirectory", "."), value.get("ref") or None)
+        except FileNotFoundError as error:
+            raise web.HTTPNotFound(text=str(error)) from None
+        except FileExistsError as error:
+            raise web.HTTPConflict(text=str(error)) from None
+        except (ValueError, TypeError, OSError) as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        return web.json_response(result, status=200 if result.get("ok") else 400)
+
+    async def mcp_status(request):
+        manager = getattr(runtime.daemon, "mcp", None)
+        if request.method == "POST":
+            if manager is None:
+                raise web.HTTPConflict(text="聊天运行时未启动，请先完成基础配置。")
+            async with runtime.lock:
+                manager = getattr(runtime.daemon, "mcp", None)
+                if manager is None:
+                    raise web.HTTPConflict(text="聊天运行时未启动。")
+                result = await manager.reload()
+            return web.json_response(result)
+        return web.json_response({"servers": [{
+            "name": name, "connected": name in manager._sessions,
+            "tools": [spec for spec in manager.tool_specs if manager.tool_group(spec["name"]) == name],
+            "error": manager.errors.get(name),
+        } for name in manager.configs] if manager else []})
 
     async def save(request):
         value = await body(request)
@@ -305,6 +357,12 @@ def register_configuration_routes(app, configuration, runtime):
     app.router.add_post("/api/settings/providers/{capability}/test", test_provider)
     app.router.add_get("/api/settings/mcp", mcp_config)
     app.router.add_patch("/api/settings/mcp", mcp_config)
+    app.router.add_get("/api/tools/mcp", mcp_status)
+    app.router.add_post("/api/tools/mcp/reload", mcp_status)
+    app.router.add_get("/api/tools/skills", skill_list)
+    app.router.add_post("/api/tools/skills", skill_item)
+    app.router.add_get("/api/tools/skills/{name}", skill_item)
+    app.router.add_delete("/api/tools/skills/{name}", skill_item)
     app.router.add_put("/api/settings/configuration/{section}", save)
     app.router.add_put("/api/settings/providers/{capability}", save)
     app.router.add_put("/api/settings/providers", save)

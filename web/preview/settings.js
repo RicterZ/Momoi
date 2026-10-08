@@ -8,7 +8,17 @@ export function createSettingsPreview(json) {
   let applied = "preview-1";
   let login = { status: "idle" };
   let connectionTesting = false;
-  let mcpDocument = { mcpServers: {} };
+  let mcpDocument = { mcpServers: {
+    "brave-search": { description: "搜索公开网页与本地商家，为 Momoi 提供实时信息与检索结果。", command: "npx", args: ["-y", "@modelcontextprotocol/server-brave-search"], env: { BRAVE_API_KEY: "${BRAVE_API_KEY}" } },
+    "fetch": { description: "抓取网页正文并转换为 Markdown，支持按页读取长文内容。", command: "uvx", args: ["mcp-server-fetch"] },
+    "context7": { description: "查询开发库的最新文档与代码示例，辅助编程和技术调研。", url: "https://mcp.context7.com/mcp", disabled: true },
+  } };
+  let skills = [
+    { name: "mcp-install", description: "安装、配置或修复 MCP 工具服务。检查运行环境，安装依赖、合并配置并重载连接。", directory: "~/.momoi/skills/mcp-install", resources: [], content: "---\nname: mcp-install\ndescription: 安装、配置或修复 MCP 工具服务。\n---\n\n# 安装 MCP 工具\n\n## 1. 检查运行环境\n\nWindows 桌面版附带 uv、Node 和 Python；Linux Docker 镜像提供同样的运行环境。\n\n## 2. 安装到工作区\n\n把源码、独立环境和服务数据放在：\n\n    tools/mcp/<server-id>/\n\n## 3. 合并服务配置\n\n读取 mcp.json，仅修改目标服务。description 描述工具是什么、能干什么，供 Momoi 发现能力。\n\n## 4. 最后重载并验证\n\n查找并加载 mcp_reload，确认连接与工具发现成功，继续原任务。" },
+    { name: "paper-reading", description: "阅读研究论文，梳理问题、方法与实验依据，整理有出处的阅读笔记。", directory: "~/.momoi/skills/paper-reading", resources: ["references/reading-guide.md"], content: "---\nname: paper-reading\ndescription: 阅读研究论文并整理笔记。\n---\n\n# 论文阅读\n\n先确认研究问题，再检查方法、实验与结论之间的证据。" },
+    { name: "daily-review", description: "整理一天的进展与待办，回顾重要事项，生成简洁的日常复盘。", directory: "~/.momoi/skills/daily-review", resources: [], content: "---\nname: daily-review\ndescription: 整理一天的进展与待办。\n---\n\n# 日常复盘\n\n记录已完成的事情和下一步安排。" },
+  ];
+  const mcpStatus = () => Object.entries(mcpDocument.mcpServers).map(([name, config]) => ({ name, connected: !config.disabled, error: null, tools: config.disabled ? [] : (name === "brave-search" ? ["brave_web_search", "brave_local_search"] : ["fetch"]).map(tool => ({ name: `mcp__${name}__${tool}`, description: tool === "brave_web_search" ? "搜索公开网页，获取标题、摘要和原文链接。" : tool === "fetch" ? "提取网页正文，返回 Markdown 内容。" : "查询地点与商家信息。" })) }));
   let configuration = {
     revision: "preview-1",
     app: {
@@ -74,6 +84,13 @@ export function createSettingsPreview(json) {
     return { ...value, options };
   };
   return (req, res, path) => {
+    if (path === "/api/tools/mcp" || path === "/api/tools/mcp/reload") { json(res, { ok: true, servers: mcpStatus() }); return true; }
+    if (path.startsWith("/api/tools/skills")) {
+      const name = decodeURIComponent(path.split("/")[4] || "");
+      if (req.method === "GET") { json(res, name ? skills.find(item => item.name === name) : { skills }); return true; }
+      if (req.method === "DELETE") { skills = skills.filter(item => item.name !== name); json(res, { ok: true }); return true; }
+      if (req.method === "POST") { json(res, { ok: false, message: "预览模式不会安装外部 Skill。" }, 400); return true; }
+    }
     if (req.method === "GET" && path === "/api/settings/mcp") {
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify(mcpDocument, null, 2) + "\n");
