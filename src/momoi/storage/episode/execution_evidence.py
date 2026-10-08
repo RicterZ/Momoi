@@ -107,7 +107,7 @@ def historical_result(value, tool_name=None):
 
 def journal_rows(db, episode_id=None, after=None, before=None, before_ordinal=None):
     rows = db.execute('''SELECT et.episode_id, et.turn_id, et.ordinal, t.started_at,
-        j.sequence, j.payload_json, j.item_type FROM episode_turns et JOIN turns t ON t.id=et.turn_id
+        j.sequence, j.created_at AS journal_created_at, j.payload_json, j.item_type FROM episode_turns et JOIN turns t ON t.id=et.turn_id
         LEFT JOIN turn_journal j ON j.turn_id=et.turn_id AND (
             j.item_type='assistant_exchange' OR (
                 j.item_type IN ('tool_call', 'tool_result') AND NOT EXISTS (
@@ -170,6 +170,7 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
                     after=None, before=None, before_ordinal=None, selected_messages=(),
                     turn_id=None, after_sequence=0, after_turn_ordinal=None):
     rows = journal_rows(store._db, episode_id, after, before, before_ordinal)
+    row_by_sequence = {(row['turn_id'], row['sequence']): row for row in rows}
     turns = {}
     terms = [str(t).casefold() for t in keywords if t]
     message_turns = {str(m['turn_id']) for m in selected_messages}
@@ -200,6 +201,25 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
     else:
         candidates.sort(key=lambda t: (t['id'] in message_turns, t['score'], t['ordinal']), reverse=True)
     chosen = sorted(candidates[:limit], key=lambda t: t['ordinal'])
+    timings = {}
+    if chosen and (turn_id is not None or after_turn_ordinal is not None):
+        identifiers = [turn['id'] for turn in chosen]
+        marks = ','.join('?' for _ in identifiers)
+        for row in store._db.execute(
+            f"""SELECT turn_id,sequence,created_at,item_type,payload_json
+                FROM turn_journal WHERE turn_id IN ({marks})
+                AND item_type IN ('tool_call','tool_result') ORDER BY turn_id,sequence""",
+            identifiers,
+        ):
+            payload = json.loads(row['payload_json'])
+            identifier = payload.get('tool_call_id')
+            if not identifier:
+                continue
+            timing = timings.setdefault((row['turn_id'], identifier), {})
+            prefix = 'call' if row['item_type'] == 'tool_call' else 'result'
+            timing[prefix + '_sequence'] = row['sequence']
+            timing['called_at' if prefix == 'call' else 'finished_at'] = row['created_at']
+            timing['called_time' if prefix == 'call' else 'finished_time'] = store.context_timestamp(row['created_at'])
     output = []
     for turn in chosen:
         entries = sorted(turn['execution'], key=lambda item: (0 if turn_id else -item[0], item[1]))
@@ -210,8 +230,14 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
             if remaining <= 0:
                 break
             value = {}
+            if turn_id is not None or after_turn_ordinal is not None:
+                source = row_by_sequence[(turn['id'], sequence)]
+                value.update(sequence=sequence, recorded_at=source['journal_created_at'],
+                             recorded_time=store.context_timestamp(source['journal_created_at']))
             if entry.get('assistant_text'):
-                value['assistant_text'] = clip(entry['assistant_text'], terms=terms)
+                value['assistant_text'] = (entry['assistant_text']
+                                           if turn_id is not None or after_turn_ordinal is not None
+                                           else clip(entry['assistant_text'], terms=terms))
             calls = []
             batch = entry.get("tools", [])
             if turn_id and selected and len(batch) > remaining:
@@ -229,6 +255,8 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
                     reduced['arguments_read'] = {'episode_id': episode_id, 'turn_id': turn['id'],
                                                  'tool_call_id': call['call_id'],
                                                  'after_sequence': sequence - 1}
+                if timing := timings.get((turn['id'], call['call_id'])):
+                    reduced['timing'] = timing
                 if not call['arguments_complete']:
                     reduced['arguments_complete'] = False
                 if reduced['result'] != result:
@@ -247,6 +275,14 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
         msgs = [{'role': 'owner' if m['role'] == 'user' else m['role'], 'text': clip(m['content']),
                  **({'quote_targets': targets} if (targets := store.message_quote_targets(m.get('id'))) else {})}
                 for m in selected_messages if str(m['turn_id']) == turn['id']][:3]
+        if turn_id is not None or after_turn_ordinal is not None:
+            # Execution reads include the dialogue of the selected Turn. Keep
+            # actual timestamps so speech between two tool batches stays there.
+            message_rows = store._db.execute(
+                'SELECT id FROM messages WHERE turn_id=? ORDER BY created_at,id',
+                (turn['id'],),
+            ).fetchall()
+            msgs = [store.conversation_message(episode_id, row['id']) for row in message_rows]
         if msgs:
             item['messages'] = msgs
         if selected:

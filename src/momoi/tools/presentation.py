@@ -73,6 +73,10 @@ def fit_result(value, budget, *, string_limit=1000):
     encode = lambda item: json.dumps(item, ensure_ascii=False, default=str)
     if len(encode(value)) <= budget:
         return value
+    from .episode_timeline import fit_dialogue_result
+    dialogue = fit_dialogue_result(value, budget)
+    if dialogue is not None:
+        return dialogue
     for width, count in [(string_limit, 10), (240, 5), (120, 3), (60, 2), (24, 1)]:
         omitted = []
 
@@ -198,37 +202,9 @@ def project_tool_result(result, name):
         result = {key: value for key, value in result.items() if key in fields}
         if omitted:
             result['omitted_fields'] = sorted(set(result.get('omitted_fields', []) + omitted))
-    if name == 'episode_read' and isinstance(result.get('episode'), dict):
-        episode = result['episode']
-        fields = {'id', 'title', 'status', 'messages', 'truncated', 'next_before_ordinal', 'next_execution_cursor'}
-        omitted = set(result.get('omitted_fields', []))
-        omitted.update(f'episode.{key}' for key in episode if key not in fields)
-        page = {key: value for key, value in episode.items() if key in fields}
-        if episode.get('turns'):
-            page['next_execution_cursor'] = 0
-        messages = episode.get('messages', [])
-        ordinals = sorted({item['ordinal'] for item in messages})[-3:]
-        selected = [item for item in messages if item['ordinal'] in ordinals]
-        if len(selected) < len(messages):
-            page['next_before_ordinal'] = min(ordinals)
-            page['truncated'] = True
-            omitted.add('episode.messages (older turns)')
-        shown = []
-        width = max(1, 6000 // max(1, len(selected)))
-        for item in selected:
-            message = {key: value for key, value in item.items() if key != 'created_at'}
-            content = str(message.get('content') or '')
-            if len(content) > width:
-                message['content'] = content[:width]
-                message['content_offset'] = message.get('content_offset', 0)
-                message['next_content_offset'] = message['content_offset'] + width
-                page['truncated'] = True
-                omitted.add('episode.messages.*.content (prefix)')
-            shown.append(message)
-        page['messages'] = shown
-        result['episode'] = page
-        if omitted:
-            result['omitted_fields'] = sorted(omitted)
+    if name == 'episode_read':
+        from .episode_timeline import project_episode
+        result = project_episode(result)
     if name == 'thinking_read' and isinstance(result.get('calls'), list):
         from ..storage import truncate_tokens
         fields = {'turn_id', 'call_id', 'created_at', 'stage', 'round', 'tools', 'reasoning_chars', 'reasoning'}

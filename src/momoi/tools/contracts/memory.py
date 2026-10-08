@@ -89,7 +89,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "episode_read",
         "description": (
-            '读取分页的原始话题消息，包含角色、时间、投递状态及证据位置，默认不附带执行记录。消息正文截断时按 message_id / next_content_offset 续读。使用 execution_cursor=0 按时间遍历全部执行 Turn，按 next_execution_cursor 续读；使用 turn_id 和 after_sequence 对单个 Turn 的历史工具调用进行分页；截断参数通过返回的 arguments_read 再调用 episode_read 读取，结果过大时用 result_ref 和 read_tool_result 读取完整快照；assistant_text 为内部评论，并非完成证明。'
+            '读取话题的分页文本时间线：USER/ASSISTANT 表示原始对话，默认不附带执行记录；message_refs 保留引用目标和续读位置。消息正文截断时按 message_id / next_content_offset 续读。使用 execution_cursor=0 按时间遍历全部执行 Turn，按 next_execution_cursor 续读；使用 turn_id 和 after_sequence 对单个 Turn 的历史工具调用进行分页；截断参数通过返回的 arguments_read 再调用 episode_read 读取，结果过大时用 result_ref 和 read_tool_result 读取完整快照；执行详情以 TOOL_CALL/TOOL_RESULT 编号配对，按可用日志时间与序列穿插对话；ASSISTANT_NOTE 是内部评论，时间是记录时间，并非发言或完成证明。不展示 end_turn 等控制调用。'
         ),
         "input_schema": {
             "type": "object",
