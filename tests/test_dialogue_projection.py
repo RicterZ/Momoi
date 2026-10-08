@@ -1,7 +1,6 @@
 """Historical chat projection must preserve delivery evidence and tool protocol."""
 import copy
 import json
-from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -41,30 +40,24 @@ def results(messages):
             for block in message['content'] if block.get('type') == 'tool_result']
 
 
-def test_reply_projection_uses_archive_and_retains_minimal_protocol_without_mutation():
-    original = [exchange(speech=[speech('已完成 <校验> & 记录'), speech('emotion://happy', at=2)]),
-                exchange('end_turn', identifier='e')]
+def test_reply_receipt_preserves_full_generated_message_and_planner_without_mutation():
+    text = '完整生成消息' * 1000
+    item = exchange(speech=[speech('数据库里的另一种渲染')])
+    item['results'][0]['content'] = json.dumps({'ok': True, 'state': 'committed', 'mode': 'voice',
+        'bubbles': [text, 'emotion://happy'], 'result_ref': 'tr_reply'})
+    original = [item, exchange('end_turn', identifier='e')]
     frozen = copy.deepcopy(original)
-    messages = render_exchanges(original, history_format=4, timezone=TZ, has_speech=True)
+    messages = render_exchanges(original, has_speech=True)
     assert original == frozen
     assert len(calls(messages)) == len(results(messages)) == 1
-    assert calls(messages)[0] == {'type': 'tool_use', 'id': 'r', 'name': 'reply', 'input': {}}
-    assert json.loads(results(messages)[0]['content']) == {'ok': True, 'state': 'committed'}
-    body = messages[0]['content'][0]['text']
-    doc = ElementTree.fromstring(body)
-    assert [b.text.strip() for b in doc.findall('bubble')] == ['已完成 <校验> & 记录', 'emotion://happy']
-    assert doc.find('bubble').attrib['time'] == '1970-01-01T08:00:01+08:00'
-    assert '生成结果不是投递证据' not in str(messages)
-    assert '策划内容' not in str(messages) and '旧依据' not in str(messages)
-
-
-@pytest.mark.parametrize('state', ['queued', 'uncertain'])
-def test_pending_voice_and_media_are_not_claimed_delivered(state):
-    messages = render_exchanges([exchange(speech=[speech('语音内容', state, 'voice'),
-                                                 speech('[附件：示例文件]', state, 'file')])], history_format=4)
-    doc = ElementTree.fromstring(messages[0]['content'][0]['text'])
-    assert [b.attrib['delivery'] for b in doc] == [state, state]
-    assert [b.attrib['kind'] for b in doc] == ['voice', 'file']
+    assert calls(messages)[0]['input'] == {'intent': '策划内容', 'reference': '旧依据'}
+    result = json.loads(results(messages)[0]['content'])
+    assert result['bubbles'] == [text, 'emotion://happy']
+    assert result['mode'] == 'voice' and result['result_ref'] == 'tr_reply'
+    assert 'history_truncated' not in result and 'preview' not in result
+    assert messages[0]['content'][0]['text'] == '回复策划，不是实际发言'
+    assert '<sent_reply>' not in str(messages)
+    assert text not in str(messages[0])
 
 
 @pytest.mark.parametrize('mode', ['failure', 'missing_archive', 'missing_result', 'delivery_failed'])
@@ -102,12 +95,13 @@ def test_end_turn_failure_preserved_and_successful_silence_explicit():
     assert 'ended the Turn without replying' in str(successful)
 
 
-def test_existing_window_switches_projection_without_waiting_for_compaction():
+def test_existing_window_removes_end_turn_and_keeps_full_reply_receipt():
     item = exchange(speech=[speech()])
     messages = render_exchanges([item, exchange('end_turn', identifier='e')], history_format=3, has_speech=True)
     assert [c['name'] for c in calls(messages)] == ['reply']
-    assert calls(messages)[0]['input'] == {}
-    assert '<sent_reply>' in str(messages)
+    assert calls(messages)[0]['input']['intent'] == '策划内容'
+    assert json.loads(results(messages)[0]['content'])['bubbles'] == ['生成结果不是投递证据']
+    assert '<sent_reply>' not in str(messages)
 
 
 def test_reply_archive_ids_are_local_to_executor_and_include_followups(tmp_path):
@@ -130,7 +124,8 @@ def test_reply_archive_ids_are_local_to_executor_and_include_followups(tmp_path)
         assert '_reply_messages' not in old[0]
         assert [x['_reply_messages']['same-id'][0]['content'] for x in enriched] == ['已开始', '已完成']
         rendered = render_exchanges(enriched, history_format=4, has_speech=True)
-        assert str(rendered).index('已开始') < str(rendered).index('已完成')
+        assert len(calls(rendered)) == 2
+        assert all(c['input']['intent'] == '策划内容' for c in calls(rendered))
         assert store.turn_exchanges(['owner'])['owner'] == old
     finally:
         store.close()
@@ -142,3 +137,15 @@ def test_large_failed_voice_keeps_delivery_failure_after_result_clipping():
     messages = render_exchanges([item])
     assert json.loads(results(messages)[0]['content'])['delivery_state'] == 'failed'
     assert '<sent_reply>' not in str(messages)
+
+
+def test_context_pressure_does_not_clip_reply_receipt():
+    from types import SimpleNamespace
+    from momoi.runtime.agent.context_window import ContextWindow
+    text = '完整回复内容' * 2000
+    item = exchange()
+    item['results'][0]['content'] = json.dumps({'ok': True, 'bubbles': [text]})
+    messages = render_exchanges([item], mark_silence=False)
+    window = ContextWindow(SimpleNamespace(max_input_tokens=800, context_compaction_ratio=1), None, None)
+    window.fit([], messages, [], 0)
+    assert json.loads(results(messages)[0]['content'])['bubbles'] == [text]

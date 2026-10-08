@@ -112,9 +112,9 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3) -> Non
                 raw = json.dumps(payload, ensure_ascii=False)
                 block["content"] = raw
             name = calls.get(block.get("tool_use_id"), "")
-            # Recall evidence is the basis for subsequent reuse. Preserve the
-            # exact observation, including failures, regardless of its size.
-            if name == "recall":
+            # Recall evidence supports reuse; reply bubbles are the actual
+            # conversation. Preserve both in full, including failure details.
+            if name in {"recall", "reply"}:
                 flush()
                 run_name = ""
                 continue

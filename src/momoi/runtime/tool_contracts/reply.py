@@ -12,7 +12,7 @@ MEDIA_BUBBLE_SCHEMA[0]["properties"]["segments"]["contains"] = {
 
 REPLY_TOOL_SPEC = {
     "name": "reply",
-    "description": "把本次回应意图和必要依据交给 Replyer 生成并发送实际发言；返回实际内容和投递结果。历史调用可能省略参数，实际发言见 assistant 的 <sent_reply>；本次调用仍须提供 intent 和 reference。",
+    "description": "把本次回应意图和必要依据交给 Replyer 生成并发送实际发言；返回实际内容和投递结果。",
     "input_schema": {
         "type": "object",
         "properties": {

@@ -229,6 +229,11 @@ class ContextWindow:
                 history_messages -= removed
                 estimated = size()
         if estimated > compaction_limit:
+            reply_ids = {
+                block.get("id") for message in messages
+                for block in (message.get("content") if isinstance(message.get("content"), list) else [])
+                if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "reply"
+            }
             for message in messages:
                 content = message.get("content")
                 if not isinstance(content, list):
@@ -238,6 +243,7 @@ class ContextWindow:
                         estimated <= compaction_limit
                         or not isinstance(block, dict)
                         or block.get("type") != "tool_result"
+                        or block.get("tool_use_id") in reply_ids
                     ):
                         continue
                     result = block.get("content")

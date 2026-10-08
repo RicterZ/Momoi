@@ -7,5 +7,3 @@
 QQ 文字回应仅在需要突出回应某条当前或历史消息时，使用 reply_to_message_id 指定该消息；历史消息先通过 recall 或 episode_read 找到原文的 quote_targets，使用其中的 QQ message_id；普通回应省略，不逐条引用。
 
 reply 的结果包含实际生成并交给发送流程的内容。以实际发言和投递结果判断用户收到什么，不能把派发意图当成已经说过的话。是否继续行动、等待或结束由你决定，发言后仍按当前工作流调用结束工具。
-
-历史 reply 调用可能省略参数；assistant 的 <sent_reply> 记录实际发言。本轮调用 reply 仍须提供 intent 和 reference。
