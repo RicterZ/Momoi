@@ -242,7 +242,7 @@ class OwnerWorkflow:
         if channel.name == "qq_call":
             log_event(logger, logging.INFO, "qq_call_turn_started", channel=channel.name, turn_id=turn_id,
                       recognition_wait_ms=round((time.time() - batch[-1].received_at) * 1000))
-        recalled = self.owner_context_baseline()
+        self.owner_context_baseline()
         reconciliation_control = self._apply_reconciliation_commands(batch)
         directives: list[str] = []
         directives.extend(self._interruption_notices.pop(channel.name, []))

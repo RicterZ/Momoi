@@ -150,7 +150,6 @@ class GoalWorkflow:
         shared = self.shared_turn_context(turn_id)
         conversation_rows = shared["rows"]
         transcript = shared["transcript"]
-        transcript_messages = shared["history"]
         idle_gap = owner_idle_gap_message(
             conversation_rows,
             now=datetime.now(self.store.timezone).timestamp(),

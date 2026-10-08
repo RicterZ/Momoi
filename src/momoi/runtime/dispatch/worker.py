@@ -276,9 +276,6 @@ class AgentWorker:
         self.store.release_goal_claim(job.id, defer_seconds=900)
         return {"goal_id": job.id}
 
-    def _next_autonomous(self) -> AutonomousJob:
-        return self._prioritize_autonomous(self.autonomous.get_nowait())
-
     def _enqueue_memory_operation(self, batch_id: str) -> None:
         if batch_id in self._queued_memory_operations:
             return

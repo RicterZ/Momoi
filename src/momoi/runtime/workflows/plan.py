@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from ...models import ToolCall, TurnDraft
+from ...models import TurnDraft
 from ...observability.events import log_event
 from ..agent import AgentWorkflow, TurnExecutionSpec
 from ..turn_support import TurnBudgetExceeded

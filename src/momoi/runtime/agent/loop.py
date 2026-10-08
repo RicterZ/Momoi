@@ -7,7 +7,7 @@ from ...channel import (
     Channel,
 )
 from ...observability.events import log_event
-from ...models import AgentReply, IncomingMessage, ToolCall, TurnDraft
+from ...models import AgentReply, IncomingMessage, TurnDraft
 from . import (
     AgentWorkflow,
     TurnExecutionSpec,

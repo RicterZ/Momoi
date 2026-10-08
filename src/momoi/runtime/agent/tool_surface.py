@@ -21,7 +21,7 @@ from ..tool_contracts.runtime import (
     tool_search_spec,
     TOOL_ENABLE_SPEC,
 )
-from ..tool_contracts.plan import PLAN_TOOLS, PLAN_STEP_FINISH
+from ..tool_contracts.plan import PLAN_TOOLS
 from .progress import public_tool_spec
 from ..tool_contracts.reply import REPLY_TOOL_SPEC
 from ..tool_contracts.qq_call import QQ_CALL_STATUS_SPEC
