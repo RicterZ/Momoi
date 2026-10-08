@@ -96,7 +96,7 @@ MOOD_UPDATE_SCHEMA: dict[str, Any] = {
 MOOD_DECISION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "description": (
-        'JSON 对象，而非情绪名称字符串。仅当持续的情绪状态仍然准确时，才使用 {"decision": "unchanged"}；unchanged 仅允许决策，因此必须完全省略 state、intensity 和 cause。对于 updated，需提供 decision、state、intensity 和 cause。根据情绪的年龄和本轮情况重新评估持续情绪。当状态、强度或持续原因发生变化（包括自然平复）时进行更新。仅在全部三项均准确时保留该记录；忽略真正短暂的反应。'
+        '根据情绪年龄和本轮情况评估持续情绪，忽略短暂反应。状态、强度和原因均准确时仅传 {"decision":"unchanged"}；任一变化（含自然平复）则传 updated 及 state、intensity、cause。必须是对象。'
     ),
     "properties": {
         "decision": {"type": "string", "enum": ["unchanged", "updated"]},
@@ -124,13 +124,13 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
 REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "description": (
-        '判断您已发送但未获回复的消息是否需要进行一次跟进。仅在消息明确要求用户回应且持续沉默会导致有意义的问题未解决时，才使用 wait=true：例如需要答案以继续推进、需要决策或确认，或需要紧急关切的认可。普通的对话性问题仅在您确实需要其答案以便在沉默后进行跟进时才符合条件。享受对话、期待另一条随意回复或有更多内容可说并不足以构成理由。仅针对已发送的消息进行判断；切勿为了符合跟进条件而添加新问题或邀请。wait=false 表示不进行自动跟进，并不意味着对话结束；用户仍可正常回复。当无需特定回应或由其他调度器负责跟进时，使用 false。返回 JSON 对象：单独返回 {"wait":false}，或返回 wait=true 并附带 delay_minutes、expected_information 和 reason。'
+        '仅针对已发送且明确需要回应的消息安排一次跟进：沉默会留下重要答案、决策、确认或紧急关切未解决时用 wait=true。普通闲聊、期待回复或还有话说不足以跟进；勿为此新增问题。无需特定回应或已有其他调度器跟进时仅传 {"wait":false}，用户仍可回复。true 必须附带 delay_minutes、expected_information、reason。'
     ),
     "properties": {
         "wait": {
             "type": "boolean",
             "description": (
-                'true 表示在消息送达后沉默期间安排一次跟进；false 表示不安排任何跟进。选择依据是否需要用户的回应，而非对话是否感觉开放。'
+                '是否在送达后持续沉默时跟进；依据回应的必要性，而非对话是否开放。'
             ),
         },
         "delay_minutes": {
@@ -138,7 +138,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
             "minimum": REPLY_WAIT_MIN_MINUTES,
             "maximum": REPLY_WAIT_MAX_MINUTES,
             "description": (
-                '用户保持沉默的情况下，成功送达消息后的完整分钟数，用于进行跟进。给予回答所需的时间；根据所请求回应的紧迫性和努力程度选择合适的延迟时间。'
+                '成功送达后等待的完整分钟数；按紧迫性和回答所需时间选择。'
             ),
         },
         "expected_information": {
@@ -146,7 +146,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
             "minLength": 1,
             "maxLength": 300,
             "description": (
-                '针对您发送的消息，需要从用户处获得的具体答案、决策、确认或认可。说明将解决待决事项的内容；切勿描述您自己的下一条消息或对听到用户回复的一般愿望。'
+                '需要用户提供的具体答案、决策、确认或认可；不写自己的下一条消息或泛泛期待。'
             ),
         },
         "reason": {
@@ -154,7 +154,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
             "minLength": 1,
             "maxLength": 500,
             "description": (
-                '解释为何不回复此特定消息需要跟进，以及该跟进应澄清或核查的内容。以待决回应为基础；切勿凭空捏造新话题、假设用户沉默的原因，或编写对话钩子。'
+                '说明此消息为何需要跟进、要澄清什么；不新增话题、猜测沉默原因或编造对话钩子。'
             ),
         },
     },
@@ -184,7 +184,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
 HEARTBEAT_ACTIVITY_TOOL_SPEC: dict[str, Any] = {
     "name": "heartbeat_activity",
     "description": (
-        '记录本次心跳的实际活动或休息情况及其结果和下次检查计划。在所有对话工作流中可见，仅在心跳期间可调用。必须在 end_turn 之前成功；两者可共享一个批次，且顺序如此。当心跳完成时，将最新报告置于原子提交阶段。'
+        '仅心跳阶段调用，暂存实际活动或休息、结果和下次检查计划。必须成功后再 end_turn，可同批依次调用；结束时原子提交最新报告。'
     ),
     "input_schema": {
         "type": "object",
@@ -221,7 +221,7 @@ HEARTBEAT_ACTIVITY_TOOL_SPEC: dict[str, Any] = {
 GOAL_REVIEW_TOOL_SPEC: dict[str, Any] = {
     "name": "goal_review",
     "description": (
-        '编排当前目标的执行结果与后续行动，或安排调度。仅在目标回合（Goal Turn）期间可调用；运行时会自动提供其 ID。必须在 end_turn({}) 结束前成功完成；两次调用可位于同一批次中且需按此顺序执行。变更仅在对应回合结束时提交。请勿传递 goal_id 或 latest_result；应使用 status 和 result，并仅包含该状态所需的字段。'
+        '仅 Goal 阶段调用，暂存当前目标结果、后续行动或调度；结束时提交。目标 ID 自动提供，不传 goal_id/latest_result，只传 status、result 及该状态需要的字段。必须成功后 end_turn({})，可同批依次调用。'
     ),
     "input_schema": GOAL_REVIEW_SCHEMA,
 }
