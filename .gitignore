@@ -31,3 +31,6 @@ desktop/Momoi.Desktop/keys/*.pem
 # Local debugging state and COS CLI output.
 /.momoi-debug/
 /coscli_output/
+
+# Local audio routing experiments; production sources live in desktop/.
+/tools/AudioRoutePoc/

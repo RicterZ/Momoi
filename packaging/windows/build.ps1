@@ -66,7 +66,7 @@ Invoke-Checked $PrivatePython @("-I", "-B", "-X", "utf8", $Entry, "--check-model
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/smoke_backend.py", "--python", $PrivatePython, "--entry", $Entry, "--model-path", (Join-Path $Stage "models/bge-small-zh-v1.5"))
 # Collect notices from the shipped environment rather than developer tooling.
 Invoke-Checked $PrivatePython @("-I", "packaging/windows/collect_licenses.py", "--output", (Join-Path $Stage "licenses"))
-Copy-Item "tools/AudioRoutePoc/EarTrumpet-LICENSE.txt" (Join-Path $Stage "licenses/EarTrumpet-LICENSE.txt")
+Copy-Item "desktop/Momoi.Desktop/Licenses/EarTrumpet-LICENSE.txt" (Join-Path $Stage "licenses/EarTrumpet-LICENSE.txt")
 Copy-Item "desktop/Momoi.Desktop/packages.lock.json" (Join-Path $Stage "licenses/dotnet-packages.lock.json")
 & (Join-Path $PSScriptRoot "prepare_mcp.ps1") -Stage $Stage
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_napcat.py", "--stage", $Stage)

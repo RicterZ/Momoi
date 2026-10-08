@@ -1,9 +1,10 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace AudioRoutePoc;
+namespace Momoi.Desktop;
 
-// AudioPolicyConfig ABI used by EarTrumpet. Internal Windows interface: PoC only.
+// AudioPolicyConfig ABI used by EarTrumpet; probe supported interfaces at runtime.
+// Third-party license: Licenses/EarTrumpet-LICENSE.txt.
 internal sealed class Policy : IDisposable
 {
     private IntPtr factory;

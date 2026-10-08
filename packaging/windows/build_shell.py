@@ -19,7 +19,7 @@ def build(output, version, dotnet='dotnet'):
     # Native recovery entry point for shells whose update command is broken.
     shutil.copyfile(payload / "Momoi.exe", payload / "Momoi-ShellUpdater.exe")
     (payload / "licenses").mkdir(exist_ok=True)
-    shutil.copyfile(ROOT / "tools/AudioRoutePoc/EarTrumpet-LICENSE.txt", payload / "licenses/EarTrumpet-LICENSE.txt")
+    shutil.copyfile(ROOT / "desktop/Momoi.Desktop/Licenses/EarTrumpet-LICENSE.txt", payload / "licenses/EarTrumpet-LICENSE.txt")
     files = {p.relative_to(payload).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
              for p in sorted(payload.rglob('*')) if p.is_file()}
     manifest = {'version': version, 'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'files': files}
