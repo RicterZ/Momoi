@@ -64,28 +64,6 @@ def recent_episode_lines(
     return "\n".join(lines)
 
 
-def heartbeat_topic_lines(items: list[dict[str, object]]) -> str:
-    lines: list[str] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        fields: list[str] = []
-        for key, limit in (("title", 120), ("updated_timestamp", 32)):
-            value = item.get(key)
-            if value not in (None, "", [], {}):
-                fields.append(f"{key.removesuffix('_timestamp')}={str(value)[:limit]}")
-        summary = str(item.get("summary") or "").strip()
-        if summary:
-            fields.append(f"summary={summary[:240]}")
-        for key in ("topics", "entities", "open_loops"):
-            values = item.get(key) or []
-            if values:
-                fields.append(f"{key}=" + ",".join(str(value) for value in values[:8]))
-        if fields:
-            lines.append("- " + " ".join(fields))
-    return "\n".join(lines)
-
-
 def due_goal_lines(
     goal: Mapping[str, object], *, scheduled_review_at: str
 ) -> str:

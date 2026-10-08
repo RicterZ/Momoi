@@ -1,6 +1,4 @@
 import copy
-import re
-import uuid
 
 from ...models import IncomingMessage
 from ...storage import MemoryRecallQuery
@@ -12,8 +10,6 @@ from ..turn_support import context_data_message
 from .presentation import recent_episode_lines, recall_context_lines
 from .rendering import assemble_main_context
 from .retrieval import build_plan_retrieval, select_plan_recall_queries
-
-_NEW_EPISODE_SLUG = re.compile(r"new:[a-z0-9][a-z0-9_-]{0,39}")
 
 
 class ContextService:
@@ -175,7 +171,6 @@ class ContextService:
 
         event_ids = [event.event_id for event in events]
         units: list[dict[str, object]] = []
-        episodes: list[dict[str, object]] = []
         raw_units = arguments.get("units")
         if not isinstance(raw_units, list) or not raw_units:
             raise ValueError("units: required nonempty JSON array of intent objects; wrap fields as {\"units\":[{...}]}")
@@ -430,7 +425,7 @@ class ContextService:
             ]))
         # Do not supersede the previous successful recall before retrieval succeeds.
         saved = self.store.save_context_plan(turn_id, revision, source_ids, plan)
-        stored = self.store.save_context_retrieval(
+        self.store.save_context_retrieval(
             turn_id, int(saved["revision"]), retrieval, state="recalled"
         )
         return assemble_main_context(

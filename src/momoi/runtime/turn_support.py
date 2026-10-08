@@ -45,17 +45,6 @@ EPISODE_SUMMARY_SYSTEM_PROMPT = EPISODE_SUMMARY_PROMPT_PATH.read_text(
 EPISODE_CONSOLIDATION_SYSTEM_PROMPT = (
     EPISODE_CONSOLIDATION_PROMPT_PATH.read_text(encoding="utf-8").strip()
 )
-MAX_CONSECUTIVE_TOOL_FAILURES = 3
-AGENDA_POLICY_TOOLS = frozenset(
-    {
-        "goal_create",
-        "goal_update",
-        "goal_finish",
-        "goal_cancel",
-    }
-)
-MEMORY_POLICY_TOOLS = frozenset({"memory_operation"})
-THINKING_POLICY_TOOLS = frozenset({"thinking_search", "thinking_read"})
 
 
 def live_prompt(path: Any, fallback: str, *, optional: bool = False) -> str:
@@ -175,12 +164,6 @@ def context_data_message(
             }
         ],
     }
-
-
-def owner_context_message(*items: tuple[str, str]) -> dict[str, Any] | None:
-    """Carry slow-changing Owner context before its native transcript."""
-
-    return context_data_message(*items, required=True)
 
 
 def owner_content_blocks(
