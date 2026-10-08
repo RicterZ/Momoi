@@ -98,9 +98,10 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(mock.stop)
 
     def write(self, servers):
+        servers = {name: {"description": f"{name} tools", **config} for name, config in servers.items()}
         atomic_write(self.configuration.mcp_path(), json.dumps({"mcpServers": servers}))
 
-    async def test_replacement_rebuilds_all_connections_catalog_and_enable_schema(self):
+    async def test_mcp_reload_keeps_runtime_and_rebuilds_catalog_and_enable_schema(self):
         self.write({name: {"command": name} for name in ("stable", "changed", "removed")})
         await self.runtime.apply()
         first = self.runtime.daemon
@@ -121,9 +122,10 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         })
         await self.runtime.apply()
         self.assertEqual(self.runtime.state, "running")
-        self.assertTrue(first.closed)
+        self.assertFalse(first.closed)
         self.assertTrue(all(session in self.closed for session in first_sessions))
         current = self.runtime.daemon
+        self.assertIs(current, first)
         specs = {spec["name"]: spec for spec in current.surface.conversation_specs()}
         index = current.surface.tool_index()
         for name in ("changed", "new group", "stable"):
@@ -169,7 +171,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
             "after": {"command": "working"},
         })
         await self.runtime.apply()
-        self.assertTrue(original.closed)
+        self.assertFalse(original.closed)
         self.assertTrue(self.runtime.status()["runtime_active"])
         self.assertEqual(self.runtime.state, "running")
         self.assertEqual(self.runtime.applied_revision, self.configuration.revision())
@@ -185,7 +187,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         await self.runtime.apply()
         self.assertEqual(self.runtime.state, "running")
         self.assertEqual(self.runtime.applied_revision, self.configuration.revision())
-        self.assertTrue(restored.closed)
+        self.assertFalse(restored.closed)
 
     async def test_mcp_file_edit_uses_existing_supervisor_watcher(self):
         stop = asyncio.Event()
@@ -201,11 +203,120 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
             first = self.runtime.daemon
             self.write({"added": {"command": "added"}})
             await applied()
-            self.assertTrue(first.closed)
+            self.assertFalse(first.closed)
             self.assertTrue(self.runtime.daemon.mcp.has_tool("mcp__added__work"))
         finally:
             stop.set()
             await task
+
+    async def test_explicit_reload_validates_and_reports_each_server(self):
+        self.write({"before": {"command": "working"}})
+        await self.runtime.apply()
+        manager = self.runtime.daemon.mcp
+        before = list(self.opened)
+        self.configuration.mcp_path().write_text('{')
+        result = await manager.reload()
+        self.assertEqual(result["error"], "invalid_mcp_config")
+        self.assertTrue((await manager.call("mcp__before__work", {}))["ok"])
+        self.assertFalse(any(session in self.closed for session in before))
+        self.write({"new": {"command": "working"}, "broken": {"command": "missing"}})
+        result = await manager.reload()
+        self.assertEqual(result["error"], "mcp_connect_failed")
+        servers = {item["name"]: item for item in result["servers"]}
+        self.assertEqual(servers["new"]["tools"], ["mcp__new__work"])
+        self.assertTrue(servers["new"]["connected"])
+        self.assertFalse(servers["broken"]["connected"])
+        self.assertIn("FileNotFoundError", servers["broken"]["error"])
+        self.assertNotIn("private connection details", str(result))
+        self.assertTrue(all(session in self.closed for session in before))
+        self.assertEqual(manager.generation, 1)
+
+    async def test_agent_installs_reloads_and_calls_new_tool_in_same_turn(self):
+        from momoi.runtime import MomoiDaemon
+        from momoi.runtime.agent import TurnExecutionSpec
+        from momoi.models import AgentReply, IncomingMessage, ProviderResponse, TurnDraft
+        daemon = MomoiDaemon(self.configuration.validate())
+        self.addCleanup(daemon.store.close)
+        event = IncomingMessage("install", "install", "安装工具", 1, 1)
+        daemon.store.add_event(event)
+        turn_id = daemon._turn_id(event.event_id)
+        daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+        test = self
+
+        class Provider:
+            calls = 0
+
+            async def complete(self, system, messages, tools, **_):
+                self.calls += 1
+                names = {spec["name"] for spec in tools}
+                if self.calls == 1:
+                    test.assertNotIn("mcp-install", str(system))
+                    call = ToolCall("search-workflow", "skill_search", {"query": "安装 MCP"})
+                elif self.calls == 2:
+                    test.assertIn("mcp-install", str(messages))
+                    call = ToolCall("load-workflow", "skill_load", {"name": "mcp-install"})
+                elif self.calls == 3:
+                    test.assertIn("PowerShell", str(messages))
+                    test.assertIn("tools/mcp", str(messages))
+                    test.assertNotIn("mcp_reload", names)
+                    call = ToolCall("enable-reload", "tool_enable", {"tools": ["mcp_reload"]})
+                elif self.calls == 4:
+                    test.write({"added": {"command": "working", "description": "查询新增数据"}})
+                    call = ToolCall("reload", "mcp_reload", {})
+                elif self.calls == 5:
+                    test.assertTrue(any("查询新增数据" in str(item) for item in messages))
+                    call = ToolCall("find", "tool_search", {"query": "查询新增数据"})
+                elif self.calls == 6:
+                    test.assertIn("mcp__added__work", str(messages))
+                    call = ToolCall("enable-new", "tool_enable", {"tools": ["mcp__added__work"]})
+                elif self.calls == 7:
+                    test.assertIn("mcp__added__work", names)
+                    call = ToolCall("use-new", "mcp__added__work", {})
+                else:
+                    test.assertEqual(self.calls, 8)
+                    test.assertIn("result", str(messages))
+                    call = ToolCall("end", "end_turn", {
+                        "reply_wait": {"wait": False},
+                        "mood": {"decision": "unchanged"},
+                    })
+                return ProviderResponse([], [call])
+
+        provider = Provider()
+        from tests.support import with_owner_recall
+        daemon.provider = with_owner_recall(provider)
+        async with daemon.mcp:
+            result = await daemon._run_tool_loop(
+                daemon._system(), [{"role": "user", "content": "安装工具"}],
+                daemon.tool_surface.conversation_specs(), [event], TurnDraft(),
+                execution=TurnExecutionSpec("owner", permitted_tools=daemon.tool_surface.permitted_names("owner")),
+                source_event_id=event.event_id, turn_id=turn_id, delivery_channel=daemon.channel,
+            )
+        self.assertIsInstance(result, AgentReply)
+        self.assertEqual(provider.calls, 8)
+
+    async def test_reload_waits_for_inflight_call(self):
+        self.write({"before": {"command": "working"}})
+        await self.runtime.apply()
+        manager = self.runtime.daemon.mcp
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def invoke(*_):
+            entered.set()
+            await release.wait()
+            return {"ok": True, "value": "completed"}
+
+        with patch.object(manager, "_invoke", invoke):
+            active = asyncio.create_task(manager.call("mcp__before__work", {}))
+            await entered.wait()
+            self.write({"after": {"command": "working"}})
+            reloading = asyncio.create_task(manager.reload())
+            await asyncio.sleep(0)
+            self.assertFalse(reloading.done())
+            release.set()
+            async with asyncio.timeout(2):
+                self.assertEqual((await active)["value"], "completed")
+                self.assertTrue((await reloading)["ok"])
+        self.assertTrue(manager.has_tool("mcp__after__work"))
 
     async def test_shutdown_resolves_active_and_queued_callers(self):
         manager = MCPManager(None, servers={"server": {"command": "server"}})
@@ -265,3 +376,34 @@ def test_brave_web_search_is_visible_without_enabling_other_group_tools():
 
     mcp.tool_specs = []
     assert web["name"] not in {spec["name"] for spec in surface.conversation_specs()}
+
+
+def test_reload_is_deferred_and_discoverable_before_first_install(tmp_path):
+    from momoi.runtime.agent.runtime_tools import search_tools
+    manager = MCPManager(tmp_path / "mcp.json", servers={})
+    surface = ToolSurface(manager, {})
+    tools = surface.conversation_specs()
+    assert "mcp_reload" not in {spec["name"] for spec in tools}
+    assert "builtin_mcp_management" in surface.tool_index()
+    groups = surface.discovery_groups()
+    found = search_tools(ToolCall("find", "tool_search", {"query": "mcp_reload"}),
+                         enable_tool_groups=groups, tool_surface=surface)
+    assert found["tools"][0]["name"] == "mcp_reload"
+    result = enable_tools(ToolCall("enable", "tool_enable", {"tools": ["mcp_reload"]}),
+                          enable_tool_groups=groups, tools=tools, tool_surface=surface)
+    assert result["ok"]
+    assert "mcp_reload" in {spec["name"] for spec in tools}
+    assert "mcp_reload" in surface.permitted_names("owner")
+    assert "mcp_reload" not in surface.permitted_names("webhook")
+
+
+def test_description_is_required_even_for_disabled_servers():
+    from momoi.mcp.config import parse_mcp_servers
+    import pytest
+    for disabled in (False, True):
+        for description in (None, "", "   ", "x" * 501):
+            server = {"command": "test", "disabled": disabled}
+            if description is not None:
+                server["description"] = description
+            with pytest.raises(ValueError, match="description must be"):
+                parse_mcp_servers(json.dumps({"mcpServers": {"test": server}}))

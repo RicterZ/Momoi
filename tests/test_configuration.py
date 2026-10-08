@@ -475,7 +475,7 @@ class ConfigurationTest(unittest.TestCase):
                                 "command": "search-server",
                                 "description": "Search public sources.",
                             },
-                            "off": {"command": "off-server", "disabled": True},
+                            "off": {"command": "off-server", "disabled": True, "description": "Off tools"},
                         }
                     }
                 )

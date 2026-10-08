@@ -48,13 +48,8 @@ def parse_mcp_servers(content: str) -> dict[str, dict[str, Any]]:
             raise ValueError(f"MCP server {name} must be an object")
         if not isinstance(config.get("disabled", False), bool):
             raise ValueError(f"MCP server {name} disabled must be boolean")
-        if config.get("disabled", False):
-            continue
-        optional = config.get("optional", False)
-        if not isinstance(optional, bool):
-            raise ValueError(f"MCP server {name} optional must be boolean")
         description = config.get("description")
-        if description is not None and (
+        if (
             not isinstance(description, str)
             or not description.strip()
             or len(description.strip()) > 500
@@ -62,6 +57,11 @@ def parse_mcp_servers(content: str) -> dict[str, dict[str, Any]]:
             raise ValueError(
                 f"MCP server {name} description must be 1 to 500 characters"
             )
+        if config.get("disabled", False):
+            continue
+        optional = config.get("optional", False)
+        if not isinstance(optional, bool):
+            raise ValueError(f"MCP server {name} optional must be boolean")
         command = config.get("command")
         url = config.get("url") or config.get("baseUrl")
         for key in ("command", "url", "baseUrl", "cwd"):

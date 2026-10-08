@@ -50,6 +50,12 @@ class MCPManager:
     def __init__(
         self, path: Path | None, *, servers: dict[str, dict[str, Any]] | None = None
     ) -> None:
+        self.path = path
+        self._reload_lock = asyncio.Lock()
+        self._calls = asyncio.Condition()
+        self._active_calls = 0
+        self.errors: dict[str, str] = {}
+        self.generation = 0
         self.configs = load_mcp_servers(path) if servers is None else copy.deepcopy(servers)
         log_event(
             logger,
@@ -69,6 +75,7 @@ class MCPManager:
 
     async def __aenter__(self) -> "MCPManager":
         self._closing = False
+        self.errors.clear()
         loop = asyncio.get_running_loop()
         for name, config in self.configs.items():
             queue: asyncio.Queue[MCPRequest] = asyncio.Queue()
@@ -84,6 +91,7 @@ class MCPManager:
                 await self.__aexit__()
                 raise
             except Exception as error:
+                self.errors[name] = str(error)
                 log_event(
                     logger,
                     logging.ERROR,
@@ -132,7 +140,8 @@ class MCPManager:
         future = None
         try:
             try:
-                await self._connect(name, config)
+                async with asyncio.timeout(60):
+                    await self._connect(name, config)
             except (KeyboardInterrupt, SystemExit):
                 raise
             except BaseException as error:
@@ -464,7 +473,45 @@ class MCPManager:
     def capability(self, name: str) -> str:
         return self._capabilities.get(name, "external_effect")
 
+    async def reload(self, *, servers=None) -> dict[str, Any]:
+        """Validate before touching connections; keep this manager's identity stable."""
+        async with self._reload_lock:
+            try:
+                configs = load_mcp_servers(self.path) if servers is None else copy.deepcopy(servers)
+            except (OSError, ValueError) as error:
+                return {"ok": False, "error": "invalid_mcp_config", "message": str(error)}
+            async with self._calls:
+                await self._calls.wait_for(lambda: self._active_calls == 0)
+                await self.__aexit__()
+                self.tool_specs.clear()
+                self._tools.clear()
+                self._capabilities.clear()
+                self.configs = configs
+                await self.__aenter__()
+                self.generation += 1
+            return {
+                "ok": not self.errors,
+                "error": "mcp_connect_failed" if self.errors else None,
+                "servers": [{
+                    "name": name, "description": config.get("description", ""),
+                    "connected": name in self._sessions,
+                    "tools": [spec["name"] for spec in self.tool_specs
+                              if self.tool_group(spec["name"]) == name],
+                    "error": self.errors.get(name),
+                } for name, config in self.configs.items()],
+            }
+
     async def call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        async with self._calls:
+            self._active_calls += 1
+        try:
+            return await self._call(name, arguments)
+        finally:
+            async with self._calls:
+                self._active_calls -= 1
+                self._calls.notify_all()
+
+    async def _call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if self._closing:
             return {"ok": False, "error": "mcp_stopped", "ambiguous": False}
         target = self._tools.get(name)

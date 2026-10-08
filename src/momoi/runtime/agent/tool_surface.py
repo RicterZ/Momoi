@@ -17,7 +17,7 @@ from ..tool_contracts.conversation import (
     END_TURN_TOOL_SPEC, HEARTBEAT_ACTIVITY_TOOL_SPEC, GOAL_REVIEW_TOOL_SPEC,
 )
 from ..tool_contracts.runtime import (
-    READ_TOOL_RESULT_SPEC,
+    READ_TOOL_RESULT_SPEC, MCP_RELOAD_SPEC,
     tool_search_spec,
     TOOL_ENABLE_SPEC,
 )
@@ -32,8 +32,11 @@ logger = logging.getLogger("momoi.runtime.turns")
 DEFERRED_TOOLS = frozenset({
     "thinking_search", "thinking_read", "episode_relations", "episode_search", "memory_search",
     "write_file", "apply_patch", "makedirs", "move_file", "delete_file",
+    "skill_install", "skill_uninstall",
 })
 BUILTIN_GROUP_DESCRIPTIONS = {
+    "builtin_skill_management": "安装或卸载工作区 skills 中的 Skill 工作流。",
+    "builtin_mcp_management": "重载 MCP 工具服务连接，应用安装或配置变更并检查可用工具。",
     "builtin_history": "查询记忆、历史话题与关联话题，查看过去的思考记录。",
     "builtin_files": "写入、修改、移动、删除文件和创建目录。",
     "builtin_qq_messages": "撤回机器人已经发送到 QQ 私聊的消息。",
@@ -73,12 +76,18 @@ class ToolSurface:
 
     def discovery_groups(self) -> dict[str, list[dict[str, Any]]]:
         groups = self.mcp_server_groups()
+        if getattr(self.mcp, "path", None) is not None:
+            groups["builtin_mcp_management"] = self.public_specs([MCP_RELOAD_SPEC])
         groups["builtin_history"] = self.public_specs([
             spec for spec in [*MEMORY_TOOL_SPECS, *THINKING_TOOL_SPECS, EPISODE_RELATIONS_TOOL_SPEC]
             if spec["name"] in DEFERRED_TOOLS
         ])
         groups["builtin_files"] = self.public_specs([
             spec for spec in self.builtin_specs if spec["name"] in DEFERRED_TOOLS
+            and spec["name"] not in {"skill_install", "skill_uninstall"}
+        ])
+        groups["builtin_skill_management"] = self.public_specs([
+            spec for spec in self.builtin_specs if spec["name"] in {"skill_install", "skill_uninstall"}
         ])
         if "napcat" in self.channel_names:
             groups["builtin_qq_messages"] = self.public_specs([QQ_RECALL_MESSAGE_SPEC])
@@ -184,7 +193,7 @@ class ToolSurface:
         memory = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}
         thinking = {str(spec["name"]) for spec in THINKING_TOOL_SPECS}
         channel_tools = {spec["name"] for group, specs in self.discovery_groups().items()
-                         if group in {"builtin_qq_messages", "builtin_calls"} for spec in specs}
+                         if group in {"builtin_qq_messages", "builtin_calls", "builtin_mcp_management"} for spec in specs}
         shared = {"reply", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
         general_chat = {
             "recall",

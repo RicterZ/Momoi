@@ -86,6 +86,8 @@ class AgentLoop:
         llm_round = 0
         remind_owner_bubbles = False
         enable_tool_groups = self.tool_surface.discovery_groups()
+        mcp_generation = getattr(self.tool_surface.mcp, "generation", 0)
+        mcp_names = {spec["name"] for spec in self.tool_surface.mcp.tool_specs}
         stage = execution.stage
         permitted_tools = execution.permitted_tools
         if workflow is not None and workflow.stage != stage:
@@ -123,6 +125,20 @@ class AgentLoop:
             return True
 
         while True:
+            generation = getattr(self.tool_surface.mcp, "generation", 0)
+            if generation != mcp_generation:
+                enable_tool_groups = self.tool_surface.discovery_groups()
+                catalog = {spec["name"]: spec for specs in enable_tool_groups.values() for spec in specs}
+                tools[:] = [catalog.get(spec["name"], spec) for spec in tools
+                            if spec["name"] not in mcp_names or spec["name"] in catalog]
+                new_mcp_names = {spec["name"] for spec in self.tool_surface.mcp.tool_specs}
+                if permitted_tools is not None and not circuit_reason and "mcp_reload" in permitted_tools:
+                    permitted_tools = frozenset((permitted_tools - mcp_names) | new_mcp_names)
+                    harness.permitted_tool_names = permitted_tools
+                mcp_names, mcp_generation = new_mcp_names, generation
+                messages.append({"role": "user", "content":
+                    "<runtime_directives>\nMCP 工具目录已更新：\n"
+                    + self.tool_surface.tool_index() + "\n</runtime_directives>"})
             if circuit_reason:
                 if circuit_rounds >= 3:
                     if "reply" in harness.completed_tools:

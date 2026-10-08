@@ -21,7 +21,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 `GET /api/settings/mcp` 原样返回 `tools.mcp_config` 指定的 JSON 文件，未指定时
 读取工作区的 `mcp.json`。保留禁用服务和环境变量引用；工作区没有该文件时返回
 `{"mcpServers": {}}`，自定义路径不存在时返回 404。
-`PATCH /api/settings/mcp` 校验请求中的完整 JSON，替换文件并触发业务运行实例重启。
+`PATCH /api/settings/mcp` 校验请求中的完整 JSON，替换文件；仅 MCP 配置变化时重载 MCP 连接，不重启聊天运行时。
 返回 202 和配置快照，表示保存成功，不代表新实例已启动。两个接口均需 dashboard 认证。
 
 鉴权后请求 `GET /api/settings/configuration`，从 `app` 读取当前配置，
@@ -367,13 +367,24 @@ Bash 命令遵循系统命令本身的语义，不自动继承文件工具的哈
 | `env` | `{}` | 为 `command` 增加的环境变量 |
 | `url` | — | Streamable HTTP 接口；未设置 `command` 时必填 |
 | `headers` | `{}` | 发送给 `url` 的 Header |
-| `description` | 根据服务器 ID 生成 | 可选的能力摘要；设置时长度为 1–500 个字符 |
+| `description` | 必填 | 描述提供什么工具、能做什么；1–500 个字符，进入 tool index；禁用服务也须填写 |
 | `enabled_tools` | `["*"]` | 要注册的原始或完整限定工具名；`[]` 表示不注册工具 |
 | `readOnlyTools` | `[]` | 应视为只读工具的原始名称 |
 | `disabled` | `false` | 保留定义但不连接 |
 
 与 `config.json` 不同，MCP 的环境变量值、URL 和 Header 会从 Momoi 进程
 环境中展开 `${VARIABLE}`。
+
+`mcp_reload` 默认按需加载：通过 `tool_search` 查找、`tool_enable` 加载，再以 `{}` 调用。
+只重载 MCP 连接并更新当前对话工具目录；配置无效保留旧连接，连接失败返回逐服务结果。
+安装步骤见 [MCP 安装工作流](./MCP-INSTALL.zh-CN.md)。
+
+## Skills
+
+标准 skill 存放在 `<workspace>/skills/<name>/SKILL.md`，frontmatter 包含 name 和 description。
+通过 `skill_search` 搜索文档内容，只返回名称和简短描述；`skill_load` 按需读取完整指引和资源路径。
+不预先注入 skill 清单。`skill_install` 支持本地目录和 HTTPS Git 仓库，`skill_uninstall` 删除 skill 目录。
+安装与加载均不执行脚本。Momoi 自带 MCP 安装 skill，详见 [Skill 使用说明](./SKILLS.zh-CN.md)。
 
 ## 单轮预算
 

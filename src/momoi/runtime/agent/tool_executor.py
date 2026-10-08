@@ -71,6 +71,7 @@ class ToolExecutor:
             "send_voice",
             "tool_search",
             "tool_enable",
+            "mcp_reload",
             "read_tool_result",
             "heartbeat_begin",
             "heartbeat_activity",

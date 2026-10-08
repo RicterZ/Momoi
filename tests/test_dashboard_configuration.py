@@ -534,7 +534,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         try:
             await applied(self.manager.revision())
             original = self.runtime.daemon
-            document = {"mcpServers": {"example": {"command": "unused-test-server"}}}
+            document = {"mcpServers": {"example": {"command": "unused-test-server", "description": "Example tools"}}}
             response = await self.client.patch(
                 "/api/settings/mcp", json=document,
                 headers={"If-Match": f'"{self.manager.revision()}"'},
@@ -567,7 +567,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         app["tools"]["mcp_config"] = None
         atomic_write(self.path, json.dumps(app))
         path.unlink()
-        document = {"mcpServers": {"later": {"disabled": True}}, "extra": "preserved"}
+        document = {"mcpServers": {"later": {"disabled": True, "description": "Later tools"}}, "extra": "preserved"}
         response = await self.client.patch("/api/settings/mcp", json=document)
         self.assertEqual(response.status, 202)
         self.assertEqual(json.loads(path.read_text()), document)

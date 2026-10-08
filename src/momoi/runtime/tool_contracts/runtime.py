@@ -56,3 +56,10 @@ READ_TOOL_RESULT_SPEC: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
+
+
+MCP_RELOAD_SPEC = {
+    "name": "mcp_reload",
+    "description": "修改 MCP 配置文件后，校验并重载 MCP 服务连接，不重启聊天运行时。返回连接状态、工具名称和失败原因；配置无效时保留当前连接。",
+    "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+}

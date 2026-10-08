@@ -26,7 +26,7 @@ own transcription. Back up the file before editing; unknown bindings prevent sta
 environment references are preserved. Without a workspace MCP file it returns
 `{"mcpServers": {}}`; a missing custom path returns 404.
 `PATCH /api/settings/mcp` replaces the file with the request JSON, validates it,
-and requests a business runtime restart. It returns 202 with the configuration
+and requests an apply; MCP-only changes reload connections without restarting the chat runtime. It returns 202 with the configuration
 snapshot; this confirms saving, not successful startup. Both methods require
 dashboard authentication.
 
@@ -397,13 +397,25 @@ Unsupported binary types return `unsupported_content_type`. HTTP 4xx/5xx return 
 | `env` | `{}` | Environment values added for `command` |
 | `url` | — | Streamable HTTP endpoint; required when `command` is omitted |
 | `headers` | `{}` | Headers sent to `url` |
-| `description` | generated from server id | Optional capability summary, 1–500 characters when set |
+| `description` | required | What tools the server provides and what they can do; 1–500 characters, included in the tool index, required even when disabled |
 | `enabled_tools` | `["*"]` | Raw or fully qualified tool names to register; `[]` registers none |
 | `readOnlyTools` | `[]` | Raw names of tools that should be treated as read-only |
 | `disabled` | `false` | Keep the definition without connecting |
 
 Unlike `config.json`, MCP environment values, URLs, and headers expand
 `${VARIABLE}` from the Momoi process environment.
+
+`mcp_reload` is deferred: find it with `tool_search`, load it with `tool_enable`, then call it with `{}`. It reloads only MCP connections and refreshes the current conversation catalog. Invalid configuration preserves existing connections; connection failures are returned per server. See the [installation workflow](./MCP-INSTALL.zh-CN.md).
+
+## Skills
+
+Standard skills live in `<workspace>/skills/<name>/SKILL.md` with YAML `name` and `description`.
+`skill_search` searches Markdown document content and returns names and short descriptions;
+`skill_load` reads full instructions and resource paths on demand. Skill catalogs are not injected
+into the system prompt or tool index. `skill_install` accepts local directories or HTTPS Git
+repositories (with optional `subdirectory` and branch/tag `ref`); `skill_uninstall` removes a skill
+directory. Neither installing nor loading executes scripts. Momoi ships the `mcp-install` skill.
+See the [skill workflow documentation](./SKILLS.zh-CN.md).
 
 ## Turn budgets
 

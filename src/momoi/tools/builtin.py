@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .web_fetch import web_fetch
+from ..skills import Skills
 
 from ..models import ToolCall
 from .contracts.builtin import BUILTIN_TOOL_SPECS, builtin_tool_enabled
@@ -32,6 +33,7 @@ class BuiltinTools:
             path.expanduser().resolve() for path in private_roots
         )
         self.exec_enabled = exec_enabled
+        self.skills = Skills(self.workspace)
 
     def resolve_path(self, value: object) -> Path:
         path = Path(str(value or "")).expanduser()
@@ -62,7 +64,7 @@ class BuiltinTools:
 
     @staticmethod
     def capability(call: ToolCall) -> str:
-        if call.name in {"read_file", "list_dir", "glob_files"}:
+        if call.name in {"read_file", "list_dir", "glob_files", "skill_search", "skill_load"}:
             return "read"
         if call.name in {
             "write_file",
@@ -70,6 +72,7 @@ class BuiltinTools:
             "makedirs",
             "move_file",
             "delete_file",
+            "skill_install", "skill_uninstall",
         }:
             return "write"
         if call.name == "web_fetch":
@@ -80,6 +83,17 @@ class BuiltinTools:
         try:
             if not builtin_tool_enabled(call.name, exec_enabled=self.exec_enabled):
                 return {"ok": False, "error": "tool_not_allowed"}
+            if call.name == "skill_search":
+                return await asyncio.to_thread(self.skills.search, call.arguments.get("query"), call.arguments.get("limit", 5))
+            if call.name == "skill_load":
+                return await asyncio.to_thread(self.skills.load, call.arguments.get("name"))
+            if call.name == "skill_install":
+                source = call.arguments.get("source")
+                if isinstance(source, str) and not source.startswith("https://"):
+                    source = str(self.resolve_path(source))
+                return await self.skills.install(source, call.arguments.get("subdirectory", "."), call.arguments.get("ref"))
+            if call.name == "skill_uninstall":
+                return await asyncio.to_thread(self.skills.uninstall, call.arguments.get("name"))
             if call.name == "exec":
                 return await self._exec(call.arguments)
             if call.name == "web_fetch":

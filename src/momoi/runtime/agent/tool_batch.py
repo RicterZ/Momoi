@@ -477,6 +477,12 @@ class ToolBatchExecutor:
                     call, enable_tool_groups=request.enable_tool_groups,
                     tools=request.tools, tool_surface=self.tool_surface,
                 )
+            elif call.name == "mcp_reload":
+                if execution.allowed_capabilities is not None and "external_effect" not in execution.allowed_capabilities:
+                    result = {"ok": False, "error": "tool_not_allowed"}
+                else:
+                    result = await self.tool_surface.mcp.reload()
+                    external_effect = True
             elif call.name == "read_tool_result":
                 result = self.tool_results.read(
                     call.arguments.get("result_ref"),

@@ -1,6 +1,7 @@
 from typing import Any
 
 from ...platform.shell import SHELL_NAME
+from .skills import SKILL_TOOL_SPECS
 
 from ...contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 
@@ -219,3 +220,5 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
 ]
+
+BUILTIN_TOOL_SPECS.extend(SKILL_TOOL_SPECS)

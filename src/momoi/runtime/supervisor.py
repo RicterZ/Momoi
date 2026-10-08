@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from dataclasses import replace
 
 from ..channel.weixin.config import WeixinState
 
@@ -153,6 +154,20 @@ class RuntimeSupervisor:
                 return
             if revision != self.configuration.revision():
                 self.request_apply()
+                return
+            if (
+                self.last_config is not None and self.daemon is not None
+                and self.task is not None and not self.task.done()
+                and hasattr(self.daemon, "mcp")
+                and replace(config, mcp_servers=self.last_config.mcp_servers) == self.last_config
+            ):
+                manager = self.daemon.mcp
+                if manager.configs != config.mcp_servers:
+                    await manager.reload(servers=config.mcp_servers)
+                self.daemon.config = config
+                self.last_config = config
+                self.applied_revision = revision
+                self.state, self.error = "running", ""
                 return
             self.missing = []
             if not config.providers.enabled("llm"):
