@@ -1,7 +1,7 @@
 """Stable, compact observations for completed-turn replay only."""
 
 import json
-from ...tools.presentation import present_result
+from ...tools.presentation import fit_result, present_result
 from collections.abc import Mapping
 
 
@@ -216,6 +216,16 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3, result
                 snapshot = result_store.historical_payload(str(payload.get("result_ref") or ""))
                 if isinstance(snapshot, dict):
                     source = snapshot
+            # Preserve arbitrary business fields (zero quantities, operation IDs,
+            # pending states, pagination), rather than serializing them as a preview.
+            source = present_result(source, historical=True)
+            business = source.get("result")
+            if history_format >= 3 and isinstance(business, (dict, list)) and not (name.startswith("mcp__weibo__") and list_excerpt(source) is not None):
+                projected = present_result(source, historical=True)
+                compact = fit_result(projected, 800, string_limit=160)
+                compact["history_truncated"] = True
+                block["content"] = json.dumps(compact, ensure_ascii=False)
+                continue
             body = result_body(source)
             if not isinstance(body, str):
                 body = json.dumps(body, ensure_ascii=False)
@@ -241,20 +251,20 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3, result
                             "version", "operation_id", "image_id", "count", "pattern", "title",
                             "requested_url", "content_type", "extract_mode", "source_truncated",
                             "content_length"):
-                    value = payload.get(key)
+                    value = source.get(key)
                     if isinstance(value, (str, int, float, bool)):
                         compact[key] = preview(value) if isinstance(value, str) else value
                 if payload.get("ok") is True:
                     compact.pop("provenance", None)
                     if compact.get("error") is None:
                         compact.pop("error", None)
-                    listing = list_excerpt(payload) if name.startswith("mcp__weibo__") else None
+                    listing = list_excerpt(source) if name.startswith("mcp__weibo__") else None
                     if listing is not None:
                         compact.pop("preview", None)
                         compact.update(listing)
                 for key in ("path", "start_line", "end_line", "total_lines", "content_offset", "next_content_offset", "sha256", "truncated", "url", "message"):
-                    if key in payload:
-                        compact[key] = preview(str(payload[key])) if isinstance(payload[key], str) else payload[key]
+                    if key in source:
+                        compact[key] = preview(str(source[key])) if isinstance(source[key], str) else source[key]
                 if name in {"read_file", "read"} and "path" not in compact:
                     call = next((b for b in content if isinstance(b, dict) and b.get("id") == block.get("tool_use_id")), {})
                     path = (call.get("input") or {}).get("path")

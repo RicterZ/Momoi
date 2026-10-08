@@ -1,5 +1,4 @@
 import base64
-import hashlib
 import json
 import os
 import re
@@ -88,7 +87,6 @@ class ToolResultStore:
                 "message": "Cursor is outside the stored tool result.",
                 "provenance": provenance,
             }
-        digest = hashlib.sha256(content.encode()).hexdigest()
         visible_status = status or {"ok": True, "error": None}
 
         def candidate(end: int) -> dict[str, Any]:
@@ -99,7 +97,6 @@ class ToolResultStore:
                 "provenance": provenance,
                 "result_ref": reference,
                 "format": "json",
-                "sha256": digest,
                 "original_chars": len(content),
                 "chunk_start": offset,
                 "chunk_end": end,

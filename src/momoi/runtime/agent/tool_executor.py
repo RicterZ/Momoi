@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ...tools.presentation import present_result
+from ...tools.presentation import fit_result, present_result
 from ...contracts import ToolResult
 from ...observability.events import log_event
 from ...observability.values import compact_log_value, safe_preview
@@ -301,16 +301,11 @@ class ToolExecutor:
                 "provenance": provenance,
                 "result_ref": result_ref,
             }
-        status: dict[str, object] = {"ok": ok, "error": error}
-        if raw.get("message") is not None:
-            status["message"] = safe_preview(raw["message"], 1000)
-        return self.tool_results.read(
-            result_ref,
-            None,
-            max_chars=self.config.tool_result_max_chars,
-            provenance=provenance,
-            status=status,
-        )
+        # Snapshots remain exact; only the inline observation is reduced.
+        return {
+            **fit_result({**present_result(envelope), "result_ref": result_ref}, budget),
+            "provenance": provenance,
+        }
 
     def artifact_path_allowed(self, call: ToolCall, root: Path) -> bool:
         try:

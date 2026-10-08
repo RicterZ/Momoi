@@ -315,18 +315,18 @@ class ProvidersToolsTest(unittest.TestCase):
                     daemon.tool_executor.result_root / f"{first['result_ref']}.json"
                 ).is_file()
             )
-            chunks = [str(first["content"])]
-            cursor = first["next_cursor"]
-            while cursor is not None:
-                result = daemon.tool_results.read(
-                    first["result_ref"],
-                    cursor,
-                    max_chars=config.tool_result_max_chars,
-                    provenance={"source": "runtime", "tool": "read_tool_result"},
-                )
+            self.assertIn("items", first)
+            self.assertIn("omitted_fields", first)
+            chunks = []
+            cursor = None
+            while True:
+                result = daemon.tool_results.read(first["result_ref"], cursor,
+                    max_chars=config.tool_result_max_chars, provenance={"source": "runtime"})
                 self.assertTrue(result["ok"], result)
-                chunks.append(str(result["content"]))
+                chunks.append(result["content"])
                 cursor = result["next_cursor"]
+                if cursor is None:
+                    break
             expected = json.dumps(
                 {
                     "ok": True,

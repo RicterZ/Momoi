@@ -41,3 +41,26 @@ def test_mcp_plain_text_invalid_json_and_mixed_media_are_preserved():
                                  {'type': 'text', 'text': 'two'}]}) == ['one', 'two']
     business = {'content': 'description', 'quantity': 0, 'status': 'accepted'}
     assert present_result({'ok': True, 'result': business})['result'] == business
+
+
+def test_large_mcp_write_preserves_pending_outcome_and_business_values(tmp_path):
+    from momoi.tools.presentation import fit_result
+    snapshots = ToolResultStore(tmp_path / 'results')
+    executor = ToolExecutor(SimpleNamespace(workspace=tmp_path, database=tmp_path / 'db',
+                           tool_result_max_chars=1000), None, None, None, None, snapshots)
+    business = {'description': 'large ' * 4000, 'quantity': 0, 'changed': False,
+                'status': 'accepted', 'operation_id': 'op-123', 'next_cursor': 'business-page-2'}
+    raw = {'ok': True, 'result': {'content': [{'type': 'text', 'text': json.dumps(business)}]}}
+    result = executor.normalize(ToolCall('c', 'mcp__stock__update', {}), raw, 'mcp')
+    live = json.loads(tool_result_block('c', result)['content'])
+    assert len(json.dumps(live, ensure_ascii=False)) <= 1000
+    assert live['result']['quantity'] == 0 and live['result']['changed'] is False
+    assert live['result']['status'] == 'accepted'
+    assert live['result']['operation_id'] == 'op-123'
+    assert live['result']['next_cursor'] == 'business-page-2'
+    assert live['truncated'] and live['omitted_fields']
+    assert json.dumps(live).count(result['result_ref']) == 1
+    assert snapshots.historical_payload(result['result_ref'])['result'] == raw['result']
+    historical = fit_result(present_result(raw), 800, string_limit=160)
+    assert historical['result']['quantity'] == 0
+    assert historical['result']['status'] == 'accepted'

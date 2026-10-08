@@ -1,6 +1,6 @@
 """Bounded historical execution evidence from native and legacy journals."""
 import json
-from ...tools.presentation import present_result
+from ...tools.presentation import fit_result, present_result
 from itertools import groupby
 
 EXCLUDED = {'recall', 'end_turn', 'heartbeat_end_turn', 'reply', 'send_bubbles', 'send_voice'}
@@ -63,6 +63,8 @@ def eligible(exchange):
 
 def bounded_result(value, terms=(), budget=800):
     """Bound the complete presentation while preserving outcome and read-back data."""
+    if isinstance(value, dict) and isinstance(value.get("result"), (dict, list)):
+        return fit_result(value, budget, string_limit=160)
     reduced = bounded(value, terms=terms)
     encode = lambda item: json.dumps(item, ensure_ascii=False, separators=(',', ':'))
     if isinstance(value, dict) and value.get('result_ref'):
