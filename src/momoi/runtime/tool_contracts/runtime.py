@@ -36,7 +36,7 @@ TOOL_ENABLE_SPEC = {
 READ_TOOL_RESULT_SPEC: dict[str, Any] = {
     "name": "read_tool_result",
     "description": (
-        '继续截断的工具结果快照，无需重新运行工具。无法读取工作区文件。'
+        '读取完整原始工具结果快照，无需重新运行工具。省略 cursor 从头读取，按 next_cursor 续读；content 为原始 JSON 文本分片，按顺序拼接可还原。omitted_fields 表示展示省略路径；完整参数深读结果也可通过其 result_ref 读取。无法读取工作区文件。'
     ),
     "input_schema": {
         "type": "object",

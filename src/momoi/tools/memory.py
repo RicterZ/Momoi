@@ -362,7 +362,7 @@ class MemoryTools:
         if "execution_cursor" in arguments:
             cursor = arguments["execution_cursor"]
             if (isinstance(cursor, bool) or not isinstance(cursor, int) or cursor < 0
-                    or any(key in arguments for key in ("turn_id", "after_sequence", "message_id",
+                    or any(key in arguments for key in ("turn_id", "tool_call_id", "after_sequence", "message_id",
                                                         "content_offset", "before_ordinal", "time_range"))):
                 return _memory_error("invalid_execution_page")
             if self.store.episode(episode_id.strip()) is None:
@@ -371,7 +371,7 @@ class MemoryTools:
             return {"ok": True, "episode_id": episode_id.strip(),
                     **execution_turns(self.store, episode_id.strip(), limit=10, tool_limit=12,
                                       after_turn_ordinal=cursor)}
-        if "after_sequence" in arguments and not arguments.get("turn_id"):
+        if ("after_sequence" in arguments or "tool_call_id" in arguments) and not arguments.get("turn_id"):
             return _memory_error("turn_id_required")
         if arguments.get("turn_id") is not None:
             if any(key in arguments for key in ("message_id", "content_offset", "before_ordinal", "time_range")):
@@ -384,6 +384,12 @@ class MemoryTools:
             if not self.store._db.execute("SELECT 1 FROM episode_turns WHERE episode_id=? AND turn_id=?",
                                           (episode_id.strip(), turn_id)).fetchone():
                 return _memory_error("episode_turn_not_found")
+            if "tool_call_id" in arguments:
+                identifier = arguments["tool_call_id"]
+                if not isinstance(identifier, str) or not identifier.strip():
+                    return _memory_error("invalid_execution_cursor")
+                from ..storage.episode.execution_evidence import execution_arguments
+                return execution_arguments(self.store, episode_id.strip(), turn_id, identifier, cursor)
             return {"ok": True, "episode_id": episode_id.strip(),
                     **execution_turns(self.store, episode_id.strip(), turn_id=turn_id,
                                       after_sequence=cursor, limit=1, tool_limit=12)}

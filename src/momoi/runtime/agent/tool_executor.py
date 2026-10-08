@@ -158,11 +158,8 @@ class ToolExecutor:
                     "tool_call_id": call.id,
                     "name": call.name,
                     "source": source,
-                    "arguments": arguments if call.name == "recall" else compact_log_value(
-                        arguments,
-                        string_limit=500,
-                        item_limit=20,
-                    ),
+                    "arguments": arguments,
+                    "arguments_complete": True,
                 },
                 trust="runtime",
             )

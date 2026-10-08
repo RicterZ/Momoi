@@ -57,7 +57,8 @@ def eligible(exchange):
         if isinstance(result, dict):
             result = {key: value for key, value in result.items() if key != 'provenance'}
         tools.append({'call_id': call.get('id'), 'name': call.get('name'),
-                      'arguments': call.get('input', {}), 'result': result})
+                      'arguments': call.get('input', {}),
+                      'arguments_complete': call.get('_arguments_complete', True), 'result': result})
     return {**({'assistant_text': text} if text else {}), **({'tools': tools} if tools else {})}
 
 
@@ -136,7 +137,8 @@ def journal_rows(db, episode_id=None, after=None, before=None, before_ordinal=No
             identifier = call.get('tool_call_id')
             result = results.get(identifier)
             exchange = {'content': [{'type': 'tool_use', 'id': identifier,
-                         'name': call.get('name'), 'input': call.get('arguments', {})}],
+                         'name': call.get('name'), 'input': call.get('arguments', {}),
+                         '_arguments_complete': call.get('arguments_complete', False)}],
                         'results': []}
             if result is not None:
                 value = result.get('result')
@@ -224,6 +226,11 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
                            'result': bounded_result(result, terms=terms)}
                 if reduced['arguments'] != call['arguments']:
                     reduced['arguments_truncated'] = True
+                    reduced['arguments_read'] = {'episode_id': episode_id, 'turn_id': turn['id'],
+                                                 'tool_call_id': call['call_id'],
+                                                 'after_sequence': sequence - 1}
+                if not call['arguments_complete']:
+                    reduced['arguments_complete'] = False
                 if reduced['result'] != result:
                     if not isinstance(reduced['result'], dict):
                         reduced['result'] = {'content': reduced['result']}
@@ -259,3 +266,19 @@ def execution_turns(store, episode_id, keywords=(), *, limit=3, tool_limit=3,
         # every Turn, including those with no archived chat messages.
         result['next_execution_cursor'] = chosen[-1]['ordinal'] if after_turn_ordinal is not None else 0
     return result
+
+
+def execution_arguments(store, episode_id, turn_id, tool_call_id, after_sequence=0):
+    """Read original inputs by journal location, without re-executing the tool."""
+    for row in journal_rows(store._db, episode_id):
+        if row['turn_id'] != turn_id or row['sequence'] is None or row['sequence'] <= after_sequence:
+            continue
+        entry = eligible(json.loads(row['payload_json']))
+        for call in entry.get('tools', []) if entry else []:
+            if call['call_id'] == tool_call_id:
+                if not call['arguments_complete']:
+                    return {'ok': False, 'error': 'complete_arguments_unavailable',
+                            'message': 'Legacy journal saved only a log projection; original arguments cannot be recovered.',
+                            'stored_arguments': call['arguments']}
+                return {'ok': True, 'tool': call['name'], 'arguments': call['arguments']}
+    return {'ok': False, 'error': 'tool_call_not_found'}
