@@ -177,7 +177,8 @@ class AgentWorker:
                 except asyncio.CancelledError:
                     if not self._stop_requested:
                         raise
-                    self.store.cancel_turn(sealed_turn_id, sealed)
+                    reason = self._interrupt_reason or "owner_stop"
+                    self.store.cancel_turn(sealed_turn_id, sealed, reason=reason)
                     log_event(
                         logger,
                         logging.INFO,
@@ -185,7 +186,7 @@ class AgentWorker:
                         stage="owner",
                         turn_id=sealed_turn_id,
                         channel=sealed[0].channel,
-                        reason="owner_stop",
+                        reason=reason,
                     )
                 finally:
                     self.finish_active_turn()
