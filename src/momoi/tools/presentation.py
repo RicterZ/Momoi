@@ -36,7 +36,7 @@ def mcp_body(value):
     return value
 
 
-def present_result(value, *, historical=False, tool_name=None):
+def present_result(value, *, historical=False, tool_name=None, display_only=False):
     if not isinstance(value, dict):
         return value
     provenance = value.get('provenance') or {}
@@ -56,6 +56,10 @@ def present_result(value, *, historical=False, tool_name=None):
         result.pop('sha256', None)
         if result.get('stderr_tail') == '':
             result.pop('stderr_tail')
+    if (historical or display_only) and tool_name == 'reply' and result.get('ok') is True:
+        result.pop('ok', None)
+        if result.get('state') == 'committed':
+            result.pop('state')
     return result
 
 

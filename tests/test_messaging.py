@@ -1255,8 +1255,9 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.messages = messages
                     self.calls += 1
                     if self.calls > 1:
-                        case.assertIn(
-                            "committed", json.dumps(messages[-1], ensure_ascii=False)
+                        case.assertEqual(
+                            json.loads(messages[-1]["content"][0]["content"])["bubbles"],
+                            ["太好了", "emotion://happy-1", "这次我可厉害了", "emotion://proud-1"],
                         )
                         call = ToolCall(
                             "emotion-close",

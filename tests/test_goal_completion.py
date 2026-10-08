@@ -463,7 +463,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                 )
             if index == 1:
                 result = json.loads(messages[-1]["content"][0]["content"])
-                self.assertEqual(result["state"], "committed")
+                self.assertEqual(result["bubbles"], ["文件已验证"])
                 self.assertNotIn("provenance", result)
                 self.assertEqual(self.daemon.store.due_outbox()[0].text, "文件已验证")
                 stop = asyncio.Event()

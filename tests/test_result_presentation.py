@@ -82,3 +82,18 @@ def test_structured_history_stays_fixed_as_later_turns_arrive():
     assert result['items'][0]['quantity'] == 0
     assert result['items'][0]['operation_id'] == 'op'
     assert source == original
+
+
+def test_reply_display_omits_success_receipt_but_preserves_internal_outcome():
+    from momoi.runtime.turn_support import tool_result_block
+    from momoi.tools.presentation import present_result
+    payload = {'ok': True, 'state': 'committed', 'bubbles': ['hello'],
+               'result_ref': 'tr_reply', 'provenance': {'tool': 'reply'}}
+    shown = json.loads(tool_result_block('r', payload)['content'])
+    assert shown == {'bubbles': ['hello'], 'result_ref': 'tr_reply'}
+    assert present_result(payload)['ok'] is True
+    assert not tool_result_block('r', payload)['is_error']
+    failed = {**payload, 'ok': False, 'error': 'send_failed'}
+    assert json.loads(tool_result_block('r', failed)['content'])['error'] == 'send_failed'
+    delivery = {**payload, 'delivery_state': 'failed'}
+    assert present_result(delivery, historical=True)['delivery_state'] == 'failed'

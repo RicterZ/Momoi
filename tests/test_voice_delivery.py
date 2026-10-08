@@ -282,8 +282,8 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         call = calls.pop(0)
                         if call.name == "end_turn":
                             sent = json.loads(_messages[-1]["content"][0]["content"])
-                            self.assertTrue(sent["ok"], str(sent))
-                            self.assertEqual(sent["state"], "staged" if stage == "goal" else "committed")
+                            self.assertNotIn("error", sent)
+                            self.assertEqual(sent.get("state"), "staged" if stage == "goal" else None)
                             self.assertEqual(daemon.store.due_outbox()[0].kind, "voice")
                             self.assertTrue(daemon.outbox_changed.is_set())
                         return ProviderResponse([
