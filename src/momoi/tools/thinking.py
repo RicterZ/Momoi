@@ -4,12 +4,11 @@ from typing import Any
 from .time_range import parse_history_time_range
 from ..observability.events import log_event
 from ..models import ToolCall
-from ..storage import Store, truncate_tokens
+from ..storage import Store
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SEARCH_LIMIT = 5
-_READ_TOKENS = 1800
 
 
 class ThinkingTools:
@@ -83,14 +82,4 @@ class ThinkingTools:
                 **result,
                 "message": "No recorded thinking matched that Turn.",
             }
-        calls = []
-        for item in result.get("calls") or []:
-            if not isinstance(item, dict):
-                continue
-            rendered = dict(item)
-            text = str(rendered.get("reasoning") or "")
-            trimmed = truncate_tokens(text, _READ_TOKENS)
-            rendered["reasoning"] = trimmed
-            rendered["truncated"] = trimmed != text
-            calls.append(rendered)
-        return {"ok": True, "count": len(calls), "calls": calls}
+        return result
