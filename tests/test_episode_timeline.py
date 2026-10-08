@@ -225,3 +225,43 @@ def test_default_dialogue_pages_three_turns_at_query_boundary(tmp_path, monkeypa
         assert boundaries == [4, 1, 0]
     finally:
         store.close()
+
+
+def test_execution_pages_resume_across_turns_with_parallel_batches(tmp_path):
+    from momoi.tools.presentation import fit_result
+    from tests.test_episode_execution import record
+    store = Store(tmp_path / 'db')
+    try:
+        for ordinal in range(1, 4):
+            setup(store, turn=f't{ordinal}', ordinal=ordinal)
+            for i in range(15):
+                record(store, 'exec', turn=f't{ordinal}', identifier=f'c{i}',
+                       result={'ok': True, 'content': str(i) * 300})
+        tools, seen = MemoryTools(store), []
+        for ordinal in range(1, 4):
+            raw = tools._episode_read({'episode_id': 'e', 'execution_cursor': ordinal - 1})
+            page = fit_result(project_episode(raw), 4000)
+            turn = page['turns'][0]
+            assert turn['id'] == f't{ordinal}'
+            while True:
+                assert turn['timeline'].count('TOOL_CALL') == turn['timeline'].count('TOOL_RESULT')
+                seen.extend((turn['id'], u['sequence']) for u in turn['execution_units'])
+                cursor = turn.get('next_after_sequence')
+                if cursor is None:
+                    break
+                raw = tools._episode_read({'episode_id': 'e', 'turn_id': turn['id'],
+                                           'after_sequence': cursor})
+                turn = fit_result(project_episode(raw), 4000)['turns'][0]
+        assert seen == [(f't{o}', i) for o in range(1, 4) for i in range(1, 16)]
+        raw = tools._episode_read({'episode_id': 'e', 'execution_cursor': 0})
+        observation = project_episode({**raw, 'result_ref': 'tr_' + 'a' * 32})
+        tiny = fit_result(observation, 800)
+        assert len(json.dumps(tiny, ensure_ascii=False)) <= 800
+        if 'turns' in tiny:
+            text = tiny['turns'][0]['timeline']
+            assert text.count('TOOL_CALL') == text.count('TOOL_RESULT')
+        else:
+            assert 'next_execution_cursor' not in tiny
+            assert tiny['result_ref'] == observation['result_ref']
+    finally:
+        store.close()
