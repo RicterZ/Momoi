@@ -213,10 +213,10 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3, result
                 "chunk_start", "chunk_end", "has_more",
             ) if key in payload}
             source = payload
-            if "chunk_start" in payload and result_store is not None:
-                snapshot = result_store.historical_payload(str(payload.get("result_ref") or ""))
-                if isinstance(snapshot, dict):
-                    source = snapshot
+            # A historical chunk is immutable evidence of what the model saw.
+            # The snapshot is only for explicit deep reads; using it here would
+            # make replay depend on retention and replace a middle chunk with
+            # an unrelated full-result preview.
             # Preserve arbitrary business fields (zero quantities, operation IDs,
             # pending states, pagination), rather than serializing them as a preview.
             source = present_result(source, historical=True, tool_name=name)

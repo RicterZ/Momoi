@@ -243,7 +243,7 @@ def test_mcp_preview_uses_text_result_without_outer_ref():
     assert 'tr_example' not in result['preview'] and '"content"' not in result['preview']
 
 
-def test_partial_snapshot_preview_uses_saved_result_not_incomplete_json(tmp_path):
+def test_partial_snapshot_preview_is_stable_and_only_describes_observed_chunk(tmp_path):
     from momoi.runtime.agent.result_store import ToolResultStore
     snapshots = ToolResultStore(tmp_path / 'results')
     text = '开始' * 80 + '正文' * 2000 + '结束' * 80
@@ -252,8 +252,10 @@ def test_partial_snapshot_preview_uses_saved_result_not_incomplete_json(tmp_path
     original = deepcopy(chunk)
     source = [exchange('m', 'mcp__example__read', chunk)]
     result = results(render_exchanges(source, result_store=snapshots))[0]
-    assert result['preview'].startswith('开始') and result['preview'].endswith('结束')
-    assert ref not in result['preview'] and '"result"' not in result['preview']
+    assert '结束' not in result['preview']
+    assert result == results(render_exchanges(source))[0]
+    snapshots._path(ref).unlink()
+    assert result == results(render_exchanges(source, result_store=snapshots))[0]
     assert chunk == original
 
 
