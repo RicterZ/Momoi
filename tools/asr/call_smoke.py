@@ -1,4 +1,5 @@
 """Run in a test Momoi container; replay PCM through the real QQ call lane."""
+import argparse
 import asyncio
 import json
 from pathlib import Path
@@ -11,8 +12,8 @@ from momoi.integrations.registry import ServiceRegistry
 from momoi.qq_call.channel import QQCallChannel
 
 
-async def run():
-    with wave.open('/tmp/test_wavs/0.wav') as wav:
+async def run(audio_path, config_path, expected_text):
+    with wave.open(str(audio_path)) as wav:
         assert wav.getframerate() == 16000
         pcm = wav.readframes(wav.getnframes()) + bytes(96000)
     playback_stops = []
@@ -44,7 +45,7 @@ async def run():
     site = web.TCPSite(runner, '127.0.0.1', 0)
     await site.start()
     port = site._server.sockets[0].getsockname()[1]
-    registry = ServiceRegistry(ConfigurationManager(Path('/home/momoi/.momoi/config.json')).validate().providers)
+    registry = ServiceRegistry(ConfigurationManager(config_path).validate().providers)
     provider = registry.asr
     assert type(provider).__name__ == 'SherpaASRProvider'
     channel = QQCallChannel(SimpleNamespace(bridge_url=f'http://127.0.0.1:{port}',
@@ -59,7 +60,7 @@ async def run():
         await asyncio.wait_for(received.wait(), 20)
         assert len(events) == 1
         event = events[0]
-        assert event.text == '对我做了介绍啊那么我想说的是呢大家如果对我的研究感兴趣呢'
+        assert event.text == expected_text, (event.text, expected_text)
         assert event.channel == 'qq_call'
         assert event.delivery_context['call_session_id'] == 'local-asr-poc'
         assert playback_stops and channel.generation == 1
@@ -75,4 +76,9 @@ async def run():
 
 
 if __name__ == '__main__':
-    asyncio.run(run())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("audio", type=Path)
+    parser.add_argument("--config", type=Path, required=True, help="Isolated test workspace config.json")
+    parser.add_argument("--expected-text", required=True)
+    args = parser.parse_args()
+    asyncio.run(run(args.audio, args.config, args.expected_text))

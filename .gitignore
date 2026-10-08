@@ -27,3 +27,7 @@ desktop/**/obj/
 desktop/Momoi.Desktop/keys/*private*
 desktop/Momoi.Desktop/keys/*.pem
 /docs/WINDOWS.zh-CN.md
+
+# Local debugging state and COS CLI output.
+/.momoi-debug/
+/coscli_output/

@@ -1,4 +1,5 @@
 """Container-local HTTP/WebSocket checks with real model audio."""
+import argparse
 import asyncio
 import json
 from pathlib import Path
@@ -11,9 +12,8 @@ from momoi.integrations.adapters.sherpa import SherpaASRProvider
 from momoi.integrations.contracts.asr import AudioInput
 
 
-async def run():
-    path = Path('/poc/test_wavs/0.wav')
-    provider = SherpaASRProvider(endpoint='http://127.0.0.1:8003')
+async def run(path, endpoint, trailing_silence):
+    provider = SherpaASRProvider(endpoint=endpoint, trailing_silence=trailing_silence)
     try:
         started = time.perf_counter()
         text = await provider.transcribe(AudioInput(path.read_bytes(), 'wav'))
@@ -44,11 +44,16 @@ async def run():
                           'feed_ms_p95': sorted(timings)[int(len(timings)*.95)],
                           'feed_ms_max': max(timings), 'session_isolation': True}, ensure_ascii=False), flush=True)
         async with aiohttp.ClientSession() as http:
-            async with http.post('http://127.0.0.1:8003/v1/transcribe', data=b'not-wav') as response:
+            async with http.post(endpoint.rstrip('/') + '/v1/transcribe', data=b'not-wav') as response:
                 assert response.status == 400, response.status
     finally:
         await provider.close()
 
 
 if __name__ == '__main__':
-    asyncio.run(run())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("audio", type=Path)
+    parser.add_argument("--endpoint", default="http://127.0.0.1:8003")
+    parser.add_argument("--trailing-silence", type=float, default=0.8)
+    args = parser.parse_args()
+    asyncio.run(run(args.audio, args.endpoint, args.trailing_silence))
