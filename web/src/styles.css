@@ -1235,6 +1235,7 @@ a.tag:hover {
   overflow-wrap: anywhere;
 }
 .reflection-card .secondary { margin: 12px 0 0; }
+.memory-evidence { font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
 .reflection-card .stamp-meta { margin-top: 12px; }
 .memory-source-link {
   align-self: center;

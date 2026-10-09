@@ -1303,7 +1303,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                     <p className="summary">{item.content}</p>
                   )}
                   {item.evidence && (
-                    <p className="secondary">依据：{item.evidence}</p>
+                    <p className="secondary memory-evidence">依据：{item.evidence}</p>
                   )}
                   <StampMeta
                     items={[
