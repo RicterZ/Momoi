@@ -86,8 +86,6 @@ def test_bad_local_configuration_does_not_load_models():
     with pytest.raises(ValueError):
         SherpaASRProvider(endpoint='http://localhost:8003', model_path='/models')
     with pytest.raises(ValueError):
-        SherpaASRProvider()
-    with pytest.raises(ValueError):
         SherpaASRProvider(endpoint='http://localhost:8003', num_threads=17)
 
 
@@ -101,7 +99,7 @@ def test_dashboard_switches_asr_without_cloud_credentials(tmp_path):
     bootstrap(path)
     manager = ConfigurationManager(path)
     local = {'adapter': 'sherpa', 'enabled': True,
-             'options': {'endpoint': 'http://asr:8003'}}
+             'options': {}}
     snapshot = manager.save_bindings({'asr': local}, manager.revision())
     registry = ServiceRegistry(manager.validate().providers)
     assert isinstance(registry.asr, ASRProvider)
@@ -126,8 +124,8 @@ def test_windows_optional_component_defaults_without_loading(monkeypatch, tmp_pa
     assert provider.model_path == str(tmp_path / 'models' / 'asr')
     assert provider._engine is None
     remote = SherpaASRProvider(endpoint='http://asr:8003')
-    assert remote.endpoint == ''
-    assert remote.model_path == str(tmp_path / 'models' / 'asr')
+    assert remote.endpoint == 'http://asr:8003'
+    assert remote.model_path == ''
     assert remote._engine is None
 
 
@@ -149,21 +147,72 @@ def test_optional_component_resolves_relative_install_directory(monkeypatch, tmp
     assert provider._engine is None
 
 
-def test_windows_shell_ignores_saved_remote_address_and_custom_model(monkeypatch, tmp_path):
+def test_windows_shell_respects_custom_model_and_provider_switches(monkeypatch, tmp_path):
     monkeypatch.setenv('MOMOI_INSTALL_DIR', str(tmp_path))
     monkeypatch.setattr('momoi.integrations.adapters.sherpa.sys.platform', 'win32')
-    provider = SherpaASRProvider(endpoint='http://asr:8003', model_path='/old/models')
+    provider = SherpaASRProvider(model_path='/custom/models')
     assert provider.endpoint == ''
-    assert provider.model_path == str(tmp_path / 'models' / 'asr')
+    assert provider.model_path == '/custom/models'
     assert provider._engine is None
-    from momoi.config.manager import ConfigurationManager
-    from momoi.config.workspace import bootstrap
-    path = tmp_path / 'config.json'
-    bootstrap(path)
-    manager = ConfigurationManager(path)
-    assert manager.snapshot()['desktop_asr_managed'] is True
-    monkeypatch.setattr('momoi.integrations.adapters.sherpa.sys.platform', 'linux')
-    assert manager.snapshot()['desktop_asr_managed'] is False
-    remote = SherpaASRProvider(endpoint='http://asr:8003')
-    assert remote.endpoint == 'http://asr:8003'
-    assert remote.model_path == ''
+    with pytest.raises(ValueError):
+        SherpaASRProvider(endpoint='http://asr:8003', model_path='/custom/models')
+    test_dashboard_switches_asr_without_cloud_credentials(tmp_path)
+
+
+def test_builtin_model_paths_and_lazy_loading(monkeypatch, tmp_path):
+    monkeypatch.delenv('MOMOI_INSTALL_DIR', raising=False)
+    monkeypatch.delenv('MOMOI_ASR_MODEL_PATH', raising=False)
+    monkeypatch.chdir(tmp_path)
+    provider = SherpaASRProvider()
+    assert provider.model_path == str(tmp_path / 'models/asr')
+    assert provider._engine is None
+    monkeypatch.setenv('MOMOI_ASR_MODEL_PATH', '/opt/momoi/models/asr')
+    assert SherpaASRProvider().model_path == '/opt/momoi/models/asr'
+    assert SherpaASRProvider(model_path='/custom').model_path == '/custom'
+    assert SherpaASRProvider(endpoint='https://custom.example').model_path == ''
+
+
+def test_legacy_asr_catalog_migration_preserves_options_and_input():
+    import copy
+    from momoi.integrations.configuration import managed_catalog
+    raw = {'services': {'sherpa': {'adapter': 'sherpa', 'settings': {
+        'endpoint': 'http://asr:8003', 'num_threads': 4}}},
+        'bindings': {'asr': {'service': 'sherpa', 'enabled': False,
+                            'options': {'trailing_silence': 0.6}}}}
+    original = copy.deepcopy(raw)
+    updated = managed_catalog(raw)
+    assert raw == original
+    binding = updated['bindings']['asr']
+    assert binding['enabled'] is False
+    assert binding['options'] == {'num_threads': 4, 'trailing_silence': 0.6}
+    assert updated['services'][binding['service']]['settings'] == {}
+    assert managed_catalog(updated) == updated
+    raw['services']['sherpa']['settings']['endpoint'] = 'https://custom.example'
+    assert managed_catalog(raw) == raw
+
+
+def test_builtin_asr_reuses_engine_and_isolates_streams(monkeypatch):
+    engines = []
+    class Engine:
+        def __init__(self, path, threads, silence):
+            assert (path, threads, silence) == ('/models/asr', 3, 0.6)
+            engines.append(self)
+        def create_stream(self):
+            return object()
+        def feed(self, stream, pcm):
+            return {'text': '识别结果', 'final': True}
+        def transcribe(self, data):
+            return '识别结果'
+    monkeypatch.setattr('momoi.integrations.adapters.sherpa.SherpaEngine', Engine)
+    async def run():
+        provider = SherpaASRProvider(model_path='/models/asr', num_threads=3, trailing_silence=0.6)
+        assert engines == []
+        first, second = await asyncio.gather(provider.create_stream(), provider.create_stream())
+        assert len(engines) == 1
+        assert first.stream is not second.stream
+        assert await provider.transcribe(AudioInput(b'wav', 'wav')) == '识别结果'
+        await first.close()
+        assert await second.feed(bytes(640)) == {'text': '识别结果', 'final': True}
+        await second.close()
+        await provider.close()
+    asyncio.run(run())

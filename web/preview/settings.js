@@ -47,7 +47,7 @@ export function createSettingsPreview(json) {
           model: "s2.1-pro-free",
         },
       },
-      embedding: { adapter: "openai", enabled: false, options: {} },
+      embedding: { adapter: "local", enabled: true, options: {} },
       balance: {
         adapter: "deepseek",
         enabled: true,

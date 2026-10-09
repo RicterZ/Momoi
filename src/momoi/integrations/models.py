@@ -31,7 +31,7 @@ class EmbeddingSpaceConfig:
 
 @dataclass(frozen=True)
 class EmbeddingConfig(EmbeddingSpaceConfig):
-    endpoint: str = "http://embedding:8002/v1/embeddings"
+    endpoint: str = ""
     api_key: str = field(default="", repr=False)
     query_timeout_seconds: float = 5
     document_timeout_seconds: float = 30

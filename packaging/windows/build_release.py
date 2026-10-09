@@ -33,20 +33,21 @@ def build_release(output: Path, version: str):
     if not (ROOT / "src/momoi/dashboard/static/index.html").is_file():
         raise FileNotFoundError("Run npm ci && npm run build first")
     requirements = runtime_requirements()
-    from momoi.desktop.embedding import MODEL_REVISION
+    from momoi.integrations.adapters.local_embedding import MODEL_REVISION
     components = {
         "requirements": requirements, "python_abi": "cp312-win_amd64", "model_revision": MODEL_REVISION,
-        "mcp": runtime_components(),
+        "mcp": runtime_components(), "desktop_layout": "momoi_desktop",
     }
     runtime_id = hashlib.sha256(json.dumps(components, sort_keys=True).encode("utf-8")).hexdigest()[:24]
     payload = {}
-    for path in sorted((ROOT / "src/momoi").rglob("*")):
-        if path.is_file() and "__pycache__" not in path.parts and path.suffix not in (".pyc", ".pyo"):
-            payload["app/" + path.relative_to(ROOT / "src").as_posix()] = path.read_bytes()
+    for parent, package in ((ROOT / "src", "momoi"), (ROOT / "desktop/python", "momoi_desktop")):
+        for path in sorted((parent / package).rglob("*")):
+            if path.is_file() and "__pycache__" not in path.parts and path.suffix not in (".pyc", ".pyo"):
+                payload["app/" + path.relative_to(parent).as_posix()] = path.read_bytes()
     from prepare_qq_call import windows_code_files
     for name, content in windows_code_files().items():
         payload["app/qq_call_bridge/" + name] = content
-    payload["app/backend_entry.py"] = (ROOT / "packaging/windows/backend_entry.py").read_bytes()
+    payload["app/backend_entry.py"] = (ROOT / "desktop/python/backend_entry.py").read_bytes()
     # Keep existing importlib.metadata version consumers working without installing code.
     payload[f"app/momoi-{version}.dist-info/METADATA"] = f"Metadata-Version: 2.3\nName: momoi\nVersion: {version}\n".encode()
     payload[f"app/momoi-{version}.dist-info/top_level.txt"] = b"momoi\n"

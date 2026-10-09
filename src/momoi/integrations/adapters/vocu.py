@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 import aiohttp
 
+from .. import media
 from ..contracts.tts import AudioOutput, TTSError, TTSProvider
 from ..errors import ErrorCategory, error_category, http_category
 from ..transport import HTTPTransport
@@ -147,8 +148,7 @@ class VocuTTSProvider(TTSProvider):
         writer = None
         decoder_log = None
         try:
-            from ...desktop.media_runtime import ffmpeg_executable
-            decoder = await asyncio.to_thread(ffmpeg_executable)
+            decoder = await asyncio.to_thread(media.ffmpeg_executable)
             async with asyncio.timeout(self.timeout_seconds):
                 process = await asyncio.create_subprocess_exec(
                     decoder, "-hide_banner", "-loglevel", "error",

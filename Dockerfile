@@ -23,7 +23,7 @@ import tomllib
 
 project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
 pathlib.Path("/tmp/requirements.txt").write_text(
-    "\n".join(project["project"]["dependencies"]) + "\n"
+    "\n".join(project["project"]["dependencies"] + project["project"]["optional-dependencies"]["asr"]) + "\n"
 )
 PY
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -46,7 +46,9 @@ ARG VERSION=1.1.2
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HOME=/home/momoi
+    HOME=/home/momoi \
+    MOMOI_EMBEDDING_MODEL_PATH=/opt/momoi/models/bge-small-zh-v1.5 \
+    MOMOI_ASR_MODEL_PATH=/opt/momoi/models/asr
 
 LABEL org.opencontainers.image.title="Momoi" \
       org.opencontainers.image.description="A persistent personal AI companion for private chat." \
@@ -58,6 +60,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY models/bge-small-zh-v1.5 /opt/momoi/models/bge-small-zh-v1.5
+COPY models/asr /opt/momoi/models/asr
 COPY --from=build /wheels /wheels
 RUN pip install --no-cache-dir --no-index /wheels/*.whl \
     && rm -rf /wheels

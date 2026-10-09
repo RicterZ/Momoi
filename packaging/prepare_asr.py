@@ -8,7 +8,7 @@ import urllib.request
 
 
 def prepare(output, archive):
-    spec = json.loads(Path(__file__).with_name('model.json').read_text())
+    spec = json.loads(Path(__file__).with_name('asr-model.json').read_text())
     archive.parent.mkdir(parents=True, exist_ok=True)
     if not archive.exists():
         temporary = archive.with_suffix('.partial')
@@ -30,7 +30,7 @@ def prepare(output, archive):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[1] / 'models' / 'asr')
     parser.add_argument('--archive', type=Path, default=Path('build/local-asr/model.tar.bz2'))
     args = parser.parse_args()
     prepare(args.output, args.archive)

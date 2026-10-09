@@ -96,7 +96,7 @@ class ProviderConnectionTest(unittest.IsolatedAsyncioTestCase):
         for headers in ({}, {"Authorization": "Bearer invalid"}):
             response = await self.client.post("/api/settings/providers/llm/test", headers=headers, json={})
             self.assertEqual(response.status, 401)
-        for options in ({}, {**self.options("llm"), "max_tokens": "wrong"}, {**self.options("llm"), "unknown": True}):
+        for options in ({"base_url": "invalid"}, {**self.options("llm"), "max_tokens": "wrong"}, {**self.options("llm"), "unknown": True}):
             response = await self.probe(options=options)
             self.assertEqual(response.status, 400)
             self.assertEqual((await response.json())["error"]["code"], "validation")

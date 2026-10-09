@@ -7,45 +7,59 @@ import yaml
 
 from momoi.config.manager import ConfigurationManager
 from momoi.config.workspace import atomic_write, bootstrap
-from momoi.desktop.workspace import prepare_workspace
-from momoi.desktop.snapshot import snapshot, restore
+from momoi_desktop.workspace import prepare_workspace
+from momoi_desktop.snapshot import snapshot, restore
 
 
-def test_desktop_manages_only_local_default_embedding(tmp_path):
-    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+def test_desktop_manages_embedding_across_config_entry_points(tmp_path, monkeypatch):
+    import pytest
+    from momoi.config.models import ConfigError
+    from momoi.integrations.configuration import load_provider_catalog
+
+    prepare_workspace(tmp_path)
     path = tmp_path / "providers.yaml"
     catalog = yaml.safe_load(path.read_text())
-    binding = catalog["bindings"]["embedding"]
-    assert binding["options"]["endpoint"] == "http://127.0.0.1:19001/v1/embeddings"
-    assert binding["options"]["model"] == "BAAI/bge-small-zh-v1.5"
-    assert binding["options"]["dimensions"] == 512
-    binding["enabled"] = False
+    catalog["services"]["embedding"]["adapter"] = "openai"
+    catalog["bindings"]["embedding"].update(enabled=False, options={
+        "endpoint": "https://custom.example/v1/embeddings", "model": "custom", "dimensions": 32})
     atomic_write(path, yaml.safe_dump(catalog))
-    prepare_workspace(tmp_path, "http://127.0.0.1:19002/v1/embeddings")
-    catalog = yaml.safe_load(path.read_text())
-    assert catalog["bindings"]["embedding"]["options"]["endpoint"] == "http://127.0.0.1:19002/v1/embeddings"
-    assert catalog["bindings"]["embedding"]["enabled"] is False
-    catalog["bindings"]["embedding"]["options"]["endpoint"] = "https://custom.example/v1/embeddings"
-    atomic_write(path, yaml.safe_dump(catalog))
-    before = path.read_bytes()
-    prepare_workspace(tmp_path, "http://127.0.0.1:19003/v1/embeddings")
-    assert path.read_bytes() == before
+    monkeypatch.setenv("MOMOI_DESKTOP_EMBEDDING", "1")
+    manager = ConfigurationManager(tmp_path / "config.json")
+    snapshot = manager.snapshot()
+    assert snapshot["desktop_embedding_managed"] is True
+    binding = snapshot["capabilities"]["embedding"]
+    assert binding["enabled"] is True
+    assert binding["adapter"] == "local"
+    assert binding["options"] == {}
+    assert manager.validate().providers.enabled("embedding")
+    assert load_provider_catalog(path).options_for("embedding") == manager.validate().providers.options_for("embedding")
+    with pytest.raises(ConfigError, match="由客户端自动维护"):
+        manager.save_binding("embedding", {"adapter": "openai", "enabled": False}, manager.revision())
+    # The raw catalog endpoint cannot bypass desktop ownership either.
+    manager.save("providers", catalog, manager.revision())
+    assert manager.snapshot()["capabilities"]["embedding"] == binding
+    monkeypatch.delenv("MOMOI_DESKTOP_EMBEDDING")
+    manager.save("providers", catalog, manager.revision())
+    assert manager.snapshot()["desktop_embedding_managed"] is False
+    assert manager.validate().providers.enabled("embedding") is False
+    assert manager.snapshot()["capabilities"]["embedding"]["options"]["model"] == "custom"
 
 
-def test_desktop_respects_custom_provider_path(tmp_path):
+def test_desktop_respects_custom_provider_path(tmp_path, monkeypatch):
     bootstrap(tmp_path / "config.json")
     (tmp_path / "providers.yaml").rename(tmp_path / "custom.yaml")
     app = json.loads((tmp_path / "config.json").read_text())
     app["providers"] = "custom.yaml"
     atomic_write(tmp_path / "config.json", json.dumps(app))
-    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    monkeypatch.setenv("MOMOI_DESKTOP_EMBEDDING", "1")
+    prepare_workspace(tmp_path)
     assert not (tmp_path / "providers.yaml").exists()
-    assert yaml.safe_load((tmp_path / "custom.yaml").read_text())["bindings"]["embedding"]["options"]["endpoint"].startswith("http://127.0.0.1:19001/")
+    assert ConfigurationManager(tmp_path / "config.json").validate().providers.adapter_for("embedding") == "local"
 
 
 def test_failed_update_restores_database_and_configuration(tmp_path):
     workspace = tmp_path / "workspace"
-    prepare_workspace(workspace, "http://127.0.0.1:19001/v1/embeddings")
+    prepare_workspace(workspace)
     config = ConfigurationManager(workspace / "config.json").dashboard_config()
     config.database.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(config.database)) as connection, connection:
@@ -54,7 +68,7 @@ def test_failed_update_restores_database_and_configuration(tmp_path):
     before = (workspace / "providers.yaml").read_bytes()
     backup = tmp_path / "backup"
     snapshot(workspace, backup)
-    prepare_workspace(workspace, "http://127.0.0.1:19002/v1/embeddings")
+    prepare_workspace(workspace)
     with closing(sqlite3.connect(config.database)) as connection, connection:
         connection.execute("drop table memories")
         connection.execute("pragma user_version = 9999")
@@ -67,7 +81,7 @@ def test_failed_update_restores_database_and_configuration(tmp_path):
 
 def test_snapshot_handles_database_created_by_failed_start(tmp_path):
     workspace = tmp_path / "workspace"
-    prepare_workspace(workspace, "http://127.0.0.1:19001/v1/embeddings")
+    prepare_workspace(workspace)
     config = ConfigurationManager(workspace / "config.json").dashboard_config()
     backup = tmp_path / "backup"
     snapshot(workspace, backup)
@@ -79,7 +93,7 @@ def test_snapshot_handles_database_created_by_failed_start(tmp_path):
 
 
 def test_mcp_runtime_uses_writable_user_caches_and_private_toolchain(tmp_path):
-    from momoi.desktop.mcp_runtime import prepare_mcp_environment
+    from momoi_desktop.mcp_runtime import prepare_mcp_environment
     install, workspace = tmp_path / "Program Files" / "Momoi", tmp_path / "user" / "Momoi"
     env = {"PATH": "existing"}
     prepare_mcp_environment(install, workspace, env)
@@ -103,54 +117,53 @@ def test_mcp_runtime_uses_writable_user_caches_and_private_toolchain(tmp_path):
 def test_desktop_prompt_defaults_match_examples(tmp_path):
     from importlib.resources import files
 
-    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    prepare_workspace(tmp_path)
     examples = Path(__file__).resolve().parents[1] / "config.example/prompts"
     for name in ("SOUL", "PLANNER", "REPLYER"):
         expected = (examples / f"{name}.md").read_text(encoding="utf-8")
         assert expected.strip()
-        assert files("momoi.desktop").joinpath(f"default_prompts/{name}.md").read_text(encoding="utf-8") == expected
+        assert files("momoi_desktop").joinpath(f"default_prompts/{name}.md").read_text(encoding="utf-8") == expected
         assert (tmp_path / f"prompts/{name}.md").read_text(encoding="utf-8") == expected
 
 
 def test_desktop_repairs_empty_prompts_at_custom_path(tmp_path):
-    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    prepare_workspace(tmp_path)
     config_path = tmp_path / "config.json"
     app = json.loads(config_path.read_text(encoding="utf-8"))
     app["context"]["soul_prompt"] = "custom/SOUL.md"
     atomic_write(config_path, json.dumps(app))
     atomic_write(tmp_path / "custom/SOUL.md", "我的自定义人格\n")
     atomic_write(tmp_path / "custom/PLANNER.md", "\ufeff  \n")
-    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    prepare_workspace(tmp_path)
     assert (tmp_path / "custom/SOUL.md").read_text(encoding="utf-8") == "我的自定义人格\n"
     examples = Path(__file__).resolve().parents[1] / "config.example/prompts"
     for name in ("PLANNER", "REPLYER"):
         assert (tmp_path / f"custom/{name}.md").read_text(encoding="utf-8") == (examples / f"{name}.md").read_text(encoding="utf-8")
     atomic_write(tmp_path / "custom/REPLYER.md", "用户自定义回复风格")
-    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    prepare_workspace(tmp_path)
     assert (tmp_path / "custom/REPLYER.md").read_text(encoding="utf-8") == "用户自定义回复风格"
 
 
-def test_desktop_model_defaults_fill_blanks_and_preserve_custom_values(tmp_path):
-    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+def test_model_defaults_are_shared_and_not_written_by_desktop(tmp_path):
+    prepare_workspace(tmp_path)
     manager = ConfigurationManager(tmp_path / "config.json")
-    capabilities = manager.snapshot()["capabilities"]
-    assert capabilities["llm"]["adapter"] == "openai"
-    assert capabilities["llm"]["options"]["base_url"] == "https://api.deepseek.com/v1"
-    assert capabilities["llm"]["options"]["model"] == "deepseek-flash"
-    assert capabilities["tts"]["enabled"] is False
-    assert capabilities["tts"]["options"]["reference_id"] == "9bb8ad542dc44d148c21c73a0884e9ae"
-    path = tmp_path / "providers.yaml"
-    catalog = yaml.safe_load(path.read_text(encoding="utf-8"))
-    catalog["bindings"]["llm"]["options"] = {"base_url": "https://custom.example/v1", "model": "my-model", "api_key": "user-key"}
-    catalog["bindings"]["tts"]["options"]["reference_id"] = "my-voice"
-    atomic_write(path, yaml.safe_dump(catalog))
-    before = path.read_bytes()
-    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
-    assert path.read_bytes() == before
-    catalog["bindings"]["llm"]["options"]["model"] = "  "
-    atomic_write(path, yaml.safe_dump(catalog))
-    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
-    assert manager.snapshot()["capabilities"]["llm"]["options"]["model"] == "deepseek-flash"
+    assert "llm" not in manager.snapshot()["capabilities"]
+    for options in ({}, {"base_url": "", "model": "  "}):
+        saved = manager.save_binding("llm", {"adapter": "openai", "enabled": True, "options": options}, manager.revision())
+        assert saved["capabilities"]["llm"]["options"] == options
+        resolved = manager.validate().providers.options_for("llm")
+        assert resolved["base_url"] == "https://api.deepseek.com/v1"
+        assert resolved["model"] == "deepseek-flash"
+    options = {"base_url": "https://custom.example/v1", "model": "my-model"}
+    manager.save_binding("llm", {"adapter": "openai", "enabled": True, "options": options}, manager.revision())
+    before = manager.provider_path.read_bytes()
+    prepare_workspace(tmp_path)
+    assert manager.provider_path.read_bytes() == before
+    assert manager.validate().providers.options_for("llm")["model"] == "my-model"
+    fields = next(item["fields"] for item in manager.snapshot()["adapters"]
+                  if item["capability"] == "llm" and item["adapter"] == "openai")
+    assert fields["model"]["default"] == "deepseek-flash"
+    assert fields["base_url"]["default"] == "https://api.deepseek.com/v1"
 
 
 def test_fish_default_voice_for_missing_or_blank_reference():
@@ -163,11 +176,11 @@ def test_fish_default_voice_for_missing_or_blank_reference():
 
 def test_desktop_system_timezone_default_preserves_existing_selection(tmp_path, monkeypatch):
     monkeypatch.setenv("MOMOI_DESKTOP_TIMEZONE", "Asia/Shanghai")
-    prepare_workspace(tmp_path, "http://127.0.0.1:19001/v1/embeddings")
+    prepare_workspace(tmp_path)
     path = tmp_path / "config.json"
     app = json.loads(path.read_text())
     assert app["timezone"] == "Asia/Shanghai"
     app["timezone"] = "America/New_York"
     atomic_write(path, json.dumps(app))
-    prepare_workspace(tmp_path, "http://127.0.0.1:19002/v1/embeddings")
+    prepare_workspace(tmp_path)
     assert json.loads(path.read_text())["timezone"] == "America/New_York"

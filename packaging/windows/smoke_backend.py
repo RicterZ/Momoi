@@ -26,15 +26,26 @@ def main():
     parser.add_argument("--model-path", type=Path, required=True)
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="Momoi 桃井 ") as directory:
-        dashboard, embedding = port(), port()
-        while embedding == dashboard:
-            embedding = port()
+        dashboard = port()
+        check = subprocess.run([
+            str(args.python.absolute()), "-I", "-B", "-X", "utf8", "-c", """
+import asyncio
+import json
+import runpy
+import sys
+runpy.run_path(sys.argv[1])
+from momoi.integrations.adapters.local_embedding import local_embedding
+vectors = asyncio.run(local_embedding(sys.argv[2]).encode(["中文记忆", "English memory"], query=True))
+assert len(vectors) == 2 and all(len(vector) == 512 for vector in vectors)
+print(json.dumps({"ok": True, "dimensions": 512, "vectors": len(vectors)}))
+""", str(args.entry.resolve()), str(args.model_path.resolve()),
+        ], capture_output=True, text=True, encoding="utf-8", check=True, timeout=120)
+        assert json.loads(check.stdout) == {"ok": True, "dimensions": 512, "vectors": 2}
         with tempfile.TemporaryFile() as errors:
             process = subprocess.Popen([
                 str(args.python.absolute()), "-I", "-B", "-X", "utf8", str(args.entry.resolve()), "--workspace", directory,
-                "--model-path", str(args.model_path.resolve()),
-                "--dashboard-port", str(dashboard), "--embedding-port", str(embedding),
-            ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True, encoding="utf-8", env={**os.environ, "HF_HUB_OFFLINE": "1", "PYTHONUTF8": "1"})
+                "--dashboard-port", str(dashboard),
+            ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True, encoding="utf-8", env={**os.environ, "HF_HUB_OFFLINE": "1", "PYTHONUTF8": "1", "MOMOI_EMBEDDING_MODEL_PATH": str(args.model_path.resolve())})
             lines = Queue()
             def capture():
                 for line in process.stdout:
@@ -68,16 +79,11 @@ def main():
                         asset = client.get(ready["url"] + item["asset_url"], headers={"Authorization": "Bearer " + ready["token"]})
                         asset.raise_for_status()
                         assert asset.content.startswith(b"\x89PNG\r\n\x1a\n")
-                    response = client.post(f"http://127.0.0.1:{embedding}/v1/embeddings", json={"model": "BAAI/bge-small-zh-v1.5", "input": ["中文记忆", "English memory"]}, timeout=30)
-                    response.raise_for_status()
-                    assert len(response.json()["data"]) == 2
-                    assert all(len(item["embedding"]) == 512 for item in response.json()["data"])
                 process.stdin.write("stop\n")
                 process.stdin.flush()
                 assert process.wait(timeout=30) == 0
-                for value in (dashboard, embedding):
-                    with socket.socket() as connection:
-                        assert connection.connect_ex(("127.0.0.1", value)) != 0, "service survived shutdown"
+                with socket.socket() as connection:
+                    assert connection.connect_ex(("127.0.0.1", dashboard)) != 0, "service survived shutdown"
             except BaseException:
                 errors.seek(0)
                 print(errors.read().decode("utf-8", errors="replace"))

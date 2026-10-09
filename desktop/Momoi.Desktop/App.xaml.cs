@@ -122,7 +122,7 @@ public partial class App : Application
         {
             try
             {
-                string entry = Path.Combine(AppContext.BaseDirectory, "releases", "bundled", "app", "momoi", "desktop", "napcat_entry.cjs");
+                string entry = Path.Combine(AppContext.BaseDirectory, "releases", "bundled", "app", "momoi_desktop", "napcat_entry.cjs");
                 await napcat.StartAsync("10000", entry, lifetime.Token);
                 File.WriteAllText(Path.Combine(workspace, "qq-smoke.json"), JsonSerializer.Serialize(new { ok = true, status = napcat.Status }));
                 await napcat.DisposeAsync();
@@ -431,6 +431,7 @@ public partial class App : Application
             string snapshot = Path.Combine(workspace, "update-backups", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
             dashboardReady = false;
             browser?.CoreWebView2.Navigate("about:blank");
+            RestoreAudioRouting();
             await napcat!.StopAsync();
             qqPanel?.Close();
             await backend.DisposeAsync();
@@ -454,6 +455,7 @@ public partial class App : Application
             catch (Exception updateError)
             {
                 loadingView?.SetDetail("恢复原版本中");
+                RestoreAudioRouting();
                 await napcat!.StopAsync();
                 if (backend is not null) { await backend.DisposeAsync(); backend = null; }
                 // Restore data as well as code: startup may have run SQLite migrations.
@@ -491,7 +493,7 @@ public partial class App : Application
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 
-    private string QQEntry() => Path.Combine(currentRelease!.Directory, "app", "momoi", "desktop", "napcat_entry.cjs");
+    private string QQEntry() => Path.Combine(currentRelease!.Directory, "app", "momoi_desktop", "napcat_entry.cjs");
 
     private async void HandleQQMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
     {
@@ -512,7 +514,7 @@ public partial class App : Application
                 case "start":
                     result = await napcat!.StartAsync(root.GetProperty("bot_qq").GetString() ?? "", QQEntry(), lifetime.Token);
                     break;
-                case "stop": await napcat!.StopAsync(); qqPanel?.Close(); result = napcat.Status; break;
+                case "stop": RestoreAudioRouting(); await napcat!.StopAsync(); qqPanel?.Close(); result = napcat.Status; break;
                 case "login": await OpenQQLoginAsync(); result = napcat!.Status; break;
                 default: throw new ArgumentException("未知 QQ 操作。");
             }
@@ -588,6 +590,7 @@ public partial class App : Application
         {
             if (startup is not null) await startup;
             if (updateTask is not null) await updateTask;
+            RestoreAudioRouting();
             if (napcat is not null) await napcat.DisposeAsync();
             if (backend is not null) await backend.DisposeAsync();
         }

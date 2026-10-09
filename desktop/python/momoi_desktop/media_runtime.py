@@ -11,7 +11,7 @@ import time
 import urllib.request
 import zipfile
 
-from ..observability.events import log_event
+from momoi.observability.events import log_event
 
 logger = logging.getLogger(__name__)
 WHEEL_NAME = "imageio_ffmpeg-0.6.0-py3-none-win_amd64.whl"
@@ -89,7 +89,7 @@ def prepare_configured_media(config_path):
     if sys.platform != "win32":
         return
     try:
-        from ..config.manager import ConfigurationManager
+        from momoi.config.manager import ConfigurationManager
         manager = ConfigurationManager(config_path)
         app = manager.read_app()
         voice = app.get("channels", {}).get("enabled", {}).get("napcat", {}).get("voice_call", {})

@@ -62,18 +62,11 @@ internal sealed class ApplicationAudioRoute
         File.Delete(backupPath);
         LiveLog.Write("audio-route", "shell", $"已恢复私有 QQ 原音频路由 PID={pid}");
     }
-    public bool Ensure(JsonElement host, JsonElement media)
+    public bool Ensure(IEnumerable<int> processes, string desiredInput, string desiredOutput)
     {
-        if (!host.TryGetProperty("audioProcesses", out var processes)
-            || !media.TryGetProperty("audio_devices", out var devices)
-            || !devices.TryGetProperty("input_device", out var inputDevice)
-            || !devices.TryGetProperty("output_device", out var outputDevice))
-        { File.Delete(readyPath); return false; }
-        string desiredInput = inputDevice.GetProperty("id").GetString() ?? "";
-        string desiredOutput = outputDevice.GetProperty("id").GetString() ?? "";
         if (!desiredInput.StartsWith("{0.0.1.00000000}.") || !desiredOutput.StartsWith("{0.0.0.00000000}."))
             throw new IOException("音频端点方向无效。");
-        var pids = processes.EnumerateArray().Select(item => item.GetProperty("pid").GetInt32()).ToArray();
+        var pids = processes.ToArray();
         if (pids.Contains(routedPid) && input == desiredInput && output == desiredOutput)
         {
             try

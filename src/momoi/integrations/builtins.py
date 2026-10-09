@@ -32,6 +32,14 @@ def register_builtins():
             )
         )
 
+    from .adapters.local_embedding import local_embedding
+
+    register_adapter(Adapter(
+        "local", "embedding", lambda options, ctx: local_embedding(**options),
+        validate=lambda options: text(options, "model_path", "", empty=True),
+        schema=builtin_schema("local", "embedding"), test=embedding_probe,
+    ))
+
     def validate_embedding(options):
         fields(
             options,

@@ -94,7 +94,9 @@ def test_code_zip_ships_windows_bridge_and_portable_media_worker(tmp_path, monke
         'src/momoi/dashboard/static/index.html': '<html></html>',
         'src/momoi/channel/napcat/voice_call/audio.py': '# Shared PCM processing',
         'src/momoi/channel/napcat/voice_call/broker.py': '# Portable media worker',
-        'packaging/windows/backend_entry.py': '# Backend entry',
+        'desktop/python/backend_entry.py': '# Backend entry',
+        'desktop/python/momoi_desktop/backend.py': '# Desktop backend',
+        'desktop/python/momoi_desktop/default_emotions/happy.png': 'resource',
         'packaging/windows/components.json': '{}',
     }
     for name, content in paths.items():
@@ -111,6 +113,8 @@ def test_code_zip_ships_windows_bridge_and_portable_media_worker(tmp_path, monke
         assert 'app/qq_call_bridge/windows/start-av-host.ps1' in bundle.namelist()
         assert 'app/momoi/channel/napcat/voice_call/audio.py' in bundle.namelist()
         assert 'app/momoi/channel/napcat/voice_call/broker.py' in bundle.namelist()
+        assert bundle.read('app/momoi_desktop/backend.py') == b'# Desktop backend'
+        assert bundle.read('app/momoi_desktop/default_emotions/happy.png') == b'resource'
         assert set(manifest['files']) == set(bundle.namelist()) - {'release.json'}
 
 

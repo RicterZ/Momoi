@@ -39,6 +39,6 @@ process.exit(0);
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--runtime', type=Path, required=True)
-    parser.add_argument('--preload', type=Path, default=Path('src/momoi/desktop/napcat_entry.cjs'))
+    parser.add_argument('--preload', type=Path, default=Path('desktop/python/momoi_desktop/napcat_entry.cjs'))
     args = parser.parse_args()
     check(args.runtime, args.preload)

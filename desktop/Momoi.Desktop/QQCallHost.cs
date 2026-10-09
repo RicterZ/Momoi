@@ -192,7 +192,7 @@ internal sealed class QQCallHost : IAsyncDisposable
         string native = Path.Combine(AppContext.BaseDirectory, "runtime", "qq-call");
         string python = Path.Combine(AppContext.BaseDirectory, "runtime", "python", "python.exe");
         string hostScript = Path.Combine(bridge, "windows", "start-av-host.ps1");
-        string mediaEntry = Path.Combine(app, "momoi", "desktop", "call_entry.py");
+        string mediaEntry = Path.Combine(app, "momoi_desktop", "call_entry.py");
         foreach (string file in new[] { Path.Combine(native, "qq", "Files", "QQ.exe"), hostScript, python, mediaEntry })
             if (!File.Exists(file)) throw new FileNotFoundException("语音运行组件缺失，请安装新版完整安装包。", file);
         if (Process.GetCurrentProcess().SessionId == 0) throw new IOException("语音电话需要在 Windows 桌面会话中启动。");

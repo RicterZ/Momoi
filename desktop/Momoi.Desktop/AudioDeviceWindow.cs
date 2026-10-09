@@ -137,20 +137,18 @@ internal sealed class AudioDeviceWindow : Window
             savedConfiguration = true;
             LiveLog.Write("audio-route", "shell", "event=audio_route_configuration_saved");
             using (var saved = JsonDocument.Parse(body)) revision = saved.RootElement.GetProperty("revision").GetString()!;
-            var processes = new List<object>();
+            var processes = new List<int>();
             foreach (var process in Process.GetProcessesByName("QQ"))
             {
                 using (process)
                 {
-                    try { processes.Add(new { pid = process.Id }); }
+                    try { processes.Add(process.Id); }
                     catch (InvalidOperationException) { }
                 }
             }
-            using var host = JsonDocument.Parse(JsonSerializer.Serialize(new { audioProcesses = processes }));
-            using var devices = JsonDocument.Parse(JsonSerializer.Serialize(new { audio_devices = new { input_device = new { id = effectiveInput.Id }, output_device = new { id = effectiveOutput.Id } } }));
             status.Text = "选择已保存，正在应用 QQ 音频路由…";
             await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
-            bool routed = routes.Ensure(host.RootElement, devices.RootElement);
+            bool routed = routes.Ensure(processes, effectiveInput.Id, effectiveOutput.Id);
             LiveLog.Write("audio-route", "shell", $"event=audio_route_apply_completed routed={routed}");
             if (!routed)
             {

@@ -43,7 +43,7 @@ process.dlopen = module => {
 require(process.argv[3]);
 import(require('node:url').pathToFileURL(require('node:path').join(process.argv[1], 'napcat', 'napcat.mjs')).href);
 '''
-    result = subprocess.run([node, '-e', script, str(runtime), str(account_data), str(ROOT / 'src/momoi/desktop/napcat_entry.cjs')], capture_output=True, text=True, encoding='utf-8', check=True)
+    result = subprocess.run([node, '-e', script, str(runtime), str(account_data), str(ROOT / 'desktop/python/momoi_desktop/napcat_entry.cjs')], capture_output=True, text=True, encoding='utf-8', check=True)
     assert 'PASS' in result.stdout
     assert (account_data / ".native-data-ready").read_text(encoding="utf-8") == str(account_data)
     assert list(runtime.iterdir()) == [runtime / 'napcat']
@@ -161,7 +161,7 @@ import(require('node:url').pathToFileURL(require('node:path').join(process.argv[
         # Windows runners may not grant symlink creation; still exercise the loader.
         linked = runtime
     result = subprocess.run([node, '-e', script, str(linked), str(data), str(plugin),
-                             str(ROOT / 'src/momoi/desktop/napcat_entry.cjs')],
+                             str(ROOT / 'desktop/python/momoi_desktop/napcat_entry.cjs')],
                             capture_output=True, text=True, check=True)
     assert result.stdout.index('INIT') < result.stdout.index('PLUGIN 42')
     assert result.stdout.count('PLUGIN 42') == 1

@@ -56,10 +56,10 @@ jobs:
         with:
           path: |
             build/windows-downloads
-            build/windows-model
+            models
             build/local-asr/model.tar.bz2
             build/windows-asr-wheels
-          key: windows-inputs-v1-${{ hashFiles('packaging/windows/components.json', 'packaging/windows/qq-pair.lock.json', 'packaging/windows/prepare_model.py', 'momoi/desktop/embedding.py') }}
+          key: windows-inputs-v1-${{ hashFiles('packaging/windows/components.json', 'packaging/windows/qq-pair.lock.json', 'packaging/prepare_embedding.py', 'packaging/prepare_asr.py', 'packaging/asr-model.json', 'src/momoi/integrations/adapters/local_embedding.py') }}
       - uses: actions/cache@v4
         id: qq-cache
         with:

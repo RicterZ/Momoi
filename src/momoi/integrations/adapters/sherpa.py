@@ -1,4 +1,4 @@
-"""Optional local CPU ASR, in process or through the private ASR container."""
+"""Local CPU ASR with optional remote Sherpa service support."""
 import asyncio
 import io
 import json
@@ -97,12 +97,9 @@ class SherpaASRProvider(ASRProvider):
     def __init__(self, *, endpoint='', model_path='', num_threads=2,
                  trailing_silence=0.8, timeout_seconds=30):
         install = os.environ.get('MOMOI_INSTALL_DIR')
-        if install and sys.platform == 'win32':
-            # The Windows shell owns the optional component and its fixed model path.
-            endpoint = ''
-            model_path = str(Path(install).resolve() / 'models' / 'asr')
-        elif not endpoint and not model_path and install:
-            model_path = str(Path(install).resolve() / 'models' / 'asr')
+        if not endpoint and not model_path:
+            model_path = str(Path(install).resolve() / 'models' / 'asr') if install else (
+                os.environ.get('MOMOI_ASR_MODEL_PATH') or str(Path('models/asr').resolve()))
         if bool(endpoint) == bool(model_path):
             raise ValueError('本地 ASR 必须填写 endpoint 或 model_path，二选一')
         from ..validation import url, number
@@ -154,7 +151,7 @@ class SherpaASRProvider(ASRProvider):
                 params={'trailing_silence': self.trailing_silence, 'num_threads': self.num_threads})
             return RemoteStream(ws, self.timeout)
         except (aiohttp.ClientError, asyncio.TimeoutError) as error:
-            raise ASRError('无法连接本地 ASR 容器') from error
+            raise ASRError('无法连接远程 ASR 服务') from error
 
     async def transcribe(self, audio: AudioInput):
         if audio.format != 'wav' or not audio.data or len(audio.data) > self.max_audio_bytes:

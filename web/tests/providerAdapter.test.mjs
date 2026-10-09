@@ -60,3 +60,14 @@ test('ASR switches between Tencent credentials and local endpoint without leakin
   assert.equal(cloud.options.endpoint, undefined);
   assert.equal(cloud.options.model_path, undefined);
 });
+
+test('LLM protocol switch preserves an explicit relay despite different defaults', () => {
+  const protocols = [
+    { capability: 'llm', adapter: 'openai', fields: { base_url: { default: 'https://api.deepseek.com/v1' }, model: { default: 'deepseek-flash' } } },
+    { capability: 'llm', adapter: 'anthropic', fields: { base_url: {}, model: {} } },
+  ];
+  for (const adapter of ['openai', 'anthropic']) {
+    const value = { adapter, options: { base_url: 'https://relay.example', model: 'custom-model' } };
+    assert.deepEqual(switchProviderAdapter('llm', value, adapter === 'openai' ? 'anthropic' : 'openai', protocols).options, value.options);
+  }
+});

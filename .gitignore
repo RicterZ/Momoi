@@ -42,3 +42,7 @@ desktop/Momoi.Desktop/keys/*.pem
 /tools/weekly_memory_replay.py
 /tools/weekly_memory_replay.md
 /tests/test_weekly_memory_replay.py
+
+# Downloaded model weights are packaged from the repository root.
+/models/*
+!/models/README.md

@@ -5,14 +5,14 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from ..config.manager import ConfigurationManager
+from momoi.config.manager import ConfigurationManager
 
 
 def snapshot(workspace: Path, destination: Path) -> None:
     manager = ConfigurationManager(workspace / "config.json")
     config = manager.dashboard_config()
     destination.mkdir(parents=True, exist_ok=False)
-    files = [manager.path, manager.provider_path, workspace / ".desktop-embedding.yaml"]
+    files = [manager.path, manager.provider_path]
     metadata = {"files": [], "database": {"path": str(config.database), "exists": config.database.exists()}}
     for index, source in enumerate(files):
         name = f"file-{index}"

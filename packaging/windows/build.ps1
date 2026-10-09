@@ -31,7 +31,7 @@ if ($Version -notmatch '^\d+\.\d+\.\d+(?:[.-][A-Za-z0-9.-]+)?$') { throw "Invali
 Invoke-Checked "npm.cmd" @("ci")
 Invoke-Checked "npm.cmd" @("run", "build")
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_icon.py")
-Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/prepare_model.py", "--output", "build/windows-model/bge-small-zh-v1.5")
+Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/prepare_embedding.py", "--output", "models/bge-small-zh-v1.5")
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/build_release.py", "--version", $Version)
 $CodeArchives = @(Get-ChildItem "dist/windows/releases/Momoi-Code-$Version-*.zip" | Sort-Object LastWriteTime -Descending)
 $CodeArchive = $CodeArchives[0].FullName
@@ -57,12 +57,11 @@ $Bundled = Join-Path $Stage "releases/bundled"
 New-Item -ItemType Directory -Path $Bundled -Force | Out-Null
 Expand-Archive $CodeArchive $Bundled -Force
 New-Item -ItemType Directory -Path (Join-Path $Stage "models") -Force | Out-Null
-Copy-Item "build/windows-model/bge-small-zh-v1.5" (Join-Path $Stage "models/bge-small-zh-v1.5") -Recurse
+Copy-Item "models/bge-small-zh-v1.5" (Join-Path $Stage "models/bge-small-zh-v1.5") -Recurse
 $ModelCache = Join-Path $Stage "models/bge-small-zh-v1.5/.cache"
 if (Test-Path $ModelCache) { Remove-Item $ModelCache -Recurse -Force }
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/trim_python.py", "--root", (Join-Path $Runtime "python"), "--report", "build/windows-python-trim.json")
 $Entry = Join-Path $Bundled "app/backend_entry.py"
-Invoke-Checked $PrivatePython @("-I", "-B", "-X", "utf8", $Entry, "--check-model", "--model-path", (Join-Path $Stage "models/bge-small-zh-v1.5"))
 Invoke-Checked "uv" @("run", "--no-sync", "python", "packaging/windows/smoke_backend.py", "--python", $PrivatePython, "--entry", $Entry, "--model-path", (Join-Path $Stage "models/bge-small-zh-v1.5"))
 # Collect notices from the shipped environment rather than developer tooling.
 Invoke-Checked $PrivatePython @("-I", "packaging/windows/collect_licenses.py", "--output", (Join-Path $Stage "licenses"))

@@ -22,16 +22,26 @@ dashboard passphrase in `docker logs momoi`. Existing files are preserved. Open
 capabilities in Settings. Weixin QR login is available in the dashboard.
 Pin a version tag from the Tags tab if you do not want `latest`.
 
-The published Compose file starts only Momoi. Start optional services as needed:
+The published Compose file starts only Momoi. BGE is included in the image and
+runs in the same process, with no encoder port or separate container. Web Settings
+can disable semantic memory or select a remote embedding provider.
+Existing default `embedding:8002` configurations migrate automatically; after
+verifying the upgrade, remove the old encoder container and any `depends_on` entry
+from a custom deployment file. For QQ, deploy NapCat separately and configure its
+reachable OneBot WebSocket URL in Settings.
+Local Sherpa ASR also runs inside Momoi. Select Sherpa in Settings and leave its
+endpoint and model path empty; the model loads only when used. Tencent Cloud and
+custom remote Sherpa services remain available. The old `http://asr:8003` default
+migrates automatically; remove the old ASR service from custom Compose files after
+verifying the upgrade.
+
+For source builds, prepare the root `models/` directory before building:
 
 ```bash
-docker compose -f docker-compose.yml --profile embedding up -d
+uv run --locked python packaging/prepare_embedding.py
+uv run --locked python packaging/prepare_asr.py
+docker compose -f compose.yaml up -d --build
 ```
-
-Then configure `http://embedding:8002/v1/embeddings` in Settings and enable semantic
-recall. For QQ, deploy NapCat separately and configure its reachable OneBot WebSocket
-URL in Settings. Remote embedding providers require no local encoder container.
-For source builds, use `docker compose -f compose.yaml up -d --build`.
 Specify `-f` explicitly: Compose otherwise prefers `compose.yaml` over `docker-compose.yml`.
 
 ## Environment

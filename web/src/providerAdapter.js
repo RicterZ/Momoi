@@ -9,7 +9,7 @@ export function switchProviderAdapter(capability, value, adapter, adapters) {
   const options = {};
   for (const [key, spec] of Object.entries(next)) {
     const supplied = value.options?.[key];
-    const endpointChanged = ["base_url", "endpoint"].includes(key)
+    const endpointChanged = capability !== "llm" && ["base_url", "endpoint"].includes(key)
       && previous[key]?.default !== spec.default;
     if (endpointChanged || supplied === undefined || (spec.enum && !spec.enum.includes(supplied))) {
       if (Object.hasOwn(spec, "default")) options[key] = structuredClone(spec.default);

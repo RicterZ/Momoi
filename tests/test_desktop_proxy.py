@@ -1,4 +1,4 @@
-from momoi.desktop import proxy
+from momoi_desktop import proxy
 
 
 def test_system_proxy_and_loopback_bypass(monkeypatch):

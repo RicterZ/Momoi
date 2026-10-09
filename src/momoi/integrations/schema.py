@@ -35,7 +35,11 @@ LLM = {
     },
 }
 SCHEMAS = {
-    ("openai", "llm"): LLM,
+    ("openai", "llm"): {
+        **LLM,
+        "base_url": field(default="https://api.deepseek.com/v1"),
+        "model": field(default="deepseek-flash"),
+    },
     ("anthropic", "llm"): LLM,
     ("sherpa", "asr"): {
         "endpoint": field(default=""),
@@ -73,8 +77,9 @@ SCHEMAS = {
         "timeout_seconds": field("number", 60),
         "max_audio_bytes": field("integer", 20971520),
     },
+    ("local", "embedding"): {"model_path": field(default="")},
     ("openai", "embedding"): {
-        "endpoint": field(default="http://embedding:8002/v1/embeddings"),
+        "endpoint": field(),
         "api_key": field(secret=True),
         "model": field(default="BAAI/bge-small-zh-v1.5"),
         "dimensions": field("integer", 512),
@@ -140,21 +145,24 @@ def builtin_schema(name, capability):
         "llm": {"base_url", "model"},
         "asr": {"secret_id", "secret_key"} if name == "tencent" else set(),
         "tts": {"api_key", "voice_id" if name == "vocu" else "reference_id"},
-        "embedding": set(),
+        "embedding": {"endpoint"} if name == "openai" else set(),
         "balance": set(),
     }
     for key in required[capability]:
         fields[key]["required"] = True
     if (name, capability) == ("sherpa", "asr"):
-        fields["endpoint"].update(label="本地 ASR 服务地址", advanced=False,
-            description="Docker 填写 http://asr:8003；Windows 安装本地 ASR 组件后留空即可。")
+        fields["endpoint"].update(label="远程 ASR 服务地址", advanced=True,
+            description="留空使用内置模型；仅连接独立 Sherpa 服务时填写。")
         fields["model_path"].update(label="本地 ASR 模型目录", advanced=True,
-            description="Windows 自动使用安装目录中的模型；仅自定义模型时填写，使用容器时留空。")
+            description="留空使用内置模型；仅自定义本地模型时填写，与远程地址二选一。")
         fields["num_threads"]["label"] = "CPU 推理线程数"
         fields["trailing_silence"]["label"] = "断句静音（秒）"
     if (name, capability) == ("deepseek", "balance"):
         fields["api_key"]["description"] = "可留空：仅估算费用，不查询账户余额。填写后启用余额查询。"
         fields["accounting"]["description"] = "按 DeepSeek 用量和官方价格估算模型费用；模型使用其他服务商时请关闭。关闭后仍可查询余额并记录通用 Token 用量。"
+    if (name, capability) == ("local", "embedding"):
+        fields["model_path"].update(label="BGE 模型目录",
+            description="留空使用安装包内置模型。直接调用本地 BGE，无需服务地址。")
     if (name, capability) == ("openai", "embedding"):
         fields["endpoint"]["description"] = "完整请求地址，例如 https://api.example.com/v1/embeddings；不会自动追加路径。"
         fields["dimensions"]["description"] = "需与所选模型的输出维度一致"

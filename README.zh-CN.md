@@ -117,7 +117,7 @@ Momoi 区分近期上下文、主人确认的事实、共同话题与每日复�
 | 私聊渠道 | 一个主人可以同时使用 QQ（NapCat）与 WeChat；回复返回发起对话的渠道，主动消息发往配置的 primary |
 | 对话 | 消息合并、引用与转发、媒体处理、自然的多气泡投递、可选图片反应，以及合法沉默 |
 | 语音电话 | 通过 NapCat 进行实时 QQ 语音通话，支持语音识别、语音合成回复和打断，适配 Windows 与 Linux |
-| 语音识别 | 可选腾讯云 ASR 或本地 Sherpa CPU 流式识别；Linux 使用独立容器，Windows 可按需安装本地模型组件 |
+| 语音识别 | 可选腾讯云 ASR 或本地 Sherpa CPU 流式识别；Linux 镜像内置模型并在进程内识别，Windows 可按需安装本地模型组件 |
 | 上下文 | 原生共享对话、按需 recall、后台话题归档与关联、运行时二次搜索和有上限的模型输入 |
 | 工具 | 内置文件/HTTP 工具、动态发现的 MCP Server，以及按 Server 配置的工具白名单 |
 | 长任务 | 工具循环、进度消息、中断、执行次数限制、大结果快照和不确定外部操作恢复 |
@@ -147,15 +147,8 @@ docker compose -f docker-compose.yml logs momoi
 打开 `http://127.0.0.1:8788`，使用启动日志中的 Dashboard token 登录。
 在设置页连接模型、编辑提示词、启用消息渠道，并完成微信扫码登录。
 
-需要时再启动可选服务：
-
-```bash
-docker compose -f docker-compose.yml --profile embedding up -d
-```
-
+镜像已包含 BGE 模型，语义记忆默认在 Momoi 进程内编码，无需额外容器或端口。
 QQ 用户单独部署 NapCat，在 Momoi 设置页填写可访问的 OneBot WebSocket 地址和主人 QQ。
-私有 Embedding 地址填写
-`http://embedding:8002/v1/embeddings`。启动容器后仍需在设置页启用对应功能；微信不依赖该服务。
 
 工作区默认持久化在 `~/.momoi`，由 `momoi` 初始化，已有文件不覆盖。
 默认只发布 dashboard 的 8788 端口；使用 Webhook 时另行添加端口映射并配置功能。
@@ -187,17 +180,28 @@ momoi --workspace /path/to/workspace
 需要从当前源码构建容器时，使用源码版 Compose：
 
 ```bash
+uv run --locked python packaging/prepare_embedding.py
+uv run --locked python packaging/prepare_asr.py
 docker compose -f compose.yaml up -d --build
 ```
 
-它复用发布栈的默认设置；需要本地编码器时，在 `up` 前添加 `--profile embedding`。
+它复用发布栈的默认设置，BGE 模型随 Momoi 镜像一起构建。
 请明确指定 `-f`：不指定时，Docker Compose 会优先使用 `compose.yaml`，而非 `docker-compose.yml`。
 
 ## 语义召回
 
-在设置页启用语义记忆，选择兼容的 Embedding 接口、模型和向量维度。
-Docker Compose 通过 `--profile embedding` 按需启动私有 Embedding 服务。
-直接在宿主机运行 Momoi 时，需使用宿主机可达的接口。
+默认使用进程内 BGE（512 维），Windows 客户端和 Linux 镜像共用同一编码实现。
+客户端自动维护编码配置；Web 设置页仍可关闭语义记忆或切换远程 OpenAI 兼容接口。
+旧的默认 `embedding:8002` 配置自动迁移为本地调用，自定义远程地址不变。
+升级既有 Docker 部署时，可在确认新版本正常运行后删除旧的 Embedding 容器及其 `depends_on`。
+
+从源码直接运行时，先准备一次离线模型：
+
+```bash
+uv run --locked python packaging/prepare_embedding.py
+```
+
+也可通过 `MOMOI_EMBEDDING_MODEL_PATH` 指定模型目录，运行时不会下载模型。
 
 Momoi 会在后台构建索引，覆盖完整后自动激活，期间关键词召回仍然可用。
 索引管理与高级选项见[配置参考](./docs/CONFIG.zh-CN.md#embedding-召回)。

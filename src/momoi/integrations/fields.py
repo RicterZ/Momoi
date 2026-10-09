@@ -105,7 +105,10 @@ def normalize_fields(schema, values, *, path="options", enabled=True):
     result = {}
     for name, spec in schema.items():
         location = f"{path}.{name}"
-        if name not in values:
+        if name not in values or (
+            spec.get("required") and "default" in spec
+            and isinstance(values[name], str) and not values[name].strip()
+        ):
             if "default" in spec:
                 value = copy.deepcopy(spec["default"])
             elif enabled and spec.get("required"):

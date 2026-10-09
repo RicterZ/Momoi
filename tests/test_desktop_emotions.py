@@ -2,7 +2,7 @@ import json
 from importlib.resources import files
 from pathlib import Path
 
-from momoi.desktop.emotions import seed_emotions
+from momoi_desktop.emotions import seed_emotions
 from momoi.storage.store import Store
 
 
@@ -11,14 +11,14 @@ def test_desktop_seeds_bundled_emotions_and_preserves_deletions(tmp_path):
     seed_emotions(tmp_path, database)
     store = Store(database, workspace=tmp_path)
     try:
-        catalog = json.loads(files("momoi.desktop").joinpath("default_emotions/catalog.json").read_text(encoding="utf-8"))
+        catalog = json.loads(files("momoi_desktop").joinpath("default_emotions/catalog.json").read_text(encoding="utf-8"))
         assert {item["slug"] for item in store.list_emotions()} == {"cry", "normal", "happy", "smug", "confused", "stunned"}
         for item in catalog:
             saved = store.emotion(item["slug"])
             assert saved["description"] == item["description"]
             asset = Path(saved["path"])
             assert asset.is_relative_to(tmp_path / "emotion")
-            assert asset.read_bytes() == files("momoi.desktop").joinpath("default_emotions", item["file"]).read_bytes()
+            assert asset.read_bytes() == files("momoi_desktop").joinpath("default_emotions", item["file"]).read_bytes()
         store.delete_emotion("cry")
         happy = store.emotion("happy")
         store.add_emotion("happy", happy["path"], "用户修改")

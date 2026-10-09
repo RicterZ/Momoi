@@ -43,12 +43,9 @@ internal sealed class BackendHost : IAsyncDisposable
     public async Task<BackendReady> StartAsync(string workspace, CodeRelease release, CancellationToken cancellationToken)
     {
         int dashboardPort = AvailablePort();
-        int embeddingPort;
-        do { embeddingPort = AvailablePort(); } while (embeddingPort == dashboardPort);
         string backend = Path.Combine(AppContext.BaseDirectory, "runtime", "python", "python.exe");
         string entry = Path.Combine(release.Directory, "app", "backend_entry.py");
-        string model = Path.Combine(AppContext.BaseDirectory, "models", "bge-small-zh-v1.5");
-        if (!File.Exists(backend) || !File.Exists(entry) || !File.Exists(Path.Combine(model, "model_optimized.onnx")))
+        if (!File.Exists(backend) || !File.Exists(entry))
             throw new FileNotFoundException("安装文件不完整，请重新安装 Momoi。");
         var info = new ProcessStartInfo(backend)
         {
@@ -57,8 +54,8 @@ internal sealed class BackendHost : IAsyncDisposable
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
             WorkingDirectory = workspace,
         };
-        foreach (string argument in new[] { "-I", "-u", "-B", "-X", "utf8", entry, "--install-dir", AppContext.BaseDirectory, "--workspace", workspace, "--model-path", model,
-            "--dashboard-port", dashboardPort.ToString(), "--embedding-port", embeddingPort.ToString() })
+        foreach (string argument in new[] { "-I", "-u", "-B", "-X", "utf8", entry, "--install-dir", AppContext.BaseDirectory, "--workspace", workspace,
+            "--dashboard-port", dashboardPort.ToString() })
             info.ArgumentList.Add(argument);
         info.Environment["MOMOI_INSTALL_DIR"] = AppContext.BaseDirectory;
         info.Environment["MOMOI_QQ_CALL_MANAGED"] = QQCallSettings.Prepare(workspace);
@@ -95,7 +92,6 @@ internal sealed class BackendHost : IAsyncDisposable
                     {
                         string? detail = stage.GetString() switch
                         {
-                            "model" => "2/5 · 加载本地模型",
                             "workspace" => "3/5 · 初始化配置",
                             "services" => "4/5 · 启动服务",
                             _ => null,

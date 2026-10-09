@@ -88,10 +88,18 @@ Provider 通过 `momoi.integrations.request_context.requested_thinking_effort(de
 
 ### Embedding
 
-只配置 `endpoint`，填写完整请求 URL，例如 `https://api.example.com/v1/embeddings`，
-也支持网关自定义路径。程序不自动追加路径。默认值为
-`http://embedding:8002/v1/embeddings`。该字段放在服务 `settings` 或 binding `options` 中。
-Embedding 不再接受 `base_url`；已有配置需改为完整的 `endpoint`。
+默认 `adapter: local` 在 Momoi 进程内调用 BGE（512 维），不使用 HTTP。
+Windows 客户端强制托管此配置；Linux/Web 可切换或停用。
+`local` 仅接受可选的 `model_path`；留空依次使用 `MOMOI_EMBEDDING_MODEL_PATH`
+或 `models/bge-small-zh-v1.5`。安装包和镜像自动提供模型目录。
+模型按需加载并在配置重载间复用。模型缺失时语义召回降级为关键词召回，运行时不联网下载。
+
+旧默认 `http://embedding:8002/v1/embeddings` 且模型、维度、校准规则均为 BGE 默认值时，
+自动转为 `local`，保留启用状态；自定义远程配置不变。
+
+使用远程服务时选择 `adapter: openai`，在 `settings` 或 binding `options` 中填写
+完整 `endpoint`，例如 `https://api.example.com/v1/embeddings`；程序不追加路径。
+以下参数仅适用于远程适配器：
 
 | 参数 | 默认值 |
 | --- | --- |
@@ -261,3 +269,12 @@ Provider 配置不接受 `{"$secret":"keep"}` 占位符。环境变量字段返�
 
 新增同类 provider 只需注册 adapter、实现标准能力接口和厂商选项转换。
 配置热加载仍由 supervisor 串行关闭旧实例、创建新实例；业务消费者不参与转换。
+
+## 内置语音识别
+
+选择 Sherpa 后，服务地址和模型目录均留空即可使用内置 ASR；仍可切换腾讯云或自定义远程 Sherpa 服务。
+Linux 镜像自带依赖与模型，Windows 使用可选 ASR 组件。模型按需加载，无需独立容器。
+源码运行先执行 `uv sync --locked --extra asr` 和 `uv run --locked python packaging/prepare_asr.py`，
+再从仓库根目录启动。模型默认位于 `models/asr/`，可用 `MOMOI_ASR_MODEL_PATH` 或设置中的模型目录覆盖。
+旧默认 `http://asr:8003` 自动迁移至内置调用，保留启停状态、线程数与断句参数。
+构建前的模型准备步骤见 [models/README.md](../models/README.md)。

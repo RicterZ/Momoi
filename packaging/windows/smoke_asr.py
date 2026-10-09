@@ -15,7 +15,7 @@ def run(install, source, archive, evidence, bge_model=None):
     from momoi.integrations.contracts.asr import AudioInput
     encoder = None
     if bge_model is not None:
-        from momoi.desktop.embedding import load_encoder
+        from momoi.integrations.adapters.local_embedding import load_encoder
         encoder = load_encoder(bge_model)
         assert len(list(encoder.embed(['ASR 初始化前的记忆测试']))[0]) == 512
     with tarfile.open(archive) as package:

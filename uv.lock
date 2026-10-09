@@ -491,22 +491,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fastapi"
-version = "0.135.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "annotated-doc" },
-    { name = "pydantic" },
-    { name = "starlette" },
-    { name = "typing-extensions" },
-    { name = "typing-inspection" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e7/7b/f8e0211e9380f7195ba3f3d40c292594fd81ba8ec4629e3854c353aaca45/fastapi-0.135.1.tar.gz", hash = "sha256:d04115b508d936d254cea545b7312ecaa58a7b3a0f84952535b4c9afae7668cd", size = 394962, upload-time = "2026-03-01T18:18:29.369Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e4/72/42e900510195b23a56bde950d26a51f8b723846bfcaa0286e90287f0422b/fastapi-0.135.1-py3-none-any.whl", hash = "sha256:46e2fc5745924b7c840f71ddd277382af29ce1cdb7d5eab5bf697e3fb9999c9e", size = 116999, upload-time = "2026-03-01T18:18:30.831Z" },
-]
-
-[[package]]
 name = "fastembed"
 version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -988,6 +972,7 @@ dependencies = [
     { name = "aiohttp" },
     { name = "beautifulsoup4" },
     { name = "cryptography" },
+    { name = "fastembed" },
     { name = "httpx" },
     { name = "jsonschema" },
     { name = "markdownify" },
@@ -1005,16 +990,12 @@ asr = [
     { name = "sherpa-onnx-core" },
 ]
 desktop = [
-    { name = "fastapi" },
-    { name = "fastembed" },
     { name = "huggingface-hub" },
     { name = "sounddevice", marker = "sys_platform == 'win32'" },
-    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
 test = [
-    { name = "fastapi" },
     { name = "pytest" },
     { name = "pytest-xdist" },
 ]
@@ -1027,8 +1008,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.11,<4" },
     { name = "beautifulsoup4", specifier = ">=4.13,<5" },
     { name = "cryptography", specifier = ">=44,<50" },
-    { name = "fastapi", marker = "extra == 'desktop'", specifier = "==0.135.1" },
-    { name = "fastembed", marker = "extra == 'desktop'", specifier = "==0.8.0" },
+    { name = "fastembed", specifier = "==0.8.0" },
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "huggingface-hub", marker = "extra == 'desktop'", specifier = "==1.7.2" },
     { name = "jsonschema", specifier = ">=4.23,<5" },
@@ -1042,13 +1022,11 @@ requires-dist = [
     { name = "sherpa-onnx-core", marker = "extra == 'asr'", specifier = "==1.13.8" },
     { name = "sounddevice", marker = "sys_platform == 'win32' and extra == 'desktop'", specifier = "==0.5.3" },
     { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2025.1" },
-    { name = "uvicorn", marker = "extra == 'desktop'", specifier = "==0.41.0" },
 ]
 provides-extras = ["asr", "desktop"]
 
 [package.metadata.requires-dev]
 test = [
-    { name = "fastapi", specifier = "==0.135.1" },
     { name = "pytest", specifier = ">=9,<10" },
     { name = "pytest-xdist", specifier = ">=3.8,<4" },
 ]

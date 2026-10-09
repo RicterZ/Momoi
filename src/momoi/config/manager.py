@@ -4,13 +4,13 @@ import copy
 import hashlib
 import json
 import os
-import sys
 from dataclasses import replace
 from pathlib import Path
 
 import yaml
 
 from .loading import parse_config
+from ..integrations.configuration import managed_catalog
 from .models import ConfigError
 from .workspace import atomic_write, default_config, empty_providers
 from .runtime_fields import runtime_fields
@@ -160,7 +160,7 @@ class ConfigurationManager:
             raise ConfigError("cannot read providers YAML") from None
         if not isinstance(raw, dict):
             raise ConfigError("providers must be an object")
-        return raw
+        return managed_catalog(raw)
 
     def revision(self):
         digest = hashlib.sha256()
@@ -251,7 +251,7 @@ class ConfigurationManager:
                 str(error) if isinstance(error, ConfigError) else type(error).__name__
             )
         return {
-            "desktop_asr_managed": sys.platform == "win32" and bool(os.environ.get("MOMOI_INSTALL_DIR")),
+            "desktop_embedding_managed": bool(os.environ.get("MOMOI_DESKTOP_EMBEDDING")),
             "desktop_qq_call_managed": bool(os.environ.get("MOMOI_QQ_CALL_MANAGED")),
             "revision": self.revision(),
             "providers": copy.deepcopy(providers),
@@ -323,6 +323,8 @@ class ConfigurationManager:
         return self.save("app", current, revision)
 
     def _set_binding(self, raw, capability, document):
+        if capability == "embedding" and os.environ.get("MOMOI_DESKTOP_EMBEDDING"):
+            raise ConfigError("Embedding 由客户端自动维护")
         if capability not in CAPABILITIES or not isinstance(document, dict):
             raise ConfigError("invalid capability configuration")
         if set(document) - {"adapter", "enabled", "options"}:
@@ -385,7 +387,7 @@ class ConfigurationManager:
             raise ConfigError("document must be an object")
         app, providers = self.read_app(), self.read_providers()
         if section == "providers":
-            candidate = copy.deepcopy(document)
+            candidate = managed_catalog(copy.deepcopy(document))
             if "llm" in providers.get("bindings", {}) and "llm" not in candidate.get(
                 "bindings", {}
             ):

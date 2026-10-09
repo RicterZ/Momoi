@@ -83,9 +83,62 @@ def load_provider_catalog(path: Path) -> ProviderCatalog:
     return parse_provider_catalog(raw, path)
 
 
+def managed_catalog(raw):
+    """Use in-process BGE on desktop and migrate the old bundled sidecar default."""
+    desktop = bool(os.environ.get("MOMOI_DESKTOP_EMBEDDING"))
+    services, bindings = raw.get("services", {}), raw.get("bindings", {})
+    if not isinstance(services, dict) or not isinstance(bindings, dict):
+        return raw  # Normal catalog validation reports malformed tables.
+    asr = bindings.get("asr", {})
+    if isinstance(asr, dict) and isinstance(asr.get("service"), str):
+        service = services.get(asr["service"], {})
+        if isinstance(service, dict) and service.get("adapter") == "sherpa":
+            settings, options = service.get("settings", {}), asr.get("options", {})
+            if isinstance(settings, dict) and isinstance(options, dict):
+                merged = {**settings, **options}
+                if merged.get("endpoint") in ("http://asr:8003", "http://asr:8003/") and not merged.get("model_path"):
+                    raw = copy.deepcopy(raw)
+                    services, bindings = raw["services"], raw["bindings"]
+                    name = "local_asr"
+                    while name in services:
+                        name += "_local"
+                    merged.pop("endpoint")
+                    services[name] = {**services[asr["service"]], "settings": {}}
+                    bindings["asr"] = {**asr, "service": name, "options": merged}
+    binding = bindings.get("embedding", {})
+    if not desktop:
+        if not isinstance(binding, dict) or not isinstance(binding.get("service"), str):
+            return raw
+        service = services.get(binding["service"], {})
+        if not isinstance(service, dict):
+            return raw
+        settings, options = service.get("settings", {}), binding.get("options", {})
+        if not isinstance(settings, dict) or not isinstance(options, dict):
+            return raw
+        options = {**settings, **options}
+        from .models import EmbeddingSpaceConfig
+        defaults = EmbeddingSpaceConfig()
+        legacy = (service.get("adapter") == "openai"
+                  and options.get("endpoint") == "http://embedding:8002/v1/embeddings"
+                  and all(options.get(key, getattr(defaults, key)) == getattr(defaults, key)
+                          for key in ("model", "dimensions", "calibration_profile")))
+        if not legacy:
+            return raw
+    raw = copy.deepcopy(raw)
+    services, bindings = raw.setdefault("services", {}), raw.setdefault("bindings", {})
+    name = "local_embedding"
+    shared = {value.get("service") for key, value in bindings.items()
+              if key != "embedding" and isinstance(value, dict)}
+    while name in shared:
+        name += "_local"
+    services[name] = {"adapter": "local"}
+    bindings["embedding"] = {"service": name, "enabled": True if desktop else binding.get("enabled", True)}
+    return raw
+
+
 def parse_provider_catalog(raw: object, path: Path) -> ProviderCatalog:
     """Resolve an in-memory document using the same rules as file loading."""
-    raw = table(raw, "providers")
+    raw = managed_catalog(table(raw, "providers"))
     keys(
         raw, {"version", "plugins", "credentials", "services", "bindings"}, "providers"
     )

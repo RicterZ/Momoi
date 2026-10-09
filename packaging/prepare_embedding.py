@@ -4,25 +4,28 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 
 from huggingface_hub import snapshot_download
 
-from momoi.desktop.embedding import MODEL, MODEL_REPOSITORY, MODEL_REVISION, load_encoder
+from momoi.integrations.adapters.local_embedding import MODEL, MODEL_REPOSITORY, MODEL_REVISION, load_encoder
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[1] / "models" / "bge-small-zh-v1.5")
     args = parser.parse_args()
     target = args.output.resolve()
     target.mkdir(parents=True, exist_ok=True)
-    snapshot_download(
+    snapshot = Path(snapshot_download(
         MODEL_REPOSITORY,
         revision=MODEL_REVISION,
-        local_dir=target,
         allow_patterns=["*.json", "*.onnx", "*.txt", "README.md"],
-    )
+    ))
+    for path in snapshot.iterdir():
+        if path.is_file():
+            shutil.copy2(path, target / path.name)
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1")
     encoder = load_encoder(target)
     vectors = list(encoder.embed(["中文记忆检索", "Momoi offline embedding", "中文与 English 混合：你好！"]))

@@ -1,20 +1,4 @@
 services:
-  asr:
-    extends:
-      file: docker-compose.yml
-      service: asr
-    image: momoi-asr:local
-    build:
-      context: .
-      dockerfile: infra/asr/Dockerfile
-  embedding:
-    extends:
-      file: docker-compose.yml
-      service: embedding
-    image: momoi-embedding:local
-    build:
-      context: .
-      dockerfile: Dockerfile.embedding
   momoi:
     extends:
       file: docker-compose.yml

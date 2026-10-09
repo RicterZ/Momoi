@@ -25,7 +25,7 @@ import tomllib
 
 project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
 pathlib.Path("/tmp/requirements.txt").write_text(
-    "\n".join(project["project"]["dependencies"]) + "\n"
+    "\n".join(project["project"]["dependencies"] + project["project"]["optional-dependencies"]["asr"]) + "\n"
 )
 PY
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -49,7 +49,9 @@ FROM python:3.13-slim-trixie AS release
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HOME=/home/momoi
+    HOME=/home/momoi \
+    MOMOI_EMBEDDING_MODEL_PATH=/opt/momoi/models/bge-small-zh-v1.5 \
+    MOMOI_ASR_MODEL_PATH=/opt/momoi/models/asr
 
 ARG CHROME_DEVTOOLS_MCP_VERSION=1.6.0
 
@@ -120,6 +122,8 @@ if __name__ == '__main__':
 PY
 
 WORKDIR /app
+COPY models/bge-small-zh-v1.5 /opt/momoi/models/bge-small-zh-v1.5
+COPY models/asr /opt/momoi/models/asr
 COPY --from=build /wheels /wheels
 RUN pip install --no-cache-dir --no-index /wheels/*.whl \
     && rm -rf /wheels

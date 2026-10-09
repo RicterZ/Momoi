@@ -101,11 +101,21 @@ wire protocol.
 
 ### Embedding
 
-Use only `endpoint` in service `settings` or binding `options`: a complete request
-URL such as `https://api.example.com/v1/embeddings`, or a custom gateway path.
-No path is appended. The default is `http://embedding:8002/v1/embeddings`.
-Embedding no longer accepts `base_url`; change existing configurations to a
-complete `endpoint`. Other defaults:
+The default `adapter: local` calls BGE (512 dimensions) inside the Momoi process,
+without HTTP. Windows desktop manages this binding; Linux/Web can change or disable it.
+The only local option is `model_path`. When omitted, the path comes from
+`MOMOI_EMBEDDING_MODEL_PATH`, then `models/bge-small-zh-v1.5`.
+Installers and Docker images supply the model directory. Models load on demand and
+survive configuration reloads. Missing models degrade recall to keyword search;
+runtime inference never downloads them.
+
+The old `http://embedding:8002/v1/embeddings` default migrates to `local` when its
+model, dimensions and calibration are BGE defaults. Its enabled state is preserved;
+custom remote configurations are unchanged.
+
+For a remote provider, use `adapter: openai` with a complete `endpoint` in service
+`settings` or binding `options`, such as `https://api.example.com/v1/embeddings`.
+No path is appended. The following options apply to the remote adapter:
 
 | Option | Default |
 | --- | --- |
@@ -274,3 +284,16 @@ Environment fields return their `{env: NAME}` references and resolve at runtime.
 See the [nested schema example](./PROVIDERS.zh-CN.md#字段声明与前端接入契约).
 New providers implement the capability and translate their options inside the
 adapter; application consumers and runtime replacement remain unchanged.
+
+## Built-in speech recognition
+
+Select Sherpa with both endpoint and model path empty to use built-in ASR.
+Tencent Cloud and custom remote Sherpa services remain selectable. Linux images
+include the dependencies and model; Windows uses the optional ASR component.
+The model loads on demand, without a separate container.
+For source execution, run `uv sync --locked --extra asr` and
+`uv run --locked python packaging/prepare_asr.py`, then start from the repository root.
+The default directory is `models/asr/`; override it with `MOMOI_ASR_MODEL_PATH`
+or the model path in Settings. The old `http://asr:8003` default migrates while
+preserving enabled state, thread count and silence settings.
+See [model preparation](../models/README.md) before building images.

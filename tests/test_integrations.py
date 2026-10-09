@@ -193,7 +193,7 @@ class CatalogTest(unittest.TestCase):
         self.assertFalse(set(removed) & schema.keys())
         raw = {
             "version": 1,
-            "services": {"vectors": {"adapter": "openai"}},
+            "services": {"vectors": {"adapter": "openai", "settings": {"endpoint": "https://encoder.example/v1/embeddings"}}},
             "bindings": {"embedding": {"service": "vectors"}},
         }
         services = ServiceRegistry(self.load(raw))

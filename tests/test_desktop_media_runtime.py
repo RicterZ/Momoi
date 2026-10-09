@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from momoi.desktop import media_runtime
+from momoi_desktop import media_runtime
 
 
 def component(monkeypatch):

@@ -58,6 +58,7 @@ const modules = [
 ];
 const adapterLabels = {
   openai: "OpenAI",
+  local: "内置 BGE",
   deepseek: "DeepSeek",
   anthropic: "Anthropic",
   fish: "Fish Audio",
@@ -860,6 +861,12 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
       setBusy(false);
     }
   }
+  if (module.id === "memory" && data.desktop_embedding_managed) {
+    return <>
+      <SectionHeader module={module} />
+      <div className="settings-form-body"><p role="status">由客户端自动维护</p></div>
+    </>;
+  }
   const testButton = testCapability && (
     <button ref={testButtonRef} type="button" className="settings-text-button settings-test-button"
       disabled={testing || saving || busy} onClick={testConnection}>
@@ -934,7 +941,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
               const fields = Object.entries(
                 adapters.find((adapter) => adapter.adapter === value.adapter)
                   ?.fields || {},
-              ).filter(([key]) => !(name === "asr" && value.adapter === "sherpa" && key === "model_path"));
+              );
               const basic = fields.filter(([key]) =>
                 primaryFields[name]?.includes(key),
               );
@@ -951,11 +958,6 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
               const update = (next) =>
                 change({ ...draft, values: { ...draft.values, [name]: next } });
               const renderField = ([key, spec]) => {
-                if (name === "asr" && value.adapter === "sherpa" && key === "endpoint" && data.desktop_asr_managed) {
-                  return <OptionField key={`${value.adapter}-${key}`} name={key}
-                    spec={{ ...spec, placeholder: "由桌面程序管理", description: "使用内置本地模型，无需填写地址或模型目录。" }}
-                    value="" disabled onChange={() => {}} />;
-                }
                 if (name === "llm" && key === "thinking" && spec.properties?.effort?.enum) {
                   const effort = spec.properties.effort;
                   return <SelectField key={`${value.adapter}-${key}`} label={effort.label || "默认思考强度"}

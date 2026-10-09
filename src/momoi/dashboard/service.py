@@ -34,7 +34,7 @@ class DashboardService:
         self.configuration = configuration
         self.runtime = runtime
 
-    async def run(self, stop: asyncio.Event) -> None:
+    async def run(self, stop: asyncio.Event, ready: asyncio.Event | None = None) -> None:
         runner = web.AppRunner(
             create_dashboard_app(
                 self.store,
@@ -50,6 +50,8 @@ class DashboardService:
         site = web.TCPSite(runner, self.host, self.port)
         try:
             await site.start()
+            if ready is not None:
+                ready.set()
             log_event(
                 logger,
                 logging.INFO,

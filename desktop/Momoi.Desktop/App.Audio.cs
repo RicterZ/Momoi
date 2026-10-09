@@ -16,6 +16,12 @@ public partial class App
     private bool applyingAudioRoute;
     private string lastAudioRouteError = "";
 
+    private void RestoreAudioRouting()
+    {
+        try { audioRoutes?.Close(); }
+        catch (Exception error) { LiveLog.Write("audio-route", "stderr", "恢复 QQ 音频路由失败，保留备份供下次启动恢复：" + error); }
+    }
+
     private void StartAudioRouting()
     {
         audioRouteTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
@@ -37,7 +43,7 @@ public partial class App
             var app = settings.RootElement.GetProperty("app");
             if (!app.TryGetProperty("channels", out var channels) || !channels.TryGetProperty("enabled", out var enabled) ||
                 !enabled.TryGetProperty("napcat", out var napcatOptions) || !napcatOptions.TryGetProperty("voice_call", out var voice) ||
-                !voice.TryGetProperty("enabled", out var callEnabled) || callEnabled.ValueKind != JsonValueKind.True) return;
+                !voice.TryGetProperty("enabled", out var callEnabled) || callEnabled.ValueKind != JsonValueKind.True) { RestoreAudioRouting(); return; }
             using var response = await client.GetAsync("/api/settings/channels/napcat/voice-call/devices", lifetime.Token);
             if (!response.IsSuccessStatusCode) return;
             using var catalog = JsonDocument.Parse(await response.Content.ReadAsStringAsync(lifetime.Token));
@@ -52,13 +58,12 @@ public partial class App
             string input = Select("input_device", "inputs", true);
             string output = Select("output_device", "outputs", false);
             if (input.Length == 0 || output.Length == 0) return;
-            var processes = new List<object>();
+            var processes = new List<int>();
             foreach (var process in Process.GetProcessesByName("QQ")) using (process)
-                try { processes.Add(new { pid = process.Id }); } catch (InvalidOperationException) { }
-            using var host = JsonDocument.Parse(JsonSerializer.Serialize(new { audioProcesses = processes }));
-            using var media = JsonDocument.Parse(JsonSerializer.Serialize(new { audio_devices = new { input_device = new { id = input }, output_device = new { id = output } } }));
+                try { processes.Add(process.Id); } catch (InvalidOperationException) { }
+            if (exiting || switching || updateBusy || napcat?.Running != true) return;
             audioRoutes ??= new ApplicationAudioRoute(System.IO.Path.Combine(workspace, "qq-call"));
-            audioRoutes.Ensure(host.RootElement, media.RootElement);
+            audioRoutes.Ensure(processes, input, output);
             lastAudioRouteError = "";
         }
         catch (OperationCanceledException) when (exiting) { }

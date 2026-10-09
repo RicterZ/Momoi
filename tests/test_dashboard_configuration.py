@@ -79,13 +79,9 @@ class ConfigurationManagerTest(unittest.TestCase):
         snapshot = manager.snapshot()
         embedding = snapshot["capabilities"]["embedding"]
         self.assertTrue(embedding["enabled"])
-        self.assertEqual(embedding["adapter"], "openai")
-        self.assertEqual(embedding["options"]["endpoint"], "http://embedding:8002/v1/embeddings")
-        self.assertEqual(embedding["options"]["model"], "BAAI/bge-small-zh-v1.5")
-        self.assertEqual(embedding["options"]["dimensions"], 512)
-        self.assertEqual(embedding["options"]["calibration_profile"], "bge-small-zh-v1.5-momoi-v1")
-        embedding["enabled"] = False
-        embedding["options"]["endpoint"] = "https://embedding.example/v1/embeddings"
+        self.assertEqual(embedding["adapter"], "local")
+        self.assertEqual(embedding["options"], {})
+        embedding.update(adapter="openai", enabled=False, options={"endpoint": "https://embedding.example/v1/embeddings"})
         manager.save_binding("embedding", embedding, snapshot["revision"])
         before = manager.provider_path.read_bytes()
         self.assertFalse(bootstrap(path))

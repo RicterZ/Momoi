@@ -9,15 +9,18 @@ import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'infra' / 'asr'))
-from prepare_model import prepare
+sys.path.insert(0, str(ROOT / 'packaging'))
+from prepare_asr import prepare
 
 
 def build(destination, archive):
     model = destination / 'models' / 'asr'
     libs = destination / 'runtime' / 'asr' / 'site-packages'
     wheels = ROOT / 'build' / 'windows-asr-wheels'
-    prepare(model, archive)
+    source = ROOT / 'models' / 'asr'
+    prepare(source, archive)
+    if model.exists(): shutil.rmtree(model)
+    shutil.copytree(source, model)
     wheels.mkdir(parents=True, exist_ok=True)
     subprocess.run(['uv', 'run', '--no-project', '--with', 'pip', 'python', '-m', 'pip',
                     'download', '--only-binary=:all:', '--platform', 'win_amd64',

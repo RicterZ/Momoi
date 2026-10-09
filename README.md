@@ -137,7 +137,7 @@ context and does not override confirmed facts.
 | Private chat | One owner across QQ (NapCat) and WeChat; replies return to the originating channel and proactive messages use the configured primary channel |
 | Conversation | Message batching, quoted/forwarded content, media handling, natural multi-bubble delivery, optional image reactions, and valid silence |
 | Voice calls | Real-time QQ voice calls through NapCat, with speech recognition, synthesized replies, and interruption support on Windows and Linux |
-| Speech recognition | Choose Tencent Cloud ASR or optional local CPU streaming ASR with Sherpa; Linux runs inference in a separate container, and Windows installs the model as an optional component |
+| Speech recognition | Choose Tencent Cloud ASR or optional local CPU streaming ASR with Sherpa; Linux bundles the model for in-process inference, and Windows installs the model as an optional component |
 | Context | Native shared transcript, on-demand recall, background Episode archiving and relationships, runtime re-search, and bounded model input |
 | Tools | Built-in file/HTTP tools plus dynamically discovered MCP servers and per-server tool allowlists |
 | Long-running work | Tool loops, progress messages, interruption, execution limits, large-result snapshots, and recovery for uncertain external effects |
@@ -171,13 +171,8 @@ logs. Use Settings to connect a model, edit prompts, enable message channels,
 and sign in to Weixin by scanning its QR code.
 
 For QQ, deploy NapCat separately and enter its reachable OneBot WebSocket URL
-and the owner QQ in Momoi's Settings. Optional services can be started with:
-
-```bash
-docker compose -f docker-compose.yml --profile embedding up -d
-```
-
-Configure the embedding service in Settings if you want semantic recall.
+and the owner QQ in Momoi's Settings. The image includes BGE and encodes semantic
+memory in the Momoi process; no separate encoder container or port is needed.
 
 The workspace is persisted in `~/.momoi` by default and initialized by `momoi`;
 existing files are preserved. Only dashboard port 8788 is published by default.
@@ -213,19 +208,32 @@ momoi --workspace /path/to/workspace
 To build the current checkout as a container, use the source Compose file:
 
 ```bash
+uv run --locked python packaging/prepare_embedding.py
+uv run --locked python packaging/prepare_asr.py
 docker compose -f compose.yaml up -d --build
 ```
 
-It shares the published stack's defaults and builds both Momoi and the encoder.
+It shares the published stack's defaults and bundles BGE in the Momoi image.
 Always specify `-f`: without it, Docker
 Compose prefers `compose.yaml` over `docker-compose.yml`.
 
 ## Semantic recall
 
-Enable semantic memory in Settings and select a compatible embedding endpoint,
-model and vector dimension. Docker Compose can start a private embedding service
-with `--profile embedding`. When running Momoi on the host, use an endpoint
-reachable from the host.
+The default is in-process BGE (512 dimensions), shared by Windows desktop and Linux.
+Desktop manages the encoder automatically; Web Settings can disable semantic memory
+or select a remote OpenAI-compatible provider. The old default `embedding:8002`
+configuration migrates to local calls; custom remote endpoints are preserved.
+After verifying an upgraded Docker deployment, remove the old encoder container
+and its `depends_on` entry from your deployment configuration.
+
+For a source checkout, prepare the offline model once:
+
+```bash
+uv run --locked python packaging/prepare_embedding.py
+```
+
+Use `MOMOI_EMBEDDING_MODEL_PATH` to select another model directory.
+Runtime inference never downloads models.
 
 Momoi builds the index in the background and activates it when coverage is complete.
 Keyword recall remains available during indexing. See
