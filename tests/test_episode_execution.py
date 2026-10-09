@@ -365,3 +365,22 @@ def test_truncated_arguments_have_exact_deep_read_and_snapshot_recovery(tmp_path
                                     'tool_call_id': 'legacy'})['error'] == 'complete_arguments_unavailable'
     finally:
         store.close()
+
+
+def test_recall_hydrates_legacy_read_file_string_lines(tmp_path):
+    store = Store(tmp_path / 'db')
+    try:
+        setup(store)
+        record(store, 'read_file', args={'path': '/band.md'},
+               result={'ok': True, 'lines': ['和纱乐队版', '立绘讨论'],
+                       'content': '和纱乐队版\n立绘讨论'})
+        hits = store.search_topic_queries(
+            [EpisodeRecallQuery('和纱|乐队', semantic_expression='和纱 乐队版 BA 蔚蓝档案')],
+            24, minimum_confidence=0,
+        )
+        assert [row['id'] for row in hits] == ['e']
+        result = hits[0]['execution_evidence']['turns'][0]['execution'][0]['tools'][0]['result']
+        assert result['lines'] == ['和纱乐队版', '立绘讨论']
+        assert result['content'] == '和纱乐队版\n立绘讨论'
+    finally:
+        store.close()

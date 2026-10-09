@@ -1,6 +1,8 @@
 import json
 from copy import deepcopy
 
+from momoi.tools.presentation import present_result
+
 from momoi.runtime.transcript.native import render_exchanges
 from momoi.runtime.turn_support import tool_result_block
 from momoi.storage.episode.execution_evidence import eligible
@@ -246,3 +248,14 @@ def test_unstructured_recall_observation_remains_verbatim():
     source[0]['results'][0]['content'] = '历史原文观察'
     replay = render_exchanges(source)
     assert replay[1]['content'][0]['content'] == '历史原文观察'
+
+
+@pytest.mark.parametrize('lines', [
+    ['和纱', '乐队'], [{'text': '和纱'}], [{'line': 1, 'text': None}],
+    [{'line': 1, 'text': '和纱'}, '乐队'],
+])
+def test_historical_read_file_preserves_unrecognized_line_formats(lines):
+    payload = {'ok': True, 'content': '原始正文', 'lines': lines, 'start_line': 5}
+    original = deepcopy(payload)
+    assert present_result(payload, historical=True, tool_name='read_file') == original
+    assert payload == original

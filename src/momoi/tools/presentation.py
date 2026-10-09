@@ -189,7 +189,11 @@ def project_tool_result(result, name):
             result.update(nodes=nodes, total_relations=len(edges),
                           next_cursor=cursor + limit if cursor + limit < len(edges) else None)
             result['omitted_fields'] = ['nodes.*.summary (excerpt)', 'edges/nodes (outside page)']
-    if name == 'read_file' and isinstance(result.get('lines'), list):
+    # Older journals use string lines; only project the numbered-line format.
+    if name == 'read_file' and isinstance(result.get('lines'), list) and all(
+        isinstance(item, dict) and isinstance(item.get('text'), str)
+        and type(item.get('line')) is int for item in result['lines']
+    ):
         lines = result.pop('lines')
         result['content'] = ''.join(item['text'] for item in lines)
         if lines:
