@@ -46,3 +46,7 @@ desktop/Momoi.Desktop/keys/*.pem
 # Downloaded model weights are packaged from the repository root.
 /models/*
 !/models/README.md
+
+# Local architecture plans and design reviews.
+/docs/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.md
+/docs/architecture/

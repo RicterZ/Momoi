@@ -36,3 +36,7 @@ Momoi 服务器通过 `ssh -p 2222 root@server` 访问。正式部署入口是�
 部署前完成必要测试并将待部署提交推送至 GitHub，然后通过 `ssh -p 2222 root@server 'bash -e /root/docker-services/build/momoi/deploy.sh'` 执行。脚本会在服务器仓库 `git pull`、使用 `Dockerfile.chrome` 构建 `momoi` 镜像，再到 `/root/docker-services` 执行 `docker compose up --build -d`。不要绕过此入口用容器内补丁、覆盖安装文件或叠加镜像代替正式部署。
 
 部署后核对服务器 Git HEAD、容器使用的镜像、Dashboard `/api/health` 和频道连接日志。健康接口需要 Dashboard JWT，勿将令牌打印到日志。
+
+# 架构文档
+
+架构设计、解耦方案、阶段计划与设计审查文档仅在本地保留，不纳入 Git。统一放在已忽略的 `docs/architecture/` 下；现有 `docs/YYYY-MM-DD_*.md` 也保持忽略。已跟踪的此类文档使用 `git rm --cached` 取消跟踪，保留本地文件，不使用 `git add -f` 强制提交。面向用户的配置、使用和部署说明不属于这类内部设计文档，仍按原有方式维护。
