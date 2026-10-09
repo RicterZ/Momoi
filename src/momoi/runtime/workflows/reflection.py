@@ -9,7 +9,7 @@ from ...storage.reflection.reflection_values import reflection_window
 from ..agent import AgentWorkflow
 from ..parsing import parse_reflection_finish
 from ..tool_contracts.reflection import REFLECTION_FINISH_SPEC
-from ..transcript.maintenance import maintenance_transcript
+from ..transcript.reflection import BACKGROUND_TOOLS, reflection_transcript
 from ..turn_support import (
     REFLECTION_PROMPT_PATH,
     REFLECTION_SYSTEM_PROMPT,
@@ -131,9 +131,7 @@ class ReflectionWorkflow:
         )
         window = (source["start_at"], source["end_at"])
         rows = self.store.conversation_messages_for_turns(None, window=window)
-        transcript_messages, _ = maintenance_transcript(
-            self.store, rows, [], window=window, replay_native=True,
-        )
+        transcript_messages = reflection_transcript(self.store, rows, window)
         raw_record = "\n".join(str(row["content"]) for row in rows)
         query = raw_record[-20000:]
         # Rendered calls, recall and runtime annotations are context, never an
@@ -149,10 +147,7 @@ class ReflectionWorkflow:
                 payload = json.loads(record["payload_json"])
             except (ValueError, TypeError):
                 continue
-            if isinstance(payload, dict) and payload.get("name") not in {
-                "recall", "memory_search", "episode_search", "episode_read", "read_tool_result",
-                "thinking_search", "thinking_read",
-            }:
+            if isinstance(payload, dict) and payload.get("name") not in BACKGROUND_TOOLS:
                 reflection_evidence += "\n" + json.dumps(payload.get("result", {}), ensure_ascii=False)
         owner_source = "\n".join(str(row["content"]) for row in rows if row["role"] == "user")
         knowledge_source = owner_source

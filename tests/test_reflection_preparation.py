@@ -11,7 +11,7 @@ import pytest
 from momoi.config.models import EpisodeAnnealingConfig, ReflectionConfig
 from momoi.models import ToolCall
 from momoi.runtime import MomoiDaemon
-from momoi.runtime.transcript.maintenance import maintenance_transcript
+from momoi.runtime.transcript.reflection import reflection_transcript
 from momoi.storage.reflection.reflection_values import reflection_window
 from tests.test_episode_annealing import annealing_items, config
 
@@ -219,7 +219,7 @@ def test_reflection_uses_configured_window_and_complete_transcript(daemon, at):
     assert (source["start_at"], source["end_at"]) == (start, end)
     rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
     assert len(rows) == count + 1
-    expected_messages, _ = maintenance_transcript(daemon.store, rows, [], window=(start, end))
+    expected_messages = reflection_transcript(daemon.store, rows, (start, end))
 
     async def reflect(_system, messages, _tools, turn_id, workflow):
         assert workflow.preserve_transcript
@@ -372,7 +372,7 @@ def test_webhook_transcript_uses_reception_time_for_window(daemon):
     assert [(row["content"], row["created_at"]) for row in rows] == [("included", start)]
 
 
-def test_native_reflection_does_not_accept_recalled_background_as_daily_evidence(daemon):
+def test_text_reflection_excludes_recalled_background_from_daily_evidence(daemon):
     daemon.config = replace(daemon.config, episode_annealing=EpisodeAnnealingConfig(enabled=False))
     start, end = day_window()
     add_turn(daemon, 'today', start + 100)
@@ -385,7 +385,8 @@ def test_native_reflection_does_not_accept_recalled_background_as_daily_evidence
         daemon.store._db.execute('UPDATE turn_journal SET created_at=? WHERE turn_id=?', (start + 100, 'today'))
     daemon.store.claim_due_reflection(ReflectionConfig(enabled=True), end)
     async def reflect(system, messages, tools, turn_id, workflow):
-        assert 'recall-history' in str(messages)
+        assert 'recall-history' not in str(messages)
+        assert '过去的旧结论不能为今天作证' not in str(messages)
         assert any(t['name'] == 'read_tool_result' for t in tools)
         rejected = await workflow.execute_tool(ToolCall('bad', 'reflection_finish', {
             'summary': '日记', 'memories': [{'kind': 'practice', 'key': 'work.check',
@@ -400,3 +401,44 @@ def test_native_reflection_does_not_accept_recalled_background_as_daily_evidence
         return workflow.completion_result()
     daemon._run_agent_workflow = reflect
     asyncio.run(daemon._complete_reflection('2026-09-08', 'reflection-test'))
+
+
+def test_text_reflection_keeps_speech_and_bounded_execution_evidence(daemon):
+    start, end = day_window()
+    add_turn(daemon, 'today', start + 100)
+    with daemon.store._db:
+        daemon.store._db.execute(
+            "INSERT INTO messages(turn_id,role,content,created_at,delivery_state,source_event_ids_json) "
+            "VALUES ('today','assistant',?,?,'uncertain','[]')",
+            ('保留完整正文<&>' + '原话' * 1000, start + 102),
+        )
+    for name, stamp, result in [
+        ('web_fetch', start + 101, {'ok': False, 'error': 'timeout', 'result_ref': 'tr_test',
+                                  'content': '很长的工具正文' * 1000}),
+        ('recall', start + 101, {'memory': '不重放旧召回'}),
+        ('reflection_finish', start + 101, {'summary': '不能用旧复盘自证'}),
+        ('web_fetch', end, {'content': '窗口外结果'}),
+    ]:
+        daemon.store.append_turn_journal('today', 'tool_result', {
+            'name': name, 'tool_call_id': name, 'ok': False, 'error': 'timeout', 'result': result,
+        }, trust='runtime')
+        with daemon.store._db:
+            daemon.store._db.execute(
+                "UPDATE turn_journal SET created_at=? WHERE turn_id='today' AND sequence="
+                "(SELECT MAX(sequence) FROM turn_journal WHERE turn_id='today')", (stamp,),
+            )
+    rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
+    messages = reflection_transcript(daemon.store, rows, (start, end))
+    assert len(messages) == 1 and messages[0]['role'] == 'user'
+    from xml.etree import ElementTree
+    root = ElementTree.fromstring(messages[0]['content'])
+    assert [item.tag for item in root] == ['message', 'tool_result', 'message']
+    speech = root.findall('message')[-1]
+    assert speech.get('speaker') == 'assistant' and speech.get('delivery') == 'uncertain'
+    assert speech.text == '保留完整正文<&>' + '原话' * 1000
+    tool = root.find('tool_result')
+    assert len(tool.text) < 1000
+    assert 'timeout' in tool.text and 'tr_test' in tool.text
+    assert '不重放旧召回' not in messages[0]['content']
+    assert '不能用旧复盘自证' not in messages[0]['content']
+    assert '窗口外结果' not in messages[0]['content']
