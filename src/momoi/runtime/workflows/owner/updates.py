@@ -30,18 +30,13 @@ class OwnerUpdateController:
         self.activity_changed = activity_changed
         self.message_changed = message_changed
         self.channel_for = channel_for
-        self.waiting = False
 
     async def wait(self, seconds, current_events, channel_name):
         if type(seconds) is not int or not 1 <= seconds <= 60:
             raise ValueError("wait seconds must be between 1 and 60")
-        self.waiting = True
-        try:
-            # New-message notifications deliberately do not shorten this window.
-            await asyncio.sleep(seconds)
-            return self.drain(current_events, channel_name)
-        finally:
-            self.waiting = False
+        # Collect the entire window, including messages arriving after the first one.
+        await asyncio.sleep(seconds)
+        return self.drain(current_events, channel_name)
 
     def drain(
         self, current_events: list[IncomingMessage], channel_name: str

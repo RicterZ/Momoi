@@ -41,7 +41,6 @@ def test_wait_returns_messages_in_result_and_prevents_stale_actions(tmp_path, wi
         with patch('momoi.runtime.workflows.owner.updates.asyncio.sleep', sleep):
             task = daemon.start_active_turn(daemon._complete_batch_turn(batch, asyncio.Event(), 'wait-turn'), stage='owner', channel=daemon.channel.name)
             await asyncio.wait_for(started.wait(), 2)
-            assert daemon.owner_updates.waiting
             updates = [IncomingMessage('next', 'next', '后半句话 [表情] [戳一戳]', 2, 2,
                        ({'type': 'text', 'text': 'attachment-marker'},)),
                        IncomingMessage('last', 'last', '补充完了', 3, 3)] if with_messages else []
@@ -50,7 +49,6 @@ def test_wait_returns_messages_in_result_and_prevents_stale_actions(tmp_path, wi
             assert not task.done() and len(captured) == 1
             finish.set()
             await asyncio.wait_for(task, 3)
-        assert not daemon.owner_updates.waiting
         assert batch == [initial, *updates]
         blocks = [b for m in captured[-1] if isinstance(m.get('content'), list) for b in m['content']]
         result = next(b for b in blocks if b.get('tool_use_id') == 'wait-1')
@@ -74,7 +72,7 @@ def test_wait_returns_messages_in_result_and_prevents_stale_actions(tmp_path, wi
     asyncio.run(run())
 
 
-def test_wait_validation_cancellation_and_scheduler_pause(tmp_path):
+def test_wait_validation_cancellation_and_scheduler_continues(tmp_path):
     async def run():
         daemon = MomoiDaemon(config(str(tmp_path)))
         assert 'wait' in daemon.tool_surface.permitted_names('owner')
@@ -90,18 +88,19 @@ def test_wait_validation_cancellation_and_scheduler_pause(tmp_path):
             task = asyncio.create_task(daemon.owner_updates.wait(60, [], daemon.channel.name))
             await started.wait()
             stop = asyncio.Event()
-            with patch.object(daemon.store, 'close_idle_episodes', side_effect=AssertionError('scheduler must pause')):
-                scheduler = asyncio.create_task(daemon._scheduler_worker(stop))
-                tick = asyncio.Event()
-                asyncio.get_running_loop().call_soon(tick.set)
-                await tick.wait()
-                assert not scheduler.done()
+            checked = asyncio.Event()
+            def close_idle_episodes():
+                checked.set()
                 stop.set()
+                return []
+            with patch.object(daemon.store, 'close_idle_episodes', side_effect=close_idle_episodes):
+                scheduler = asyncio.create_task(daemon._scheduler_worker(stop))
+                await asyncio.wait_for(checked.wait(), 2)
+                assert not task.done()
                 daemon.agenda_changed.set()
-                await scheduler
+                await asyncio.wait_for(scheduler, 2)
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
-        assert not daemon.owner_updates.waiting
         daemon.store.close()
     asyncio.run(run())
