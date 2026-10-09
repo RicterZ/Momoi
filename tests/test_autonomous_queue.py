@@ -85,7 +85,7 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(selected, ["goal", "goal", "goal", "heartbeat"])
             daemon.store.close()
 
-    async def test_memory_maintenance_yields_before_higher_priority_job(self):
+    async def test_paused_memory_maintenance_does_not_enqueue_or_requeue(self):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
@@ -123,13 +123,15 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
             daemon._complete_memory_maintenance_turn = run_maintenance  # type: ignore[method-assign]
             daemon._complete_goal_turn = run_goal  # type: ignore[method-assign]
             daemon._enqueue_memory_maintenance("maintenance-1")
-            await daemon._agent_worker(stop)
+            self.assertTrue(daemon.autonomous.empty())
+            self.assertNotIn("maintenance-1", daemon._queued_memory_maintenance)
+            # A job already queued before the pause may finish, but cannot requeue.
+            daemon.autonomous.put_nowait(AutonomousJob.memory_maintenance("maintenance-1"))
+            await asyncio.wait_for(daemon._agent_worker(stop), timeout=5)
 
             self.assertEqual(order, ["memory_maintenance", "goal"])
-            queued = daemon.autonomous.get_nowait()
-            self.assertEqual(
-                queued, AutonomousJob.memory_maintenance("maintenance-1")
-            )
+            self.assertTrue(daemon.autonomous.empty())
+            self.assertNotIn("maintenance-1", daemon._queued_memory_maintenance)
             daemon.store.close()
 
 if __name__ == "__main__":

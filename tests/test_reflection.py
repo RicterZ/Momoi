@@ -232,12 +232,8 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 daemon._complete_reflection_turn("2026-07-21", asyncio.Event()),
                 timeout=5,
             )
-            maintenance = await asyncio.wait_for(daemon.autonomous.get(), timeout=5)
-            self.assertEqual(maintenance.kind, "memory_maintenance")
-            self.assertEqual(
-                daemon.store.pending_memory_maintenance_turn(),
-                maintenance.id,
-            )
+            self.assertTrue(daemon.autonomous.empty())
+            self.assertIsNotNone(daemon.store.pending_memory_maintenance_turn())
             reflection = daemon.store.reflection("2026-07-21")
             self.assertEqual(reflection["state"], "completed")
             self.assertEqual(

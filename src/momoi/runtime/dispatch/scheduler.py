@@ -233,13 +233,7 @@ class Scheduler:
             if weekly is not None:
                 await self.autonomous.put(AutonomousJob('weekly_reflection', weekly['period_end']))
                 continue
-            maintenance_turn_id = self.store.pending_memory_maintenance_turn()
-            if (
-                maintenance_turn_id is not None
-                and maintenance_turn_id not in self._queued_memory_maintenance
-            ):
-                self._enqueue_memory_maintenance(maintenance_turn_id)
-                continue
+            # Memory maintenance is paused pending its architecture replacement.
             heartbeat = self.store.claim_due_heartbeat(
                 self.config.heartbeat, self.config.notifications
             )

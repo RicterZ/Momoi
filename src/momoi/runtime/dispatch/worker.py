@@ -288,10 +288,8 @@ class AgentWorker:
         self.autonomous.put_nowait(AutonomousJob.memory_operation(batch_id))
 
     def _enqueue_memory_maintenance(self, turn_id: str) -> None:
-        if turn_id in self._queued_memory_maintenance:
-            return
-        self._queued_memory_maintenance.add(turn_id)
-        self.autonomous.put_nowait(AutonomousJob.memory_maintenance(turn_id))
+        # Keep pending records, but do not schedule maintenance during the redesign.
+        return
 
     def _prioritize_autonomous(self, current: AutonomousJob) -> AutonomousJob:
         candidates = [current]
