@@ -468,3 +468,31 @@ def test_reflection_groups_topics_without_duplicate_or_outside_evidence(daemon):
     assert sum(rendered.count(row['content']) for row in rows) == len(rows) == 5
     assert rendered.count('shared完成项目') == 1
     assert 'old完成项目' not in rendered
+
+
+def test_reflection_tool_validation_drops_retry_protocol_and_keeps_failure():
+    from momoi.runtime.transcript.reflection import reflection_tool_result
+
+    message = "goal_update: status: 'done' is not one of ['active', 'waiting', 'blocked']."
+    text = reflection_tool_result({
+        'ok': False, 'error': 'invalid_tool_arguments', 'tool_call_id': 'call_private',
+        'result': {'ok': False, 'error': 'invalid_tool_arguments',
+                   'message': message + ' Correct arguments only; do not repeat completed actions.',
+                   'details': [{'field': 'status'}], 'allowed_fields': ['goal_id', 'status'],
+                   'required_fields': ['goal_id'], 'examples': [], 'result_ref': 'tr_validation'},
+    }, 'goal_update')
+    assert text == 'TOOL goal_update: 失败；invalid_tool_arguments；' + message
+
+
+def test_reflection_tool_nested_failure_is_not_reported_as_success():
+    from momoi.runtime.transcript.reflection import reflection_tool_result
+
+    text = reflection_tool_result({'ok': True, 'result': {
+        'ok': False, 'error': 'timeout', 'result': {'message': '远程设备无响应'},
+    }}, 'remote_start')
+    assert '失败；timeout' in text and '远程设备无响应' in text
+    assert '成功' not in text and '"result"' not in text
+    success = reflection_tool_result({'ok': True, 'result': {
+        'ok': True, 'result': {'remaining': 6},
+    }}, 'inventory')
+    assert success == 'TOOL inventory: 成功；{"remaining":6}'

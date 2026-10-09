@@ -13,6 +13,42 @@ BACKGROUND_TOOLS = {
 }
 
 
+def reflection_tool_result(payload, name):
+    """Render outcomes, not the live tool's retry protocol or transport envelope."""
+    value = historical_result(payload.get("result", {}), name)
+    failed = payload.get("ok") is False
+    error = payload.get("error")
+    reference = None
+    while isinstance(value, dict):
+        failed = failed or value.get("ok") is False
+        error = value.get("error") or error
+        reference = value.get("result_ref") or reference
+        if "result" not in value or set(value) - {"ok", "error", "result", "result_ref"}:
+            break
+        value = value["result"]
+    if error == "invalid_tool_arguments" and isinstance(value, dict):
+        # The original validation message already names the field and constraint.
+        value = str(value.get("message") or error).removesuffix(
+            " Correct arguments only; do not repeat completed actions."
+        )
+    elif isinstance(value, dict):
+        value = {key: item for key, item in value.items()
+                 if key not in {"ok", "error", "result_ref"}}
+    reduced = bounded_result(value)
+    body = reduced if isinstance(reduced, str) else json.dumps(
+        reduced, ensure_ascii=False, separators=(",", ":"),
+    )
+    parts = ["失败" if failed or error else "成功" if payload.get("ok") is True else "结果"]
+    if error and str(error) not in body:
+        parts.append(str(error))
+    if body not in ("", "{}", "null"):
+        parts.append(body)
+    # Only excerpts need an explicit read-back handle in the daily presentation.
+    if reference and (reduced != value or "[...truncated...]" in body):
+        parts.append(f"完整结果：{reference}")
+    return f"TOOL {name}: " + "；".join(parts)
+
+
 def reflection_transcript(store, rows, window):
     records = []
     for row in rows:
@@ -37,13 +73,7 @@ def reflection_transcript(store, rows, window):
         name = str(payload.get("name") or "")
         if not name or name in BACKGROUND_TOOLS or name in TRANSCRIPT_PROTOCOL_TOOLS:
             continue
-        result = bounded_result(historical_result(payload.get("result", {}), name))
-        text = (
-            f"TOOL {name} (turn={row['turn_id']}, "
-            f"call_id={payload.get('tool_call_id') or ''}): "
-            + json.dumps({"ok": payload.get("ok"), "error": payload.get("error"),
-                          "result": result}, ensure_ascii=False)
-        )
+        text = reflection_tool_result(payload, name)
         records.append((float(row["created_at"]), 0, int(row["sequence"]), text, str(row["turn_id"])))
     records.sort(key=lambda item: item[:3])
     # A Turn may belong to multiple topics. Keep its evidence once in a shared
