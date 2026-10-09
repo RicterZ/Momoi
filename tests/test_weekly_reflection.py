@@ -25,6 +25,12 @@ def test_weekly_reference_validation_and_daily_rendering(tmp_path):
     assert parse_weekly_reflection(args, source)[1] is None
     for bad in [dict(evidence_ids=[ids[0]]), dict(evidence_ids=['invented']), dict(counterevidence_ids=[ids[0]])]:
         assert parse_weekly_reflection({'summary': '回顾', 'findings': [{**finding, **bad}]}, source)[1]
+    explicit = {**finding, 'assessment': 'explicit', 'evidence_ids': [ids[0]],
+                'content': '用户明确要求简短回复。', 'uncertainty': ''}
+    assert parse_weekly_reflection({'summary': '两天材料', 'findings': [explicit]}, source)[1] is None
+    assert parse_weekly_reflection({'summary': '两天材料', 'findings': [
+        {**explicit, 'evidence_ids': ['invented']},
+    ]}, source)[1]
     store.close()
 
 

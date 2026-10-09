@@ -21,7 +21,7 @@ WEEKLY_REFLECTION_FINISH_SPEC = {
         'type': 'object', 'additionalProperties': False,
         'properties': {
             'summary': {'type': 'string', 'minLength': 1, 'maxLength': 4000,
-                        'description': '整体认识及实际材料覆盖的范围，非每日流水账。'},
+                        'description': '用一两句话说明材料覆盖和主要局限，不复述候选列表。'},
             'findings': {
                 'type': 'array', 'maxItems': 16,
                 'items': {
@@ -29,9 +29,10 @@ WEEKLY_REFLECTION_FINISH_SPEC = {
                     'properties': {
                         'key': {'type': 'string', 'minLength': 1, 'maxLength': 200,
                                 'description': '不含日期的稳定主题键。'},
-                        'assessment': {'type': 'string', 'enum': ['recurring', 'change', 'unresolved'],
-                                       'description': '分别表示跨日重复模式、有依据的变化、仍待观察的认识；不要求每类都有。'},
-                        'content': {'type': 'string', 'minLength': 1, 'maxLength': 1000},
+                        'assessment': {'type': 'string', 'enum': ['explicit', 'recurring', 'change', 'unresolved'],
+                                       'description': 'explicit：用户明确表达的事实、状态或要求，单日即可；recurring：跨日独立经历支持的模式；change：有依据的变化；unresolved：尚待确认的认识。不要求每类都有。'},
+                        'content': {'type': 'string', 'minLength': 1, 'maxLength': 1000,
+                                    'description': '通常一句话，直接陈述值得记住的认识及必要适用范围；不写日期标签、事件经过或论证。'},
                         'evidence_ids': {'type': 'array', 'minItems': 1, 'uniqueItems': True,
                                          'items': {'type': 'string'}, 'description': '输入中支持本条的观察 ID。'},
                         'counterevidence_ids': {'type': 'array', 'uniqueItems': True,
