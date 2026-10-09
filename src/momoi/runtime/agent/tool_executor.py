@@ -67,6 +67,7 @@ class ToolExecutor:
     def source(self, name: str) -> str:
         if name in {
             "end_turn",
+            "wait",
             "reply",
             "send_bubbles",
             "send_voice",
@@ -286,7 +287,8 @@ class ToolExecutor:
                     "error": error, "truncated": bool(raw.get("truncated", False))}
         serialized = json.dumps(present_result(envelope), ensure_ascii=False, default=str)
         budget = self.config.tool_result_max_chars - RESULT_REF_OVERHEAD
-        if len(serialized) <= budget:
+        # Wait carries new owner input, not a summarizable external tool response.
+        if call.name == "wait" or len(serialized) <= budget:
             return {**envelope, "result_ref": result_ref}
         if call.name == "read_file" and ok and (
             isinstance(payload.get("content"), str)

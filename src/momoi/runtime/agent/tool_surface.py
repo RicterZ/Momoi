@@ -17,7 +17,7 @@ from ..tool_contracts.conversation import (
     END_TURN_TOOL_SPEC, HEARTBEAT_ACTIVITY_TOOL_SPEC, GOAL_REVIEW_TOOL_SPEC,
 )
 from ..tool_contracts.runtime import (
-    READ_TOOL_RESULT_SPEC, MCP_RELOAD_SPEC,
+    READ_TOOL_RESULT_SPEC, MCP_RELOAD_SPEC, WAIT_TOOL_SPEC,
     tool_search_spec,
     TOOL_ENABLE_SPEC,
 )
@@ -168,6 +168,7 @@ class ToolSurface:
             reply_spec["input_schema"]["properties"]["mode"]["enum"] = ["text"]
         tools = [
             copy.deepcopy(RECALL_TOOL_SPEC),
+            copy.deepcopy(WAIT_TOOL_SPEC),
             heartbeat_begin_spec(),
             copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC),
             copy.deepcopy(GOAL_REVIEW_TOOL_SPEC),
@@ -216,7 +217,7 @@ class ToolSurface:
             *external,
         }
         if stage == "owner":
-            return frozenset(general_chat | {spec["name"] for spec in PLAN_TOOLS})
+            return frozenset(general_chat | {"wait"} | {spec["name"] for spec in PLAN_TOOLS})
         if stage == "heartbeat":
             return frozenset(
                 {

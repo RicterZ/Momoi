@@ -483,6 +483,7 @@ class AgentLoop:
                     prepare_heartbeat_context=self.prepare_heartbeat_context,
                     submit_owner_context=self.submit_owner_context,
                     settle_owner_updates=self.owner_updates.settle,
+                    wait_owner_messages=self.owner_updates.wait,
                 )
             )
             results = batch.results
@@ -492,9 +493,13 @@ class AgentLoop:
             last_tool_error = batch.last_tool_error
             if updates:
                 batch_state = ToolBatchState()
-                source_event_id = self._absorb_owner_updates(
-                    updates, messages, delivery_channel, harness, draft
-                )
+                if batch.updates_in_result:
+                    source_event_id = updates[-1].event_id
+                    harness.accept_owner_update()
+                else:
+                    source_event_id = self._absorb_owner_updates(
+                        updates, messages, delivery_channel, harness, draft
+                    )
                 protocol_failures = 0
                 thought_rounds = execution_failures = 0
                 continue

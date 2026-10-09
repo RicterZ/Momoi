@@ -147,6 +147,12 @@ class Scheduler:
     async def _scheduler_worker(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
             self.agenda_changed.clear()
+            if self.owner_updates.waiting:
+                try:
+                    await asyncio.wait_for(self.agenda_changed.wait(), timeout=AGENDA_POLL_SECONDS)
+                except TimeoutError:
+                    pass
+                continue
             closed_episodes = self.store.close_idle_episodes()
             if closed_episodes:
                 log_event(

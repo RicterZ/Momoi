@@ -63,3 +63,14 @@ MCP_RELOAD_SPEC = {
     "description": "修改 MCP 配置文件后，校验并重载 MCP 服务连接，不重启聊天运行时。返回连接状态、工具名称和失败原因；配置无效时保留当前连接。",
     "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
 }
+
+
+WAIT_TOOL_SPEC = {
+    "name": "wait",
+    "description": "用户话未说完时，等待指定秒数再继续当前 turn；期间新消息不打断等待，暂停后台 turn 调度。结束后统一接入当前渠道的文字、图片、表情和动作。不是定时提醒工具。",
+    "input_schema": {
+        "type": "object", "additionalProperties": False,
+        "properties": {"seconds": {"type": "integer", "minimum": 1, "maximum": 60}},
+        "required": ["seconds"],
+    },
+}

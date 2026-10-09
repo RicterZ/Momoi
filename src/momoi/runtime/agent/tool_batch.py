@@ -15,6 +15,7 @@ from ...observability.values import safe_preview
 from ..turn_support import (
     tool_error_block,
     tool_result_block,
+    owner_content_blocks,
 )
 from ..tool_contracts.conversation import end_turn_correction, end_turn_tool_spec
 from ...tools.validation import validate_tool_arguments
@@ -69,6 +70,7 @@ class ToolBatchRequest:
     prepare_heartbeat_context: PrepareHeartbeatContext
     submit_owner_context: SubmitOwnerContext
     settle_owner_updates: SettleOwnerUpdates
+    wait_owner_messages: Any = None
     system: Any = None
     context_messages: Any = None
 
@@ -83,6 +85,7 @@ class ToolBatchResult:
     ended: bool
     reply: AgentReply | None
     protocol_error: bool = False
+    updates_in_result: bool = False
 
 
 class ToolBatchExecutor:
@@ -128,6 +131,7 @@ class ToolBatchExecutor:
         ended = False
         reply = None
         protocol_error = False
+        updates_in_result = False
 
         request.messages.append(
             assistant_history_message(request.response.content, request.response.continuation)
@@ -184,6 +188,23 @@ class ToolBatchExecutor:
                 result = {"ok": False, "error": "tool_not_allowed"}
             elif validation_error:
                 result = validation_error
+            elif call.name == "wait":
+                if execution.stage != "owner" or request.wait_owner_messages is None:
+                    result = {"ok": False, "error": "tool_not_allowed"}
+                else:
+                    owner_updates = await request.wait_owner_messages(
+                        call.arguments['seconds'], request.current_events, request.delivery_channel.name
+                    )
+                    updates_in_result = True
+                    blocks = owner_content_blocks(owner_updates, request.delivery_channel.content_blocks, self.store.timezone)
+                    result = {"ok": True, "waited_seconds": call.arguments['seconds'],
+                              "received_messages": len(owner_updates),
+                              "message": "等待结束，以下是期间收到的用户消息。" if owner_updates else "等待结束，未收到新消息。",
+                              "messages": [block for block in blocks if block.get('type') == 'text'] if owner_updates else []}
+                    # Provider adapters carry images beside their associated tool result.
+                    if any(block.get('type') == 'image' for block in blocks):
+                        image_blocks.extend([{'type': 'text', 'text': f'[wait result {call.id} attachments]'},
+                                             *blocks])
             elif call.name in {"plan_create", "plan_submit", "plan_start", "plan_get", "plan_update", "plan_cancel", "plan_resume"}:
                 try:
                     if call.name == "plan_create":
@@ -610,6 +631,11 @@ class ToolBatchExecutor:
                 break
             if ended:
                 break
+            if call.name == "wait" and result.get("ok"):
+                # Always return to the model before any action planned before waiting.
+                results.extend(tool_error_block(pending.id, "reconsider_after_wait")
+                               for pending in request.response.tool_calls[index + 1:])
+                break
             if execution.accept_owner_updates:
                 owner_updates = await request.settle_owner_updates(
                     request.current_events, request.delivery_channel.name
@@ -651,4 +677,5 @@ class ToolBatchExecutor:
             ended=ended,
             reply=reply,
             protocol_error=protocol_error,
+            updates_in_result=updates_in_result,
         )
