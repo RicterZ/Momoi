@@ -1,6 +1,7 @@
 """Retrieval values; no database, provider, or runtime dependencies."""
 from dataclasses import dataclass
 from typing import Protocol
+from collections.abc import Mapping
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,8 @@ class MemoryDenseEvidence(Protocol):
 
 class MemoryDenseRecall(Protocol):
     async def __call__(
-        self, queries: list[MemoryRecallQuery], limit: int,
+        self, queries: list[MemoryRecallQuery], limit: int, *,
+        eligible_ids: Mapping[str, frozenset[str]] | None = None,
     ) -> MemoryDenseEvidence: ...
 
 

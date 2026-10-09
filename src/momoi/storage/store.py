@@ -22,6 +22,7 @@ from .episode.episode_annealing import EpisodeAnnealingStore
 from .episode.episode_consolidation import EpisodeConsolidationStore
 from .memory.memory_operations import MemoryOperationStore
 from ..memory import Memory
+from .memory.memory_values import MOMOI_MEMORY_TAGS
 from ..memory.storage.vector_repository import VectorRepository
 from ..memory.storage.index_queue import IndexQueue
 from ..memory.storage.index_documents import IndexDocuments
@@ -156,6 +157,7 @@ class Store(
         )
         self.memories = Memory(
             self._db, search_backend=self._search_backend, reflection_rows=self._reflection_recall_rows,
+            tags=MOMOI_MEMORY_TAGS,
         )
         self.memory = self.memories.repository
         self.memory_vectors = VectorRepository(self._db)

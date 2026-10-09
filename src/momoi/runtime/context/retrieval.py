@@ -9,6 +9,7 @@ from ...observability.events import log_event
 from ...observability.values import safe_preview
 from ...storage import Store
 from ...memory import MemoryRecallQuery
+from ...memory.retrieval.service import MAX_MEMORY_RECALL_RESULTS
 from ...storage.context.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
 from ...storage.episode.episode_ranking import EpisodeRecallQuery, rank_recall_items
 
@@ -302,7 +303,7 @@ def build_plan_retrieval(
                 )
                 for item in recall_queries
             ],
-            max(0, config.memory_results),
+            min(MAX_MEMORY_RECALL_RESULTS, max(0, config.memory_results)),
             dense_evidence=dense_evidence,
         )
     )

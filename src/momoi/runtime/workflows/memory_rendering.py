@@ -5,7 +5,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 
 def memory_record(memory):
     fields = ("id", "kind", "key", "activation", "content", "updated_at", "expires_at",
-              "source_event_id", "evidence_quote")
+              "source_event_id", "evidence_quote", "meta")
     return {key: memory[key] for key in fields if memory.get(key) is not None}
 
 
@@ -21,6 +21,8 @@ def memory_element(memory, *, visible=False, compact=False):
     if compact and len(content) > 240:
         content = content[:237] + "..."
     SubElement(node, "content").text = content
+    for tag in record.get("meta", {}).get("tags", []):
+        SubElement(node, "tag").text = tag
     if not compact and record.get("evidence_quote"):
         SubElement(node, "evidence", {"event_id": str(record["source_event_id"])}).text = str(record["evidence_quote"])
     return node

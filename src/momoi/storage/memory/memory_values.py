@@ -4,31 +4,21 @@ from collections.abc import Mapping
 from xml.sax.saxutils import escape, quoteattr
 
 from ...memory.retrieval.models import MemoryRecallQuery
-from ...memory.storage.records import MEMORY_ACTIVATIONS, memory_snapshot_fingerprint
+from ...memory.storage.records import MEMORY_ACTIVATIONS, MEMORY_KINDS, memory_snapshot_fingerprint
 from ...memory.text import estimate_tokens, truncate_tokens, token_chunk
+from ...memory.metadata import TagCatalog
 
-
-
-# The one classification used by both memory planes: confirmed memory (owner
-# evidence) and reflection memory (daily review). They differ in provenance and
-# reliability, not in what a fact is about, so they share this vocabulary.
-#
-# What memory holds, and what it deliberately does not:
-#   - episodes narrate one-off events, so shared experiences are not a kind here;
-#     they belong to episode summaries.
-#   - current state owns temporary state, so memories never expire.
-# A kind describes the subject of the fact, never its confidence.
-MEMORY_KINDS = {
-    "profile",           # who the owner is: identity, background, rhythm, habits
-    "preference",        # what the owner wants: preferences, constraints, standing wording
-    "relationship",      # the bond with the owner: nature, boundaries, forms of address, agreements
-    "third_party",       # stable facts about other people in the world
-    "practice",          # how to do things: reusable methods, decision procedures, tool usage
-    "world_knowledge",   # facts about the world outside the relationship
-    "self_insight",      # the agent's own tendencies, feelings, and patterns
-    "cross_event_state", # a durable state that outlives the event that produced it
-}
-
+MOMOI_MEMORY_TAGS = TagCatalog({
+    "food_drink": "饮食、饮品、口味及相关限制",
+    "health": "健康、身体状况与长期健康习惯",
+    "work_study": "工作、学习及相关安排和方法",
+    "technology": "软件、设备、编程和技术偏好",
+    "travel": "出行、地点及旅行偏好",
+    "leisure": "游戏、音乐、阅读等休闲活动",
+    "daily_life": "作息、居住、生活习惯",
+    "social": "家人、朋友、其他人和人际关系",
+    "communication": "称呼、表达方式、互动边界",
+})
 
 
 def valid_scoped_memory_key(key: str) -> bool:

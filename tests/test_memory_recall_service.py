@@ -23,7 +23,7 @@ def test_natural_query_uses_injected_dense_recall_then_one_rerank(database):
     repo = MemoryRepository(database)
     coffee = write(repo)
     tea = write(repo, key="tea", text="也喜欢无糖茶")
-    write(repo, key="unrelated", text="喜欢骑自行车")
+    unrelated = write(repo, key="unrelated", text="喜欢骑自行车")
     query = "用户喜欢什么饮品"
     embedding = AsyncMock(return_value=dense(query, coffee, tea))
     seen = []
@@ -39,7 +39,10 @@ def test_natural_query_uses_injected_dense_recall_then_one_rerank(database):
     assert {row["id"] for row in results} == {coffee, tea}
     assert results == list(reversed(seen))
     assert all(row["dense_only"] for row in results)
-    embedding.assert_awaited_once_with([MemoryRecallQuery(query)], 6)
+    embedding.assert_awaited_once_with(
+        [MemoryRecallQuery(query)], 24,
+        eligible_ids={query: frozenset(str(i) for i in (coffee, tea, unrelated))},
+    )
     reranker.assert_awaited_once()
 
 

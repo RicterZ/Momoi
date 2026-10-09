@@ -44,7 +44,7 @@
 
 ## 确定记忆的用途
 
-字段及可选值按工具 schema 填写。`kind` 按内容主题选择，不表示可信程度。`recall` 用于相关时再检索的长期话题事实；`always` 只用于明确、与具体话题无关的人际偏好或约束，不能只因为重要就设为 `always`。
+字段及可选值按工具 schema 填写。每次 write 在 `meta.tags` 中从目录选择零至三个主题标签，没有合适标签就填空数组，不创造标签。标签只描述主题，不决定作用范围，也不能作为同一事实的判据。`kind` 按内容主题选择，不表示可信程度。`recall` 用于相关时再检索的长期话题事实；`always` 只用于明确、与具体话题无关的人际偏好或约束，不能只因为重要就设为 `always`。
 
 `scoped` 用于只在指定 Goal、Heartbeat 或 Webhook 执行时生效的长期规则。key 以 `goal.<goal_id>.`、`heartbeat.` 或 `webhook.` 开头，后接稳定的规则名称。Goal ID 以提供的 `goal_directory` 或现有记忆为依据，不根据标题猜测；无法确定目标 Goal 时用 `defer`。修改、合并时保留原作用范围；只有用户明确改变适用范围时才调整 activation 或 key。
 

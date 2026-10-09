@@ -8,6 +8,7 @@ from copy import deepcopy
 
 from .models import MemoryRecallQuery, MemoryDenseEvidence, MemoryDenseRecall
 from .ranking import rank_recall_items
+from ..metadata import MemoryFilters
 from ..storage.records import MEMORY_ACTIVATIONS
 from ..storage.repository import MemoryRepository
 from .sparse import (
@@ -25,6 +26,7 @@ _MEMORY_RECENCY_FLOOR = 0.8
 _MEMORY_RECENCY_HALF_LIFE_SECONDS = 180 * 86400
 _CONFIRMED_MEMORY_SCORE_FLOOR = 0.35
 _REFLECTION_MEMORY_SCORE_FLOOR = 0.35
+MAX_MEMORY_RECALL_CANDIDATES = 24
 MAX_MEMORY_RECALL_RESULTS = 6
 
 
@@ -43,6 +45,7 @@ class MemoryRecallService:
 
     async def search(
         self, query: str | list[MemoryRecallQuery], limit: int = 6, *,
+        filters: MemoryFilters | None = None,
         request: str | None = None, dense_evidence: MemoryDenseEvidence | None = None,
         reranker: MemoryReranker | None = None,
     ) -> list[dict[str, object]]:
@@ -54,16 +57,33 @@ class MemoryRecallService:
         queries = [MemoryRecallQuery(query.strip())] if isinstance(query, str) else list(query)
         if not queries or any(not item.dense_expression for item in queries):
             raise ValueError("memory search requires a nonempty query")
-        if dense_evidence is None and self.dense_recall is not None and limit > 0:
-            dense_evidence = await self.dense_recall(queries, limit)
-        candidates = self.rank(queries, limit, dense_evidence=dense_evidence)
+        filters = self.repository.tags.filters(filters)
+        if dense_evidence is not None and any(filters.values()):
+            raise ValueError("filtered search must generate its own dense evidence before top-k")
         reranker = reranker or self._reranker
+        limit = min(MAX_MEMORY_RECALL_RESULTS, max(0, limit))
+        candidate_limit = MAX_MEMORY_RECALL_CANDIDATES if reranker and limit else limit
+        if dense_evidence is None and self.dense_recall is not None and limit > 0:
+            dense_evidence = await self.dense_recall(
+                queries, candidate_limit, eligible_ids=self.eligible_source_ids(queries, filters),
+            )
+        candidates = self.rank(queries, candidate_limit, dense_evidence=dense_evidence, filters=filters)
         if reranker is None:
             return candidates
         request = request if request is not None else "\n".join(q.dense_expression for q in queries)
         # A transport must not be able to mutate the validated candidate pool.
         selected = await reranker(request, deepcopy(candidates))
-        return validate_reranked_rows(candidates, selected)
+        return validate_reranked_rows(candidates, selected)[:limit]
+
+    def eligible_source_ids(self, queries, filters: MemoryFilters | None = None):
+        """Current visibility and metadata constrain vectors before truncation."""
+        rows = self.repository.recall_rows(now=time.time(), filters=filters)
+        eligible = {}
+        for query in queries:
+            ids = eligible.setdefault(query.dense_expression, set())
+            ids.update(str(row["id"]) for row in rows
+                       if not query.kinds or row["kind"] in query.kinds)
+        return {expression: frozenset(ids) for expression, ids in eligible.items()}
 
     def _alternative_weights(
         self,
@@ -85,19 +105,23 @@ class MemoryRecallService:
         now: float | None = None,
         include_reflections: bool = False,
         dense_evidence: MemoryDenseEvidence | None = None,
+        filters: MemoryFilters | None = None,
     ) -> list[dict[str, object]]:
         """Recall confirmed facts; daily observations are opt-in for reflection only."""
 
+        filters = self.repository.tags.filters(filters)
         if max_results <= 0 or not queries:
             return []
-        limit = min(MAX_MEMORY_RECALL_RESULTS, max_results)
+        limit = min(MAX_MEMORY_RECALL_CANDIDATES, max_results)
         stamp = time.time() if now is None else now
         self.repository.purge_expired()
-        confirmed_rows = self.repository.recall_rows(now=stamp)
+        confirmed_rows = self.repository.recall_rows(now=stamp, filters=filters)
         reflection_rows = (
             self._reflection_rows() if include_reflections and self._reflection_rows else []
         )
 
+        reflection_rows = [row for row in reflection_rows if not filters["tags_any"]
+                           and (not filters["kinds"] or row["kind"] in filters["kinds"])]
         confirmed_candidates: list[dict[str, object]] = []
         for row in confirmed_rows:
             importance = min(1.0, max(0.0, float(row["importance"])))
@@ -108,6 +132,7 @@ class MemoryRecallService:
                     "kind": str(row["kind"]),
                     "key": str(row["key"]),
                     "content": str(row["content"]),
+                    "meta": row["meta"],
                     "confidence": 1.0,
                     "reliability_bonus": 0.12 + 0.03 * importance,
                     "recency_floor": 1.0,
@@ -379,14 +404,16 @@ class MemoryRecallService:
         include_core: bool = False,
         activation: str | None = None,
         include_scoped: bool = False,
+        filters: MemoryFilters | None = None,
     ) -> list[dict[str, object]]:
+        filters = self.repository.tags.filters(filters)
         if max_results <= 0:
             return []
         if activation is not None and activation not in MEMORY_ACTIVATIONS:
             raise ValueError("invalid memory activation")
         self.repository.purge_expired()
         rows = self.repository.search_rows(
-            activation=activation, include_scoped=include_scoped,
+            activation=activation, include_scoped=include_scoped, filters=filters,
         )
         core_kinds = {"profile", "relationship", "shared"}
         ranked: list[tuple[float, object]] = []

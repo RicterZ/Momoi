@@ -31,7 +31,9 @@ def test_public_memory_api_shares_search_snapshot_and_index_source(database):
     document = memory.index_source.documents(str(identifier))[0]
     assert document.content == 'Kind: preference\nKey: drink\nContent: 喜欢无糖咖啡'
     assert document.document_type == 'confirmed_memory'
-    dense.assert_awaited_once_with([MemoryRecallQuery(query)], 6)
+    dense.assert_awaited_once_with(
+        [MemoryRecallQuery(query)], 24, eligible_ids={query: frozenset({str(identifier)})},
+    )
     rerank.assert_awaited_once()
     assert not database.in_transaction
 

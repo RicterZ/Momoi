@@ -5,6 +5,7 @@ from ....storage.memory.memory_values import (
     ALWAYS_MEMORY_KINDS,
     MEMORY_ACTIVATIONS,
     MEMORY_KINDS,
+    MOMOI_MEMORY_TAGS,
     valid_scoped_memory_key,
 )
 
@@ -97,7 +98,7 @@ def parse_decisions(
         if action != "write":
             continue
         memory = item["memory"]
-        if not isinstance(memory, dict) or set(memory) != {
+        if not isinstance(memory, dict) or set(memory) - {"meta"} != {
             "kind",
             "key",
             "content",
@@ -105,6 +106,8 @@ def parse_decisions(
             "expires_at",
         }:
             raise ValueError("write requires complete memory fields")
+        if "meta" in memory:
+            MOMOI_MEMORY_TAGS.validate(memory["meta"])
         if (
             memory["kind"] not in MEMORY_KINDS
             or memory["activation"] not in MEMORY_ACTIVATIONS

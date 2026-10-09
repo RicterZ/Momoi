@@ -500,6 +500,7 @@ class ContextService:
                     unit_ids=tuple(str(value) for value in item["unit_ids"]),
                     priority=int(item["priority"]),
                     semantic_expression=str(item["semantic_expression"]),
+                    kinds=tuple(str(kind) for kind in item.get("kinds") or []),
                 )
                 for item in selected
             ],

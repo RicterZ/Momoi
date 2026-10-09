@@ -20,6 +20,8 @@ class DenseSearchPool:
     after: float | None = None
     before: float | None = None
     group_by_parent: bool = False
+    source_ids: frozenset[str] | None = None
+    expressions: frozenset[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -105,11 +107,15 @@ class DenseQueryService:
             expression: [] for expression in expressions
         }
         for pool in pools:
+            indices = [i for i, expression in enumerate(expressions)
+                       if pool.expressions is None or expression in pool.expressions]
+            if not indices:
+                continue
             for index, matches in self.snapshot.search(
-                matrix, pool.document_types, width, after=pool.after, before=pool.before,
-                group_by_parent=pool.group_by_parent,
+                matrix[indices], pool.document_types, width, after=pool.after, before=pool.before,
+                group_by_parent=pool.group_by_parent, source_ids=pool.source_ids,
             ).items():
-                hits[expressions[index]].extend(matches)
+                hits[expressions[indices[index]]].extend(matches)
         return DenseSearchResult(
             space_id=self.snapshot.space_id, hits=hits, query_batch_size=len(expressions),
             request_ms=request_ms, search_ms=(time.monotonic() - started) * 1000,
@@ -132,11 +138,20 @@ class MemoryVectorRecall:
         self.queries = queries
         self.calibration = dict(calibration)
 
+    @staticmethod
+    def pools(eligible_ids: Mapping[str, frozenset[str]] | None):
+        if eligible_ids is None:
+            return [DenseSearchPool({"confirmed_memory"})]
+        return [DenseSearchPool({"confirmed_memory"}, source_ids=ids,
+                                expressions=frozenset({expression}))
+                for expression, ids in eligible_ids.items()]
+
     async def __call__(
-        self, queries: list[MemoryRecallQuery], limit: int,
+        self, queries: list[MemoryRecallQuery], limit: int, *,
+        eligible_ids: Mapping[str, frozenset[str]] | None = None,
     ) -> VectorMemoryEvidence:
         result = await self.queries.search(
             (query.dense_expression for query in queries),
-            [DenseSearchPool({"confirmed_memory"})], limit=limit,
+            self.pools(eligible_ids), limit=limit,
         )
         return VectorMemoryEvidence(result.memory, self.calibration)

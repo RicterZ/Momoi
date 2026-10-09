@@ -109,6 +109,7 @@ class SegmentedVectorSnapshot:
         after: float | None = None,
         before: float | None = None,
         group_by_parent: bool = False,
+        source_ids: frozenset[str] | None = None,
     ) -> dict[int, list[tuple[VectorMetadata, float]]]:
         candidates: dict[int, list[tuple[VectorMetadata, float]]] = {
             index: [] for index in range(len(query_vectors))
@@ -119,6 +120,7 @@ class SegmentedVectorSnapshot:
             eligible = [
                 index for index, meta in enumerate(segment.metadata)
                 if meta.document_type in document_types
+                and (source_ids is None or meta.source_id in source_ids)
                 and self._latest.get(meta.key) == meta.generation
                 and (after is None or meta.ends_at is not None and meta.ends_at >= after)
                 and (before is None or meta.starts_at is not None and meta.starts_at < before)

@@ -105,7 +105,8 @@ CREATE TABLE IF NOT EXISTS memories (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
     expires_at REAL,
-    superseded_by INTEGER
+    superseded_by INTEGER,
+    meta_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS memories_active
     ON memories(kind, key) WHERE superseded_by IS NULL;

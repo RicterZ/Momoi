@@ -137,7 +137,13 @@ class SemanticRecallService:
         episode_before: float | None = None,
         output_limit: int = 8,
     ) -> DenseRecallEvidence:
-        pools = [DenseSearchPool({"confirmed_memory"})] if include_memory else []
+        queries = list(queries)
+        pools = self.memory_dense_recall.pools(
+            self.store.memories.recall.eligible_source_ids([
+                query if isinstance(query, MemoryRecallQuery) else MemoryRecallQuery(query.dense_expression)
+                for query in queries
+            ])
+        ) if include_memory else []
         if include_episode:
             episode_types = (
                 {"episode_turn"}

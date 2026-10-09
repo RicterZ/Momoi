@@ -4,6 +4,7 @@ from ....storage.memory.memory_values import (
     ALWAYS_MEMORY_KINDS,
     MEMORY_ACTIVATIONS,
     MEMORY_KINDS,
+    MOMOI_MEMORY_TAGS,
 )
 
 _EVIDENCE = {
@@ -39,6 +40,18 @@ _MEMORY = {
         "key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,199}$"},
         "content": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "只写事实或规则及必要条件；不附证据、记录日期或审阅经过，保留事实本身必要的日期。"},
         "activation": {"type": "string", "enum": sorted(MEMORY_ACTIVATIONS)},
+        "meta": {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": "array", "maxItems": 3, "uniqueItems": True,
+                    "items": {"type": "string", "enum": sorted(MOMOI_MEMORY_TAGS.tags)},
+                    "description": "; ".join(f"{key}: {value}" for key, value in MOMOI_MEMORY_TAGS.tags.items()),
+                },
+            },
+            "required": ["tags"], "additionalProperties": False,
+            "description": "从预定义目录选择零至三个主题；没有合适主题时 tags 为空。",
+        },
         "expires_at": {
             "type": "null",
             "description": '记忆不会过期；始终为 null。临时状态属于当前状态。',

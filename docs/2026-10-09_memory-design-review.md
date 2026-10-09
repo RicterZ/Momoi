@@ -1,6 +1,6 @@
 # Momoi 单用户记忆：分类、检索与写入方案审计
 
-状态：**Milestone 7，待审计方案，尚未实施**。代码基线为 `1e6f12aa`（Milestone 6）。本文不包含数据库变更或线上迁移；下面的拟议接口不能直接用于当前版本。
+状态：**Milestone 7 原始方案；Milestone 8 已实施，详见 [标签与过滤](2026-10-09_memory-metadata.md)**。代码基线为 `1e6f12aa`（Milestone 6）。本文保留最初方案供对照；当前可用接口以 Milestone 8 文档为准，plan/apply 和 scope 仍未实现，线上迁移未执行。
 
 建议保留单用户、同一 SQLite 数据库和 `src/momoi/memory`。普通调用保持 `await memory.search("用户喜欢什么饮品")`；新增主题标签作为可选过滤条件，把工作流范围从 key 中分离。写入分成库内的计划与原子提交，Momoi 继续验证所有者证据并管理后台回合。
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from typing import cast
 
+from ..metadata import MemoryFilters, TagCatalog
 from .records import ActiveMemory, InventoryMemory, MEMORY_ACTIVATIONS, memory_snapshot_fingerprint
 from .transactions import transaction
 
@@ -16,8 +18,44 @@ class MemoryRepository:
     authentication and source-text verification belong to the caller. Connection
     lifetime and schema migrations remain the caller's responsibility.
     """
-    def __init__(self, database: sqlite3.Connection) -> None:
+    def __init__(self, database: sqlite3.Connection, *, tags: TagCatalog | None = None) -> None:
         self._db = database
+        self.tags = tags or TagCatalog()
+
+    @staticmethod
+    def _record(row):
+        record = dict(row)
+        meta = json.loads(record.pop("meta_json"))
+        # Reading does not reclassify historical tags after catalog changes.
+        record["meta"] = {"tags": meta.get("tags", [])}
+        return record
+
+    def _filter_sql(self, filters: MemoryFilters | None):
+        filters = self.tags.filters(filters)
+        clauses, params = [], []
+        if filters["kinds"]:
+            clauses.append("kind IN (" + ",".join("?" for _ in filters["kinds"]) + ")")
+            params.extend(filters["kinds"])
+        if filters["tags_any"]:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM json_each(meta_json, '$.tags') "
+                "WHERE value IN (" + ",".join("?" for _ in filters["tags_any"]) + "))"
+            )
+            params.extend(filters["tags_any"])
+        return "".join(" AND " + clause for clause in clauses), params
+
+    def update_meta(self, snapshot, meta, *, now: float | None = None) -> None:
+        """Apply a reviewed tag edit; reject stale snapshots and preserve vectors."""
+        meta = self.tags.validate(meta)
+        with transaction(self._db):
+            current = self.validate_snapshots({int(snapshot["id"]): snapshot})[int(snapshot["id"])]
+            if meta == current["meta"]:
+                return
+            self._db.execute(
+                "UPDATE memories SET meta_json=?, updated_at=? WHERE id=?",
+                (json.dumps(meta, ensure_ascii=False, sort_keys=True),
+                 time.time() if now is None else now, snapshot["id"]),
+            )
 
     def validate_snapshots(
         self, snapshots: dict[int, dict[str, object]],
@@ -64,6 +102,9 @@ class MemoryRepository:
         """Keep the survivor ID and transfer evidence from merged records."""
         newest = max(events, key=lambda item: float(item["occurred_at"]))
         with transaction(self._db):
+            current = self.snapshots([survivor_id, *source_ids])
+            meta = {"tags": sorted({tag for row in current.values() for tag in row["meta"]["tags"]})}
+            self.update_meta(current[survivor_id], meta)
             for source_id in source_ids:
                 self._db.execute(
                     """INSERT OR IGNORE INTO memory_evidence
@@ -91,7 +132,7 @@ class MemoryRepository:
         rows = self._db.execute(
             """SELECT id, kind, key, content, activation, authority,
                       source_event_id, evidence_quote, importance,
-                      created_at, updated_at, expires_at, superseded_by
+                      created_at, updated_at, expires_at, superseded_by, meta_json
                FROM memories AS m
                WHERE m.superseded_by IS NULL
                  AND (m.expires_at IS NULL OR m.expires_at>?)
@@ -102,7 +143,7 @@ class MemoryRepository:
                ORDER BY m.id""",
             (now,),
         ).fetchall()
-        return [cast(InventoryMemory, dict(row)) for row in rows]
+        return [cast(InventoryMemory, self._record(row)) for row in rows]
 
     def purge_expired(self, *, now: float | None = None) -> int:
         now = time.time() if now is None else now
@@ -137,7 +178,7 @@ class MemoryRepository:
             raise ValueError("invalid memory activation")
         now = time.time() if now is None else now
         rows = self._db.execute(
-            """SELECT id, kind, key, content, activation, importance, updated_at
+            """SELECT id, kind, key, content, activation, importance, updated_at, meta_json
                FROM memories AS m
                WHERE m.activation=? AND m.superseded_by IS NULL
                  AND (m.expires_at IS NULL OR m.expires_at > ?)
@@ -148,7 +189,7 @@ class MemoryRepository:
                ORDER BY m.id""",
             (activation, now),
         ).fetchall()
-        return [dict(row) for row in rows]
+        return [self._record(row) for row in rows]
 
     def has(self, kind: str, key: str) -> bool:
         return (
@@ -167,7 +208,7 @@ class MemoryRepository:
 
     def active(self, kind: str, key: str) -> ActiveMemory | None:
         row = self._db.execute(
-            """SELECT id, kind, key, content, importance FROM memories AS m
+            """SELECT id, kind, key, content, importance, meta_json FROM memories AS m
                WHERE m.kind=? AND m.key=? AND m.superseded_by IS NULL
                  AND (m.expires_at IS NULL OR m.expires_at > ?)
                  AND NOT EXISTS (
@@ -177,7 +218,7 @@ class MemoryRepository:
                ORDER BY m.id DESC LIMIT 1""",
             (kind, key, time.time()),
         ).fetchone()
-        return cast(ActiveMemory, dict(row)) if row else None
+        return cast(ActiveMemory, self._record(row)) if row else None
 
     def snapshots(self, ids: list[int]) -> dict[int, dict[str, object]]:
         if not ids:
@@ -190,7 +231,7 @@ class MemoryRepository:
                 ORDER BY m.id""",
             (*ids, time.time()),
         ).fetchall()
-        return {int(row["id"]): dict(row) for row in rows}
+        return {int(row["id"]): self._record(row) for row in rows}
 
 
     def add_evidence(
@@ -211,6 +252,11 @@ class MemoryRepository:
     def write(self, memory, target_ids, source, evidence, *, now: float) -> int:
         """Replace the supplied versions, carrying forward their evidence."""
         with transaction(self._db):
+            meta = memory.get("meta")
+            if "meta" not in memory:
+                previous = self.snapshots(list(target_ids))
+                meta = {"tags": sorted({tag for row in previous.values() for tag in row["meta"]["tags"]})}
+            meta = self.tags.validate(meta)
             existing = self._db.execute(
                 """SELECT id FROM memories WHERE kind=? AND key=? AND superseded_by IS NULL
                    AND (expires_at IS NULL OR expires_at>?)""",
@@ -234,8 +280,8 @@ class MemoryRepository:
                 )
             cursor = self._db.execute(
                 """INSERT INTO memories (kind,key,content,activation,authority,source_event_id,
-                   evidence_quote,importance,created_at,updated_at,expires_at)
-                   VALUES (?,?,?,?,'owner',?,?,0.5,?,?,?)""",
+                   evidence_quote,importance,created_at,updated_at,expires_at,meta_json)
+                   VALUES (?,?,?,?,'owner',?,?,0.5,?,?,?,?)""",
                 (
                     memory["kind"],
                     memory["key"],
@@ -246,6 +292,7 @@ class MemoryRepository:
                     now,
                     now,
                     memory["expires_at"],
+                    json.dumps(meta, ensure_ascii=False, sort_keys=True),
                 ),
             )
             memory_id = int(cursor.lastrowid)
@@ -265,9 +312,10 @@ class MemoryRepository:
                 )
             return memory_id
 
-    def recall_rows(self, *, now: float):
-        return self._db.execute(
-            """SELECT id, kind, key, content, importance, updated_at
+    def recall_rows(self, *, now: float, filters: MemoryFilters | None = None):
+        clause, params = self._filter_sql(filters)
+        rows = self._db.execute(
+            f"""SELECT id, kind, key, content, importance, updated_at, meta_json
                FROM memories
                WHERE superseded_by IS NULL
                  AND activation='recall'
@@ -275,14 +323,16 @@ class MemoryRepository:
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
                      WHERE t.kind=memories.kind AND t.key=memories.key
-                 )""",
-            (now,),
+                 ){clause}""",
+            (now, *params),
         ).fetchall()
+        return [self._record(row) for row in rows]
 
-    def search_rows(self, *, activation=None, include_scoped=False):
-        return self._db.execute(
-            """SELECT id, kind, key, content, authority, evidence_quote,
-                      activation, importance, updated_at,
+    def search_rows(self, *, activation=None, include_scoped=False, filters=None):
+        clause, params = self._filter_sql(filters)
+        rows = self._db.execute(
+            f"""SELECT id, kind, key, content, authority, evidence_quote,
+                      activation, importance, updated_at, meta_json,
                       (SELECT COUNT(*) FROM memory_evidence AS e
                        WHERE e.memory_id=memories.id) AS evidence_count
                FROM memories
@@ -293,13 +343,14 @@ class MemoryRepository:
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
                      WHERE t.kind=memories.kind AND t.key=memories.key
-                 )""",
-            (time.time(), include_scoped, activation, activation),
+                 ){clause}""",
+            (time.time(), include_scoped, activation, activation, *params),
         ).fetchall()
+        return [self._record(row) for row in rows]
 
     def recall_row(self, source_id: str):
         row = self._db.execute(
-            """SELECT id, kind, key, content FROM memories AS m
+            """SELECT id, kind, key, content, meta_json FROM memories AS m
                WHERE id=? AND superseded_by IS NULL AND activation='recall'
                  AND (expires_at IS NULL OR expires_at>?)
                  AND NOT EXISTS (
@@ -308,4 +359,4 @@ class MemoryRepository:
                  )""",
             (source_id, time.time()),
         ).fetchone()
-        return dict(row) if row is not None else None
+        return self._record(row) if row is not None else None

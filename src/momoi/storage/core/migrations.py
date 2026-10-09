@@ -682,6 +682,11 @@ def _add_weekly_reflection_workflow(database):
     _add_turn_workflow(database, "weekly_reflection")
 
 
+def _add_memory_metadata(database):
+    if "meta_json" not in _columns(database, "memories"):
+        database.execute("ALTER TABLE memories ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -716,6 +721,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_tool_discovery,
     _add_channel_event_workflow,
     _add_weekly_reflection_workflow,
+    _add_memory_metadata,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 
