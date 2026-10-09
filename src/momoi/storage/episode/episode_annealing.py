@@ -49,14 +49,6 @@ class EpisodeAnnealingStore:
                          WHERE et.episode_id=conversation_episodes.id
                            AND m.delivery_state='queued'
                      )
-                     AND NOT EXISTS (
-                         SELECT 1 FROM episode_turns AS waiting_turn
-                         JOIN self_state AS state
-                           ON state.pending_reply_turn_id=waiting_turn.turn_id
-                         WHERE waiting_turn.episode_id=conversation_episodes.id
-                           AND state.id=1
-                           AND state.pending_reply_expectation<>''
-                     )
                    ORDER BY updated_at""",
                 (now,),
             ).fetchall()

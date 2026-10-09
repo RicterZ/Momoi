@@ -61,7 +61,7 @@ class ContextCaptured(BaseException):
 
 
 @pytest.mark.parametrize(
-    "stage", ["owner", "goal", "heartbeat", "webhook", "reply_followup"]
+    "stage", ["owner", "goal", "heartbeat", "webhook"]
 )
 def test_real_workflows_inject_only_current_input_and_preserve_history(daemon, stage):
     clock, slot = seed(daemon)
@@ -86,13 +86,6 @@ def test_real_workflows_inject_only_current_input_and_preserve_history(daemon, s
         work = daemon._complete_heartbeat("heartbeat-context", owner_event_revision=0)
     elif stage == "webhook":
         work = daemon._complete_webhook_turn("CURRENT_WEBHOOK", "webhook-context")
-    elif stage == "reply_followup":
-        with daemon.store._db:
-            daemon.store._db.execute("""UPDATE self_state SET pending_reply_turn_id='old',
-                pending_reply_expectation='answer', pending_reply_since=1000,
-                pending_reply_last_reason='follow up', pending_reply_channel='napcat',
-                pending_reply_next_check_at=1060 WHERE id=1""")
-        work = daemon._complete_reply_wait("followup-context", owner_event_revision=0)
     else:
         draft = TurnDraft()
         result = daemon.agenda_tools.execute(

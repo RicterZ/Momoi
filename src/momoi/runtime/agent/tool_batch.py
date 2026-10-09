@@ -43,7 +43,6 @@ SubmitOwnerContext = Callable[
 
 @dataclass(frozen=True)
 class ToolBatchState:
-    visible_since_owner_update: bool = False
     previous_tool_name: str | None = None
     last_sent_bubbles: list[ChannelMessage] | None = None
     last_sent_channel: str = ""
@@ -123,7 +122,6 @@ class ToolBatchExecutor:
     async def execute(self, request: ToolBatchRequest) -> ToolBatchResult:
         execution = request.execution
         state = request.state
-        visible = state.visible_since_owner_update
         previous_tool_name = state.previous_tool_name
         last_sent_bubbles = state.last_sent_bubbles
         last_sent_channel = state.last_sent_channel
@@ -250,7 +248,7 @@ class ToolBatchExecutor:
                                 ToolCall(call.id + "-summary", "send_bubbles", {"bubbles": [args["summary"]]}),
                                 turn_id=request.turn_id, stage=execution.stage,
                                 round_number=request.round_number, delivery_channel=request.delivery_channel,
-                                heartbeat_turn=execution.heartbeat, reply_followup_turn=execution.reply_followup,
+                                heartbeat_turn=execution.heartbeat,
                                 heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
                                 previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
                                 previous_channel=last_sent_channel,
@@ -260,7 +258,6 @@ class ToolBatchExecutor:
                                 raise ValueError("proposal delivery failed: " + str(
                                     delivery.result.get("message") or delivery.result.get("error") or "unknown error"
                                 ))
-                            visible = True
                             last_sent_bubbles = copy.deepcopy(delivery.bubbles)
                             last_sent_channel = delivery.channel
                         plan = self.store.submit_task_plan(args["plan_id"], request.delivery_channel.name,
@@ -299,7 +296,7 @@ class ToolBatchExecutor:
                         harness_started=request.harness.started,
                     )
             elif call.name == "mood_change":
-                if execution.stage not in {"owner", "heartbeat", "webhook", "reply_followup"}:
+                if execution.stage not in {"owner", "heartbeat", "webhook"}:
                     result = {"ok": False, "error": "tool_not_allowed"}
                 else:
                     mood, error = parse_mood_update(call.arguments)
@@ -419,7 +416,6 @@ class ToolBatchExecutor:
                     reply, error = parse_end_turn(
                         call.arguments,
                         execution=execution,
-                        visible_since_owner_update=visible,
                     )
                     result = (
                         {"ok": True, "state": "completed"}
@@ -442,7 +438,6 @@ class ToolBatchExecutor:
                 if cached_reply is not None:
                     result = cached_reply
                     if result.get("ok"):
-                        visible = True
                         last_sent_bubbles = copy.deepcopy(result["bubbles"])
                         last_sent_channel = str(result["channel"])
                 elif getattr(target, "required_reply_mode", None) and (
@@ -460,7 +455,7 @@ class ToolBatchExecutor:
                 else:
                     try:
                         reply_request = replace(request, delivery_channel=target,
-                                                state=ToolBatchState(visible, previous_tool_name, last_sent_bubbles, last_sent_channel))
+                                                state=ToolBatchState(previous_tool_name, last_sent_bubbles, last_sent_channel))
                         bubbles = await self.replyer.generate(call, reply_request)
                         mode = call.arguments.get("mode", "text")
                         if mode == "text":
@@ -473,7 +468,7 @@ class ToolBatchExecutor:
                             and not event.delivery_context.get("channel_notice")), {})
                         delivery = dispatch(delivery_call, turn_id=request.turn_id, stage=execution.stage,
                             round_number=request.round_number, delivery_channel=target,
-                            heartbeat_turn=execution.heartbeat, reply_followup_turn=execution.reply_followup,
+                            heartbeat_turn=execution.heartbeat,
                             heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
                             previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
                             previous_channel=last_sent_channel,
@@ -482,7 +477,6 @@ class ToolBatchExecutor:
                             delivery = await delivery
                         result = {**delivery.result, "bubbles": bubbles, "mode": mode}
                         if delivery.bubbles is not None:
-                            visible = True
                             last_sent_bubbles = copy.deepcopy(delivery.bubbles)
                             last_sent_channel = delivery.channel
                     except Exception as error:
@@ -678,7 +672,7 @@ class ToolBatchExecutor:
         # Keep the model's actual assistant text and native tool exchange for
         # later Turns. Delivered speech is confirmed separately by the stored
         # conversation rows; a plain assistant text response never implies send.
-        if execution.stage in {"owner", "heartbeat", "reply_followup", "webhook", "goal", "plan_step"}:
+        if execution.stage in {"owner", "heartbeat", "webhook", "goal", "plan_step"}:
             self.store.append_turn_journal(
                 request.turn_id,
                 "assistant_exchange",
@@ -695,7 +689,6 @@ class ToolBatchExecutor:
             owner_updates=owner_updates,
             external_effect=external_effect,
             state=ToolBatchState(
-                visible_since_owner_update=visible,
                 previous_tool_name=previous_tool_name,
                 last_sent_bubbles=last_sent_bubbles,
                 last_sent_channel=last_sent_channel,

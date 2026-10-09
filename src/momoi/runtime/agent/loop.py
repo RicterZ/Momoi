@@ -72,7 +72,6 @@ class AgentLoop:
         require_response = execution.require_response
         autonomous_goal_id = execution.goal_id
         heartbeat_turn = execution.heartbeat
-        reply_wait_turn = execution.reply_followup
         accept_owner_updates = execution.accept_owner_updates
         dynamic_tool_policies = execution.dynamic_tool_policies
         external_tool_used = False
@@ -102,7 +101,7 @@ class AgentLoop:
         harness.validate_surface({str(tool["name"]) for tool in tools})
         def open_circuit(reason: str) -> bool:
             nonlocal circuit_reason, harness, permitted_tools, tools
-            if circuit_reason or workflow is not None or stage not in {"owner", "webhook", "reply_followup"}:
+            if circuit_reason or workflow is not None or stage not in {"owner", "webhook"}:
                 return False
             circuit_reason = reason
             if stage == "owner" and (external_tool_used or self.store.turn_has_external_effect(turn_id)):
@@ -151,8 +150,6 @@ class AgentLoop:
                 raise TurnBudgetExceeded("model round limit reached")
             if workflow is not None and workflow.before_round is not None:
                 await workflow.before_round(llm_round, messages)
-            if reply_wait_turn and self.store.pending_owner_reply() is None:
-                return None
             updates = (
                 await self.owner_updates.settle(
                     current_events, delivery_channel.name
@@ -215,7 +212,7 @@ class AgentLoop:
                 + (", ".join(sorted(str(tool["name"]) for tool in request_tools
                                      if tool["name"] not in callable_names)) or "无")
                 + "。未加载工具通过 tool_search 查找、tool_enable 加载；加载不解除阶段限制。"
-            ) if llm_round == 1 and stage in {"owner", "heartbeat", "goal", "webhook", "reply_followup", "plan_step"} else ""
+            ) if llm_round == 1 and stage in {"owner", "heartbeat", "goal", "webhook", "plan_step"} else ""
             if round_directives and round_directives != last_round_directives:
                 directive = "<runtime_directives>\n" + round_directives + "\n</runtime_directives>"
                 if not last_round_directives and messages[-1].get("role") == "user":
@@ -337,7 +334,7 @@ class AgentLoop:
                         log_event(logger, logging.DEBUG, "turn_auto_completed",
                                   stage=stage, turn_id=turn_id, reason="no_tool_calls")
                         return AgentReply([], mood_update=None if circuit_reason else draft.mood_update)
-                if stage in {"owner", "heartbeat", "reply_followup", "webhook", "goal", "plan_step"}:
+                if stage in {"owner", "heartbeat", "webhook", "goal", "plan_step"}:
                     self.store.append_turn_journal(
                         turn_id,
                         "assistant_exchange",

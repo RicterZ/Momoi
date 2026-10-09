@@ -241,8 +241,8 @@ class WebhookStore:
                 outbox = self._db.execute(
                     """INSERT INTO outbox
                        (turn_id, dedupe_key, text, kind, media_path, payload_json,
-                        reply_expectation, target_channel)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        target_channel)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
                         turn_id,
                         f"turn:{turn_id}:{index}",
@@ -250,7 +250,6 @@ class WebhookStore:
                         kind,
                         path,
                         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                        "",
                         target_channel,
                     ),
                 )
@@ -284,13 +283,6 @@ class WebhookStore:
                     recall_values=(visible,),
                 )
             self._apply_mood_update(reply.mood_update, now)
-            if reply.should_schedule_reply_wait:
-                self._bind_turn_reply_expectation(
-                    turn_id,
-                    reply.reply_expectation,
-                    reply.reply_wait_delay_minutes,
-                    reply.reply_wait_reason,
-                )
             outbox_ids = [
                 int(row["id"])
                 for row in self._db.execute(

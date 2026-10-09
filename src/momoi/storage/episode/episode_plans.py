@@ -29,8 +29,6 @@ class EpisodePlanStore:
         turn_id: str,
         now: float,
         raw_text: str,
-        *,
-        keep_open: bool = False,
     ) -> None:
         row = self._db.execute(
             """SELECT plan_json FROM context_plans
@@ -80,7 +78,7 @@ class EpisodePlanStore:
             topics = list(action.get("topics") or [])
             entities = list(action.get("entities") or [])
             loops = list(action.get("open_loops") or [])
-            status = "open" if loops or keep_open else "closing"
+            status = "open" if loops else "closing"
             if existing is None:
                 self._db.execute(
                     """INSERT INTO conversation_episodes
@@ -150,7 +148,7 @@ class EpisodePlanStore:
                       )""",
                 (now, now, *selected),
             )
-        elif not keep_open:
+        else:
             self._db.execute(
                 f"""UPDATE conversation_episodes SET status='closed',
                    closed_at=?, updated_at=?

@@ -713,6 +713,68 @@ def _add_reflection_candidates(database):
 );""")
 
 
+def _remove_reply_followup(database):
+    from ..episode.episode_sql import runtime_archive_kind_sql
+
+    waiting_turns = set()
+    if "pending_reply_turn_id" in _columns(database, "self_state"):
+        waiting_turns.update(row[0] for row in database.execute(
+            "SELECT pending_reply_turn_id FROM self_state WHERE pending_reply_turn_id IS NOT NULL"
+        ))
+    if "reply_expectation" in _columns(database, "outbox"):
+        waiting_turns.update(row[0] for row in database.execute(
+            "SELECT DISTINCT turn_id FROM outbox WHERE reply_expectation<>''"
+        ))
+    for turn_id in waiting_turns:
+        database.execute(
+            f"""UPDATE conversation_episodes SET status='closing', closed_at=NULL
+                WHERE status='open' AND open_loops_json='[]'
+                  AND id IN (SELECT episode_id FROM episode_turns WHERE turn_id=?)
+                  AND {runtime_archive_kind_sql('conversation_episodes')} IS NULL""",
+            (turn_id,),
+        )
+    reason = "reply_followup_retired"
+    database.execute(
+        """UPDATE outbox SET state='superseded', last_error=?,
+               possible_duplicate=CASE WHEN state IN ('sending','ambiguous')
+                                       THEN 1 ELSE possible_duplicate END
+           WHERE state IN ('pending','sending','ambiguous') AND (
+               turn_id IN (SELECT id FROM turns WHERE workflow_kind='reply_followup')
+               OR turn_id IN (SELECT turn_id FROM notifications
+                              WHERE notification_key='heartbeat.reply_followup'))""",
+        (reason,),
+    )
+    database.execute(
+        """UPDATE messages SET delivery_state=CASE
+               WHEN (SELECT possible_duplicate FROM outbox WHERE id=messages.outbox_id)=1
+               THEN 'uncertain' ELSE 'failed' END
+           WHERE outbox_id IN (SELECT id FROM outbox WHERE last_error=?)""", (reason,),
+    )
+    database.execute(
+        """UPDATE notifications SET state='superseded', claimed_at=NULL,
+               superseded_at=?, superseded_reason=?
+           WHERE notification_key='heartbeat.reply_followup'
+             AND state IN ('pending','queued') AND (
+                 state='pending' OR turn_id IN (
+                     SELECT turn_id FROM outbox WHERE last_error=?))""",
+        (time.time(), reason, reason),
+    )
+    database.execute(
+        """UPDATE turns SET state='cancelled', stage='cancelled', failure_reason=?
+           WHERE workflow_kind='reply_followup' AND state='running'""", (reason,),
+    )
+    database.execute(
+        """UPDATE self_state SET heartbeat_claimed_at=NULL, heartbeat_claim_kind=NULL
+           WHERE heartbeat_claim_kind='reply'"""
+    )
+    for column in _columns(database, "self_state"):
+        if column.startswith("pending_reply_"):
+            database.execute(f"ALTER TABLE self_state DROP COLUMN {column}")
+    for table in ("outbox", "notifications"):
+        if "reply_expectation" in _columns(database, table):
+            database.execute(f"ALTER TABLE {table} DROP COLUMN reply_expectation")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -751,6 +813,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_memory_commits,
     add_memory_scope,
     _add_reflection_candidates,
+    _remove_reply_followup,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

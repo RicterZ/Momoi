@@ -45,7 +45,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     "next_check_minutes": 30, "reason": "Enough for now",
                 }),
                 ToolCall("finish", "end_turn", {
-                    "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
+                    "mood": {"decision": "unchanged"},
                 }),
             ]
             recall_count = 0
@@ -112,7 +112,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     "activity": "resting", "mode": "rest", "strategy": [],
                 })
                 finish = ToolCall("finish", "end_turn", {
-                    "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
+                    "mood": {"decision": "unchanged"},
                 })
 
                 class Provider:
@@ -234,7 +234,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             "finish",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -407,7 +406,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             "finish",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )

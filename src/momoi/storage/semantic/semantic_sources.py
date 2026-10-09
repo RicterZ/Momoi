@@ -36,12 +36,6 @@ class SemanticSourceStore:
                          JOIN messages AS m ON m.turn_id=et.turn_id
                          WHERE et.episode_id=e.id AND m.delivery_state='queued'
                      )
-                     AND NOT EXISTS (
-                         SELECT 1 FROM episode_turns AS et
-                         JOIN self_state AS s ON s.pending_reply_turn_id=et.turn_id
-                         WHERE et.episode_id=e.id AND s.id=1
-                           AND s.pending_reply_expectation<>''
-                     )
                      AND (e.title<>'' OR e.working_summary<>'' OR e.narrative_summary<>''
                           OR e.summary<>'' OR EXISTS (
                               SELECT 1 FROM episode_turns AS et
@@ -71,12 +65,6 @@ class SemanticSourceStore:
                      SELECT 1 FROM episode_turns AS et
                      JOIN messages AS m ON m.turn_id=et.turn_id
                      WHERE et.episode_id=e.id AND m.delivery_state='queued'
-                 )
-                 AND NOT EXISTS (
-                     SELECT 1 FROM episode_turns AS et
-                     JOIN self_state AS s ON s.pending_reply_turn_id=et.turn_id
-                     WHERE et.episode_id=e.id AND s.id=1
-                       AND s.pending_reply_expectation<>''
                  )
                  AND (e.title<>'' OR e.working_summary<>'' OR e.narrative_summary<>''
                       OR e.summary<>'' OR EXISTS (

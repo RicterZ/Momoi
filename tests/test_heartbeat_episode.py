@@ -162,42 +162,6 @@ class HeartbeatTimelineTests(unittest.TestCase):
             self.assertNotIn("<bubble>", str(transcript.messages))
             store.close()
 
-    def test_reply_followup_does_not_append_recent_heartbeat_activity(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            now = datetime(
-                2026, 8, 16, 10, tzinfo=ZoneInfo("Asia/Shanghai")
-            ).timestamp()
-            self._commit(store, "heartbeat-1", now, "刷微博")
-            self.assertEqual(
-                [item["content"] for item in store.recent_conversation_messages(10, 10000) if item["role"] == "heartbeat"],
-                ["Activity: 刷微博\nResult: 记录 heartbeat-1"],
-            )
-            store.begin_turn("owner-1", "owner", ["evt-1"])
-            with store._db:
-                store._db.execute(
-                    """UPDATE self_state SET pending_reply_turn_id='owner-1',
-                       pending_reply_expectation='x', pending_reply_since=?,
-                       pending_reply_next_check_at=? WHERE id=1""",
-                    (now, now + 60),
-                )
-            store.begin_turn(
-                "reply-followup", "reply_followup", ["reply-followup:1"]
-            )
-            with patch("momoi.storage.agenda.heartbeat_commits.time.time", return_value=now + 60):
-                store.commit_reply_followup(
-                    "reply-followup",
-                    owner_event_revision=0,
-                    notification_config=NotificationConfig(),
-                    mood_update=None,
-                    reason="test",
-                    pending_reply_turn_id="owner-1",
-                )
-            self.assertEqual(
-                [item["content"] for item in store.recent_conversation_messages(10, 10000) if item["role"] == "heartbeat"],
-                ["Activity: 刷微博\nResult: 记录 heartbeat-1"],
-            )
-            store.close()
 
     def test_heartbeat_header_migration_preserves_existing_records(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

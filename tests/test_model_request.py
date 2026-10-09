@@ -58,7 +58,7 @@ class ModelRequestTest(unittest.IsolatedAsyncioTestCase):
             thinking=ThinkingConfig(effort="high"),
         )
         stage_efforts = {
-            "episode_anneal": "low", "reply_followup": "max",
+            "episode_anneal": "low", "webhook": "max",
             "reflection": "medium", "goal": "xhigh",
         }
         runner = self.runner(stage_efforts)
@@ -114,7 +114,7 @@ class ModelRequestTest(unittest.IsolatedAsyncioTestCase):
                                          "none" if model == "gpt-test" else "disabled")
 
     async def test_overrides_are_isolated_across_concurrent_requests_and_child_tasks(self):
-        runner = self.runner({"episode_anneal": "low", "reply_followup": "max"})
+        runner = self.runner({"episode_anneal": "low", "webhook": "max"})
         ready = asyncio.Event()
         arrived = 0
         observed = []
@@ -134,7 +134,7 @@ class ModelRequestTest(unittest.IsolatedAsyncioTestCase):
             return ProviderResponse([], [])
 
         with model_request(thinking_effort="outer"):
-            await asyncio.gather(*(self.run_round(runner, stage, complete) for stage in ("episode_anneal", "reply_followup", "owner")))
+            await asyncio.gather(*(self.run_round(runner, stage, complete) for stage in ("episode_anneal", "webhook", "owner")))
             self.assertEqual(requested_thinking_effort(), "outer")
         self.assertCountEqual(observed, [("low", "low"), ("max", "max"), ("default", "default")])
         self.assertEqual(requested_thinking_effort("default"), "default")

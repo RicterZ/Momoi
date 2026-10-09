@@ -142,7 +142,7 @@ class BubbleDelivery:
     async def send_voice(
         self, text: str, *, tool_call_id: str, turn_id: str,
         delivery_channel: Channel,
-        heartbeat_turn: bool, reply_followup_turn: bool,
+        heartbeat_turn: bool,
         heartbeat_owner_event_revision: int | None,
         delivery_context: dict | None = None,
     ) -> BubbleDeliveryResult:
@@ -164,7 +164,7 @@ class BubbleDelivery:
             return failure("tts_not_configured")
 
         def contact_error() -> str | None:
-            if (heartbeat_turn or reply_followup_turn) and heartbeat_owner_event_revision is not None:
+            if heartbeat_turn and heartbeat_owner_event_revision is not None:
                 return self.policy.heartbeat_contact_error(
                     heartbeat_owner_event_revision,
                 )
@@ -223,7 +223,7 @@ class BubbleDelivery:
             delivery_context=context.get("delivery_context"),
             **{key: context[key] for key in (
                 "turn_id", "delivery_channel", "heartbeat_turn",
-                "reply_followup_turn", "heartbeat_owner_event_revision",
+                "heartbeat_owner_event_revision",
             )},
         )
 
@@ -236,7 +236,6 @@ class BubbleDelivery:
         round_number: int,
         delivery_channel: Channel,
         heartbeat_turn: bool,
-        reply_followup_turn: bool,
         heartbeat_owner_event_revision: int | None,
         previous_tool_name: str | None,
         previous_bubbles: list[ChannelMessage] | None,
@@ -255,7 +254,7 @@ class BubbleDelivery:
         if bubbles is None:
             return BubbleDeliveryResult({"ok": False, "error": error})
         check_contact = (
-            (heartbeat_turn or reply_followup_turn)
+            heartbeat_turn
             and heartbeat_owner_event_revision is not None
         )
         contact_error = (

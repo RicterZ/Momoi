@@ -36,7 +36,6 @@ from momoi.models import (
     ProviderResponse,
     ToolCall,
 )
-from momoi.storage.delivery.reply_wait import decode_reply_wait, encode_reply_wait
 from momoi.runtime.parsing import (
     parse_bubbles,
     parse_response,
@@ -503,59 +502,13 @@ class MessagingTest(unittest.TestCase):
             store.close()
 
     def test_validates_terminal_response_tool(self) -> None:
-        self.assertIsNone(decode_reply_wait("旧版纯文本期待"))
-        encoded = encode_reply_wait("老师的安排", "需要安排晚上活动", 6)
-        self.assertEqual(
-            decode_reply_wait(encoded),
-            {
-                "expected_information": "老师的安排",
-                "reason": "需要安排晚上活动",
-                "delay_minutes": 6,
-            },
-        )
-        reply, error = parse_response(
-            {
-                "reply_wait": {"wait": False},
-                "mood": {"decision": "unchanged"},
-            }
-        )
+        reply, error = parse_response({"mood": {"decision": "unchanged"}})
         self.assertIsNone(error)
         self.assertEqual(reply.messages, [])
-        self.assertFalse(reply.expects_reply)
-        self.assertFalse(reply.should_schedule_reply_wait)
-        scheduled, error = parse_response(
-            {
-                "reply_wait": {
-                    "wait": True,
-                    "delay_minutes": 7,
-                    "expected_information": "主人晚上的安排",
-                    "reason": "晚上约好一起玩，需要知道主人什么时候有空",
-                },
-                "mood": {"decision": "unchanged"},
-            }
-        )
-        self.assertIsNone(error)
-        self.assertTrue(scheduled.should_schedule_reply_wait)
-        self.assertEqual(scheduled.reply_expectation, "主人晚上的安排")
-        self.assertEqual(scheduled.reply_wait_delay_minutes, 7)
-        self.assertIn("一起玩", scheduled.reply_wait_reason)
-        invalid_schedule, error = parse_response(
-            {
-                "reply_wait": {
-                    "wait": True,
-                    "delay_minutes": 11,
-                    "expected_information": "主人晚上的安排",
-                    "reason": "需要按约定跟进",
-                },
-                "mood": {"decision": "unchanged"},
-            }
-        )
-        self.assertIsNone(invalid_schedule)
-        self.assertEqual(error, "invalid_reply_wait_decision")
         with_bubbles, error = parse_response(
             {
                 "bubbles": ["旧协议气泡"],
-                "reply_wait": {"wait": False},
+
                 "mood": {"decision": "unchanged"},
             }
         )
@@ -569,9 +522,9 @@ class MessagingTest(unittest.TestCase):
             }
         )
         self.assertIsNone(old_shape)
-        self.assertEqual(error, "legacy_reply_wait_fields_not_allowed")
+        self.assertEqual(error, "unexpected_end_turn_fields")
         heartbeat, error = parse_response({
-            "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
+            "mood": {"decision": "unchanged"},
             "heartbeat": {"next_check_minutes": 10, "reason": "later"},
         })
         self.assertIsNone(heartbeat)
@@ -594,8 +547,8 @@ class MessagingTest(unittest.TestCase):
                 "mood": {"decision": "unchanged"},
             }
         )
-        self.assertIsNone(invalid)
-        self.assertEqual(error, "invalid_reply_wait_decision")
+        self.assertIsNotNone(invalid)
+        self.assertIsNone(error)
         rich, error = parse_bubbles(
             {
                 "bubbles": [
@@ -763,7 +716,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "close-after-warning",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -853,7 +805,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "finish",
                                 "end_turn",
                                 {
-                                    "reply_wait": {"wait": False},
                                     "mood": {"decision": "unchanged"},
                                 },
                             )
@@ -967,7 +918,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "silent-close",
                         "end_turn",
                         {
-                            "reply_wait": {"wait": False},
                             "mood": {"decision": "unchanged"},
                         },
                     )
@@ -1033,12 +983,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "close-after-question",
                                 "end_turn",
                                 {
-                                    "reply_wait": {
-                                        "wait": True,
-                                        "delay_minutes": 4,
-                                        "expected_information": "老师的选择",
-                                        "reason": "需要按老师的选择继续",
-                                    },
                                     "mood": {"decision": "unchanged"},
                                 },
                             )
@@ -1056,13 +1000,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             outbox = daemon.store.due_outbox()
             self.assertEqual([row.text for row in outbox], ["老师会选哪一个？"])
-            stored_wait = json.loads(
-                daemon.store._db.execute(
-                    "SELECT reply_expectation FROM outbox WHERE id=?", (outbox[0].id,)
-                ).fetchone()[0]
-            )
-            self.assertEqual(stored_wait["expected_information"], "老师的选择")
-            self.assertEqual(stored_wait["delay_minutes"], 4)
+            self.assertIsNone(daemon.store.next_heartbeat_due_at(False))
             daemon.store.close()
 
     async def test_outbox_does_not_wait_between_different_turns(self) -> None:
@@ -1162,7 +1100,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "image-response",
                         "end_turn",
                         {
-                            "reply_wait": {"wait": False},
                             "mood": {"decision": "unchanged"},
                         },
                     )
@@ -1262,7 +1199,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "emotion-close",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -1371,7 +1307,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         tool_name = "end_turn"
                         arguments = {
-                            "reply_wait": {"wait": False},
                             "mood": {"decision": "unchanged"},
                         }
                     call = ToolCall(
@@ -1607,7 +1542,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 f"end_turn-{self.calls}",
                                 "end_turn",
                                 {
-                                    "reply_wait": {"wait": False},
                                     "mood": {"decision": "unchanged"},
                                 },
                             )

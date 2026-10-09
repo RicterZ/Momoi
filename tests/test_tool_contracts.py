@@ -47,7 +47,7 @@ def test_model_tool_schemas_compile_and_examples_validate():
         *MEMORY_TOOL_SPECS,
         *THINKING_TOOL_SPECS,
         *(end_turn_tool_spec(stage) for stage in (
-            "owner", "goal", "heartbeat", "webhook", "reply_followup",
+            "owner", "goal", "heartbeat", "webhook",
         )),
     ]
     for spec in specs:

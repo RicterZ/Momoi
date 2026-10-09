@@ -44,30 +44,6 @@ class HeartbeatStateStore:
             separators=(",", ":"),
         )
 
-    def pending_owner_reply(self, now: float | None = None) -> dict[str, object] | None:
-        now = time.time() if now is None else now
-        row = self._db.execute(
-            """SELECT pending_reply_turn_id, pending_reply_expectation,
-                      pending_reply_since, pending_reply_last_reason,
-                      pending_reply_channel, pending_reply_delay_minutes,
-                      pending_reply_next_check_at
-               FROM self_state WHERE id=1"""
-        ).fetchone()
-        if row is None or not str(row["pending_reply_expectation"] or "").strip():
-            return None
-        since = float(row["pending_reply_since"] or now)
-        source_turn = str(row["pending_reply_turn_id"] or "")
-        return {
-            "source_turn": source_turn,
-            "expected_information": str(row["pending_reply_expectation"]),
-            "reason": str(row["pending_reply_last_reason"] or ""),
-            "waiting_since": self.context_timestamp(since),
-            "waiting_minutes": max(0, int((now - since) / 60)),
-            "delay_minutes": int(row["pending_reply_delay_minutes"] or 0),
-            "deadline": self.context_timestamp(row["pending_reply_next_check_at"] or now),
-            "channel": str(row["pending_reply_channel"] or ""),
-        }
-
     def _apply_mood_update(
         self, update: dict[str, object] | None, now: float
     ) -> None:

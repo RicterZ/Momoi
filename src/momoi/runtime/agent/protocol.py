@@ -93,16 +93,7 @@ def parse_end_turn(
     arguments: dict[str, Any],
     *,
     execution: TurnExecutionSpec,
-    visible_since_owner_update: bool,
 ) -> tuple[AgentReply | None, str | None]:
     if not execution.require_response:
         return None, "end_turn_not_allowed"
-    reply, error = parse_response(arguments)
-    if reply is None:
-        return None, error
-    if reply.expects_reply and not visible_since_owner_update:
-        return None, "reply_expectation_without_visible_bubble"
-    if execution.reply_followup:
-        if reply.should_schedule_reply_wait:
-            return None, "reply_followup_cannot_schedule_another_wait"
-    return reply, None
+    return parse_response(arguments)

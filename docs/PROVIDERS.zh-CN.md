@@ -36,7 +36,7 @@ bindings:
       thinking:
         effort: high
         stages:
-          reply_followup: low
+          webhook: low
   balance:
     service: deepseek_balance
     options:

@@ -49,7 +49,7 @@ class TurnHarnessTest(unittest.TestCase):
                                 harness_started=started,
                                 goal_turn=stage == "goal",
                                 require_response=stage in {
-                                    "owner", "heartbeat", "webhook", "reply_followup",
+                                    "owner", "heartbeat", "webhook",
                                 },
                                 owner_turn=stage == "owner",
                                 failed_rounds=failed_rounds,
@@ -174,17 +174,6 @@ class TurnHarnessTest(unittest.TestCase):
         harness.accept_owner_update()
         self.assertEqual(harness.validate([send]), "heartbeat_recall_required_before_send")
 
-    def test_reply_followup_can_work_before_or_after_optional_delivery(self) -> None:
-        harness = TurnHarness.for_stage("reply_followup")
-        work = ToolCall("work", "read_file", {"path": "notes.txt"})
-        send = ToolCall("send", "reply", {"bubbles": ["我再看看"]})
-        end = ToolCall("end", "end_turn", {})
-
-        self.assertIsNone(harness.validate([work]))
-        self.assertIsNone(harness.validate([send]))
-        harness.accept("reply")
-        self.assertIsNone(harness.validate([work]))
-        self.assertIsNone(harness.validate([end]))
 
     def test_terminal_tool_must_be_alone_for_every_stage(self) -> None:
         work = ToolCall("work", "work", {})

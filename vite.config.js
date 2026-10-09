@@ -207,7 +207,7 @@ function previewThinkingCalls() {
       reasoning: "老师在问表情包。先召回最近用过的贴纸，不要把分类方案一次倒完。",
     },
     ...Array.from({ length: 22 }, (_, index) => {
-      const stages = ["owner", "heartbeat", "webhook", "reply_followup", "reflection"];
+      const stages = ["owner", "heartbeat", "webhook", "reflection"];
       const stage = stages[index % stages.length];
       const reasoning = [
         `预览思考 ${index + 1}。用来把左侧列表和右侧详情都撑出滚动条。`,

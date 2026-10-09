@@ -33,7 +33,7 @@ def test_wait_returns_messages_in_result_and_prevents_stale_actions(tmp_path, wi
                     return response(ToolCall('wait-1', 'wait', {'seconds': 60}),
                                     ToolCall('stale', 'read_file', {'path': 'must-not-read'}))
                 assert len(captured) == 2
-                return response(ToolCall('end', 'end_turn', {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'}}))
+                return response(ToolCall('end', 'end_turn', {'mood': {'decision': 'unchanged'}}))
         daemon.provider = Provider()
         initial = IncomingMessage('first', 'first', '我有件事', 1, 1)
         daemon.store.add_event(initial)

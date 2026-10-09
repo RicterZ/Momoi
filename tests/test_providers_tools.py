@@ -1156,7 +1156,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "end_turn-corrected",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -1233,7 +1232,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "corrected-response",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -1282,7 +1280,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                             "name": "end_turn",
                                             "arguments": json.dumps(
                                                 {
-                                                    "reply_wait": {"wait": False},
                                                     "mood": {"decision": "unchanged"},
                                                 },
                                                 ensure_ascii=False,
@@ -1367,7 +1364,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
-                                    "reply_wait": {"type": "object"},
                                     "mood": {"type": "object"},
                                 },
                             },
@@ -1435,7 +1431,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             response.tool_calls[0].arguments,
             {
-                "reply_wait": {"wait": False},
                 "mood": {"decision": "unchanged"},
             },
         )

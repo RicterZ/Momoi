@@ -188,6 +188,6 @@ def test_skill_management_requires_tool_search_and_enable():
                                   enable_tool_groups=groups, tools=tools, tool_surface=surface)
             assert result["ok"]
             assert name in {spec["name"] for spec in tools}
-            for stage in ("owner", "heartbeat", "goal", "reply_followup"):
+            for stage in ("owner", "heartbeat", "goal"):
                 assert name in surface.permitted_names(stage)
             assert name not in surface.permitted_names("webhook")

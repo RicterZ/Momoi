@@ -96,8 +96,8 @@ class NotificationStore:
             outbox = self._db.execute(
                 """INSERT OR IGNORE INTO outbox
                    (turn_id, dedupe_key, text, kind, media_path, payload_json,
-                    reply_expectation, target_channel)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    target_channel)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     row["turn_id"],
                     dedupe_key,
@@ -105,7 +105,6 @@ class NotificationStore:
                     kind,
                     path,
                     json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                    row["reply_expectation"] if index == len(messages) - 1 else "",
                     target_channel,
                 ),
             )

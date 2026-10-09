@@ -193,12 +193,7 @@ def test_allowed_end_turn_captures_tool_surface_and_waits_for_commit(daemon, kin
                 ),
             ]
         )
-    if kind == "reply_followup":
-        daemon.store.pending_owner_reply = lambda: {"source_turn": "previous"}
-        calls.append(
-            response(ToolCall("send", "send_bubbles", {"bubbles": ["followup"]}))
-        )
-    end = {"mood": {"decision": "unchanged"}, "reply_wait": {"wait": False}}
+    end = {"mood": {"decision": "unchanged"}, }
     if kind == "goal":
         end = {}
         calls.append(response(ToolCall("review", "goal_review", {"status": "done", "result": "done"})))

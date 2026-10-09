@@ -127,17 +127,6 @@ class EpisodeConsolidationStore:
                          SELECT 1 FROM messages AS m
                          WHERE m.turn_id=t.id AND m.delivery_state='queued'
                      )
-                     AND NOT EXISTS (
-                         SELECT 1 FROM self_state AS state
-                         WHERE state.id=1
-                           AND state.pending_reply_turn_id=t.id
-                           AND state.pending_reply_expectation<>''
-                     )
-                     AND NOT EXISTS (
-                         SELECT 1 FROM outbox AS o
-                         WHERE o.turn_id=t.id AND o.reply_expectation<>''
-                           AND o.state IN ('pending', 'sending', 'ambiguous')
-                     )
                      AND EXISTS (
                          SELECT 1 FROM messages AS m WHERE m.turn_id=t.id
                      )

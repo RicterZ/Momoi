@@ -252,7 +252,7 @@ class OwnerWorkflow:
         directives: list[str] = []
         directives.extend(self._interruption_notices.pop(channel.name, []))
         if channel.name == "qq_call":
-            directives.append("当前是主人通过 QQ 电话的发言，使用 reply(mode=voice) 回应；保持自然口语，不为电话安排 reply_wait，结束本轮不等于挂断电话。")
+            directives.append("当前是主人通过 QQ 电话的发言，使用 reply(mode=voice) 回应；保持自然口语，结束本轮不等于挂断电话。")
         for plan in self.store.paused_task_plans(channel.name):
             if plan["status"] == "paused" and self.store.plan_resume_safety(plan) == "owner_decision_required":
                 directives.append(
@@ -377,8 +377,6 @@ class OwnerWorkflow:
             tool_calls=len(draft.tool_calls),
             memory_operations=len(draft.memory_operations),
             goals=len(draft.goals),
-            expects_reply=reply.expects_reply,
-            schedule_reply_wait=reply.should_schedule_reply_wait,
             llm=self.store.turn_usage(turn_id),
         )
         self.outbox_changed.set()

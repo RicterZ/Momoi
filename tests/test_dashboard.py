@@ -303,7 +303,6 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 "last_at": None,
                 "running": False,
                 "kind": None,
-                "reply_check_at": None,
             },
         )
 
@@ -396,7 +395,6 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             json={"content": "test"},
         )
         self.assertEqual(missing.status, 404)
-
 
 
     async def test_chat_log_includes_ignored_and_deferred_turns(self) -> None:
@@ -552,10 +550,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         now = time.time()
         with self.store._db:
             self.store._db.execute(
-                """UPDATE self_state SET next_heartbeat_at=?, last_heartbeat_at=?,
-                   pending_reply_expectation='等回复',
-                   pending_reply_next_check_at=? WHERE id=1""",
-                (now + 1800, now - 600, now + 300),
+                """UPDATE self_state SET next_heartbeat_at=?, last_heartbeat_at=? WHERE id=1""",
+                (now + 1800, now - 600),
             )
         heartbeat = (
             await (await self.client.get("/api/overview", headers=self._auth())).json()
@@ -564,7 +560,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(heartbeat["last_at"], now - 600, places=3)
         self.assertFalse(heartbeat["running"])
         self.assertIsNone(heartbeat["kind"])
-        self.assertAlmostEqual(heartbeat["reply_check_at"], now + 300, places=3)
+        self.assertNotIn("reply_check_at", heartbeat)
 
         with self.store._db:
             self.store._db.execute(

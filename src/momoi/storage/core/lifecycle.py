@@ -36,7 +36,7 @@ class LifecycleStore:
             "UPDATE notifications SET claimed_at=NULL WHERE state='pending'"
         )
         self._supersede_heartbeat_contacts(
-            ("heartbeat.chat", "heartbeat.reply_followup"),
+            ("heartbeat.chat",),
             "process_restart_invalidated_ephemeral_contact",
             now,
         )

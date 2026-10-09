@@ -217,9 +217,7 @@ class OutboxWorker:
                         self.bubble_delivery.voice_audio.pop((row.turn_id, row.text), None)
                     if isinstance(native_message_id, str) and native_message_id:
                         self.store.record_delivery_receipt(row.id, native_message_id)
-                    reply_waiting = self.store.mark_sent(row.id)
-                    if reply_waiting:
-                        self.agenda_changed.set()
+                    self.store.mark_sent(row.id)
                     previous_delivery = delivery
                     log_event(
                         logger,

@@ -10,7 +10,6 @@ from ..channel import (
 )
 from ..storage.delivery.emotions import EMOTION_PREFIX
 from ..models import AgentReply
-from ..storage.delivery.reply_wait import REPLY_WAIT_MAX_MINUTES, REPLY_WAIT_MIN_MINUTES
 from ..memory.storage.records import MEMORY_KINDS
 
 
@@ -85,56 +84,11 @@ def parse_bubbles(
     return bubbles, None
 
 
-def parse_reply_wait_decision(
-    value: object,
-) -> tuple[dict[str, Any] | None, str | None]:
-    if not isinstance(value, dict):
-        return None, "invalid_reply_wait_decision"
-    wait = value.get("wait")
-    if wait is False and set(value) == {"wait"}:
-        return {"wait": False}, None
-    if wait is not True or set(value) != {
-        "wait",
-        "delay_minutes",
-        "expected_information",
-        "reason",
-    }:
-        return None, "invalid_reply_wait_decision"
-    delay = value.get("delay_minutes")
-    expected = value.get("expected_information")
-    reason = value.get("reason")
-    if (
-        not isinstance(delay, int)
-        or isinstance(delay, bool)
-        or not REPLY_WAIT_MIN_MINUTES <= delay <= REPLY_WAIT_MAX_MINUTES
-        or not isinstance(expected, str)
-        or not expected.strip()
-        or len(expected) > 300
-        or not isinstance(reason, str)
-        or not reason.strip()
-        or len(reason) > 500
-    ):
-        return None, "invalid_reply_wait_decision"
-    return {
-        "wait": True,
-        "delay_minutes": delay,
-        "expected_information": expected.strip(),
-        "reason": reason.strip(),
-    }, None
-
-
 def parse_response(
     arguments: dict[str, Any],
 ) -> tuple[AgentReply | None, str | None]:
     if "bubbles" in arguments:
         return None, "bubbles_not_allowed_in_end_turn"
-    legacy_reply_wait_fields = {
-        "expects_reply",
-        "reply_expectation",
-        "schedule_reply_wait",
-    }
-    if legacy_reply_wait_fields & arguments.keys():
-        return None, "legacy_reply_wait_fields_not_allowed"
     messages: list[ChannelMessage] = []
     error: str | None = None
     mood, error = parse_mood_decision(arguments.get("mood"))
@@ -142,15 +96,11 @@ def parse_response(
         return None, error
     if "activity" in arguments:
         return None, "activity_not_allowed_in_end_turn"
-    reply_wait, error = parse_reply_wait_decision(arguments.get("reply_wait"))
-    if reply_wait is None:
-        return None, error
-    if set(arguments) - {"mood", "reply_wait"}:
+    if set(arguments) - {"mood"}:
         return None, "unexpected_end_turn_fields"
     return AgentReply(
         messages,
         mood_update=mood,
-        reply_wait=reply_wait,
     ), None
 
 

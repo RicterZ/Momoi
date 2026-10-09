@@ -167,7 +167,7 @@ def test_shared_workflows_replay_identical_prefix_and_changes(tmp_path):
     store.append_turn_journal("past", "assistant_exchange", {
         "content": "内部判断", "results": [],
     }, trust="runtime")
-    stages = ("owner", "heartbeat", "goal", "webhook", "reply_followup",
+    stages = ("owner", "heartbeat", "goal", "webhook",
               "plan_step", "current_state_maintenance")
     for stage in stages:
         store.begin_turn(stage, stage, [stage])

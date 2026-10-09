@@ -9,7 +9,6 @@ THINKING_STAGES = {
     "replyer": "发言生成（Replyer）",
     "topic_selection": "话题召回筛选",
     "heartbeat": "心跳",
-    "reply_followup": "回复跟进",
     "webhook": "Webhook",
     "goal": "目标执行",
     "plan_step": "Plan 步骤执行",

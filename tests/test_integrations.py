@@ -250,7 +250,7 @@ class CatalogTest(unittest.TestCase):
             ("max_tokens", True),
             ("tool_choice", "false"),
             ("thinking", {"effort": "invalid"}),
-            ("thinking", {"effort": "high", "stages": {"reply_followup": "low"}}),
+            ("thinking", {"effort": "high", "stages": {"webhook": "low"}}),
             ("unknown", "value"),
         ]:
             with self.subTest(field=field):

@@ -52,7 +52,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.context = dict(
             turn_id="voice-turn", stage="owner", round_number=1,
             delivery_channel=self.channel,
-            heartbeat_turn=False, reply_followup_turn=False,
+            heartbeat_turn=False,
             heartbeat_owner_event_revision=None,
             previous_tool_name=None, previous_bubbles=None, previous_channel="",
         )
@@ -210,7 +210,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         name = "send_voice"
         self.assertNotIn(name, {tool["name"] for tool in surface.conversation_specs()})
         self.assertEqual(surface.mcp_server_groups(), {})
-        for stage in ("owner", "heartbeat", "webhook", "reply_followup", "goal"):
+        for stage in ("owner", "heartbeat", "webhook", "goal"):
             with self.subTest(stage=stage):
                 permitted = surface.permitted_names(stage)
                 self.assertNotIn(name, permitted)
@@ -228,7 +228,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("send_bubbles", {tool["name"] for tool in surface.conversation_specs()})
         reply = next(tool for tool in surface.conversation_specs() if tool["name"] == "reply")
         self.assertEqual(reply["input_schema"]["properties"]["mode"]["enum"], ["text", "voice"])
-        for stage in ("owner", "heartbeat", "webhook", "reply_followup", "goal"):
+        for stage in ("owner", "heartbeat", "webhook", "goal"):
             self.assertIn("reply", surface.permitted_names(stage))
             self.assertNotIn("send_voice", surface.permitted_names(stage))
         unsupported = ToolSurface(SimpleNamespace(tool_specs=[]), {"napcat": SimpleNamespace()}, voice_enabled=True)
@@ -236,7 +236,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(unsupported_reply["input_schema"]["properties"]["mode"]["enum"], ["text"])
 
     async def test_voice_runs_through_chat_and_goal_workflows(self):
-        for stage in ("owner", "heartbeat", "webhook", "reply_followup", "goal"):
+        for stage in ("owner", "heartbeat", "webhook", "goal"):
             with self.subTest(stage=stage):
                 config = AppConfig(
                     providers=provider_catalog(LLMConfig("http://localhost", "test", "test", 100, 0, 1, 0)),
@@ -262,7 +262,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         calls.append(ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "rest"}))
                         calls.append(ToolCall("recall", "recall", {"semantic": ["Prior discussion of this message"]}))
                     calls.append(reply_call("voice", text=self.text, mode="voice"))
-                    end = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
+                    end = {"mood": {"decision": "unchanged"}}
                     if stage == "goal":
                         calls.append(ToolCall("review", "goal_review", {"status": "done", "result": "voice delivered"}))
                         end = {}
@@ -271,8 +271,6 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     async def complete(_system, _messages, tools, **kwargs):
                         self.assertIn("reply", {tool["name"] for tool in tools})
                         self.assertNotIn("send_voice", {tool["name"] for tool in tools})
-                        if stage == "reply_followup":
-                            self.assertIsNone(kwargs.get("required_tool"))
                         self.assertTrue(calls, "unexpected protocol retry")
                         call = calls.pop(0)
                         if call.name == "end_turn":
@@ -335,7 +333,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(rounds, 2)
                     self.assertIn("voice_not_supported", str(messages[-1]))
                     call = ToolCall("end", "end_turn", {
-                        "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
+                        "mood": {"decision": "unchanged"},
                     })
                 return ProviderResponse([{
                     "type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments,
@@ -353,7 +351,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.close()
 
     async def test_model_receives_synthesis_error_and_can_fall_back_to_text(self):
-        for stage in ("webhook", "reply_followup", "goal"):
+        for stage in ("webhook", "goal"):
             with self.subTest(stage=stage):
                 config = AppConfig(
                     providers=provider_catalog(LLMConfig("http://localhost", "test", "test", 100, 0, 1, 0)),
@@ -394,7 +392,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                             call = ToolCall("review", "goal_review", {"status": "done", "result": "text fallback prepared"})
                         else:
                             self.assertEqual(rounds, 4 if stage == "goal" else 3)
-                            end = ({} if stage == "goal" else {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}})
+                            end = ({} if stage == "goal" else {"mood": {"decision": "unchanged"}})
                             call = ToolCall("end", "end_turn", end)
                         return ProviderResponse([{
                             "type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments,

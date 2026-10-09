@@ -65,7 +65,6 @@ class DashboardStore:
                    ('delivered', 'uncertain', 'internal')"""
         ).fetchone()[0]
         state = self.self_state()
-        waiting = bool(str(state.get("pending_reply_expectation") or "").strip())
         return {
             "counts": counts,
             "current_state": self.dashboard_current_state(),
@@ -86,11 +85,6 @@ class DashboardStore:
                 "last_at": _dashboard_unix(state.get("last_heartbeat_at")),
                 "running": state.get("heartbeat_claimed_at") is not None,
                 "kind": state.get("heartbeat_claim_kind"),
-                "reply_check_at": (
-                    _dashboard_unix(state.get("pending_reply_next_check_at"))
-                    if waiting
-                    else None
-                ),
             },
             "latest_message_at": latest_message,
             "latest_message_timestamp": (

@@ -65,7 +65,6 @@ class TurnCommitStore:
                 turn_id,
                 now,
                 raw_text,
-                keep_open=reply.should_schedule_reply_wait,
             )
             if user_text.strip():
                 self._db.execute(
@@ -86,8 +85,8 @@ class TurnCommitStore:
                 outbox = self._db.execute(
                     """INSERT INTO outbox
                        (turn_id, dedupe_key, text, kind, media_path, payload_json,
-                        reply_expectation, target_channel)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        target_channel)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
                         turn_id,
                         f"turn:{turn_id}:{index}",
@@ -95,7 +94,6 @@ class TurnCommitStore:
                         kind,
                         path,
                         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                        "",
                         target_channel,
                     ),
                 )
@@ -121,7 +119,6 @@ class TurnCommitStore:
                 "final",
                 {
                     "channel": target_channel,
-                    "reply_wait": reply.reply_wait,
                     "mood_change": reply.mood_update,
                     "mutations": {
                         "memory_operations": draft.memory_operations if draft else [],
@@ -136,13 +133,6 @@ class TurnCommitStore:
                 "UPDATE events SET processed=1 WHERE id=?",
                 ((event_id,) for event_id in event_ids),
             )
-            if reply.should_schedule_reply_wait:
-                self._bind_turn_reply_expectation(
-                    turn_id,
-                    reply.reply_expectation,
-                    reply.reply_wait_delay_minutes,
-                    reply.reply_wait_reason,
-                )
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
                    source_ids_json=?, failure_reason=NULL, updated_at=? WHERE id=?""",

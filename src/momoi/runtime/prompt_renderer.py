@@ -13,8 +13,6 @@ from .turn_support import (
     HEARTBEAT_SYSTEM_PROMPT,
     OWNER_PROMPT_PATH,
     OWNER_SYSTEM_PROMPT,
-    REPLY_WAIT_PROMPT_PATH,
-    REPLY_WAIT_SYSTEM_PROMPT,
     SYSTEM_PROMPT_PATH,
     live_prompt as _live_prompt,
 )
@@ -146,6 +144,3 @@ class PromptRenderer:
 
     def _owner_system_prompt(self) -> str:
         return _live_prompt(OWNER_PROMPT_PATH, OWNER_SYSTEM_PROMPT)
-
-    def _reply_wait_system_prompt(self) -> str:
-        return _live_prompt(REPLY_WAIT_PROMPT_PATH, REPLY_WAIT_SYSTEM_PROMPT)

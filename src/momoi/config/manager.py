@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from .loading import parse_config
+from .loading import parse_config, remove_retired_thinking_stage
 from ..integrations.configuration import managed_catalog
 from .models import ConfigError
 from .workspace import atomic_write, default_config, empty_providers
@@ -142,6 +142,7 @@ class ConfigurationManager:
             raise ConfigError("cannot read config.json") from None
         if not isinstance(raw, dict):
             raise ConfigError("config.json must be an object")
+        remove_retired_thinking_stage(raw)
         return managed_qq_call(raw)
 
     def _provider_path(self, raw):

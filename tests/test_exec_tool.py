@@ -68,7 +68,7 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(visible & catalog, expected - DEFERRED_TOOLS)
             discovered = {spec["name"] for specs in surface.discovery_groups().values() for spec in specs}
             self.assertEqual((visible | discovered) & catalog, expected)
-            for stage in ("owner", "heartbeat", "goal", "reply_followup"):
+            for stage in ("owner", "heartbeat", "goal"):
                 self.assertEqual(surface.permitted_names(stage) & catalog, expected)
             self.assertEqual(surface.permitted_names("webhook") & catalog, {"web_fetch"})
         for name in replaced:

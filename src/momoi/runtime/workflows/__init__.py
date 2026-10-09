@@ -5,7 +5,6 @@ from .memory_maintenance import MemoryMaintenanceWorkflow
 from .memory_operation import MemoryOperationWorkflow
 from .owner import OwnerWorkflow
 from .reflection import ReflectionWorkflow
-from .reply_followup import ReplyFollowupWorkflow
 from .webhook import WebhookWorkflow
 
 __all__ = [
@@ -18,6 +17,5 @@ __all__ = [
     "MemoryOperationWorkflow",
     "OwnerWorkflow",
     "ReflectionWorkflow",
-    "ReplyFollowupWorkflow",
     "WebhookWorkflow",
 ]

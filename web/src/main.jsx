@@ -160,12 +160,6 @@ function activityMetaItems(activity, heartbeat) {
       value: formatDate(heartbeat.next_at),
     });
   }
-  if (heartbeat?.reply_check_at) {
-    items.push({
-      label: "回复复查",
-      value: formatDate(heartbeat.reply_check_at),
-    });
-  }
   if (items.length === 1) {
     items.push({ label: "下次心跳", value: "未排程" });
   }
@@ -2399,6 +2393,7 @@ function RecallDetail({ recall }) {
   );
 }
 
+// Keep retired follow-up records readable in historical thinking logs.
 const plannerStages = new Set(["owner", "heartbeat", "webhook", "goal", "plan_step", "reply_followup"]);
 
 function ThinkingCall({ call, children = [], nested = false }) {

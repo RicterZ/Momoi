@@ -5,9 +5,9 @@ from momoi.runtime.agent.workflow import TurnExecutionSpec
 
 
 class EndTurnTest(unittest.TestCase):
-    STAGES = ("owner", "heartbeat", "webhook", "reply_followup")
+    STAGES = ("owner", "heartbeat", "webhook")
 
-    def arguments(self, stage, *, wait=False):
+    def arguments(self, stage):
         result = {
             "mood": {
                 "decision": "updated",
@@ -15,24 +15,16 @@ class EndTurnTest(unittest.TestCase):
                 "intensity": 0.6,
                 "cause": "The shared game ended badly",
             },
-            "reply_wait": {"wait": wait},
         }
-        if wait:
-            result["reply_wait"].update(
-                delay_minutes=3,
-                expected_information="Which game to play next",
-                reason="Suggest another game if the owner is still undecided",
-            )
         return result
 
-    def parse(self, stage, arguments, *, visible=True):
+    def parse(self, stage, arguments):
         execution = TurnExecutionSpec(
             stage, goal_id="existing-goal" if stage == "goal" else None
         )
         return parse_end_turn(
             arguments,
             execution=execution,
-            visible_since_owner_update=visible,
         )
 
     def test_all_chat_stages_return_private_state_without_messages(self):
@@ -42,35 +34,17 @@ class EndTurnTest(unittest.TestCase):
                 self.assertIsNone(error)
                 self.assertEqual(reply.messages, [])
                 self.assertEqual(reply.mood_update["state"], "frustrated")
-                self.assertFalse(reply.should_schedule_reply_wait)
 
-    def test_wait_requires_visible_bubbles_for_each_initiating_stage(self):
-        for stage in ("owner", "heartbeat", "webhook"):
-            with self.subTest(stage=stage):
-                arguments = self.arguments(stage, wait=True)
-                reply, error = self.parse(stage, arguments, visible=False)
-                self.assertIsNone(reply)
-                self.assertEqual(error, "reply_expectation_without_visible_bubble")
-                reply, error = self.parse(stage, arguments)
-                self.assertIsNone(error)
-                self.assertTrue(reply.should_schedule_reply_wait)
-                self.assertEqual(reply.reply_wait_delay_minutes, 3)
 
     def test_silent_close_is_allowed_for_every_chat_stage(self):
         for stage in self.STAGES:
             with self.subTest(stage=stage):
                 reply, error = self.parse(
-                    stage, self.arguments(stage), visible=False
+                    stage, self.arguments(stage)
                 )
                 self.assertIsNone(error)
                 self.assertIsNotNone(reply)
 
-    def test_followup_cannot_start_another_wait(self):
-        reply, error = self.parse(
-            "reply_followup", self.arguments("reply_followup", wait=True)
-        )
-        self.assertIsNone(reply)
-        self.assertEqual(error, "reply_followup_cannot_schedule_another_wait")
 
     def test_business_fields_are_rejected_by_every_chat_stage(self):
         for stage in self.STAGES:
@@ -110,10 +84,9 @@ class EndTurnSchemaTest(unittest.TestCase):
 
         arguments = EndTurnTest()
         expected = {
-            'owner': {'reply_wait', 'mood'},
-            'heartbeat': {'reply_wait', 'mood'},
-            'webhook': {'reply_wait', 'mood'},
-            'reply_followup': {'reply_wait', 'mood'},
+            'owner': {'mood'},
+            'heartbeat': {'mood'},
+            'webhook': {'mood'},
             'goal': set(),
         }
         for stage, required in expected.items():
@@ -131,6 +104,4 @@ class EndTurnSchemaTest(unittest.TestCase):
                     self.assertFalse(validator.is_valid({**args, field: {}}))
                 if stage != 'goal':
                     self.assertFalse(validator.is_valid({**args, 'goal': None}))
-                if stage == 'reply_followup':
-                    self.assertFalse(validator.is_valid(arguments.arguments(stage, wait=True)))
                 self.assertEqual(spec, end_turn_tool_spec(stage))

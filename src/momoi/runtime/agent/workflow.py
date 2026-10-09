@@ -34,7 +34,7 @@ class TurnExecutionSpec:
 
     @property
     def require_response(self) -> bool:
-        return self.stage in {"owner", "heartbeat", "webhook", "reply_followup"}
+        return self.stage in {"owner", "heartbeat", "webhook"}
 
     @property
     def accept_owner_updates(self) -> bool:
@@ -47,7 +47,6 @@ class TurnExecutionSpec:
             "heartbeat",
             "webhook",
             "goal",
-            "reply_followup",
             "plan_step",
             "current_state_maintenance",
         }
@@ -55,10 +54,6 @@ class TurnExecutionSpec:
     @property
     def heartbeat(self) -> bool:
         return self.stage == "heartbeat"
-
-    @property
-    def reply_followup(self) -> bool:
-        return self.stage == "reply_followup"
 
 
 @dataclass(frozen=True)

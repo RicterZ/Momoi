@@ -13,7 +13,7 @@ from tests.test_memory_operations import daemon, event, response
 
 def end_call():
     return ToolCall("end", "end_turn", {
-        "mood": {"decision": "unchanged"}, "reply_wait": {"wait": False},
+        "mood": {"decision": "unchanged"},
     })
 
 
@@ -115,7 +115,7 @@ def test_heartbeat_activity_and_end_commit_only_after_success(daemon):
     assert daemon.store._db.execute("SELECT state FROM turns WHERE id=?", (turn_id,)).fetchone()[0] == "completed"
 
 
-@pytest.mark.parametrize("stage", ["owner", "heartbeat", "webhook", "reply_followup", "goal", "plan_step"])
+@pytest.mark.parametrize("stage", ["owner", "heartbeat", "webhook", "goal", "plan_step"])
 def test_hidden_delivery_tools_cannot_bypass_replyer(stage):
     harness = TurnHarness.for_stage(stage)
     if harness.spec.first_tool:
@@ -150,13 +150,13 @@ def test_circuit_recovery_is_bounded_and_cannot_restart_task(daemon, recovery):
             return response(ToolCall("forbidden", "write_file", {"path": "no", "content": "no"}))
         if step == 1 and recovery == "silent_end":
             return response(ToolCall("silent-end", "end_turn", {
-                "mood": {"decision": "unchanged"}, "reply_wait": {"wait": False},
+                "mood": {"decision": "unchanged"},
             }))
         if recovery == "sent_then_error" or step == 2:
             notices.append("任务没做完，工具连续出错，我先停下了。")
             return response(reply_call("notice", bubbles=notices[-1:]))
         return response(ToolCall("finish", "end_turn", {
-            "mood": {"decision": "unchanged"}, "reply_wait": {"wait": False},
+            "mood": {"decision": "unchanged"},
         }))
 
     daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format="anthropic"))

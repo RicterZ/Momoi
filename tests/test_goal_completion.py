@@ -122,7 +122,7 @@ class GoalBoundaryTest(unittest.TestCase):
     def test_goal_review_permission_and_completion_gate(self):
         review = ToolCall("review", "goal_review", {"status": "done", "result": "done"})
         end = ToolCall("end", "end_turn", {})
-        for stage in ("owner", "heartbeat", "webhook", "reply_followup"):
+        for stage in ("owner", "heartbeat", "webhook"):
             harness = TurnHarness.for_stage(
                 stage, permitted_tool_names=frozenset({"goal_review"})
             )
@@ -592,7 +592,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
         self.daemon.agenda_tools.finish_review = AsyncMock(
             side_effect=AssertionError("must not execute")
         )
-        ordinary = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
+        ordinary = {"mood": {"decision": "unchanged"}}
 
         def inspect(index, messages):
             if index == 1:

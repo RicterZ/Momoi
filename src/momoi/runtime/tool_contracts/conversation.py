@@ -2,7 +2,6 @@ import copy
 from typing import Any
 
 from ...tools.contracts.agenda import GOAL_REVIEW_SCHEMA
-from ...storage.delivery.reply_wait import REPLY_WAIT_MAX_MINUTES, REPLY_WAIT_MIN_MINUTES
 
 SEGMENT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -127,66 +126,6 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
     ],
 }
 
-REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "description": (
-        '仅针对已发送且明确需要回应的消息安排一次跟进：沉默会留下重要答案、决策、确认或紧急关切未解决时用 wait=true。普通闲聊、期待回复或还有话说不足以跟进；勿为此新增问题。无需特定回应或已有其他调度器跟进时仅传 {"wait":false}，用户仍可回复。true 必须附带 delay_minutes、expected_information、reason。'
-    ),
-    "properties": {
-        "wait": {
-            "type": "boolean",
-            "description": (
-                '是否在送达后持续沉默时跟进；依据回应的必要性，而非对话是否开放。'
-            ),
-        },
-        "delay_minutes": {
-            "type": "integer",
-            "minimum": REPLY_WAIT_MIN_MINUTES,
-            "maximum": REPLY_WAIT_MAX_MINUTES,
-            "description": (
-                '成功送达后等待的完整分钟数；按紧迫性和回答所需时间选择。'
-            ),
-        },
-        "expected_information": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 300,
-            "description": (
-                '需要用户提供的具体答案、决策、确认或认可；不写自己的下一条消息或泛泛期待。'
-            ),
-        },
-        "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500,
-            "description": (
-                '说明此消息为何需要跟进、要澄清什么；不新增话题、猜测沉默原因或编造对话钩子。'
-            ),
-        },
-    },
-    "required": ["wait"],
-    "additionalProperties": False,
-    "examples": [
-        {"wait": False},
-        {
-            "wait": True,
-            "delay_minutes": REPLY_WAIT_MAX_MINUTES,
-            "expected_information": "主人确认刚发出的行程草案是否采用",
-            "reason": "行程安排还等主人确认；若仍未回复，确认是否需要修改草案，暂不执行预订。",
-        },
-    ],
-    "oneOf": [
-        {
-            "properties": {"wait": {"enum": [False]}},
-            "maxProperties": 1,
-        },
-        {
-            "properties": {"wait": {"enum": [True]}},
-            "required": ["delay_minutes", "expected_information", "reason"],
-        },
-    ],
-}
-
 HEARTBEAT_ACTIVITY_TOOL_SPEC: dict[str, Any] = {
     "name": "heartbeat_activity",
     "description": (
@@ -233,23 +172,22 @@ GOAL_REVIEW_TOOL_SPEC: dict[str, Any] = {
 }
 
 
-END_TURN_EXAMPLE = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
+END_TURN_EXAMPLE = {"mood": {"decision": "unchanged"}}
 
 END_TURN_TOOL_SPEC: dict[str, Any] = {
     "name": "end_turn",
     "description": (
-        '结束本轮并提交其暂存状态。不发送消息。可单独调用或在 reply、heartbeat_activity、goal_review 或 save_image_summary 之后最后调用；这些前置调用必须成功。其他工作工具必须在更早的轮次中完成。对于 owner、webhook、heartbeat 和 reply_followup，需提供 mood 和 reply_wait 对象；reply_followup 要求 wait=false。Heartbeat 要求在结束前成功调用 heartbeat_activity。对于 Goal，必须先成功调用 goal_review，然后以空参数 {} 调用 end_turn。'
+        '结束本轮并提交其暂存状态。不发送消息。可单独调用或在 reply、heartbeat_activity、goal_review 或 save_image_summary 之后最后调用；这些前置调用必须成功。其他工作工具必须在更早的轮次中完成。对于 owner、webhook 和 heartbeat，需提供 mood 对象。Heartbeat 要求在结束前成功调用 heartbeat_activity。对于 Goal，必须先成功调用 goal_review，然后以空参数 {} 调用 end_turn。'
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
             "mood": MOOD_DECISION_SCHEMA,
         },
         "oneOf": [
             {
                 "title": "Conversation completion",
-                "required": ["reply_wait", "mood"],
+                "required": ["mood"],
                 "examples": [copy.deepcopy(END_TURN_EXAMPLE)],
             },
             {
@@ -261,7 +199,7 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
         "examples": [
             copy.deepcopy(END_TURN_EXAMPLE),
             {},
-            {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}},
+            {"mood": {"decision": "unchanged"}},
         ],
         "additionalProperties": False,
     },
@@ -277,18 +215,9 @@ def end_turn_tool_spec(stage: str) -> dict[str, Any]:
         schema["properties"] = {}
         schema["required"] = []
         schema["examples"] = [{}]
-    elif stage in {"owner", "heartbeat", "webhook", "reply_followup"}:
-        schema["required"] = ["reply_wait", "mood"]
+    elif stage in {"owner", "heartbeat", "webhook"}:
+        schema["required"] = ["mood"]
         schema["examples"] = [copy.deepcopy(END_TURN_EXAMPLE)]
-        if stage == "reply_followup":
-            wait_schema = schema["properties"]["reply_wait"]
-            wait_schema.pop("oneOf")
-            wait_schema["description"] = (
-                "This is the scheduled follow-up. Return {\"wait\":false}; "
-                "do not schedule another follow-up. The owner can still reply normally."
-            )
-            wait_schema["examples"] = [{"wait": False}]
-            wait_schema["properties"] = {"wait": {"type": "boolean", "enum": [False]}}
     else:
         raise ValueError(f"end_turn is not available in {stage}")
     return spec
@@ -300,15 +229,11 @@ def end_turn_correction(error: str, schema: dict[str, Any], arguments: dict[str,
         "reply_required_before_end_turn": "This recovery phase requires a user-visible notification before ending.",
         "goal_review_required_before_end_turn": "Call goal_review successfully before end_turn({}); they may share a batch in that order.",
         "goal_end_turn_requires_empty_arguments": "Submit the Goal outcome through goal_review; end_turn accepts only {} in this stage.",
-        "unexpected_end_turn_fields": "end_turn accepts only mood and reply_wait. Submit Goal outcomes through goal_review and Heartbeat activity and schedule through heartbeat_activity.",
+        "unexpected_end_turn_fields": "end_turn accepts only mood. Submit Goal outcomes through goal_review and Heartbeat activity and schedule through heartbeat_activity.",
         "heartbeat_activity_required_before_end_turn": "Call heartbeat_activity successfully before end_turn; they may share a batch.",
         "invalid_mood_decision": 'mood must be {"decision":"unchanged"} or {"decision":"updated","state":"calm","intensity":0.3,"cause":"具体原因"}. A string is invalid.',
-        "invalid_reply_wait_decision": f'reply_wait must be {{"wait":false}} or an object with wait=true, delay_minutes (integer {REPLY_WAIT_MIN_MINUTES}-{REPLY_WAIT_MAX_MINUTES}), expected_information and reason. A boolean is invalid; wait=false accepts no other fields.',
-        "reply_expectation_without_visible_bubble": "Send the actual question/continuation with reply before waiting. Use wait=false if the conversation is complete.",
-        "reply_followup_cannot_schedule_another_wait": 'This follow-up cannot schedule another follow-up; use reply_wait={"wait":false}.',
         "bubbles_not_allowed_in_end_turn": "Send the response through reply first; remove bubbles from end_turn.",
         "activity_not_allowed_in_end_turn": "Remove activity; record Heartbeat activity through heartbeat_activity before ending.",
-        "legacy_reply_wait_fields_not_allowed": "Remove expects_reply, reply_expectation and schedule_reply_wait; use the reply_wait object.",
     }
     missing = [key for key in schema.get("required", []) if key not in arguments]
     message = hints.get(error, "Correct the arguments to match this stage's schema and retry end_turn as a native tool call.")

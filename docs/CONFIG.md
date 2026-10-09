@@ -67,7 +67,7 @@ The empty string means “use model default”. Submit through the same PATCH en
   "revision": "<revision from GET /api/settings/configuration>",
   "document": {
     "thinking": {
-      "stages": {"episode_anneal": "low", "reply_followup": "low"}
+      "stages": {"episode_anneal": "low", "webhook": "low"}
     }
   }
 }
@@ -161,7 +161,7 @@ temporary-file behavior. Pending messages are synthesized again after a restart
 or cache eviction; failures during this recovery mark delivery failed.
 On Weixin the harness rejects `send_voice` without changing the tool schema;
 direct internal calls return `voice_not_supported`.
-Owner, Heartbeat, Webhook, Goal and reply-followup workflows support voice output.
+Owner, Heartbeat, Webhook and Goal workflows support voice output.
 Goal voice messages retain the existing notification scheduling.
 
 Incoming voice transcriptions on NapCat and Weixin are prefixed with

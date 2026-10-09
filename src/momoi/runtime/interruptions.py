@@ -27,7 +27,6 @@ TURN_INGRESS = {
     "webhook": TurnIngressPolicy(),
     "goal": TurnIngressPolicy(),
     "heartbeat": TurnIngressPolicy(),
-    "reply_followup": TurnIngressPolicy(),
     "reflection": TurnIngressPolicy(),
     "weekly_reflection": TurnIngressPolicy(),
     "memory_operation": TurnIngressPolicy(),

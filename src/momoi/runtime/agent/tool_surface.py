@@ -238,8 +238,6 @@ class ToolSurface:
             )
         if stage == "webhook":
             return frozenset({"reply", "mood_change", "web_fetch", "read_tool_result", "end_turn"})
-        if stage == "reply_followup":
-            return frozenset(general_chat)
         if stage == "goal":
             return frozenset(
                 {

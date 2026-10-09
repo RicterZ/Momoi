@@ -177,7 +177,7 @@ def test_replyer_poke_not_a_planner_tool_and_qq_control_is_permitted(tmp_path):
         assert 'qq_poke' not in names
         assert 'qq_recall_message' not in names
         assert '戳一戳' in next(spec['description'] for spec in tools if spec['name'] == 'reply')
-        for stage in ('owner', 'heartbeat', 'reply_followup', 'goal'):
+        for stage in ('owner', 'heartbeat', 'goal'):
             assert {'qq_recall_message', 'qq_call_status'} <= current.permitted_names(stage)
             assert 'qq_poke' not in current.permitted_names(stage)
         groups = current.discovery_groups()

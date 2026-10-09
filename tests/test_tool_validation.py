@@ -69,7 +69,7 @@ def test_stage_specific_end_turn():
         "end_turn",
         {
             "mood": {"decision": "unchanged", "state": "happy"},
-            "reply_wait": {"wait": False},
+
         },
         end_turn_tool_spec("owner")["input_schema"],
     )[1]

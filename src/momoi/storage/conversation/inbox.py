@@ -3,13 +3,12 @@ import sqlite3
 import time
 
 from ...models import IncomingMessage, MessageRecalled, MessagePoked
-from ..episode.episode_sql import runtime_archive_kind_sql
 from ..core.integrity import decode_stored_json
 from ..core.turn_workflow import turn_workflow_kind_sql
 
 
 class InboxStore:
-    """Owner event ingestion, pending inbox, and reply-wait cancellation."""
+    """Owner event ingestion, pending inbox, and heartbeat contact cancellation."""
 
     def _record_channel_notice(self, event_id, message_id, channel, occurred_at, text, payload):
         now = time.time()
@@ -154,43 +153,12 @@ class InboxStore:
             )
             if cursor.rowcount == 1:
                 now = time.time()
-                pending = self._db.execute(
-                    """SELECT pending_reply_turn_id FROM self_state
-                       WHERE id=1 AND pending_reply_expectation<>''"""
-                ).fetchone()
-                if pending is not None:
-                    self._release_reply_episode_hold(
-                        str(pending["pending_reply_turn_id"] or ""), now
-                    )
-                self._db.execute(
-                    """UPDATE self_state SET pending_reply_turn_id=NULL,
-                       pending_reply_expectation='', pending_reply_since=NULL,
-                       pending_reply_last_reason='',
-                       pending_reply_channel='', pending_reply_delay_minutes=0,
-                       pending_reply_next_check_at=NULL,
-                       updated_at=? WHERE id=1""",
-                    (now,),
-                )
                 self._supersede_heartbeat_contacts(
-                    ("heartbeat.chat", "heartbeat.reply_followup"),
+                    ("heartbeat.chat",),
                     "owner_message_superseded_heartbeat_contact",
                     now,
                 )
         return cursor.rowcount == 1
-
-    def _release_reply_episode_hold(self, turn_id: str, now: float) -> None:
-        if not turn_id:
-            return
-        self._db.execute(
-            f"""UPDATE conversation_episodes
-               SET status='closing', closed_at=NULL, updated_at=?
-               WHERE status='open' AND open_loops_json='[]'
-                 AND id IN (
-                     SELECT episode_id FROM episode_turns WHERE turn_id=?
-                 )
-                 AND {runtime_archive_kind_sql('conversation_episodes')} IS NULL""",
-            (now, turn_id),
-        )
 
     def _supersede_heartbeat_contacts(
         self, keys: tuple[str, ...], reason: str, now: float
@@ -206,7 +174,7 @@ class InboxStore:
                         WHERE t.id=o.turn_id
                           AND t.kind='autonomous'
                           AND t.state='running'
-                          AND {workflow} IN ('heartbeat', 'reply_followup')
+                          AND {workflow}='heartbeat'
                     )
                 ) AND o.state IN ('pending', 'ambiguous')""",
             keys,

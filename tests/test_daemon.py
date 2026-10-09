@@ -350,7 +350,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         tool_name = "end_turn"
                         arguments = {
-                            "reply_wait": {"wait": False},
                             "mood": {"decision": "unchanged"},
                         }
                     call = ToolCall(
@@ -470,7 +469,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "final-end_turn",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -831,152 +829,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
-    async def test_reply_heartbeat_turn_uses_reply_check_schedule(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(
-                AppConfig(
-                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                    system_prompt="test",
-                    transcript_turns_min=4,
-                    transcript_turns_max=4,
-                    episode_unsummarized_tail_turns=2,
-                    memory_results=2,
-                    database=Path(directory) / "momoi.sqlite3",
-                    log_level="INFO",
-                )
-            )
-            install_scripted_replyer(daemon)
-            daemon.store.begin_turn("question", "owner", [])
-            daemon.store.complete_background_turn("question")
-            daemon.store._db.execute(
-                """UPDATE self_state SET next_heartbeat_at=1660,
-                   pending_reply_turn_id='question',
-                   pending_reply_expectation='主人是否回复',
-                   pending_reply_next_check_at=1060 WHERE id=1"""
-            )
-            self.assertIsNotNone(
-                daemon.store.claim_due_heartbeat(
-                    daemon.config.heartbeat,
-                    daemon.config.notifications,
-                    now=1060,
-                )
-            )
-
-            with patch.object(
-                daemon, "_complete_reply_wait", new_callable=AsyncMock
-            ) as complete:
-                await daemon._complete_heartbeat_turn(asyncio.Event())
-
-            self.assertEqual(
-                complete.await_args.args[0],
-                daemon._turn_id("reply-followup", 1060.0),
-            )
-            parent = daemon.store._db.execute(
-                "SELECT parent_turn_id FROM turns WHERE id=?",
-                (complete.await_args.args[0],),
-            ).fetchone()[0]
-            self.assertEqual(parent, "question")
-            daemon.store.close()
-
-
-
-    async def test_reply_followup_can_end_silently_and_cannot_rearm(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(
-                AppConfig(
-                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig(
-                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                    ),
-                    system_prompt="test",
-                    transcript_turns_min=4,
-                    transcript_turns_max=4,
-                    episode_unsummarized_tail_turns=2,
-                    memory_results=2,
-                    database=Path(directory) / "momoi.sqlite3",
-                    log_level="INFO",
-                )
-            )
-            install_scripted_replyer(daemon)
-            daemon.store._db.execute(
-                """UPDATE self_state SET pending_reply_turn_id='question',
-                   pending_reply_expectation='主人对问题的回答',
-                   pending_reply_since=1000,
-                   pending_reply_last_reason='这个问题需要老师决定',
-                   pending_reply_delay_minutes=1,
-                   pending_reply_channel='napcat',
-                   pending_reply_next_check_at=1060 WHERE id=1"""
-            )
-            daemon.store.begin_turn(
-                "mandatory-followup",
-                "reply_followup",
-                ["reply-followup:1060"],
-            )
-
-            class Provider:
-                calls = 0
-
-                async def complete(
-                    provider_self,
-                    _system: object,
-                    _messages: list[dict[str, object]],
-                    _tools: list[dict[str, object]],
-                    **_: object,
-                ) -> ProviderResponse:
-                    provider_self.calls += 1
-                    if provider_self.calls == 1:
-                        call = ToolCall(
-                            "rearm",
-                            "end_turn",
-                            {
-                                "reply_wait": {
-                                    "wait": True,
-                                    "delay_minutes": 2,
-                                    "expected_information": "老师的回答",
-                                    "reason": "还想再等一次",
-                                },
-                                "mood": {"decision": "unchanged"},
-                            },
-                        )
-                    elif provider_self.calls == 2:
-                        call = ToolCall(
-                            "related-work",
-                            "goal_create",
-                            {
-                                "title": "跟进此前约定",
-                                "success_criteria": "完成相关后续工作",
-                                "next_action": "检查约定事项",
-                                "next_review_at": "2099-01-01T00:00:00+08:00",
-                            },
-                        )
-                    else:
-                        call = ToolCall(
-                            "close",
-                            "end_turn",
-                            {
-                                "reply_wait": {"wait": False},
-                                "mood": {"decision": "unchanged"},
-                            },
-                        )
-                    return ProviderResponse([], [call])
-
-            provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
-            await daemon._complete_reply_wait(
-                "mandatory-followup",
-                "napcat",
-                owner_event_revision=0,
-            )
-
-            self.assertEqual(provider.calls, 3)
-            self.assertEqual(daemon.store.due_outbox(), [])
-            self.assertIsNone(daemon.store.pending_owner_reply())
-            self.assertEqual(
-                [goal["title"] for goal in daemon.store.list_goals()],
-                ["跟进此前约定"],
-            )
-            daemon.store.close()
 
     async def test_owner_mcp_tool_is_resident_from_the_first_round(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1069,7 +921,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "finish",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -1166,7 +1017,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "finish-workspace",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -1273,7 +1123,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         assert {"reply", "recall"} <= {tool["name"] for tool in tools}
                         calls = [reply_call("notify", bubbles=["创建任务没成功，我先停下了。"]),
-                                 ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}, "reply_wait": {"wait": False}})]
+                                 ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}, })]
                     return ProviderResponse(
                         [
                             {
@@ -1550,7 +1400,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "heartbeat-first-finish",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -1595,12 +1444,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             f"heartbeat-{self.calls}",
                             "end_turn",
                             {
-                                "reply_wait": {
-                                    "wait": True,
-                                    "delay_minutes": 4,
-                                    "expected_information": "主人对关卡点子的回应",
-                                    "reason": "想听老师对新关卡点子的看法",
-                                },
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -1668,7 +1511,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(goal["title"], "继续整理关卡点子")
             self.assertEqual(provider.calls, 10)
             daemon.store.close()
-
 
 
     async def test_owner_turn_stops_cleanly_at_configured_token_budget(self) -> None:
@@ -1796,7 +1638,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                         assert self.calls == limit + 1
                                         assert {"reply", "recall"} <= {tool["name"] for tool in _args[2]}
                                         calls = [reply_call("notify", bubbles=["这次出错了，我先停下来，结果还没确认。"]),
-                                                 ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}, "reply_wait": {"wait": False}})]
+                                                 ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}, })]
                                         return ProviderResponse([{"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments} for c in calls], calls)
                                     if external_effect and self.calls == 1:
                                         daemon.store.begin_tool_call(
@@ -2021,7 +1863,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "stop-response",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -2103,7 +1944,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "stop-after-tool",
                             "end_turn",
                             {
-                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )

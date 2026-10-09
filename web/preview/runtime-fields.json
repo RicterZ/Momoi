@@ -67,22 +67,6 @@
             "advanced": false,
             "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
           },
-          "reply_followup": {
-            "type": "string",
-            "label": "回复跟进",
-            "enum": [
-              "",
-              "off",
-              "low",
-              "medium",
-              "high",
-              "xhigh",
-              "max"
-            ],
-            "default": "",
-            "advanced": false,
-            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
-          },
           "webhook": {
             "type": "string",
             "label": "Webhook",

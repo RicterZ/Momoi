@@ -8,7 +8,6 @@ from typing import Any
 from ...observability.events import log_event
 from ...observability.values import safe_preview
 from ...models import AgentReply, TurnDraft
-from ...storage.delivery.reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ..agent import TurnExecutionSpec
 from ..context.current_state import pack_current_turn_context
 from ..context.presentation import (
@@ -39,46 +38,30 @@ class HeartbeatWorkflow:
                 reason=conversation["blocked_by"],
             )
             self.store.release_heartbeat_claim(
-                self._heartbeat_retry_delay(
-                    str(self.store.self_state().get("heartbeat_claim_kind") or "")
-                )
+                self.config.heartbeat.min_interval_seconds
             )
             self.agenda_changed.set()
             return
         claim_kind = state.get("heartbeat_claim_kind")
         scheduled_at = (
-            state.get("pending_reply_next_check_at")
-            if claim_kind == "reply"
-            else (
-                state.get("heartbeat_claimed_at")
-                if claim_kind == "manual"
-                else state.get("next_heartbeat_at")
-            )
+            state.get("heartbeat_claimed_at")
+            if claim_kind == "manual" else state.get("next_heartbeat_at")
         )
-        turn_kind = "reply-followup" if claim_kind == "reply" else "heartbeat"
+        turn_kind = "heartbeat"
         turn_id = self._turn_id(turn_kind, scheduled_at)
         turn_state = self.store.begin_turn(
-            turn_id,
-            "reply_followup" if claim_kind == "reply" else "heartbeat",
-            [f"{turn_kind}:{scheduled_at}"],
-            parent_turn_id=str(state.get("pending_reply_turn_id") or "") or None
-            if claim_kind == "reply" else None,
+            turn_id, "heartbeat", [f"heartbeat:{scheduled_at}"],
         )
         if turn_state in {"completed", "cancelled"}:
             self.store.clear_heartbeat_claim()
             return
         if turn_state == "needs_reconciliation" or stop.is_set():
             self.store.release_heartbeat_claim(
-                self._heartbeat_retry_delay(str(claim_kind))
+                self.config.heartbeat.min_interval_seconds
             )
             return
         try:
-            complete = (
-                self._complete_reply_wait
-                if claim_kind == "reply"
-                else self._complete_heartbeat
-            )
-            await complete(
+            await self._complete_heartbeat(
                 turn_id,
                 target_channel,
                 owner_event_revision=int(conversation["owner_event_revision"]),
@@ -109,7 +92,7 @@ class HeartbeatWorkflow:
                 notification_channel=target_channel or "",
             )
             self.store.release_heartbeat_claim(
-                self._heartbeat_retry_delay(str(claim_kind))
+                self.config.heartbeat.min_interval_seconds
             )
             self.store.record_turn_failure(turn_id, "fatal_error_after_external_tool")
             self.agenda_changed.set()
@@ -130,15 +113,9 @@ class HeartbeatWorkflow:
             )
             self.store.record_turn_failure(turn_id, type(error).__name__)
             self.store.release_heartbeat_claim(
-                self._heartbeat_retry_delay(str(claim_kind))
+                self.config.heartbeat.min_interval_seconds
             )
             self.agenda_changed.set()
-
-    def _heartbeat_retry_delay(self, claim_kind: str = "") -> float:
-        pending = self.store.pending_owner_reply()
-        if claim_kind != "reply" or not pending:
-            return self.config.heartbeat.min_interval_seconds
-        return REPLY_FOLLOWUP_RETRY_SECONDS
 
     async def _complete_heartbeat(
         self,
@@ -224,18 +201,10 @@ class HeartbeatWorkflow:
         decision = {
             **draft.heartbeat_activity,
             "messages": reply.messages,
-            "reply_expectation": reply.reply_expectation,
-            "schedule_reply_wait": reply.should_schedule_reply_wait,
-            "reply_wait_minutes": reply.reply_wait_delay_minutes,
-            "reply_wait_reason": reply.reply_wait_reason,
             "mood_update": reply.mood_update,
         }
         if not contact_window["allowed"]:
             decision["messages"] = []
-            decision["reply_expectation"] = ""
-            decision["schedule_reply_wait"] = False
-            decision["reply_wait_minutes"] = 0
-            decision["reply_wait_reason"] = ""
         committed_messages = self.store.commit_heartbeat(
             turn_id,
             owner_event_revision=owner_event_revision,
@@ -246,11 +215,6 @@ class HeartbeatWorkflow:
             mood_update=decision["mood_update"],
             messages=decision["messages"],
             reason=decision["reason"],
-            reply_expectation=(
-                decision["reply_expectation"] if decision["schedule_reply_wait"] else ""
-            ),
-            reply_wait_minutes=decision["reply_wait_minutes"],
-            reply_wait_reason=decision["reply_wait_reason"],
             draft=draft,
             memory_events=memory_events,
             notification_channel=delivery_channel.name,

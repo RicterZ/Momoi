@@ -61,7 +61,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
     "thinking": {
       "stages": {
         "episode_anneal": "low",
-        "reply_followup": "low"
+        "webhook": "low"
       }
     }
   }

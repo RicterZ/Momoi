@@ -859,7 +859,6 @@ def test_owner_recall_snapshot_reaches_private_queue(daemon):
                 "end",
                 "end_turn",
                 {
-                    "reply_wait": {"wait": False},
                     "mood": {"decision": "unchanged"},
                 },
             )
@@ -928,7 +927,7 @@ def test_owner_assistant_text_never_becomes_a_delivered_bubble(daemon):
         recall_response(),
         response(reply_call('send', bubbles=['这是气泡'])),
         response(ToolCall('end', 'end_turn', {
-            'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
+            'mood': {'decision': 'unchanged'},
         })),
     ]
     for reply in replies:
@@ -1100,7 +1099,7 @@ def test_owner_tool_loop_routes_temporary_state_immediately(daemon):
     seed_temporary_state(daemon.store)
     daemon.store.begin_turn("state-turn", "owner", [source.event_id])
     calls = [response(ToolCall("recall", "recall", {"semantic": ["用户的日常习惯"]})), response(state_call()), response(ToolCall("end", "end_turn", {
-        "mood": {"decision": "unchanged"}, "reply_wait": {"wait": False},
+        "mood": {"decision": "unchanged"},
     }))]
 
     async def complete(*args, **kwargs):

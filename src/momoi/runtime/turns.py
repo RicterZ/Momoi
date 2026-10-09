@@ -15,7 +15,6 @@ from .workflows import (
     MemoryOperationWorkflow,
     OwnerWorkflow,
     ReflectionWorkflow,
-    ReplyFollowupWorkflow,
     WebhookWorkflow,
 )
 
@@ -37,7 +36,6 @@ class TurnRunner(
     GoalWorkflow,
     ReflectionWorkflow,
     HeartbeatWorkflow,
-    ReplyFollowupWorkflow,
     OwnerWorkflow,
     ContextService,
     AgentLoop,

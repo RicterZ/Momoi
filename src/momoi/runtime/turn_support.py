@@ -21,7 +21,6 @@ OWNER_PROMPT_PATH = PROMPT_ROOT.joinpath("owner.md")
 WEBHOOK_PROMPT_PATH = PROMPT_ROOT.joinpath("webhook.md")
 HEARTBEAT_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat.md")
 GOAL_PROMPT_PATH = PROMPT_ROOT.joinpath("crontab.md")
-REPLY_WAIT_PROMPT_PATH = PROMPT_ROOT.joinpath("reply_wait.md")
 REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
 MEMORY_MAINTENANCE_PROMPT_PATH = PROMPT_ROOT.joinpath(
     "memory_maintenance.md"
@@ -34,7 +33,6 @@ OWNER_SYSTEM_PROMPT = OWNER_PROMPT_PATH.read_text(encoding="utf-8").strip()
 WEBHOOK_SYSTEM_PROMPT = WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
 HEARTBEAT_SYSTEM_PROMPT = HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
 GOAL_SYSTEM_PROMPT = GOAL_PROMPT_PATH.read_text(encoding="utf-8").strip()
-REPLY_WAIT_SYSTEM_PROMPT = REPLY_WAIT_PROMPT_PATH.read_text(encoding="utf-8").strip()
 REFLECTION_SYSTEM_PROMPT = REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
 MEMORY_MAINTENANCE_SYSTEM_PROMPT = MEMORY_MAINTENANCE_PROMPT_PATH.read_text(
     encoding="utf-8"
