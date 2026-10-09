@@ -164,7 +164,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 2000,
-                    "description": 'add/replace 的新范围化事实；forget 则受其约束。保留用户的极性、对象、条件和持续时间。',
+                    "description": 'add/replace 的新范围化事实；forget 则受其约束。保留用户的极性、对象、条件和持续时间。持久化记忆正文只写结论，不附证据、记录日期或纠正经过；事实本身必要的日期保留，依据单独填 evidence。',
                 },
                 "evidence": {
                     "type": "string",

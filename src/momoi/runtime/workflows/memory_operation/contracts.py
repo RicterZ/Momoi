@@ -37,7 +37,7 @@ _MEMORY = {
             ),
         },
         "key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,199}$"},
-        "content": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "content": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "只写事实或规则及必要条件；不附证据、记录日期或审阅经过，保留事实本身必要的日期。"},
         "activation": {"type": "string", "enum": sorted(MEMORY_ACTIVATIONS)},
         "expires_at": {
             "type": "null",

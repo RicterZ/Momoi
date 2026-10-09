@@ -69,7 +69,7 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                     "minLength": 1,
                                     "maxLength": 2000,
                                     "description": (
-                                        '幸存行的完整最终内容。不要扩大支持的事实。'
+                                        '幸存行的完整最终结论及必要条件；不附证据、记录日期或审阅经过，保留事实本身必要的日期。不要扩大支持的事实。'
                                     ),
                                 },
                                 "activation": {
@@ -145,7 +145,7 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                     "minLength": 1,
                                     "maxLength": 2000,
                                     "description": (
-                                        '幸存行的完整最终内容。'
+                                        '幸存行的完整最终结论及必要条件；不附证据、记录日期或审阅经过，保留事实本身必要的日期。'
                                     ),
                                 },
                                 "activation": {
