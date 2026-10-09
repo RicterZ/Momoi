@@ -16,6 +16,55 @@ from momoi.models import ProviderResponse, ToolCall
 
 
 class ReflectionTest(unittest.IsolatedAsyncioTestCase):
+    def test_daily_namespace_preserves_other_days_and_forgetting(self) -> None:
+        from momoi.storage import Store
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            memory = {
+                "kind": "profile", "key": "commute.duration",
+                "content": "今天通勤约 25 分钟，尚不能确认日常规律。",
+                "evidence": "我到了", "confidence": 0.6,
+            }
+
+            def commit(day, content):
+                with store._db:
+                    store._db.execute(
+                        "INSERT OR IGNORE INTO reflections "
+                        "(id, local_date, state, scheduled_at, created_at) "
+                        "VALUES (?, ?, 'running', 0, 0)",
+                        (f"reflection:{day}", day),
+                    )
+                    store._db.execute(
+                        "UPDATE reflections SET state='running' WHERE local_date=?", (day,),
+                    )
+                store.commit_reflection(day, "test", "日记", [{**memory, "content": content}])
+
+            commit("2026-10-07", "第一次观察")
+            commit("2026-10-08", "第二次观察")
+            commit("2026-10-08", "第二次观察修订")
+            rows = store.list_reflection_memories()
+            self.assertEqual({row["key"] for row in rows}, {
+                "2026-10-07.commute.duration", "2026-10-08.commute.duration",
+            })
+            self.assertEqual({row["content"] for row in rows}, {"第一次观察", "第二次观察修订"})
+            first = next(row for row in rows if row["local_date"] == "2026-10-07")
+            store.delete_reflection_memory(first["id"])
+            commit("2026-10-07", "不应复活")
+            commit("2026-10-09", "第三次观察")
+            self.assertEqual({row["content"] for row in store.list_reflection_memories()}, {
+                "第二次观察修订", "第三次观察",
+            })
+            # Legacy unscoped tombstones still prevent forgotten insights returning.
+            with store._db:
+                store._db.execute(
+                    "INSERT INTO reflection_memory_tombstones VALUES (?, ?, ?, 0)",
+                    ("profile", "commute.duration", "我到了"),
+                )
+            commit("2026-10-10", "旧删除记录不应复活")
+            self.assertEqual(len(store.list_reflection_memories()), 2)
+            store.close()
+
     async def test_daily_reflection_promotes_only_evidence_backed_learning(
         self,
     ) -> None:

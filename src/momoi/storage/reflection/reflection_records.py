@@ -35,6 +35,13 @@ class ReflectionRecordStore:
                 (reflection_id,),
             )
             for memory in memories:
+                # The runtime owns the date namespace; model keys stay topic-stable.
+                key = f"{local_date}.{memory['key']}"
+                if self._db.execute(
+                    "SELECT 1 FROM reflection_memory_tombstones WHERE kind=? AND key IN (?, ?)",
+                    (memory["kind"], key, memory["key"]),
+                ).fetchone():
+                    continue
                 self._db.execute(
                     """INSERT INTO reflection_memories
                        (kind, key, content, evidence, confidence,
@@ -48,7 +55,7 @@ class ReflectionRecordStore:
                          updated_at=excluded.updated_at""",
                     (
                         memory["kind"],
-                        memory["key"],
+                        key,
                         memory["content"],
                         memory["evidence"],
                         memory["confidence"],
