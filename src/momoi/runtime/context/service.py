@@ -43,25 +43,36 @@ class ContextService:
                                    candidate_count=len(candidates),
                                    selected_ids=[str(row["id"]) for row in candidates])
             return RecallSelection(candidates, [], [])
-        memory_candidates = self.store.rank_recalled_memories(
-            [
-                MemoryRecallQuery(
-                    expression=str(item["expression"]),
-                    unit_ids=tuple(str(value) for value in item["unit_ids"]),
-                    priority=int(item["priority"]),
-                    semantic_expression=str(item["semantic_expression"]),
-                    kinds=tuple(str(kind) for kind in item.get("kinds") or []),
-                )
-                for item in selected
-            ],
-            max(0, self.config.memory_results),
-            dense_evidence=dense_evidence,
+        memory_queries = [
+            MemoryRecallQuery(
+                expression=str(item["expression"]),
+                unit_ids=tuple(str(value) for value in item["unit_ids"]),
+                priority=int(item["priority"]),
+                semantic_expression=str(item["semantic_expression"]),
+                kinds=tuple(str(kind) for kind in item.get("kinds") or []),
+            )
+            for item in selected
+        ]
+        selection = RecallSelection([], [], [])
+
+        async def joint_reranker(current_request, memory_candidates):
+            nonlocal selection
+            selection = await select_topics(
+                self.provider, self.store, current_request, queries, candidates,
+                memory_candidates=memory_candidates,
+                thinking_effort=self.config.thinking_stages.get("topic_selection", "low"),
+                diagnostics=diagnostics,
+            )
+            return [*selection.memories, *selection.reflections]
+
+        memories = await self.store.memory_recall.search(
+            memory_queries, max(0, self.config.memory_results), request=request,
+            dense_evidence=dense_evidence, reranker=joint_reranker,
         )
-        return await select_topics(
-            self.provider, self.store, request, queries, candidates,
-            memory_candidates=memory_candidates,
-            thinking_effort=self.config.thinking_stages.get("topic_selection", "low"),
-            diagnostics=diagnostics,
+        return RecallSelection(
+            selection.episodes,
+            [row for row in memories if row["source"] == "confirmed"],
+            [row for row in memories if row["source"] == "reflection"],
         )
 
     def _context_compaction_tokens(self) -> int:

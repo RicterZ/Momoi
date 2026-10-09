@@ -22,6 +22,7 @@ from .episode.episode_annealing import EpisodeAnnealingStore
 from .episode.episode_consolidation import EpisodeConsolidationStore
 from .memory.memory_operations import MemoryOperationStore
 from ..memory.repository import MemoryRepository
+from ..memory.recall import MemoryRecallService
 from .memory.memory_recall import MemoryRecallStore
 from .memory.memory_maintenance_commits import MemoryMaintenanceCommitStore
 from .memory.memory_maintenance_evidence import MemoryMaintenanceEvidenceStore
@@ -152,6 +153,9 @@ class Store(
             has_external_effect=self.turn_has_external_effect,
         )
         self.memory = MemoryRepository(self._db)
+        self.memory_recall = MemoryRecallService(
+            self.memory, self._search_backend, reflection_rows=self._reflection_recall_rows,
+        )
         self.request_metrics = RequestMetricsRepository(self._db)
         try:
             self._initialize_database()

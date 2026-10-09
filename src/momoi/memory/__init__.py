@@ -1,5 +1,4 @@
-"""Memory infrastructure and repositories independent of Momoi runtime.
+"""Memory storage, retrieval, and reranking independent of Momoi runtime.
 
-The caller owns the SQLite connection and schema. The high-level Memory API
-is introduced in a later milestone.
+The caller owns the SQLite connection, schema, and injected model capabilities.
 """

@@ -9,6 +9,7 @@ from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from .structured_selection import SelectionProtocolError, select_structured
+from ..memory.rerank import MemoryRerankCandidates, select_indices
 from ..storage.episode.episode_cues import cue_texts
 from ..observability.events import log_event
 
@@ -92,9 +93,8 @@ def render_topic_selection_request(payload: Mapping[str, object]) -> str:
 
 async def select_topics(provider, store, request, queries, candidates, *, memory_candidates=(),
                         thinking_effort="low", diagnostics=None):
-    memory_candidates = list(memory_candidates)
-    confirmed = [row for row in memory_candidates if row.get("source") == "confirmed"]
-    reflections = [row for row in memory_candidates if row.get("source") == "reflection"]
+    memory_pool = MemoryRerankCandidates(list(memory_candidates))
+    confirmed, reflections = memory_pool.confirmed, memory_pool.reflections
     diagnostics = diagnostics if diagnostics is not None else {}
     diagnostics.update(status="no_candidates", thinking_effort=thinking_effort or "model",
                        candidate_count=len(candidates), selected_ids=[], candidates=[],
@@ -117,12 +117,7 @@ async def select_topics(provider, store, request, queries, candidates, *, memory
             "cues": cue_texts(row.get("recall_cues")),
             "conversation_time": store.topic_conversation_time(str(row["id"])),
         } for i, row in enumerate(candidates)],
-        "memories": [{"index": i, "kind": row.get("kind"), "key": row.get("key"),
-                      "content": row.get("content")} for i, row in enumerate(confirmed)],
-        "reflections": [{"index": i, "kind": row.get("kind"), "key": row.get("key"),
-                         "content": row.get("content"), "local_date": row.get("local_date"),
-                         "confidence": row.get("confidence"), "evidence": row.get("evidence")}
-                        for i, row in enumerate(reflections)],
+        **memory_pool.payload(),
     }
     diagnostics["queries"] = payload["retrieval_queries"]
     diagnostics["candidates"] = [{
@@ -151,10 +146,7 @@ async def select_topics(provider, store, request, queries, candidates, *, memory
         "input_schema": {"type": "object", "properties": {
             "indices": {"type": "array", "maxItems": len(candidates), "uniqueItems": True,
                         "items": {"type": "integer", "minimum": 0, "maximum": max(0, len(candidates)-1)}},
-            "memory_indices": {"type": "array", "maxItems": len(confirmed), "uniqueItems": True,
-                               "items": {"type": "integer", "minimum": 0, "maximum": max(0, len(confirmed)-1)}},
-            "reflection_indices": {"type": "array", "maxItems": len(reflections), "uniqueItems": True,
-                                   "items": {"type": "integer", "minimum": 0, "maximum": max(0, len(reflections)-1)}},
+            **memory_pool.schema(),
         }, "required": ["indices", "memory_indices", "reflection_indices"],
             "additionalProperties": False},
     }
@@ -162,16 +154,9 @@ async def select_topics(provider, store, request, queries, candidates, *, memory
     def parse(args):
         if not isinstance(args, dict):
             raise SelectionProtocolError("selection arguments must be an object")
-        selections = []
-        for name, rows in (("indices", candidates), ("memory_indices", confirmed),
-                           ("reflection_indices", reflections)):
-            indices = args.get(name)
-            if (not isinstance(indices, list) or len(indices) > len(rows)
-                    or any(type(i) is not int or not 0 <= i < len(rows) for i in indices)
-                    or len(set(indices)) != len(indices)):
-                raise SelectionProtocolError(f"Invalid or duplicate {name}")
-            selections.append([rows[i] for i in indices])
-        return RecallSelection(*selections)
+        episodes = select_indices(candidates, args.get("indices"), name="indices")
+        memories, reflections = memory_pool.select(args)
+        return RecallSelection(episodes, memories, reflections)
 
     started = time.monotonic()
     try:

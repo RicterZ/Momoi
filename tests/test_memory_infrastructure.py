@@ -35,10 +35,14 @@ from standalone_memory.search import StringSearchBackend, search_expression
 from standalone_memory.text import estimate_tokens, token_chunk
 from standalone_memory.vectors import encode_vector, decode_vector
 from standalone_memory.repository import MemoryRepository
+from standalone_memory.recall import MemoryRecallService
+from standalone_memory.rerank import MemoryRerankCandidates
 import sqlite3
 
 with sqlite3.connect(":memory:") as db:
     assert MemoryRepository(db).snapshots([]) == {}
+    assert MemoryRecallService(MemoryRepository(db)).rank([], 6) == []
+assert MemoryRerankCandidates([]).select({"memory_indices": [], "reflection_indices": []}) == ([], [])
 
 assert MemoryRecallQuery("咖啡").dense_expression == "咖啡"
 assert DenseThresholds(0.5, 0.7, 0.9).calibrated(0.9) == 1.0

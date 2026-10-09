@@ -164,3 +164,41 @@ def test_topic_selection_filters_memory_and_reflection_candidates_in_returned_or
         memory_candidates=memories,
     ))
     assert selected == RecallSelection([], memories[:2][::-1], [])
+
+
+def test_runtime_memory_service_uses_one_joint_rerank_and_keeps_model_order(tmp_path):
+    from momoi.runtime.context.service import ContextService
+    from momoi.storage import Store
+    from tests.test_context_assembler import config
+    from tests.test_memory_repository import write
+
+    store = Store(tmp_path / "db")
+    try:
+        first = write(store.memory, key="coffee", text="饮品偏好：无糖咖啡")
+        second = write(store.memory, key="tea", text="饮品偏好：无糖茶")
+        store.create_episode("讨论饮品", episode_id="drinks")
+        service = ContextService()
+        service.store = store
+        service.config = config(str(tmp_path), summary_results=3)
+        returned_order = []
+
+        async def complete(system, messages, tools, **kwargs):
+            payload = ElementTree.fromstring(messages[0]["content"])
+            assert len(payload.findall("candidates/candidate")) == 1
+            nodes = payload.findall("memory_candidates/candidate")
+            assert len(nodes) == 2
+            returned_order.extend(node.findtext("content") for node in reversed(nodes))
+            return response([0], [1, 0])
+
+        provider = SimpleNamespace(complete=AsyncMock(side_effect=complete))
+        service.provider = provider
+        result = asyncio.run(service._select_recall_topics(
+            "用户喜欢什么饮品", [{"expression": "饮品", "semantic_expression": "饮品偏好",
+                                  "unit_ids": ["u1"], "priority": 0}], None,
+        ))
+        provider.complete.assert_awaited_once()
+        assert [row["id"] for row in result.episodes] == ["drinks"]
+        assert {row["id"] for row in result.memories} == {first, second}
+        assert [row["content"] for row in result.memories] == returned_order
+    finally:
+        store.close()

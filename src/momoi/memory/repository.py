@@ -264,3 +264,35 @@ class MemoryRepository:
                     memory_id, citation["event_id"], citation["quote"], now
                 )
             return memory_id
+
+    def recall_rows(self, *, now: float):
+        return self._db.execute(
+            """SELECT id, kind, key, content, importance, updated_at
+               FROM memories
+               WHERE superseded_by IS NULL
+                 AND activation='recall'
+                 AND (expires_at IS NULL OR expires_at > ?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=memories.kind AND t.key=memories.key
+                 )""",
+            (now,),
+        ).fetchall()
+
+    def search_rows(self, *, activation=None, include_scoped=False):
+        return self._db.execute(
+            """SELECT id, kind, key, content, authority, evidence_quote,
+                      activation, importance, updated_at,
+                      (SELECT COUNT(*) FROM memory_evidence AS e
+                       WHERE e.memory_id=memories.id) AS evidence_count
+               FROM memories
+               WHERE superseded_by IS NULL
+                 AND (expires_at IS NULL OR expires_at > ?)
+                 AND (? OR activation!='scoped')
+                 AND (? IS NULL OR activation=?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=memories.kind AND t.key=memories.key
+                 )""",
+            (time.time(), include_scoped, activation, activation),
+        ).fetchall()

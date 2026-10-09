@@ -1,5 +1,6 @@
 """Retrieval values; no database, provider, or runtime dependencies."""
 from dataclasses import dataclass
+from typing import Protocol
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,20 @@ class DenseThresholds:
 class DenseMemoryHit:
     source_id: str
     cosine: float
+
+
+class MemoryDenseEvidence(Protocol):
+    """The memory scorer needs hits and thresholds, not a provider or profile registry."""
+
+    memory: dict[str, dict[tuple[str, str], DenseMemoryHit]]
+
+    def thresholds(self, document_type: str) -> DenseThresholds | None: ...
+
+
+class MemoryDenseRecall(Protocol):
+    async def __call__(
+        self, queries: list[MemoryRecallQuery], limit: int,
+    ) -> MemoryDenseEvidence: ...
 
 
 @dataclass(frozen=True)

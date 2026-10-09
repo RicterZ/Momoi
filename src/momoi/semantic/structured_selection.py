@@ -5,8 +5,7 @@ from ..integrations.request_context import model_request
 from ..observability.context import log_context, new_trace_id
 
 
-class SelectionProtocolError(ValueError):
-    """The response cannot be mapped to the supplied structured candidates."""
+from ..memory.rerank import SelectionProtocolError
 
 
 async def select_structured(provider, system, messages, spec, parse, *, timeout, thinking_effort="low", stage=None):
