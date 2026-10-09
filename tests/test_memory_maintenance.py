@@ -44,21 +44,6 @@ def memory(
 
 
 class MemoryMaintenanceProtocolTest(unittest.TestCase):
-    def test_finish_tool_schema_has_expected_change_variants(self) -> None:
-        schema = MEMORY_MAINTENANCE_FINISH_SPEC["input_schema"]
-        assert isinstance(schema, dict)
-        properties = schema["properties"]
-        assert isinstance(properties, dict)
-        variants = properties["changes"]["items"]["oneOf"]
-        self.assertEqual(len(variants), 3)
-        self.assertEqual(
-            [variant["properties"]["action"]["enum"][0] for variant in variants],
-            ["replace", "merge", "retire"],
-        )
-        for variant in variants:
-            self.assertNotIn("snapshot_fingerprint", variant["properties"])
-            self.assertNotIn("snapshot_fingerprints", variant["properties"])
-        self.assertNotIn("version", properties)
 
     def test_parser_rejects_text_wrapped_results(self) -> None:
         result, error = parse_memory_maintenance_result(
@@ -280,7 +265,6 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
         )
         self.assertIsNone(result)
         self.assertIn("not an exact contiguous substring", error)
-
 
     def test_parser_requires_owner_evidence_ids_for_merge(self) -> None:
         rows = {

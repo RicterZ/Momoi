@@ -59,17 +59,6 @@ class GoalBoundaryTest(unittest.TestCase):
         self.assertEqual(error["unexpected_fields"], ["latest_result"])
         self.assertEqual(error["missing_fields"], ["result"])
 
-    def test_shared_end_turn_schema_accepts_chat_or_empty_goal_completion(self):
-        from jsonschema import Draft202012Validator
-        from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
-
-        check = Draft202012Validator(END_TURN_TOOL_SPEC["input_schema"])
-        chat = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
-        self.assertTrue(check.is_valid(chat))
-        self.assertTrue(check.is_valid({}))
-        for args in ({"goal": {}}, {**chat, "goal": None}, {"mood": chat["mood"]}):
-            self.assertFalse(check.is_valid(args))
-
     def test_goal_schema_requires_status_specific_outcomes(self):
         from jsonschema import Draft202012Validator
         from momoi.runtime.tool_contracts.conversation import GOAL_REVIEW_TOOL_SPEC

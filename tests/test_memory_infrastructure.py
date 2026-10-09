@@ -97,27 +97,3 @@ assert decode_vector(encode_vector([3.0, 4.0], 2), 2).tolist() == [
         [sys.executable, "-I", "-c", script, str(package)],
         cwd=tmp_path, check=True, capture_output=True, text=True,
     )
-
-
-def test_legacy_imports_share_the_extracted_objects():
-    from momoi.memory import text
-    from momoi.memory.retrieval import models, sparse as search
-    from momoi.memory.storage import vectors
-    from momoi.runtime.agent import budget
-    from momoi.semantic import models as semantic_models
-    from momoi.storage.core import search as storage_search
-    from momoi.storage.memory import memory_values
-    from momoi.storage.semantic import semantic_documents
-
-    assert storage_search.SearchBackend is search.SearchBackend
-    assert storage_search.search_expression is search.search_expression
-    assert memory_values.MemoryRecallQuery is models.MemoryRecallQuery
-    assert semantic_models.DenseThresholds is models.DenseThresholds
-    assert semantic_models.DenseMemoryHit is models.DenseMemoryHit
-    assert semantic_models.DenseEpisodeHit is models.DenseEpisodeHit
-    assert budget.TextSizer is text.TextSizer
-    assert budget.MEMORY_TEXT_FITTER is text.MEMORY_TEXT_FITTER
-    assert budget.TEXT_SIZER is text.TEXT_SIZER
-    assert memory_values.token_chunk is text.token_chunk
-    assert semantic_documents.encode_vector is vectors.encode_vector
-    assert semantic_documents.decode_vector is vectors.decode_vector

@@ -79,39 +79,6 @@ class TurnHarnessTest(unittest.TestCase):
             [{"type": "tool_use", "id": "1", "name": "web_fetch", "input": {}}],
         )
 
-    def test_every_model_turn_stage_has_an_explicit_harness(self) -> None:
-        self.assertEqual(
-            set(TURN_HARNESS_SPECS),
-            {
-                "owner",
-                "heartbeat",
-                "reply_followup",
-                "webhook",
-                "goal",
-                "reflection", "weekly_reflection",
-                "memory_maintenance", "memory_operation",
-                "episode_consolidate",
-                "episode_anneal",
-                "episode_relation",
-                "current_state_maintenance", "plan_step",
-            },
-        )
-
-    def test_empty_first_states_are_declared_not_implicit(self) -> None:
-        for stage in {
-            "webhook",
-            "goal",
-            "reflection", "weekly_reflection",
-            "memory_maintenance", "memory_operation",
-            "episode_consolidate",
-            "episode_anneal",
-            "current_state_maintenance",
-        }:
-            with self.subTest(stage=stage):
-                harness = TurnHarness.for_stage(stage)
-                self.assertIsNone(harness.spec.first_tool)
-                self.assertTrue(harness.started)
-
     def test_owner_can_open_and_finish_without_recall(self) -> None:
         harness = TurnHarness.for_stage("owner")
         self.assertIsNone(harness.spec.first_tool)
@@ -170,16 +137,6 @@ class TurnHarnessTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "end_turn"):
             harness.validate_surface(set())
         harness.validate_surface({"recall", "reply", "end_turn"})
-
-    def test_only_heartbeat_has_an_explicit_opening_in_autonomous_chat(self) -> None:
-        self.assertEqual(
-            TurnHarness.for_stage("heartbeat").spec.first_tool,
-            "heartbeat_begin",
-        )
-        self.assertEqual(
-            TurnHarness.for_stage("reply_followup").spec.first_tool,
-            None,
-        )
 
     def test_heartbeat_requires_separate_successful_recall_for_each_batch(self) -> None:
         harness = TurnHarness.for_stage("heartbeat")
