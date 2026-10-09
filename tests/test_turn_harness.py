@@ -154,9 +154,12 @@ class TurnHarnessTest(unittest.TestCase):
         self.assertIsNone(harness.validate([send, voice]))
         self.assertIsNone(harness.validate([send]))
         harness.accept("reply")
+        harness.accept("reply")
         self.assertEqual(harness.validate([voice]), "heartbeat_recall_required_before_send")
         harness.accept("recall")
         self.assertIsNone(harness.validate([voice]))
+        harness.accept_owner_update()
+        self.assertEqual(harness.validate([send]), "heartbeat_recall_required_before_send")
 
     def test_reply_followup_can_work_before_or_after_optional_delivery(self) -> None:
         harness = TurnHarness.for_stage("reply_followup")

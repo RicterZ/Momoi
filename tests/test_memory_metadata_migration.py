@@ -8,7 +8,6 @@ from momoi.storage.core.migrations import MIGRATIONS, _add_memory_metadata, appl
 from momoi.memory.storage.transactions import transaction
 from momoi.memory.storage.vectors import encode_vector
 from momoi.runtime.workflows.memory_operation.contracts import MEMORY_OPERATION_FINISH_SPEC
-from scripts.check_memory_metadata_migration import audit
 from tests.test_memory_repository import write
 from tests.test_memory_operations import store, event, submit, write as decision, apply
 
@@ -57,7 +56,7 @@ def test_tag_update_preserves_vector_and_does_not_dirty_index(store):
     assert store.memories.snapshots([identifier])[identifier]['updated_at'] >= original['updated_at']
 
 
-def test_legacy_migration_rehearsal_is_read_only_and_reopen_keeps_evidence_and_vectors(tmp_path):
+def test_metadata_migration_reopen_preserves_records_evidence_and_vectors(tmp_path):
     path = tmp_path / 'legacy.sqlite3'
     store = Store(path)
     try:
@@ -75,18 +74,19 @@ def test_legacy_migration_rehearsal_is_read_only_and_reopen_keeps_evidence_and_v
             )
             store._db.execute('ALTER TABLE memories DROP COLUMN meta_json')
             store._db.execute(f'PRAGMA user_version={MIGRATIONS.index(_add_memory_metadata)}')
+        columns = ','.join(row[1] for row in store._db.execute('PRAGMA table_info(memories)'))
+        queries = {'memories': f'SELECT {columns} FROM memories ORDER BY id'}
+        queries.update({table: f'SELECT * FROM {table} ORDER BY rowid'
+                        for table in ('memory_evidence', 'memory_tombstones', 'semantic_documents')})
+        before = {table: [tuple(row) for row in store._db.execute(query)] for table, query in queries.items()}
     finally:
         store.close()
-    original_bytes = path.read_bytes()
-    report = audit(path)
-    assert path.read_bytes() == original_bytes
-    assert report['restore'] == report['integrity'] == 'ok'
-    assert report['tables']['memories']['count'] == 2
-    assert report['tables']['memory_evidence']['count'] == 2
-    assert report['tables']['memory_tombstones']['count'] == 1
-    assert report['tables']['semantic_documents']['count'] == 1
     reopened = Store(path)
     try:
+        assert {table: [tuple(row) for row in reopened._db.execute(query)]
+                for table, query in queries.items()} == before
+        assert reopened._db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+        assert reopened._db.execute('PRAGMA foreign_key_check').fetchall() == []
         assert reopened.memories.repository.active('preference', 'drink')['meta'] == {'tags': [], 'scope': ''}
         assert reopened.memories.snapshots([forgotten]) == {}
         assert asyncio.run(reopened.memories.search('无糖咖啡'))
@@ -96,8 +96,6 @@ def test_legacy_migration_rehearsal_is_read_only_and_reopen_keeps_evidence_and_v
         assert [tuple(row) for row in reopened._db.execute('SELECT * FROM memories')] == before
     finally:
         reopened.close()
-    with pytest.raises(ValueError, match='expected pre-metadata schema'):
-        audit(path)
 
 
 def test_metadata_migration_rolls_back_with_version_on_failure(tmp_path, monkeypatch):

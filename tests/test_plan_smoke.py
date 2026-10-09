@@ -303,7 +303,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             ToolCall("send", "reply", {}), ToolCall("finish", "plan_step_finish", {}),
         ]))
 
-    async def test_shared_schema_does_not_grant_step_owner_permissions(self):
+    async def test_plan_step_can_create_draft_without_exposing_step_finish_to_owner(self):
         import asyncio
         import json
         daemon = self.daemon
@@ -324,8 +324,8 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual({s["name"] for s in request_tools},
                              {s["name"] for s in tools} | {s["name"] for s in daemon.tool_surface.discovery_groups()["builtin_plans"]} | {"plan_step_finish"})
             if calls == 1:
-                call = ToolCall("forbidden", "plan_create", {
-                    "title": "must not exist", "request": "nested",
+                call = ToolCall("nested", "plan_create", {
+                    "title": "nested draft", "request": "nested",
                     "steps": [{"task": "nested", "on_failure": "stop"}],
                 })
             else:

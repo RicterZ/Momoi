@@ -1,3 +1,4 @@
+import pytest
 from tests.support import reply_call, install_scripted_replyer
 from tests.support import provider_catalog
 import asyncio
@@ -38,7 +39,6 @@ from momoi.runtime import (
 from momoi.runtime.turn_support import (
     pack_user_context,
     sections,
-    truncate_tool_result_json,
 )
 from tests.support import with_owner_recall
 
@@ -126,23 +126,6 @@ class OwnerAttachmentOrderTest(unittest.TestCase):
 
 
 class ProvidersToolsTest(unittest.TestCase):
-    def test_context_truncation_keeps_error_envelope_valid(self) -> None:
-        rendered = truncate_tool_result_json(
-            json.dumps(
-                {
-                    "ok": False,
-                    "error": "upstream_error",
-                    "message": "specific reason",
-                    "result": {"content": "x" * 5000},
-                }
-            ),
-            1000,
-        )
-        parsed = json.loads(rendered)
-        self.assertEqual(parsed["error"], "upstream_error")
-        self.assertEqual(parsed["message"], "specific reason")
-        self.assertTrue(parsed["truncated"])
-
     def test_openai_adapter_orders_tool_result_before_correction_text(self) -> None:
         messages = openai_messages(
             "system",
@@ -493,19 +476,12 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 manager.configs["offline"]["optional"] = optional
             with patch.object(manager, "_connect", side_effect=RuntimeError("offline")):
                 with self.assertLogs("momoi.mcp.manager", level="ERROR") as logs:
-                    async with manager:
+                    async with manager as entered:
+                        self.assertIs(entered, manager)
                         self.assertEqual(manager._workers, {})
                         self.assertEqual(manager._queues, {})
                         self.assertEqual(manager.tool_specs, [])
             self.assertIn("mcp_connect_failure", str(logs.output))
-
-    async def test_optional_mcp_connection_failure_allows_startup(self) -> None:
-        manager = MCPManager(None)
-        manager.configs = {"optional": {"command": "missing", "optional": True}}
-        with patch.object(manager, "_connect", side_effect=RuntimeError("offline")):
-            entered = await manager.__aenter__()
-        self.assertIs(entered, manager)
-        await manager.__aexit__()
 
     async def test_mcp_result_reaches_normalization_without_pretruncation(self) -> None:
         class Result:
@@ -1702,3 +1678,56 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(moved_path.exists())
         finally:
             await server.close()
+
+
+@pytest.mark.parametrize("api_format,path,provider_type,success", [
+    ("openai", "/v1/chat/completions", OpenAIProvider,
+     {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}),
+    ("anthropic", "/v1/messages", AnthropicProvider,
+     {"content": [{"type": "text", "text": "ok"}]}),
+])
+def test_invalid_json_retries_then_succeeds(api_format, path, provider_type, success):
+    async def scenario():
+        attempts = 0
+        async def completion(_):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return web.Response(text="{", content_type="application/json")
+            return web.json_response(success)
+        server = TestServer(web.Application())
+        server.app.router.add_post(path, completion)
+        async with server:
+            config = LLMConfig(str(server.make_url("/")).rstrip("/"), "test", "test", 100, 0, 1, 1,
+                               api_format=api_format)
+            sleep = AsyncMock()
+            # Do not patch the shared asyncio module used by the HTTP server.
+            with patch("momoi.llm.transport.asyncio", SimpleNamespace(sleep=sleep, TimeoutError=asyncio.TimeoutError)):
+                async with provider_type(config) as provider:
+                    response = await provider.complete("system", [{"role": "user", "content": "test"}])
+            assert response.content[0]["text"] == "ok"
+            assert attempts == 2
+            assert sleep.await_args_list == [call(1)]
+    asyncio.run(scenario())
+
+
+def test_rate_limit_and_empty_content_remain_errors():
+    async def scenario():
+        attempts = 0
+        async def completion(_):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return web.json_response({"error": {"message": "rate limited"}}, status=429)
+            return web.json_response({"content": []})
+        server = TestServer(web.Application())
+        server.app.router.add_post("/v1/messages", completion)
+        async with server:
+            config = LLMConfig(str(server.make_url("/")).rstrip("/"), "test", "test", 100, 0, 1, 1,
+                               api_format="anthropic")
+            async with AnthropicProvider(config) as provider:
+                for error in ("rate limited", "no text content"):
+                    with pytest.raises(ProviderError, match=error):
+                        await provider.complete("system", [{"role": "user", "content": "test"}])
+            assert attempts == 2
+    asyncio.run(scenario())

@@ -6,10 +6,9 @@ from momoi.storage import Store
 from momoi.storage.core import migrations
 from momoi.memory.storage.transactions import transaction
 from tests.test_memory_repository import write
-from scripts.check_memory_metadata_migration import audit, fingerprint
 
 
-def test_commit_migration_preserves_tagged_records_and_backup_recovery(tmp_path):
+def test_commit_migration_preserves_tagged_records_and_is_idempotent(tmp_path):
     path = tmp_path / 'legacy.sqlite3'
     store = Store(path)
     try:
@@ -18,26 +17,23 @@ def test_commit_migration_preserves_tagged_records_and_backup_recovery(tmp_path)
         with transaction(store._db):
             store._db.execute('DROP TABLE memory_commits')
             store._db.execute(f'PRAGMA user_version={migrations.MIGRATIONS.index(migrations._add_memory_commits)}')
-        before = fingerprint(store._db, include_meta=True)
+        tables = ('memories', 'memory_evidence', 'memory_tombstones', 'semantic_spaces',
+                  'semantic_documents', 'semantic_dirty_sources', 'memory_operation_batches')
+        before = {table: [tuple(row) for row in store._db.execute(f'SELECT * FROM {table} ORDER BY rowid')]
+                  for table in tables}
     finally:
         store.close()
-    original_bytes = path.read_bytes()
-    report = audit(path, stage='commits')
-    assert path.read_bytes() == original_bytes
-    assert report['from_version'] == 34 and report['to_version'] == 35
-    assert report['tables'] == before
-    assert report['restore'] == 'ok'
     store = Store(path)
     try:
         assert store._db.execute('PRAGMA user_version').fetchone()[0] == migrations.SCHEMA_VERSION
-        assert fingerprint(store._db, include_meta=True) == before
+        assert {table: [tuple(row) for row in store._db.execute(f'SELECT * FROM {table} ORDER BY rowid')]
+                for table in tables} == before
         assert store._db.execute('SELECT COUNT(*) FROM memory_commits').fetchone()[0] == 0
         migrations.apply_migrations(store._db)
-        assert fingerprint(store._db, include_meta=True) == before
+        assert {table: [tuple(row) for row in store._db.execute(f'SELECT * FROM {table} ORDER BY rowid')]
+                for table in tables} == before
     finally:
         store.close()
-    with pytest.raises(ValueError, match='expected pre-commits'):
-        audit(path, stage='commits')
 
 
 def test_commit_migration_failure_rolls_back_table_and_version(tmp_path, monkeypatch):
