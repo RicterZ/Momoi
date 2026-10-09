@@ -43,7 +43,8 @@ def test_wait_returns_messages_in_result_and_prevents_stale_actions(tmp_path, wi
             await asyncio.wait_for(started.wait(), 2)
             assert daemon.owner_updates.waiting
             updates = [IncomingMessage('next', 'next', '后半句话 [表情] [戳一戳]', 2, 2,
-                       ({'type': 'text', 'text': 'attachment-marker'},))] if with_messages else []
+                       ({'type': 'text', 'text': 'attachment-marker'},)),
+                       IncomingMessage('last', 'last', '补充完了', 3, 3)] if with_messages else []
             for event in updates:
                 await daemon._receive(event)
             assert not task.done() and len(captured) == 1
@@ -54,6 +55,15 @@ def test_wait_returns_messages_in_result_and_prevents_stale_actions(tmp_path, wi
         blocks = [b for m in captured[-1] if isinstance(m.get('content'), list) for b in m['content']]
         result = next(b for b in blocks if b.get('tool_use_id') == 'wait-1')
         text = result['content']
+        payload = json.loads(text)
+        assert len(payload['messages']) == len(updates)
+        assert [m['text'] for m in payload['messages']] == [event.text for event in updates]
+        assert [m['message_id'] for m in payload['messages']] == [event.message_id for event in updates]
+        assert '<current_messages>' not in text
+        if with_messages:
+            assert payload['messages'][0]['attachment_ref'] == 'next'
+            assert 'attachment_ref' not in payload['messages'][1]
+            assert any('attachment_ref=next' in b.get('text', '') for b in blocks)
         assert ('后半句话' in text) == with_messages
         assert ('未收到新消息' in text) != with_messages
         assert any(b.get('tool_use_id') == 'stale' and b['is_error'] for b in blocks)

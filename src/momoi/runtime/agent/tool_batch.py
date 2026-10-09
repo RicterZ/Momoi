@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ...channel import Channel, ChannelMessage
+from ...storage.core.timestamps import context_timestamp
 from ...observability.context import log_context
 from ...models import MessageRecalled, AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
 from ...observability.events import TRACE, log_event
@@ -15,7 +16,6 @@ from ...observability.values import safe_preview
 from ..turn_support import (
     tool_error_block,
     tool_result_block,
-    owner_content_blocks,
 )
 from ..tool_contracts.conversation import end_turn_correction, end_turn_tool_spec
 from ...tools.validation import validate_tool_arguments
@@ -196,15 +196,31 @@ class ToolBatchExecutor:
                         call.arguments['seconds'], request.current_events, request.delivery_channel.name
                     )
                     updates_in_result = True
-                    blocks = owner_content_blocks(owner_updates, request.delivery_channel.content_blocks, self.store.timezone)
+                    received = []
+                    for event in owner_updates:
+                        item = {"time": context_timestamp(event.received_at, self.store.timezone),
+                                "message_id": event.message_id, "text": event.text}
+                        notice = event.delivery_context.get("channel_notice")
+                        if notice:
+                            item["event"] = notice
+                            blocks = []
+                        else:
+                            blocks = request.delivery_channel.content_blocks(event.segments)
+                        descriptions = [block['text'] for block in blocks if block.get('type') == 'text']
+                        if descriptions:
+                            item['attachments'] = descriptions
+                        if any(block.get('type') == 'image' for block in blocks):
+                            item['attachment_ref'] = event.event_id
+                            # Binary inputs stay outside JSON; each group identifies its message.
+                            image_blocks.extend([
+                                {'type': 'text', 'text': f'[wait result {call.id} attachment_ref={event.event_id}]'},
+                                *blocks,
+                            ])
+                        received.append(item)
                     result = {"ok": True, "waited_seconds": call.arguments['seconds'],
-                              "received_messages": len(owner_updates),
-                              "message": "等待结束，以下是期间收到的用户消息。" if owner_updates else "等待结束，未收到新消息。",
-                              "messages": [block for block in blocks if block.get('type') == 'text'] if owner_updates else []}
-                    # Provider adapters carry images beside their associated tool result.
-                    if any(block.get('type') == 'image' for block in blocks):
-                        image_blocks.extend([{'type': 'text', 'text': f'[wait result {call.id} attachments]'},
-                                             *blocks])
+                              "received_messages": len(received),
+                              "message": "等待结束，以下是期间收到的用户消息。" if received else "等待结束，未收到新消息。",
+                              "messages": received}
             elif call.name in {"plan_create", "plan_submit", "plan_start", "plan_get", "plan_update", "plan_cancel", "plan_resume"}:
                 try:
                     if call.name == "plan_create":
