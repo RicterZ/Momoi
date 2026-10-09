@@ -229,6 +229,10 @@ class Scheduler:
                     AutonomousJob.reflection(str(reflection["local_date"]))
                 )
                 continue
+            weekly = self.store.claim_due_weekly_reflection(self.config.reflection)
+            if weekly is not None:
+                await self.autonomous.put(AutonomousJob('weekly_reflection', weekly['period_end']))
+                continue
             maintenance_turn_id = self.store.pending_memory_maintenance_turn()
             if (
                 maintenance_turn_id is not None
@@ -261,6 +265,7 @@ class Scheduler:
                     self.store.next_reflection_due_at(
                         self.config.reflection,
                     ),
+                    self.store.next_weekly_reflection_due_at(self.config.reflection),
                     self.store.next_heartbeat_due_at(self.config.heartbeat.enabled),
                 )
                 if due is not None

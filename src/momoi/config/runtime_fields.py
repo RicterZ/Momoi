@@ -14,6 +14,7 @@ THINKING_STAGES = {
     "goal": "目标执行",
     "plan_step": "Plan 步骤执行",
     "reflection": "每日复盘",
+    "weekly_reflection": "每周观察盘点",
     "memory_maintenance": "记忆维护",
     "memory_operation": "记忆操作",
     "episode_consolidate": "话题整理",

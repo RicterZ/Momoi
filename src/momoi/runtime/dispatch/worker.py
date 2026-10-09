@@ -71,6 +71,8 @@ class AgentWorker:
                         work = self._complete_heartbeat_turn(stop, target_channel)
                     elif job.kind == "reflection":
                         work = self._complete_reflection_turn(job.id, stop)
+                    elif job.kind == "weekly_reflection":
+                        work = self._complete_weekly_reflection_turn(job.id, stop)
                     elif job.kind == "memory_operation":
                         work = self._complete_memory_operation_turn(job.id, stop)
                     elif job.kind == "memory_maintenance":
@@ -264,6 +266,9 @@ class AgentWorker:
         if job.kind == "heartbeat":
             self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
             return {}
+        if job.kind == "weekly_reflection":
+            self.store.release_weekly_reflection(job.id, "owner_stop", delay_seconds=3600)
+            return {"period_end": job.id}
         if job.kind == "reflection":
             self.store.release_reflection(job.id, "owner_stop", delay_seconds=3600)
             return {"local_date": job.id}

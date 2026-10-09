@@ -8,7 +8,7 @@ from ...storage.conversation.transcripts import TRANSCRIPT_PROTOCOL_TOOLS
 BACKGROUND_TOOLS = {
     "recall", "memory_search", "episode_search", "episode_read", "read_tool_result",
     "thinking_search", "thinking_read",
-    "reflection_finish", "episode_summary_finish", "episode_relation_finish",
+    "weekly_reflection_finish", "reflection_finish", "episode_summary_finish", "episode_relation_finish",
     "episode_classify_turns", "episode_consolidation_finish", "current_state_finish",
     "memory_maintenance_finish", "memory_operation_finish",
 }

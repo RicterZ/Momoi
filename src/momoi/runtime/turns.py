@@ -20,11 +20,13 @@ from .workflows import (
 )
 
 
+from .workflows.weekly_reflection import WeeklyReflectionWorkflow
 from .workflows.plan import PlanWorkflow
 
 
 class TurnRunner(
     PlanWorkflow,
+    WeeklyReflectionWorkflow,
     CurrentStateWorkflow,
     EpisodeAnnealingWorkflow,
     EpisodeRelationWorkflow,
