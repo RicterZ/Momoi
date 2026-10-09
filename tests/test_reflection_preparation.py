@@ -570,3 +570,36 @@ def test_reflection_excludes_whole_runtime_topic_and_summary(daemon, archive_kin
     assert 'owner-turn完成项目' in text
     source = daemon.store.reflection_source('2026-09-08')
     assert '排除的归档话题' not in source['episode_timeline']
+
+
+def test_reflection_quote_whitespace_and_actionable_errors():
+    from momoi.runtime.parsing import parse_reflection_finish
+
+    item = {'kind': 'profile', 'key': 'diet.dinner', 'content': '老师这次晚餐吃玉米。',
+            'evidence': '晚饭 玉米 鸡蛋', 'confidence': 0.9}
+    args = {'summary': '日记', 'memories': [item]}
+    source = '晚饭\r\n玉米  \t鸡蛋'
+    result, error = parse_reflection_finish(args, source, source, source)
+    assert error is None and result['memories'][0]['evidence'] == item['evidence']
+    for evidence in ['晚饭 / 鸡蛋', '晚饭米饭鸡蛋', '晚饭 玉米 水果']:
+        details = []
+        _, error = parse_reflection_finish(
+            {**args, 'memories': [{**item, 'evidence': evidence}]}, source, source, source,
+            errors=details,
+        )
+        assert error == 'invalid_reflection_memory'
+        assert details[0]['path'] == 'memories[0].evidence'
+        assert details[0]['item_number'] == 1
+        assert 'continuous passage' in details[0]['message']
+    details = []
+    _, error = parse_reflection_finish(args, source, '助手才说过这句话', source, errors=details)
+    assert error == 'owner_reflection_requires_owner_evidence'
+    assert details[0]['path'] == 'memories[0].evidence'
+    details = []
+    _, error = parse_reflection_finish(
+        {**args, 'memories': [item, {**item, 'kind': 'invalid'}]}, source, source, source,
+        errors=details,
+    )
+    assert error == 'invalid_reflection_memory'
+    assert details[0]['path'] == 'memories[1].kind'
+    assert details[0]['item_number'] == 2

@@ -203,6 +203,7 @@ def parse_reflection_finish(
     owner_source: str,
     knowledge_source: str,
     open_episode_ids: set[str] | None = None,
+    *, errors: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     if not isinstance(arguments, dict):
         return None, "invalid_reflection_finish"
@@ -231,7 +232,15 @@ def parse_reflection_finish(
     memories: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     interaction_practices = 0
-    for item in raw_memories:
+    normalized_source = " ".join(source.split())
+    normalized_owner = " ".join(owner_source.split())
+    normalized_knowledge = " ".join(knowledge_source.split())
+    for index, item in enumerate(raw_memories):
+        def invalid(field, message, code="invalid_reflection_memory"):
+            if errors is not None:
+                errors.append({"path": f"memories[{index}].{field}",
+                               "item_number": index + 1, "message": message})
+            return None, code
         if not isinstance(item, dict) or set(item) != {
             "kind",
             "key",
@@ -239,44 +248,41 @@ def parse_reflection_finish(
             "evidence",
             "confidence",
         }:
-            return None, "invalid_reflection_memory"
+            return invalid("fields", "Required fields: kind, key, content, evidence, confidence; no extra fields.")
         kind = item.get("kind")
         key = item.get("key")
         content = item.get("content")
         evidence = item.get("evidence")
         confidence = item.get("confidence")
-        if (
-            kind not in MEMORY_KINDS
-            or not isinstance(key, str)
-            or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key)
-            or not isinstance(content, str)
-            or not content.strip()
-            or len(content) > 1000
-            or not isinstance(evidence, str)
-            or not evidence.strip()
-            or len(evidence) > 500
-            or evidence not in source
-            or isinstance(confidence, bool)
-            or not isinstance(confidence, (int, float))
-            or not 0 <= float(confidence) <= 1
-        ):
-            return None, "invalid_reflection_memory"
+        if not isinstance(kind, str) or kind not in MEMORY_KINDS:
+            return invalid("kind", "Allowed values: " + ", ".join(sorted(MEMORY_KINDS)))
+        if not isinstance(key, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key):
+            return invalid("key", "Use 1–200 lowercase letters, digits, dots, underscores or hyphens; start with a letter or digit.")
+        if not isinstance(content, str) or not content.strip() or len(content) > 1000:
+            return invalid("content", "Provide non-empty text of at most 1000 characters.")
+        if not isinstance(evidence, str) or not evidence.strip() or len(evidence) > 500:
+            return invalid("evidence", "Provide a non-empty continuous quote of at most 500 characters.")
+        quote = " ".join(evidence.split())
+        if quote not in normalized_source:
+            return invalid("evidence", "Quote not found in source after whitespace normalization. Copy one continuous passage; do not paraphrase or join passages with '/'.")
+        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= float(confidence) <= 1:
+            return invalid("confidence", "Provide a number from 0 to 1.")
         if (
             kind in {"profile", "preference"}
-            and evidence not in owner_source
+            and quote not in normalized_owner
         ):
-            return None, "owner_reflection_requires_owner_evidence"
-        if kind == "world_knowledge" and evidence not in knowledge_source:
-            return None, "world_reflection_requires_observed_evidence"
+            return invalid("evidence", "Quote must come from the owner, not the assistant or tools.", "owner_reflection_requires_owner_evidence")
+        if kind == "world_knowledge" and quote not in normalized_knowledge:
+            return invalid("evidence", "Quote must come from observed evidence.", "world_reflection_requires_observed_evidence")
         if kind == "practice" and key.startswith("interaction."):
-            if evidence not in owner_source:
-                return None, "interaction_practice_requires_owner_evidence"
+            if quote not in normalized_owner:
+                return invalid("evidence", "Quote must come from the owner.", "interaction_practice_requires_owner_evidence")
             interaction_practices += 1
             if interaction_practices > 1:
-                return None, "too_many_interaction_practices"
+                return invalid("kind", "At most one interaction practice is allowed.", "too_many_interaction_practices")
         identity = (kind, key)
         if identity in seen:
-            return None, "duplicate_reflection_memory"
+            return invalid("key", "Duplicate kind/key in this submission; combine duplicate observations.", "duplicate_reflection_memory")
         seen.add(identity)
         memories.append(
             {

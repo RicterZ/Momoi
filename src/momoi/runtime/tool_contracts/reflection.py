@@ -81,7 +81,7 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                             "minLength": 1,
                             "maxLength": 500,
                             "description": (
-                                '支持该结论的来自所提供当日或工具证据的精确连续引文，而非仅其主题。'
+                                '支持该结论的来自所提供当日或工具证据的连续原文引文（换行、回车及连续空白统一按一个空格匹配），而非仅其主题；不得改写或用斜杠拼接不同片段。'
                             ),
                         },
                         "confidence": {

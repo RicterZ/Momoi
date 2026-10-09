@@ -189,18 +189,21 @@ class ReflectionWorkflow:
             nonlocal workflow_complete, workflow_result
             if call.name != "reflection_finish":
                 return await retrieval.execute(call)
+            validation_errors = []
             decision, error = parse_reflection_finish(
                 call.arguments,
                 reflection_evidence,
                 owner_source,
                 knowledge_source,
                 open_episode_ids,
+                errors=validation_errors,
             )
             if decision is None:
                 return {
                     "ok": False,
                     "error": error or "invalid_reflection_finish",
-                    "message": "Correct the reflection result and resubmit it.",
+                    "message": "Correct the indicated field and resubmit the complete result; keep unaffected observations.",
+                    "details": validation_errors,
                 }
             self.store.commit_reflection(
                 local_date,
