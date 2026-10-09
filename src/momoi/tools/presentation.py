@@ -232,7 +232,7 @@ def project_tool_result(result, name):
             result['omitted_fields'] = sorted(omitted)
     if name == 'memory_search' and isinstance(result.get('results'), list):
         fields = {'id', 'kind', 'key', 'content', 'source', 'local_date', 'confidence',
-                  'evidence', 'evidence_quote', 'updated_at', 'activation', 'authority'}
+                  'evidence', 'evidence_quote', 'updated_at', 'activation', 'authority', 'meta'}
         removed = sorted({key for item in result['results'] if isinstance(item, dict)
                           for key in item if key not in fields})
         result['results'] = [{key: value for key, value in item.items() if key in fields}

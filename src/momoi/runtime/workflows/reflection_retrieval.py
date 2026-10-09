@@ -15,7 +15,7 @@ REFLECTION_RETRIEVAL_SPECS = [
         "name": "recall",
         "description": (
             "复盘期间只读检索记忆和话题摘要，获取历史背景。使用 query 和可选的 limit，"
-            "不使用 Owner 的 units；不会绑定话题、保存上下文计划或修改记忆。"
+            "filters 仅过滤记忆，不限制话题摘要。不使用 Owner 的 units；不会绑定话题、保存上下文计划或修改记忆。"
             "请阅读原始记录核实细节；检索结果只是背景，不能证明事件发生在今日复盘时段。"
         ),
         "input_schema": copy.deepcopy(_MEMORY_SPEC["input_schema"]),
@@ -65,6 +65,7 @@ class ReflectionRetrieval:
             for name in ("memory_search", "episode_search"):
                 search_args = dict(args)
                 if name == "episode_search":
+                    search_args.pop("filters", None)
                     search_args["time_range"] = {"kind": "all"}
                 results[name] = await self.memory_tools.execute_async(
                     ToolCall(call.id, name, search_args), [], self.draft,

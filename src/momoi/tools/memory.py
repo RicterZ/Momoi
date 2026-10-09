@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from .time_range import parse_history_time_range
 from ..observability.events import log_event
@@ -15,8 +17,9 @@ from ..memory.retrieval.sparse import SearchBackend, search_expression
 from ..storage import Store
 from ..memory.text import truncate_tokens
 from ..storage.episode.episode_ranking import EpisodeRecallQuery
-from ..runtime.retrieval.models import DenseRecallEvidence
-from ..runtime.retrieval.service import SemanticRecallService
+if TYPE_CHECKING:
+    from ..runtime.retrieval.models import DenseRecallEvidence
+    from ..runtime.retrieval.service import SemanticRecallService
 from ..memory import Memory
 from .contracts.memory import MEMORY_TOOL_SPECS
 from .validation import validate_tool_arguments
@@ -151,7 +154,8 @@ class MemoryTools:
                 if not query:
                     return self._search(call.arguments, draft)
                 results = await self.memory.search(
-                    query, min(10, max(1, int(call.arguments.get("limit", 6)))),
+                    query, min(6, max(1, int(call.arguments.get("limit", 6)))),
+                    filters=call.arguments.get("filters"),
                 )
                 return self._memory_search_result(results, draft)
             if call.name == "episode_search":
@@ -244,7 +248,7 @@ class MemoryTools:
             limit = min(10, max(1, int(arguments.get("limit", 6))))
         except (TypeError, ValueError):
             limit = 6
-        results = self.memory.search_literal(query, limit)
+        results = self.memory.search_literal(query, limit, filters=arguments.get("filters"))
         return self._memory_search_result(results, draft)
 
     def _memory_search_result(

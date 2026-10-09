@@ -1,5 +1,8 @@
 from typing import Any
 
+from ...storage.memory.catalog import MOMOI_MEMORY_TAGS
+from ...memory.storage.records import MEMORY_KINDS
+
 
 MEMORY_TOOL_POLICY = """### 记忆工具
 
@@ -13,7 +16,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "memory_search",
         "description": (
-            '在已提交的记忆中搜索早期事实、人物、偏好、事件或未由提供上下文解析的模糊引用。'
+            '搜索已确认记忆。默认搜索全局；只有明确需要缩小范围时才设置 filters，避免漏掉未标标签的相关记忆。'
         ),
         "input_schema": {
             "type": "object",
@@ -24,10 +27,34 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                         '简洁的主题；使用 `|` 表示同一主题的替代名称。'
                     ),
                 },
+                "filters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "description": "各字段之间取交集；省略或空数组不限制主题或分类。scope 默认全局，不跨作用域搜索。",
+                    "properties": {
+                        "tags_any": {
+                            "type": "array", "uniqueItems": True,
+                            "maxItems": len(MOMOI_MEMORY_TAGS.tags),
+                            "items": {"type": "string", "enum": sorted(MOMOI_MEMORY_TAGS.tags)},
+                            "description": "主题之间为 OR，例如 [health, food_drink] 匹配健康或饮食。会排除未标这些标签的记忆。目录："
+                                + "; ".join(f"{key}: {value}" for key, value in MOMOI_MEMORY_TAGS.tags.items()),
+                        },
+                        "kinds": {
+                            "type": "array", "uniqueItems": True, "maxItems": len(MEMORY_KINDS),
+                            "items": {"type": "string", "enum": sorted(MEMORY_KINDS)},
+                            "description": "记忆性质之间为 OR；不是主题标签。",
+                        },
+                        "scope": {
+                            "type": "string", "maxLength": 200,
+                            "pattern": "^(?:|heartbeat|webhook|goal:[^\\s]+)$",
+                            "description": "空字符串表示全局；也可明确指定 heartbeat、webhook 或已知的 goal:<任务ID>。",
+                        },
+                    },
+                },
                 "limit": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 10,
+                    "maximum": 6,
                     "default": 6,
                 },
             },
