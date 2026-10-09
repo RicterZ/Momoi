@@ -430,25 +430,20 @@ def test_text_reflection_keeps_speech_and_bounded_execution_evidence(daemon):
     rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
     messages = reflection_transcript(daemon.store, rows, (start, end))
     assert len(messages) == 1 and messages[0]['role'] == 'user'
-    from xml.etree import ElementTree
-    root = ElementTree.fromstring(messages[0]['content'])
-    group = root.find('topic_group')
-    assert group.get('kind') == 'unassigned'
-    assert [item.tag for item in group] == ['message', 'tool_result', 'message']
-    speech = root.findall('.//message')[-1]
-    assert speech.get('speaker') == 'assistant' and speech.get('delivery') == 'uncertain'
-    assert speech.text == '保留完整正文<&>' + '原话' * 1000
-    tool = root.find('.//tool_result')
-    assert len(tool.text) < 1000
-    assert 'timeout' in tool.text and 'tr_test' in tool.text
+    text = messages[0]['content']
+    assert '## 尚未归类 | ' in text
+    assert text.index('USER: today完成项目') < text.index('TOOL web_fetch') < text.index('ASSISTANT (uncertain):')
+    assert 'ASSISTANT (uncertain): 保留完整正文<&>' + '原话' * 1000 in text
+    tool = text.split('TOOL web_fetch', 1)[1].split('\n\nASSISTANT', 1)[0]
+    assert len(tool) < 1200
+    assert 'timeout' in tool and 'tr_test' in tool
+    assert text.count('+08:00') == 1
     assert '不重放旧召回' not in messages[0]['content']
     assert '不能用旧复盘自证' not in messages[0]['content']
     assert '窗口外结果' not in messages[0]['content']
 
 
 def test_reflection_groups_topics_without_duplicate_or_outside_evidence(daemon):
-    from xml.etree import ElementTree
-
     start, end = day_window()
     for name, at in [('old', start - 1), ('a1', start + 1), ('b1', start + 2),
                      ('a2', start + 3), ('shared', start + 4), ('loose', start + 5)]:
@@ -461,12 +456,15 @@ def test_reflection_groups_topics_without_duplicate_or_outside_evidence(daemon):
     daemon.store.link_turn_to_episode('b', 'a1', relation='related')
     rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
     rendered = reflection_transcript(daemon.store, rows, (start, end))[0]['content']
-    root = ElementTree.fromstring(rendered)
-    groups = root.findall('topic_group')
-    assert [group.get('kind') for group in groups] == ['topic', 'topic', 'shared', 'unassigned']
-    assert groups[0].find('topic').get('title') == '项目<&>'
-    assert [message.text for message in groups[0].findall('message')] == ['a1完成项目', 'a2完成项目']
-    assert [topic.get('id') for topic in groups[2].findall('topic')] == ['a', 'b']
-    assert len(root.findall('.//message')) == len(rows) == 5
+    groups = rendered.split('## ')[1:]
+    assert len(groups) == 4
+    assert groups[0].startswith('项目<&> | ')
+    assert 'USER: a1完成项目\na2完成项目' in groups[0]
+    assert groups[1].startswith('日常 | ')
+    assert groups[2].startswith('共同材料：项目<&> / 日常 | ')
+    assert groups[3].startswith('尚未归类 | ')
+    assert rendered.count('+08:00') == 4
+    assert '<message' not in rendered and '<topic' not in rendered
+    assert sum(rendered.count(row['content']) for row in rows) == len(rows) == 5
     assert rendered.count('shared完成项目') == 1
     assert 'old完成项目' not in rendered

@@ -1,6 +1,5 @@
 """Text-only daily evidence, without replaying historical agent instructions."""
 import json
-from xml.sax.saxutils import escape, quoteattr
 
 from ...storage.episode.execution_evidence import bounded_result, historical_result
 from ...storage.conversation.transcripts import TRANSCRIPT_PROTOCOL_TOOLS
@@ -19,11 +18,10 @@ def reflection_transcript(store, rows, window):
     for row in rows:
         role = str(row["role"])
         delivery = str(row.get("delivery_state") or "unknown")
-        text = (
-            f'<message id={quoteattr(str(row["id"]))} speaker={quoteattr(role)} '
-            f'time={quoteattr(store.context_timestamp(float(row["created_at"])))} '
-            f'delivery={quoteattr(delivery)}>{escape(str(row["content"]))}</message>'
-        )
+        label = role.upper()
+        if role == "assistant" and delivery != "delivered":
+            label += f" ({delivery})"
+        text = f"{label}: {row['content']}"
         records.append((float(row["created_at"]), 1, int(row["id"]), text, str(row["turn_id"])))
     for row in store._db.execute(
         "SELECT turn_id, sequence, created_at, payload_json FROM turn_journal "
@@ -41,13 +39,10 @@ def reflection_transcript(store, rows, window):
             continue
         result = bounded_result(historical_result(payload.get("result", {}), name))
         text = (
-            f'<tool_result name={quoteattr(name)} '
-            f'time={quoteattr(store.context_timestamp(float(row["created_at"])))} '
-            f'turn={quoteattr(str(row["turn_id"]))} '
-            f'call_id={quoteattr(str(payload.get("tool_call_id") or ""))}>'
-            + escape(json.dumps({"ok": payload.get("ok"), "error": payload.get("error"),
-                                 "result": result}, ensure_ascii=False))
-            + '</tool_result>'
+            f"TOOL {name} (turn={row['turn_id']}, "
+            f"call_id={payload.get('tool_call_id') or ''}): "
+            + json.dumps({"ok": payload.get("ok"), "error": payload.get("error"),
+                          "result": result}, ensure_ascii=False)
         )
         records.append((float(row["created_at"]), 0, int(row["sequence"]), text, str(row["turn_id"])))
     records.sort(key=lambda item: item[:3])
@@ -69,18 +64,23 @@ def reflection_transcript(store, rows, window):
     groups = {}
     for record in records:
         key = tuple(turn_topics.get(record[4], []))
-        groups.setdefault(key, []).append(record[3])
+        groups.setdefault(key, []).append(record)
     sections = []
     for topic_ids, evidence in groups.items():
-        topics = "\n".join(
-            f'<topic id={quoteattr(topic_id)} title={quoteattr(titles[topic_id])} />'
-            for topic_id in topic_ids
-        )
-        kind = "shared" if len(topic_ids) > 1 else "topic" if topic_ids else "unassigned"
-        sections.append(
-            f'<topic_group kind={quoteattr(kind)}>\n'
-            + (topics + "\n" if topics else "")
-            + "\n".join(evidence) + "\n</topic_group>"
-        )
+        title = " / ".join(titles[topic_id] for topic_id in topic_ids) or "尚未归类"
+        if len(topic_ids) > 1:
+            title = "共同材料：" + title
+        stamp = store.context_timestamp(evidence[0][0])
+        blocks = []
+        previous_label = None
+        for record in evidence:
+            text = record[3]
+            label, _, body = text.partition(": ")
+            if record[1] == 1 and label == previous_label:
+                blocks[-1] += "\n" + body
+            else:
+                blocks.append(text)
+            previous_label = label if record[1] == 1 else None
+        sections.append(f"## {title} | {stamp}\n\n" + "\n\n".join(blocks))
     return [{"role": "user", "content": "<conversation_history>\n"
-             + "\n".join(sections) + "\n</conversation_history>"}]
+             + "\n\n".join(sections) + "\n</conversation_history>"}]
