@@ -5,6 +5,7 @@ from ...storage.episode.execution_evidence import bounded_result, historical_res
 from ...storage.conversation.transcripts import TRANSCRIPT_PROTOCOL_TOOLS
 
 BACKGROUND_TOOLS = {
+    "goal_create", "goal_update", "goal_finish", "goal_cancel", "goal_review",
     "recall", "memory_search", "episode_search", "episode_read", "read_tool_result",
     "thinking_search", "thinking_read",
     "weekly_reflection_finish", "reflection_finish", "episode_summary_finish", "episode_relation_finish",
@@ -50,6 +51,8 @@ def reflection_transcript(store, rows, window):
     records = []
     for row in rows:
         role = str(row["role"])
+        if role == "goal":
+            continue
         delivery = str(row.get("delivery_state") or "unknown")
         label = role.upper()
         if role == "assistant" and delivery != "delivered":

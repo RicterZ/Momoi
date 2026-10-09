@@ -515,3 +515,20 @@ def test_reflection_pairs_call_arguments_by_id_and_preserves_raw_outcome(daemon)
     text = reflection_transcript(daemon.store, [], (start, end))[0]['content']
     assert 'TOOL CALL: bash("docker ps")\nTOOL RESULT: {"exit_code":0,"stdout_tail":"bash: line 1: docker: command not found\\n"}' in text
     assert 'pwd' not in text and '成功' not in text and '失败' not in text
+
+
+def test_reflection_excludes_goal_records_and_tools_but_keeps_dialogue(daemon):
+    start, end = day_window()
+    add_turn(daemon, 'goal-turn', start + 1)
+    for name in ['goal_create', 'goal_update', 'goal_finish', 'goal_cancel', 'goal_review']:
+        daemon.store.append_turn_journal('goal-turn', 'tool_result', {
+            'name': name, 'tool_call_id': name, 'ok': True, 'result': {'content': '内部目标数据'},
+        }, trust='runtime')
+    with daemon.store._db:
+        daemon.store._db.execute('UPDATE turn_journal SET created_at=? WHERE turn_id=?',
+                                 (start + 2, 'goal-turn'))
+    rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
+    rows.append({**rows[0], 'role': 'goal', 'content': '内部目标快照'})
+    text = reflection_transcript(daemon.store, rows, (start, end))[0]['content']
+    assert 'USER: goal-turn完成项目' in text
+    assert '内部目标' not in text and 'GOAL:' not in text and 'TOOL CALL:' not in text
