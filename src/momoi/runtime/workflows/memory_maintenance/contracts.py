@@ -72,6 +72,11 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                         '新版本的完整最终结论及必要条件；不附证据、记录日期或审阅经过，保留事实本身必要的日期。不要扩大支持的事实。'
                                     ),
                                 },
+                                "triggers": {
+                                    "type": "array", "maxItems": 8, "uniqueItems": True,
+                                    "items": {"type": "string", "minLength": 1, "maxLength": 40},
+                                    "description": "最终字面触发词；省略继承，[] 清空。降为 recall 时可按原事实补充具体词，不能猜测新含义。",
+                                },
                                 "activation": {
                                     "type": "string",
                                     "enum": ["always", "recall", "scoped"],
@@ -147,6 +152,11 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                     "description": (
                                         '新版本的完整最终结论及必要条件；不附证据、记录日期或审阅经过，保留事实本身必要的日期。'
                                     ),
+                                },
+                                "triggers": {
+                                    "type": "array", "maxItems": 8, "uniqueItems": True,
+                                    "items": {"type": "string", "minLength": 1, "maxLength": 40},
+                                    "description": "最终字面触发词；省略继承，[] 清空。降为 recall 时可按原事实补充具体词，不能猜测新含义。",
                                 },
                                 "activation": {
                                     "type": "string",

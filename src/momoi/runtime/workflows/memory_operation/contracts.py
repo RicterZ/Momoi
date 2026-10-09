@@ -44,6 +44,11 @@ _MEMORY = {
                     "type": "string", "maxLength": 200,
                     "description": "全局填空字符串；工作流范围为 heartbeat、webhook 或 goal:<提供的 Goal ID>。key 不包含范围前缀。",
                 },
+                "triggers": {
+                    "type": "array", "maxItems": 8, "uniqueItems": True,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 40},
+                    "description": "少量具体的字面触发词，如喵；触发后将 recall 记忆附到当前用户消息。无需求填 []；更新时省略则继承，显式 [] 清空。不使用正则或泛词。",
+                },
                 "tags": {
                     "type": "array", "maxItems": 3, "uniqueItems": True,
                     "items": {"type": "string", "enum": sorted(MOMOI_MEMORY_TAGS.tags)},
@@ -102,7 +107,7 @@ MEMORY_OPERATION_FINISH_SPEC: dict[str, Any] = {
                             "type": "string",
                             "enum": ["write", "metadata", "forget", "noop", "defer"],
                             "description": (
-                                '当持久含义已表示时执行 noop 并提供 target_ids/evidence 追加证据；仅调整标签用 metadata；写入以细化或整合现有规则，或添加独立事实。不同的措辞或另一个示例本身并不要求写入。'
+                                '当持久含义已表示时执行 noop 并提供 target_ids/evidence 追加证据；仅调整标签或触发词用 metadata；写入以细化或整合现有规则，或添加独立事实。不同的措辞或另一个示例本身并不要求写入。'
                             ),
                         },
                         "reason": {"type": "string", "minLength": 1, "maxLength": 500},

@@ -11,6 +11,7 @@ from ....observability.values import safe_preview
 from ....models import AgentReply, IncomingMessage, TurnDraft
 from ....llm.errors import ProviderError
 from ...agent import TurnExecutionSpec, WorkflowProtocolError
+from ...context.triggers import triggered_memory_context
 from ...context.current_state import pack_current_turn_context
 from ...context.presentation import heartbeat_self_state_lines
 from ...turn_support import (
@@ -31,6 +32,7 @@ class OwnerWorkflow:
         updates: list[IncomingMessage],
         channel: Channel,
         recalled: dict[str, str],
+        *, draft: TurnDraft | None = None,
     ) -> dict[str, Any]:
         """Carry only what the interruption actually changed.
 
@@ -59,6 +61,9 @@ class OwnerWorkflow:
                     current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
                 ),
             ),
+            ("triggered_memories", triggered_memory_context(
+                self.memory, updates, draft.memory_context if draft is not None else {},
+            )),
             ("recall_memories", recalled["recall_memories"]),
             ("recall_status", recalled["query_recall"]),
             ("reflection_memories", recalled["reflection_memories"]),
@@ -308,6 +313,7 @@ class OwnerWorkflow:
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("recent_recall_context", candidates["recent_recall_context"]),
+            ("triggered_memories", triggered_memory_context(self.memory, batch, injected_memories)),
         )
         current_content = _owner_content_blocks(
             batch, channel.content_blocks, self.store.timezone, runtime_text

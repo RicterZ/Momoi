@@ -5,7 +5,7 @@ import sqlite3
 import time
 from typing import cast
 
-from ..metadata import MemoryFilters, TagCatalog, validate_scope
+from ..metadata import MemoryFilters, TagCatalog, validate_scope, inherited_triggers, validate_triggers
 from .records import ActiveMemory, InventoryMemory, MEMORY_ACTIVATIONS, memory_snapshot_fingerprint, memory_scope
 from .transactions import transaction
 
@@ -28,6 +28,8 @@ class MemoryRepository:
         meta = json.loads(record.pop("meta_json"))
         # Reading does not reclassify historical tags after catalog changes.
         record["meta"] = {"tags": meta.get("tags", []), "scope": record.pop("scope_key")}
+        if "triggers" in meta:
+            record["meta"]["triggers"] = meta["triggers"]
         return record
 
     def _filter_sql(self, filters: MemoryFilters | None):
@@ -45,7 +47,7 @@ class MemoryRepository:
         return "".join(" AND " + clause for clause in clauses), params
 
     def update_meta(self, snapshot, meta, *, now: float | None = None) -> None:
-        """Apply a reviewed tag edit; reject stale snapshots and preserve vectors."""
+        """Apply a reviewed metadata edit; reject stale snapshots and preserve vectors."""
         requested = meta
         meta = self.tags.validate(meta)
         with transaction(self._db):
@@ -53,11 +55,13 @@ class MemoryRepository:
             if "scope" in requested and meta["scope"] != memory_scope(current):
                 raise ValueError("metadata cannot change memory scope")
             meta["scope"] = memory_scope(current)
+            if "triggers" not in requested and "triggers" in current["meta"]:
+                meta["triggers"] = current["meta"]["triggers"]
             if meta == current["meta"]:
                 return
             self._db.execute(
                 "UPDATE memories SET meta_json=?, updated_at=? WHERE id=?",
-                (json.dumps({"tags": meta["tags"]}, ensure_ascii=False, sort_keys=True),
+                (json.dumps({key: value for key, value in meta.items() if key != "scope"}, ensure_ascii=False, sort_keys=True),
                  time.time() if now is None else now, snapshot["id"]),
             )
 
@@ -91,19 +95,22 @@ class MemoryRepository:
                 (memory["kind"], memory["key"], memory_scope(memory), source["event_id"], source["quote"], now),
             )
 
-    def replace(self, memory_id, content, activation, expires_at, source, *, updated_at) -> int:
+    def replace(self, memory_id, content, activation, expires_at, source, *, updated_at, triggers=None) -> int:
         """Create a replacement version with the same identity and inherited evidence."""
         with transaction(self._db):
             row = self.snapshots([memory_id]).get(memory_id)
             if row is None:
                 raise ValueError("memory_snapshot_changed")
+            meta = dict(row["meta"])
+            if triggers is not None:
+                meta["triggers"] = validate_triggers(triggers)
             return self.write(
                 {"kind": row["kind"], "key": row["key"], "content": content,
-                 "activation": activation, "expires_at": expires_at, "meta": row["meta"]},
+                 "activation": activation, "expires_at": expires_at, "meta": meta},
                 [memory_id], source, [source], now=updated_at,
             )
 
-    def merge(self, survivor_id, source_ids, content, activation, expires_at, events) -> int:
+    def merge(self, survivor_id, source_ids, content, activation, expires_at, events, *, triggers=None) -> int:
         """Use the selected identity for a new version, preserving all source evidence."""
         newest = max(events, key=lambda item: float(item["occurred_at"]))
         with transaction(self._db):
@@ -114,11 +121,16 @@ class MemoryRepository:
             if len({memory_scope(row) for row in current.values()}) != 1:
                 raise ValueError("memory merge cannot cross scopes")
             survivor = current[survivor_id]
+            meta = {"tags": sorted({tag for row in current.values() for tag in row["meta"]["tags"]}),
+                    "scope": memory_scope(survivor)}
+            if triggers is not None:
+                meta["triggers"] = validate_triggers(triggers)
+            elif any("triggers" in row["meta"] for row in current.values()):
+                meta["triggers"] = inherited_triggers(current.values())
             return self.write(
                 {"kind": survivor["kind"], "key": survivor["key"], "content": content,
                  "activation": activation, "expires_at": expires_at,
-                 "meta": {"tags": sorted({tag for row in current.values() for tag in row["meta"]["tags"]}),
-                          "scope": memory_scope(survivor)}}, targets,
+                 "meta": meta}, targets,
                 {"event_id": newest["id"], "quote": newest["content"]},
                 [{"event_id": event["id"], "quote": event["content"]} for event in events],
                 now=float(newest["occurred_at"]),
@@ -258,6 +270,11 @@ class MemoryRepository:
                     raise ValueError("memory write cannot cross scopes")
                 meta = {"tags": sorted({tag for row in previous.values() for tag in row["meta"]["tags"]}),
                         "scope": next(iter(scopes), "")}
+            if isinstance(meta, dict) and "triggers" not in meta:
+                previous = self.snapshots(list(target_ids))
+                words = inherited_triggers(previous.values())
+                if words:
+                    meta = {**meta, "triggers": words}
             meta = self.tags.validate(meta)
             if (memory["activation"] == "scoped") != bool(meta["scope"]):
                 raise ValueError("memory activation and scope disagree")
@@ -296,7 +313,7 @@ class MemoryRepository:
                     now,
                     now,
                     memory["expires_at"],
-                    json.dumps({"tags": meta["tags"]}, ensure_ascii=False, sort_keys=True),
+                    json.dumps({key: value for key, value in meta.items() if key != "scope"}, ensure_ascii=False, sort_keys=True),
                     meta["scope"],
                 ),
             )

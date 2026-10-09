@@ -40,12 +40,13 @@ class AgentLoop:
         messages: list[dict[str, Any]],
         delivery_channel: Channel,
         harness: TurnHarness,
+        draft: TurnDraft,
     ) -> str:
         """Fold newly arrived owner messages into the Turn and reopen the harness."""
 
         messages.append(
             self._owner_update_message(
-                updates, delivery_channel, self.owner_context_baseline()
+                updates, delivery_channel, self.owner_context_baseline(), draft=draft
             )
         )
         harness.accept_owner_update()
@@ -161,7 +162,7 @@ class AgentLoop:
             if updates:
                 batch_state = ToolBatchState()
                 source_event_id = self._absorb_owner_updates(
-                    updates, messages, delivery_channel, harness
+                    updates, messages, delivery_channel, harness, draft
                 )
                 protocol_failures = 0
                 thought_rounds = execution_failures = 0
@@ -264,7 +265,7 @@ class AgentLoop:
                 )
                 batch_state = ToolBatchState()
                 source_event_id = self._absorb_owner_updates(
-                    updates, messages, delivery_channel, harness
+                    updates, messages, delivery_channel, harness, draft
                 )
                 protocol_failures = 0
                 thought_rounds = execution_failures = 0
@@ -306,7 +307,7 @@ class AgentLoop:
                         }
                     )
                 source_event_id = self._absorb_owner_updates(
-                    updates, messages, delivery_channel, harness
+                    updates, messages, delivery_channel, harness, draft
                 )
                 protocol_failures = 0
                 thought_rounds = execution_failures = 0
@@ -492,7 +493,7 @@ class AgentLoop:
             if updates:
                 batch_state = ToolBatchState()
                 source_event_id = self._absorb_owner_updates(
-                    updates, messages, delivery_channel, harness
+                    updates, messages, delivery_channel, harness, draft
                 )
                 protocol_failures = 0
                 thought_rounds = execution_failures = 0

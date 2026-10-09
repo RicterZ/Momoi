@@ -24,6 +24,8 @@ def memory_element(memory, *, visible=False, compact=False):
     SubElement(node, "content").text = content
     for tag in record.get("meta", {}).get("tags", []):
         SubElement(node, "tag").text = tag
+    for word in record.get("meta", {}).get("triggers", []):
+        SubElement(node, "trigger").text = word
     if not compact and record.get("evidence_quote"):
         SubElement(node, "evidence", {"event_id": str(record["source_event_id"])}).text = str(record["evidence_quote"])
     return node

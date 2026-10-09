@@ -52,7 +52,7 @@ class MemoryMaintenanceCommitStore:
                     replacement_id = self.memories.repository.replace(
                         memory_id, str(change["content"]), activation, expires_at,
                         {"event_id": source_event_id, "quote": evidence_quote},
-                        updated_at=updated_at,
+                        updated_at=updated_at, triggers=change.get("triggers"),
                     )
                     created_ids.append(replacement_id)
                 elif action == "merge":
@@ -78,7 +78,7 @@ class MemoryMaintenanceCommitStore:
                         raise ValueError("invalid_memory_maintenance_evidence")
                     replacement_id = self.memories.repository.merge(
                         survivor_id, source_ids, str(change["content"]),
-                        activation, expires_at, cited_events,
+                        activation, expires_at, cited_events, triggers=change.get("triggers"),
                     )
                     created_ids.append(replacement_id)
                 elif action == "retire":

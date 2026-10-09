@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from typing import Any
 
+from ....memory.metadata import validate_triggers
 from ....memory.storage.records import MEMORY_ACTIVATIONS
 from .contracts import MAINTENANCE_ACTIONS
 
@@ -257,6 +258,12 @@ def parse_memory_maintenance_result(
                     f"{path}.memory_id: expected integer; got {memory_id_value!r}"
                 )
             target_ids = {memory_id_value}
+        if "triggers" in item and action in {"replace", "merge"}:
+            required.add("triggers")
+            try:
+                validate_triggers(item["triggers"])
+            except ValueError as error:
+                return None, f"{path}.triggers: {error}"
         actual_keys = set(item)
         if actual_keys != required:
             missing = sorted(required - actual_keys)
