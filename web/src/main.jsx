@@ -5,7 +5,7 @@ import "./styles.css";
 import RequestMetrics from "./RequestMetrics.jsx";
 import Loading from "./Loading.jsx";
 import MemoryMetadata from "./MemoryMetadata.jsx";
-import { filterMemories } from "./memoryInventory.js";
+import { filterMemories, memoryTagLabels } from "./memoryInventory.js";
 import Tools from "./Tools.jsx";
 import EmotionContent from "./EmotionContent.jsx";
 import ConfigurationSettings, { ApplyDialog, SaveBar } from "./ConfigurationSettings.jsx";
@@ -1277,9 +1277,17 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                 <article className="reflection-card" key={item.identity}>
                   <div className="card-head">
                     <h2>{memoryKindLabel(item.kind)}</h2>
-                    <span className="status">
-                      {candidateMode ? `${item.count} 次独立观察${item.status === "blocked" ? " · 存在冲突" : ""}` : labels[item.activation] || item.activation}
-                    </span>
+                    <div className="memory-badges">
+                      <span className="status">
+                        {candidateMode ? `${item.count} 次独立观察${item.status === "blocked" ? " · 存在冲突" : ""}` : labels[item.activation] || item.activation}
+                      </span>
+                      {!candidateMode && !!item.meta?.tags?.length && <>
+                        <span className="memory-tag-divider" aria-hidden="true">//</span>
+                        <div className="memory-chips" aria-label="主题标签">
+                          {item.meta.tags.map(tag => <span className="memory-tag" key={tag} title={tag}>{memoryTagLabels[tag] || tag}</span>)}
+                        </div>
+                      </>}
+                    </div>
                   </div>
                   {!candidateMode && <MemoryMetadata item={item} />}
                   {editingId === item.identity ? (

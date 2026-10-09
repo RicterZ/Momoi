@@ -1,19 +1,13 @@
-import { memoryScope, memoryScopeLabel, memoryTagLabels } from "./memoryInventory.js";
+import { memoryScope, memoryScopeLabel } from "./memoryInventory.js";
 
 export default function MemoryMetadata({ item }) {
   if (item.activation === "reflection") return null;
   const triggers = item.meta?.triggers || [];
-  const tags = item.meta?.tags || [];
   const scope = memoryScope(item);
   const triggerActive = item.activation === "recall" && !scope;
   return (
     <div className="memory-metadata">
       {scope && <p className="memory-scope">作用于 {memoryScopeLabel(item)}</p>}
-      {!!tags.length && (
-        <div className="memory-chips" aria-label="主题标签">
-          {tags.map((tag) => <span className="memory-tag" key={tag} title={tag}>{memoryTagLabels[tag] || tag}</span>)}
-        </div>
-      )}
       <div className="memory-triggers">
         <span>触发词：</span>
         {triggers.length ? (

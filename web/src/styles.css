@@ -2307,6 +2307,8 @@ a.tag:hover {
 .memory-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; list-style: none; }
 .memory-tag, .memory-trigger { max-width: 100%; padding: 3px 8px; border: 1px solid currentColor; border-radius: 4px; font-size: 12px; overflow-wrap: anywhere; }
 .memory-tag { color: var(--muted); }
+.memory-badges { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.memory-tag-divider { color: var(--muted); font-size: 12px; }
 .memory-trigger { color: var(--ink); border-color: var(--blue); background: var(--blue-soft); }
 .memory-triggers { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: 12px; }
 .memory-trigger-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
