@@ -2,7 +2,6 @@ from copy import deepcopy
 from xml.etree.ElementTree import fromstring
 
 from momoi.runtime.workflows.memory_operation.rendering import render_memory_operation_request
-from momoi.runtime.workflows.memory_maintenance.rendering import render_memory_maintenance_request
 from momoi.runtime.workflows.memory_rendering import memory_record
 from momoi.runtime.workflows.episode.cue_verifier import render_cue_review
 
@@ -73,15 +72,6 @@ def test_memory_xml_distinguishes_stale_and_deleted_snapshots_without_internal_f
     assert old == example_memory()
 
 
-def test_maintenance_directory_does_not_duplicate_supplied_memories():
-    rows = [example_memory(i) for i in range(1, 4)]
-    rendered = render_memory_maintenance_request(
-        mutable_memories=rows[:1], context_memories=rows[1:2], memory_directory=rows, owner_evidence=[],
-    )
-    root = fromstring("<request>" + rendered + "</request>")
-    assert [node.get("id") for node in root.findall(".//memory")] == ["1", "2", "3"]
-    assert root.findtext("mutable_memories/memory/content") == rows[0]["content"]
-    assert root.find("topic_context") is None
 
 
 def test_forgotten_candidates_are_separate_from_current_targets_and_escape_quotes():

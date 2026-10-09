@@ -263,7 +263,6 @@ Webhook Turn 与其他 Momoi 工作流共享同一份原生对话和记忆；如
 | `/compact` | 压缩当前对话上下文，保留原始历史 |
 | `/heartbeat` | 立即触发一次 Heartbeat |
 | `/reflect` | 复盘当前本地自然日 |
-| `/tidy` | 运行 Confirmed memory 维护 |
 | `/resolve <id> <result>` | 记录一次不确定外部操作经过核实的真实结果 |
 | `/resume <id> <current state>` | 从经过核实的当前状态继续不确定工作 |
 

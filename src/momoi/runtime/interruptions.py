@@ -30,7 +30,6 @@ TURN_INGRESS = {
     "reflection": TurnIngressPolicy(),
     "weekly_reflection": TurnIngressPolicy(),
     "memory_operation": TurnIngressPolicy(),
-    "memory_maintenance": TurnIngressPolicy(),
     "current_state_maintenance": TurnIngressPolicy(),
 }
 

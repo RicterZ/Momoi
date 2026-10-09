@@ -1,7 +1,7 @@
 from momoi.config.models import HeartbeatConfig, NotificationConfig
 from momoi.models import AgentReply
 from momoi.storage import Store
-from momoi.storage.core.migrations import SCHEMA_VERSION
+from momoi.storage.core.migrations import MIGRATIONS, _remove_reply_followup
 
 
 def test_upgrade_cancels_old_followup_and_preserves_history(tmp_path):
@@ -43,7 +43,7 @@ def test_upgrade_cancels_old_followup_and_preserves_history(tmp_path):
             (id,turn_id,goal_id,notification_key,priority,reason,messages_json,state,not_before,created_at)
             VALUES (?,?,'heartbeat','heartbeat.reply_followup','normal','旧跟进','[]','queued',1,1)""",
             (tid, tid))
-    store._db.execute(f'PRAGMA user_version={SCHEMA_VERSION - 1}')
+    store._db.execute(f'PRAGMA user_version={MIGRATIONS.index(_remove_reply_followup)}')
     store._db.commit()
     store.close()
 

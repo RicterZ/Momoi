@@ -15,7 +15,6 @@ from momoi.runtime.workflows.episode.contracts import (
     EPISODE_CONSOLIDATION_FINISH_SPEC,
     EPISODE_SUMMARY_FINISH_SPEC,
 )
-from momoi.runtime.workflows.memory_maintenance.contracts import MEMORY_MAINTENANCE_FINISH_SPEC
 from momoi.runtime.workflows.memory_operation.contracts import (
     MEMORY_OPERATION_FINISH_SPEC,
     MEMORY_OPERATION_SEARCH_SPEC,
@@ -39,7 +38,6 @@ def test_model_tool_schemas_compile_and_examples_validate():
         EPISODE_CLASSIFY_TURNS_SPEC,
         EPISODE_CONSOLIDATION_FINISH_SPEC,
         EPISODE_SUMMARY_FINISH_SPEC,
-        MEMORY_MAINTENANCE_FINISH_SPEC,
         MEMORY_OPERATION_FINISH_SPEC,
         MEMORY_OPERATION_SEARCH_SPEC,
         *AGENDA_TOOL_SPECS,

@@ -34,7 +34,6 @@ TURN_HARNESS_SPECS = {
         TurnHarnessSpec("reflection", None, "reflection_finish"),
         TurnHarnessSpec("weekly_reflection", None, "weekly_reflection_finish",
                         permitted_tools=frozenset({"weekly_reflection_finish"})),
-        TurnHarnessSpec("memory_maintenance", None, "memory_maintenance_finish"),
         TurnHarnessSpec("memory_operation", None, "memory_operation_finish", permitted_tools=frozenset({"memory_operation_finish", "memory_operation_search"})),
         TurnHarnessSpec("episode_consolidate", None, "episode_consolidation_finish"),
         TurnHarnessSpec("episode_anneal", None, "episode_summary_finish"),

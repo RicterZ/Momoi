@@ -56,7 +56,6 @@ class AgentWorker:
                     job = item
                     assert isinstance(job, AutonomousJob)
                     self._stop_requested = False
-                    requeue_memory_maintenance = False
                     if job.kind == "plan_step":
                         work = self._complete_plan_step_turn(job.id, stop)
                     elif job.kind == "current_state_maintenance":
@@ -75,8 +74,6 @@ class AgentWorker:
                         work = self._complete_weekly_reflection_turn(job.id, stop)
                     elif job.kind == "memory_operation":
                         work = self._complete_memory_operation_turn(job.id, stop)
-                    elif job.kind == "memory_maintenance":
-                        work = self._complete_memory_maintenance_turn(job.id, stop)
                     else:
                         work = self._complete_goal_turn(job.id, stop)
                     plan = self.store.task_plan(job.id) if job.kind == "plan_step" else None
@@ -85,10 +82,7 @@ class AgentWorker:
                         channel=plan["channel"] if plan else self.channel.name,
                     )
                     try:
-                        result = await self._active_turn
-                        requeue_memory_maintenance = (
-                            job.kind == "memory_maintenance" and result is True
-                        )
+                        await self._active_turn
                     except asyncio.CancelledError:
                         if not self._stop_requested:
                             raise
@@ -107,10 +101,6 @@ class AgentWorker:
                             self._queued_current_state.discard(job.id)
                         if job.kind == "memory_operation":
                             self._queued_memory_operations.discard(job.id)
-                        if job.kind == "memory_maintenance":
-                            self._queued_memory_maintenance.discard(job.id)
-                            if requeue_memory_maintenance and not stop.is_set():
-                                self._enqueue_memory_maintenance(job.id)
                         self.finish_active_turn()
                         self.agenda_changed.set()
                     continue
@@ -273,7 +263,6 @@ class AgentWorker:
             self.store.release_reflection(job.id, "owner_stop", delay_seconds=3600)
             return {"local_date": job.id}
         if job.kind in {
-            "memory_maintenance",
             "memory_operation",
             "current_state_maintenance",
         }:
@@ -286,10 +275,6 @@ class AgentWorker:
             return
         self._queued_memory_operations.add(batch_id)
         self.autonomous.put_nowait(AutonomousJob.memory_operation(batch_id))
-
-    def _enqueue_memory_maintenance(self, turn_id: str) -> None:
-        # Keep pending records, but do not schedule maintenance during the redesign.
-        return
 
     def _prioritize_autonomous(self, current: AutonomousJob) -> AutonomousJob:
         candidates = [current]

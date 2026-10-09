@@ -61,7 +61,7 @@ class MemoryOperationWorkflow:
 
         async def planner(context):
             snapshots, evidence = context.snapshots, context.evidence
-            for item in self.store.memory_maintenance_evidence_for_memories(
+            for item in self.store.memory_evidence_for_memories(
                 list(snapshots)
             ):
                 evidence[item["event_id"]] = item["content"]
@@ -97,7 +97,7 @@ class MemoryOperationWorkflow:
                     except CandidateBudgetExceeded as error:
                         return {"ok": False, "error": str(error)}
                     related = {key: row for key, row in context.snapshots.items() if key not in previous_ids}
-                    related_evidence = self.store.memory_maintenance_evidence_for_memories(
+                    related_evidence = self.store.memory_evidence_for_memories(
                         list(related)
                     )
                     for item in related_evidence:

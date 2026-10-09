@@ -33,7 +33,7 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
             )
             daemon.autonomous.put_nowait(AutonomousJob.heartbeat())
             daemon.autonomous.put_nowait(
-                AutonomousJob.memory_maintenance("maintenance-1")
+                AutonomousJob("weekly_reflection", "2030-01-07")
             )
             daemon.autonomous.put_nowait(AutonomousJob.reflection("2030-01-01"))
             daemon.autonomous.put_nowait(AutonomousJob.goal("goal-1"))
@@ -47,7 +47,7 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 await daemon._next_work(),
-                ("goal", AutonomousJob.memory_maintenance("maintenance-1")),
+                ("goal", AutonomousJob("weekly_reflection", "2030-01-07")),
             )
             self.assertEqual(
                 await daemon._next_work(), ("goal", AutonomousJob.heartbeat())
@@ -85,54 +85,6 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(selected, ["goal", "goal", "goal", "heartbeat"])
             daemon.store.close()
 
-    async def test_paused_memory_maintenance_does_not_enqueue_or_requeue(self):
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(
-                AppConfig(
-                    providers=provider_catalog(LLMConfig(
-                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    )),
-                    channel=NapCatConfig(
-                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                    ),
-                    system_prompt="test",
-                    transcript_turns_min=4,
-                    transcript_turns_max=4,
-                    episode_unsummarized_tail_turns=2,
-                    memory_results=2,
-                    database=Path(directory) / "momoi.sqlite3",
-                    log_level="INFO",
-                )
-            )
-            stop = asyncio.Event()
-            order: list[str] = []
-
-            async def run_maintenance(
-                _turn_id: str, _stop: asyncio.Event
-            ) -> bool:
-                order.append("memory_maintenance")
-                daemon.autonomous.put_nowait(AutonomousJob.goal("goal-1"))
-                return True
-
-            async def run_goal(
-                _goal_id: str, _stop: asyncio.Event
-            ) -> None:
-                order.append("goal")
-                stop.set()
-
-            daemon._complete_memory_maintenance_turn = run_maintenance  # type: ignore[method-assign]
-            daemon._complete_goal_turn = run_goal  # type: ignore[method-assign]
-            daemon._enqueue_memory_maintenance("maintenance-1")
-            self.assertTrue(daemon.autonomous.empty())
-            self.assertNotIn("maintenance-1", daemon._queued_memory_maintenance)
-            # A job already queued before the pause may finish, but cannot requeue.
-            daemon.autonomous.put_nowait(AutonomousJob.memory_maintenance("maintenance-1"))
-            await asyncio.wait_for(daemon._agent_worker(stop), timeout=5)
-
-            self.assertEqual(order, ["memory_maintenance", "goal"])
-            self.assertTrue(daemon.autonomous.empty())
-            self.assertNotIn("maintenance-1", daemon._queued_memory_maintenance)
-            daemon.store.close()
 
 if __name__ == "__main__":
     unittest.main()

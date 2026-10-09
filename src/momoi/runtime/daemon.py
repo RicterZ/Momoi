@@ -231,7 +231,6 @@ class MomoiDaemon(
         self._webhook_turn_active = False
         self._stop_requested = False
         self._manual_heartbeat_channel: str | None = None
-        self._queued_memory_maintenance: set[str] = set()
         self._queued_memory_operations: set[str] = set()
         self._queued_current_state: set[str] = set()
         self._webhook_commits: dict[str, asyncio.Future[None]] = {}
@@ -254,8 +253,6 @@ class MomoiDaemon(
             self._episode_annealing_dirty = True
         self.store.recover_memory_operations()
         self.store.recover_current_state_tasks()
-        for turn_id in self.store.recover_memory_maintenance_turns():
-            self._enqueue_memory_maintenance(turn_id)
         for event in self.store.pending_events():
             self.incoming.put_nowait(event)
         try:

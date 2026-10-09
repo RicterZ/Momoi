@@ -134,42 +134,6 @@ def test_owner_initial_and_interruption_inject_current_user_only(daemon):
     assert 'triggered_memories' not in str(message)
 
 
-def test_maintenance_demotion_can_add_trigger_to_legacy_memory(daemon):
-    from momoi.runtime.workflows.memory_maintenance import parse_memory_maintenance_result
-    from momoi.runtime.workflows.memory_operation.contracts import MEMORY_OPERATION_FINISH_SPEC
-    from momoi.runtime.workflows.memory_maintenance.contracts import MEMORY_MAINTENANCE_FINISH_SPEC
-    from jsonschema import validate
-
-    identifier = seed(daemon.memory, activation='always', triggers=())
-    store = daemon.store
-    snapshots = daemon.memory.snapshots([identifier])
-    turn_id = 'maintenance-trigger'
-    store.queue_memory_maintenance_turn(turn_id, 'manual:test')
-    store.claim_memory_maintenance_turn(turn_id)
-    arguments = {
-        'reviewed_ids': [], 'regroup_requests': [], 'summary': '短呼唤需要时触发',
-        'changes': [{'action': 'replace', 'memory_id': identifier,
-                     'content': snapshots[identifier]['content'], 'activation': 'recall',
-                     'expires_at': None, 'evidence': None, 'reason': '按主题召回即可', 'triggers': ['喵']}],
-    }
-    validate(arguments, MEMORY_MAINTENANCE_FINISH_SPEC['input_schema'])
-    decision = {'operation_ids': ['op'], 'action': 'metadata', 'reason': '具体呼唤词',
-                'target_ids': [identifier], 'meta': {'tags': [], 'triggers': ['喵']},
-                'evidence': [{'event_id': 'owner', 'quote': '喵'}]}
-    validate({'decisions': [decision]}, MEMORY_OPERATION_FINISH_SPEC['input_schema'])
-    parsed, error = parse_memory_maintenance_result(
-        arguments, mutable_memories=snapshots, context_ids=set(), directory_ids=set(), owner_evidence={},
-    )
-    assert error is None
-    store.apply_memory_maintenance_batch(turn_id, parsed, snapshots, owner_marker=store.latest_owner_event_marker())
-    result = daemon.memory.triggered('喵')
-    assert len(result) == 1 and result[0]['id'] != identifier
-    assert result[0]['meta']['triggers'] == ['喵']
-    arguments['changes'][0]['triggers'] = ['']
-    parsed, error = parse_memory_maintenance_result(
-        arguments, mutable_memories=snapshots, context_ids=set(), directory_ids=set(), owner_evidence={},
-    )
-    assert parsed is None and 'triggers' in error
 
 
 def test_merge_trigger_overflow_rolls_back_until_explicitly_reviewed(database):

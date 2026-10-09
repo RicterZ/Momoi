@@ -5,7 +5,6 @@ from ...observability.events import TRACE, log_event
 from ...observability.values import safe_preview
 from ...models import IncomingMessage, OwnerInputStatus, MessageRecalled, MessagePoked
 from ..jobs import AutonomousJob
-from ..workflows.memory_maintenance import MEMORY_MAINTENANCE_RUN_VERSION
 
 logger = logging.getLogger("momoi.runtime.daemon")
 
@@ -127,32 +126,6 @@ class CommandRouter:
                     command="heartbeat",
                     reason="heartbeat_already_active",
                 )
-            return
-        if message.text.strip() == "/tidy":
-            turn_id = self.store.pending_memory_maintenance_turn()
-            if turn_id is None:
-                turn_id = self._turn_id(
-                    "memory-maintenance",
-                    MEMORY_MAINTENANCE_RUN_VERSION,
-                    "manual",
-                    message.event_id,
-                )
-                self.store.queue_memory_maintenance_turn(
-                    turn_id, f"manual:{message.event_id}"
-                )
-            annealing = self._active_annealing
-            if annealing is not None and not annealing.done():
-                annealing.cancel("memory_maintenance")
-            self._enqueue_memory_maintenance(turn_id)
-            log_event(
-                logger,
-                logging.INFO,
-                "owner_command_accepted",
-                channel=message.channel,
-                event_id=message.event_id,
-                command="tidy",
-                turn_id=turn_id,
-            )
             return
         if message.text.strip() == "/reflect":
             reflection = self.store.claim_manual_reflection(at=self.config.reflection.at)

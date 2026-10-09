@@ -17,6 +17,7 @@ from .episode.episode_search import (
 )
 from .episode.episode_annealing import EpisodeAnnealingStore
 from .episode.episode_consolidation import EpisodeConsolidationStore
+from .memory.memory_evidence import MemoryEvidenceStore
 from .memory.memory_operations import MemoryOperationStore
 from ..memory import Memory
 from .memory.catalog import MOMOI_MEMORY_TAGS
@@ -24,9 +25,6 @@ from ..memory.storage.vector_repository import VectorRepository
 from ..memory.storage.index_queue import IndexQueue
 from ..memory.storage.index_documents import IndexDocuments
 from .memory.context import MemoryContextStore
-from .memory.memory_maintenance_commits import MemoryMaintenanceCommitStore
-from .memory.memory_maintenance_evidence import MemoryMaintenanceEvidenceStore
-from .memory.memory_maintenance_queue import MemoryMaintenanceQueueStore
 from .agenda.crontabs import GoalStore
 from .delivery.emotions import EmotionStore
 from .conversation.turns import TurnStore
@@ -109,10 +107,8 @@ class Store(
     OutboxStore,
     ReconciliationStore,
     TurnCommitStore,
-    MemoryMaintenanceQueueStore,
-    MemoryMaintenanceEvidenceStore,
-    MemoryMaintenanceCommitStore,
     MemoryContextStore,
+    MemoryEvidenceStore,
     MemoryOperationStore,
     WebhookStore,
     DeliveryStore,

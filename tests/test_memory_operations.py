@@ -90,7 +90,7 @@ def write(source, *, ids=None, targets=None, key="drink", content="主人喝茶"
 def apply(store, batch, decisions, snapshots=None):
     snapshots = snapshots or {}
     evidence = {item["event_id"]: item["text"] for item in batch["events"]}
-    for item in store.memory_maintenance_evidence_for_memories(list(snapshots)):
+    for item in store.memory_evidence_for_memories(list(snapshots)):
         evidence[item["event_id"]] = item["content"]
     plan = store.memories.writing.review(
         PlanningContext(batch["operations"], evidence, snapshots, evidence_times={

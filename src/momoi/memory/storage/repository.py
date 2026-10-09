@@ -77,15 +77,8 @@ class MemoryRepository:
             raise ValueError("memory_snapshot_changed")
         return current
 
-    def forget(self, memory, source, *, now: float, require_unique=False) -> None:
+    def forget(self, memory, source, *, now: float) -> None:
         with transaction(self._db):
-            if require_unique and self._db.execute(
-                """SELECT 1 FROM memories
-                   WHERE kind=? AND key=? AND scope_key=? AND id<>?
-                     AND superseded_by IS NULL LIMIT 1""",
-                (memory["kind"], memory["key"], memory_scope(memory), memory["id"]),
-            ).fetchone() is not None:
-                raise ValueError("memory_maintenance_tombstone_conflict")
             self._db.execute(
                 """INSERT INTO memory_tombstones
                    (kind,key,scope_key,source_event_id,evidence_quote,created_at)

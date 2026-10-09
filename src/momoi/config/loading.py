@@ -21,11 +21,12 @@ from .models import (
 from .validation import boolean, clock, integer, mapping, nonnegative, positive
 
 
-def remove_retired_thinking_stage(raw: dict) -> None:
+def remove_retired_thinking_stages(raw: dict) -> None:
     thinking = raw.get("thinking")
     stages = thinking.get("stages") if isinstance(thinking, dict) else None
     if isinstance(stages, dict):
         stages.pop("reply_followup", None)
+        stages.pop("memory_maintenance", None)
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -39,7 +40,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
     raw = copy.deepcopy(raw)
     if not isinstance(raw, dict):
         raise ConfigError("config.json must be a table/object")
-    remove_retired_thinking_stage(raw)
+    remove_retired_thinking_stages(raw)
     allowed = {
         "providers",
         "timezone",

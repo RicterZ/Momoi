@@ -64,7 +64,7 @@ class EndTurnTest(unittest.TestCase):
 
     def test_private_maintenance_keeps_its_own_terminal_tools(self):
         for stage in (
-            "reflection", "memory_maintenance",
+            "reflection",
             "episode_consolidate", "episode_anneal",
         ):
             with self.subTest(stage=stage):

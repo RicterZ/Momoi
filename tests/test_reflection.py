@@ -233,7 +233,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 timeout=5,
             )
             self.assertTrue(daemon.autonomous.empty())
-            self.assertIsNotNone(daemon.store.pending_memory_maintenance_turn())
+            self.assertEqual(daemon.store._db.execute("SELECT COUNT(*) FROM turns WHERE workflow_kind='memory_maintenance'").fetchone()[0], 0)
             reflection = daemon.store.reflection("2026-07-21")
             self.assertEqual(reflection["state"], "completed")
             self.assertEqual(

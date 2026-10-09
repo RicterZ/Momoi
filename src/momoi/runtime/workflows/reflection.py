@@ -16,7 +16,6 @@ from ..turn_support import (
     live_prompt as _live_prompt,
     pack_user_context as _pack_user_context,
 )
-from .memory_maintenance import MEMORY_MAINTENANCE_RUN_VERSION
 from .reflection_retrieval import REFLECTION_RETRIEVAL_SPECS, ReflectionRetrieval
 
 logger = logging.getLogger("momoi.runtime.turns")
@@ -118,12 +117,6 @@ class ReflectionWorkflow:
         # or the command time for manual runs. Queueing/retries must not extend it.
         end_at = float(reflection["scheduled_at"]) if reflection is not None else None
         await self._prepare_reflection_episodes(local_date, at=reflection_at, end_at=end_at)
-        maintenance_turn_id = self._turn_id(
-            "memory-maintenance",
-            MEMORY_MAINTENANCE_RUN_VERSION,
-            "reflection",
-            turn_id,
-        )
         source = self.store.reflection_source(
             local_date,
             at=reflection_at,
@@ -215,9 +208,7 @@ class ReflectionWorkflow:
                 decision["summary"],
                 decision["memories"],
                 decision["conversation_actions"],
-                maintenance_turn_id,
             )
-            self._enqueue_memory_maintenance(maintenance_turn_id)
             self.agenda_changed.set()
             if self.config.episode_annealing.enabled:
                 self._episode_annealing_dirty = True

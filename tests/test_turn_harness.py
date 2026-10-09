@@ -31,7 +31,7 @@ class TurnHarnessTest(unittest.TestCase):
                 for external_effect in (False, True):
                     with self.subTest(stage=stage, started=started, external_effect=external_effect):
                         workflow = stage in {
-                            "plan_step", "reflection", "weekly_reflection", "memory_maintenance", "memory_operation",
+                            "plan_step", "reflection", "weekly_reflection", "memory_operation",
                             "episode_consolidate", "episode_anneal", "episode_relation",
                             "current_state_maintenance",
                         }

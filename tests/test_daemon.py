@@ -792,42 +792,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(daemon.store.reflection(local_date)["state"], "running")
             daemon.store.close()
 
-    async def test_manual_tidy_command_preserves_pending_job_while_paused(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(
-                AppConfig(
-                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig(
-                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                    ),
-                    system_prompt="test",
-                    transcript_turns_min=4,
-                    transcript_turns_max=4,
-                    episode_unsummarized_tail_turns=2,
-                    memory_results=2,
-                    database=Path(directory) / "momoi.sqlite3",
-                    log_level="INFO",
-                )
-            )
-            install_scripted_replyer(daemon)
-            command = IncomingMessage(
-                "qq:manual-tidy",
-                "manual-tidy",
-                "/tidy",
-                1,
-                1,
-                channel="napcat",
-            )
-            await daemon._receive(command)
-            await daemon._receive(command)
-
-            self.assertTrue(daemon.autonomous.empty())
-            turn_id = daemon.store.pending_memory_maintenance_turn()
-            self.assertIsNotNone(turn_id)
-            self.assertTrue(daemon.store.claim_memory_maintenance_turn(turn_id))
-            self.assertEqual(daemon.store.recover_memory_maintenance_turns(), [turn_id])
-            self.assertEqual(daemon.store.pending_events(), [])
-            daemon.store.close()
 
 
     async def test_owner_mcp_tool_is_resident_from_the_first_round(self) -> None:

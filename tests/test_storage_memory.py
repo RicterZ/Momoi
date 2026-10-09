@@ -1793,24 +1793,6 @@ class StorageMemoryTest(unittest.TestCase):
                 "working_summary_claims_json",
             )
 
-            store.queue_memory_maintenance_turn("corrupt-maintenance", "reflection:1")
-            with store._db:
-                store._db.execute(
-                    """INSERT INTO turn_journal
-                       (turn_id, sequence, created_at, item_type, visibility,
-                        trust, payload_json)
-                       VALUES ('corrupt-maintenance', 1, 1,
-                               'memory_maintenance_plan', 'internal', 'runtime',
-                               'not-json')"""
-                )
-            with self.assertLogs("momoi.storage.core.integrity", level="ERROR"):
-                with self.assertRaises(StorageIntegrityError):
-                    store.memory_maintenance_journal("corrupt-maintenance")
-            turn = store._db.execute(
-                "SELECT state, failure_reason FROM turns WHERE id='corrupt-maintenance'"
-            ).fetchone()
-            self.assertEqual(turn["state"], "needs_reconciliation")
-            self.assertIn("storage_integrity_error", turn["failure_reason"])
             store.close()
 
     def test_recall_reuse_candidate_is_only_the_latest_effective_scope(self) -> None:

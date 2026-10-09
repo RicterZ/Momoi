@@ -775,6 +775,15 @@ def _remove_reply_followup(database):
             database.execute(f"ALTER TABLE {table} DROP COLUMN reply_expectation")
 
 
+def _retire_memory_maintenance(database):
+    database.execute(
+        """UPDATE turns SET state='cancelled', stage='cancelled',
+               failure_reason='memory_maintenance_retired', updated_at=?
+           WHERE workflow_kind='memory_maintenance' AND state='running'""",
+        (time.time(),),
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -814,6 +823,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     add_memory_scope,
     _add_reflection_candidates,
     _remove_reply_followup,
+    _retire_memory_maintenance,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

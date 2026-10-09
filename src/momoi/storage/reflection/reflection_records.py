@@ -14,7 +14,6 @@ class ReflectionRecordStore:
         summary: str,
         memories: list[dict[str, object]],
         conversation_actions: list[dict[str, object]] | None = None,
-        maintenance_turn_id: str = "",
     ) -> None:
         reflection_id = f"reflection:{local_date}"
         now = time.time()
@@ -65,20 +64,6 @@ class ReflectionRecordStore:
                     ),
                 )
             self.apply_conversation_actions(conversation_actions or [], now=now)
-            if maintenance_turn_id:
-                self._db.execute(
-                    """INSERT OR IGNORE INTO turns
-                       (id, kind, workflow_kind, source_ids_json, state, stage,
-                        started_at, updated_at)
-                       VALUES (?, 'autonomous', 'memory_maintenance', ?, 'running',
-                               'memory_maintenance_queued', ?, ?)""",
-                    (
-                        maintenance_turn_id,
-                        json.dumps([reflection_id]),
-                        now,
-                        now,
-                    ),
-                )
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
                    failure_reason=NULL, updated_at=? WHERE id=?""",

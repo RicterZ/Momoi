@@ -307,7 +307,6 @@ nothing useful.
 | `/compact` | Compact the active conversation context while preserving history |
 | `/heartbeat` | Trigger one Heartbeat immediately |
 | `/reflect` | Run Reflection for the current local day |
-| `/tidy` | Run confirmed-memory maintenance |
 | `/resolve <id> <result>` | Record the verified result of an uncertain external action |
 | `/resume <id> <current state>` | Continue uncertain work from a verified current state |
 
