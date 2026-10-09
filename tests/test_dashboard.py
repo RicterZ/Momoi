@@ -892,6 +892,26 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             "SELECT meta_json FROM memories WHERE id=?", (memory_id,),
         ).fetchone()[0]), {"tags": ["communication"], "triggers": ["喵"]})
 
+    async def test_memory_trigger_edit_validation_and_clear(self):
+        response = await self.client.get('/api/memories', headers=self._auth())
+        original = (await response.json())['items'][0]
+        path = f"/api/memories/{original['id']}"
+        response = await self.client.patch(path, headers=self._auth(), json={'triggers': ['喵', '晚安']})
+        self.assertEqual(response.status, 200)
+        item = await response.json()
+        self.assertEqual(item['meta']['triggers'], ['喵', '晚安'])
+        self.assertEqual(item['content'], original['content'])
+        for invalid in [None, '喵', [''], ['a', 'Ａ'], ['x' * 41], list('123456789')]:
+            response = await self.client.patch(path, headers=self._auth(), json={'content': '不应写入', 'triggers': invalid})
+            self.assertEqual(response.status, 400)
+        response = await self.client.patch(path, headers=self._auth(), json={'triggers': []})
+        self.assertEqual(response.status, 200)
+        item = await response.json()
+        self.assertEqual(item['meta']['triggers'], [])
+        self.assertEqual(item['content'], original['content'])
+        self.assertEqual(item['meta']['tags'], original['meta']['tags'])
+        self.assertEqual(item['meta']['scope'], original['meta']['scope'])
+
     async def test_reflection_memory_management_and_diary_link(self) -> None:
         now = time.time()
         with self.store._db:

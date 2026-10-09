@@ -180,23 +180,27 @@ class DashboardStore:
             (memory_id, time.time()),
         ).fetchone()
 
-    def update_memory_content(
-        self, memory_id: int, content: str
-    ) -> dict[str, object] | None:
-        text = content.strip()
-        if not text or len(text) > 2000:
+    def update_memory_content(self, memory_id: int, content=None, *, triggers=...):
+        from ...memory.metadata import validate_triggers
+
+        if content is not None and (not isinstance(content, str) or not 1 <= len(content.strip()) <= 2000):
             raise ValueError("content must contain between 1 and 2000 characters")
-        now = time.time()
-        with self._db:
+        if triggers is not ...:
+            triggers = validate_triggers(triggers)
+        with self.transaction():
             row = self._active_memory_row(memory_id)
             if row is None:
                 return None
-            self._db.execute(
-                "UPDATE memories SET content=?, updated_at=? WHERE id=?",
-                (text, now, memory_id),
-            )
-        updated = self._active_memory_row(memory_id)
-        return self._memory_public_dict(updated) if updated else None
+            if content is not None:
+                self._db.execute(
+                    "UPDATE memories SET content=?, updated_at=? WHERE id=?",
+                    (content.strip(), time.time(), memory_id),
+                )
+            if triggers is not ...:
+                repository = self.memories.repository
+                snapshot = repository.snapshots([memory_id])[memory_id]
+                repository.update_meta(snapshot, {**snapshot['meta'], 'triggers': triggers})
+        return self._memory_public_dict(self._active_memory_row(memory_id))
 
     def forget_memory_by_id(self, memory_id: int, reason: str) -> bool:
         text = reason.strip() or "Deleted from dashboard"

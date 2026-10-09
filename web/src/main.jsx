@@ -1170,6 +1170,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
   const confirm = useConfirm();
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
+  const [triggerDraft, setTriggerDraft] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState("");
 
@@ -1180,7 +1181,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
       await api(`/api/${item.resource}/${item.id}`, {
         method: "PATCH",
         token,
-        body: { content: draft, ...(candidateMode ? { revision: item.revision } : {}) },
+        body: { content: draft, ...(candidateMode ? { revision: item.revision } : { triggers: triggerDraft.split("\n").map(word => word.trim()).filter(Boolean) }) },
       });
       setEditingId(null);
       onMutated();
@@ -1302,6 +1303,14 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                   ) : (
                     <p className="summary">{item.content}</p>
                   )}
+                  {!candidateMode && editingId === item.identity && (
+                    <label className="memory-trigger-editor">触发词
+                      <textarea className="edit-area" aria-label="记忆触发词" rows={3}
+                        value={triggerDraft} onChange={event => setTriggerDraft(event.target.value)}
+                        placeholder="每行一个触发词，留空可清除" />
+                      <small>最多 8 个，每个不超过 40 字；仅全局召回记忆参与自动触发。</small>
+                    </label>
+                  )}
                   {item.evidence && (
                     <p className="secondary memory-evidence">依据：{item.evidence}</p>
                   )}
@@ -1352,6 +1361,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                           onClick={() => {
                             setEditingId(item.identity);
                             setDraft(item.content);
+                            setTriggerDraft((item.meta?.triggers || []).join("\n"));
                             setError("");
                           }}
                         >

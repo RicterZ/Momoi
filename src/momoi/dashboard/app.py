@@ -496,10 +496,12 @@ def create_dashboard_app(
         except ValueError:
             raise web.HTTPBadRequest(text="invalid memory id") from None
         payload = await _json_body(request)
-        if "content" not in payload:
-            raise web.HTTPBadRequest(text="content is required")
+        if not payload or set(payload) - {'content', 'triggers'}:
+            raise web.HTTPBadRequest(text="content or triggers is required")
+        if 'content' in payload and not isinstance(payload['content'], str):
+            raise web.HTTPBadRequest(text="content must be a string")
         try:
-            item = store.update_memory_content(memory_id, str(payload["content"]))
+            item = store.update_memory_content(memory_id, **payload)
         except ValueError as error:
             raise web.HTTPBadRequest(text=str(error)) from None
         if item is None:

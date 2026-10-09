@@ -2316,3 +2316,5 @@ a.tag:hover {
 
 .memory-toolbar { flex-wrap: wrap; gap: 12px; }
 .memory-toolbar > p { width: 100%; }
+
+.memory-trigger-editor { display: grid; gap: 8px; margin-top: 12px; font-size: 12px; color: var(--muted); }
