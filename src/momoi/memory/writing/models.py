@@ -25,7 +25,6 @@ class PlanningContext:
     requests: list[dict[str, object]]
     evidence: dict[str, str]
     snapshots: dict[int, dict[str, object]]
-    forgotten: dict[int, dict[str, object]] = field(default_factory=dict)
     evidence_times: dict[str, float] = field(default_factory=dict)
     retrieval_fallback: str = ""
 
@@ -48,10 +47,6 @@ class MemoryPlan:
     @property
     def snapshots(self) -> dict[int, dict[str, object]]:
         return self._records('snapshots')
-
-    @property
-    def forgotten(self) -> dict[int, dict[str, object]]:
-        return self._records('forgotten')
 
     def _records(self, name):
         snapshots = self.payload()[name]

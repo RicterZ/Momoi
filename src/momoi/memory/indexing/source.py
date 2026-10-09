@@ -1,4 +1,4 @@
-"""Retained memory index for writing; recall independently filters visible IDs."""
+"""Effective memory index for writing; recall independently filters visible IDs."""
 
 from ..storage.index_records import IndexDocument
 from ..storage.repository import MemoryRepository

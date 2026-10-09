@@ -284,6 +284,9 @@ class MemoryRepository:
             if tombstone is not None:
                 # Re-adding a fact must not unhide its previously deleted versions.
                 hidden_ids = [int(row["id"]) for row in existing]
+                for hidden_id in hidden_ids:
+                    self.add_evidence(hidden_id, tombstone["source_event_id"],
+                                      tombstone["evidence_quote"], tombstone["created_at"])
                 self._db.execute(
                     "DELETE FROM memory_tombstones WHERE kind=? AND key=? AND scope_key=?",
                     (memory["kind"], memory["key"], meta["scope"]),
@@ -316,6 +319,8 @@ class MemoryRepository:
                     "UPDATE memories SET superseded_by=?,updated_at=? WHERE id=?",
                     (memory_id, now, old_id),
                 )
+                if old_id not in target_ids:
+                    continue
                 self._db.execute(
                     """INSERT OR IGNORE INTO memory_evidence(memory_id,source_event_id,quote,created_at)
                        SELECT ?,source_event_id,quote,created_at FROM memory_evidence WHERE memory_id=?""",
@@ -333,7 +338,7 @@ class MemoryRepository:
             return memory_id
 
     def planning_rows(self, ids=None):
-        """Current versions, including forgotten records, for private write review."""
+        """Only effective current versions, across all activation modes."""
         params = [time.time()]
         clause = ""
         if ids is not None:
@@ -342,12 +347,13 @@ class MemoryRepository:
             clause = " AND m.id IN (" + ",".join("?" for _ in ids) + ")"
             params.extend(ids)
         rows = self._db.execute(
-            """SELECT m.*, t.source_event_id AS forgotten_event_id,
-                      t.evidence_quote AS forgotten_quote, t.created_at AS forgotten_at
-               FROM memories m LEFT JOIN memory_tombstones t ON t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
+            """SELECT m.* FROM memories m
                WHERE m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at>? OR t.kind IS NOT NULL)"""
-            + clause + " ORDER BY m.id", params,
+                 AND (m.expires_at IS NULL OR m.expires_at>?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones t
+                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
+                 )""" + clause + " ORDER BY m.id", params,
         ).fetchall()
         return [self._record(row) for row in rows]
 
@@ -356,12 +362,6 @@ class MemoryRepository:
             "SELECT * FROM memory_tombstones WHERE kind=? AND key=? AND scope_key=?", (kind, key, validate_scope(scope)),
         ).fetchone()
         return dict(row) if row else None
-
-    def validate_forgotten(self, snapshots):
-        current = {row["id"]: row for row in self.planning_rows(list(snapshots))
-                   if row["forgotten_at"] is not None}
-        if current != snapshots:
-            raise ValueError("memory_forgotten_snapshot_changed")
 
     def recall_rows(self, *, now: float, filters: MemoryFilters | None = None):
         clause, params = self._filter_sql(filters)

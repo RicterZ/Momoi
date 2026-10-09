@@ -3,7 +3,7 @@ from copy import deepcopy
 import time
 import math
 
-from .candidates import CandidateBudgetExceeded, WriteCandidates, check_budget, normalized
+from .candidates import CandidateBudgetExceeded, WriteCandidates, check_budget
 from .models import MemoryPlan, MemoryPlanner, PlanningContext, canonical_json
 from .validation import parse_decisions
 from ..storage.records import memory_scope
@@ -44,13 +44,6 @@ class MemoryWritingService:
         ):
             raise ValueError('invalid memory snapshots')
 
-        if not isinstance(context.forgotten, dict) or any(
-            type(key) is not int or key <= 0 or not isinstance(row, dict) or row.get('id') != key
-            or type(row.get('forgotten_at')) not in (int, float)
-            or not math.isfinite(row['forgotten_at'])
-            for key, row in context.forgotten.items()
-        ) or set(context.forgotten).intersection(context.snapshots):
-            raise ValueError('invalid forgotten memory snapshots')
         seen = set()
         for request in context.requests:
             if (not isinstance(request, dict)
@@ -81,7 +74,7 @@ class MemoryWritingService:
         except (TypeError, KeyError) as error:
             raise ValueError('invalid memory decision structure') from error
         if any(item['action'] != 'defer' for item in decisions):
-            check_budget(context.snapshots, context.forgotten)
+            check_budget(context.snapshots)
         for item in decisions:
             for request in context.requests:
                 if request['id'] in item['operation_ids'] and 'scope' in request and any(
@@ -92,7 +85,6 @@ class MemoryWritingService:
             if item['action'] == 'write':
                 if context.retrieval_fallback not in ('', 'disabled'):
                     raise ValueError('candidate recall failed; defer this request')
-                self._check_forgotten(context, item, scan=False)
                 scope = memory_scope(item['memory'])
                 if any(memory_scope(context.snapshots[target]) != scope for target in item['target_ids']):
                     raise ValueError('memory writes cannot move or merge across scopes')
@@ -100,10 +92,9 @@ class MemoryWritingService:
                        if request['id'] in item['operation_ids']):
                     raise ValueError('memory write does not match request scope')
         return MemoryPlan(canonical_json({
-            'version': 3, 'requests': context.requests, 'evidence': context.evidence,
+            'version': 4, 'requests': context.requests, 'evidence': context.evidence,
             'snapshots': {str(key): value for key, value in context.snapshots.items()},
             'decisions': decisions,
-            'forgotten': {str(key): value for key, value in context.forgotten.items()},
             'evidence_times': context.evidence_times, 'retrieval_fallback': context.retrieval_fallback,
         }))
 
@@ -121,7 +112,6 @@ class MemoryWritingService:
             await self.candidates.collect(context)
         except CandidateBudgetExceeded as error:
             context.snapshots.clear()
-            context.forgotten.clear()
             context.retrieval_fallback = str(error)
             return self._defer(context)
         if context.retrieval_fallback not in ('', 'disabled'):
@@ -144,30 +134,6 @@ class MemoryWritingService:
             'action': 'defer', 'reason': 'Candidate review unavailable: ' + context.retrieval_fallback[:400],
         }]})
 
-    def _check_forgotten(self, context, decision, *, scan=True):
-        memory = decision['memory']
-        candidates = dict(context.forgotten)
-        # Exact content and stable keys remain protected even when not retrieved.
-        for row in self.repository.planning_rows() if scan else ():
-            if row['forgotten_at'] is not None and memory_scope(row) == memory_scope(memory) and (
-                (row['kind'], row['key']) == (memory['kind'], memory['key'])
-                or normalized(row['content']) == normalized(memory['content'])
-            ):
-                candidates[row['id']] = row
-        relevant = [row for row in candidates.values() if memory_scope(row) == memory_scope(memory)]
-        tombstone = self.repository.tombstone(memory['kind'], memory['key'], scope=memory_scope(memory)) if scan else None
-        if tombstone is not None:
-            relevant.append({'forgotten_at': tombstone['created_at'],
-                             'forgotten_event_id': tombstone['source_event_id']})
-        for request in context.requests:
-            if request['id'] not in decision['operation_ids']:
-                continue
-            event_id = request['event_id']
-            if any(event_id == row['forgotten_event_id']
-                   or context.evidence_times.get(event_id, float('-inf')) <= row['forgotten_at']
-                   for row in relevant):
-                raise ValueError('forgotten memory requires fresh owner evidence; defer this request')
-
     def apply(self, plan: MemoryPlan, *, operation_id: str) -> dict[str, object]:
         if not isinstance(plan, MemoryPlan):
             raise ValueError('memory apply requires a MemoryPlan')
@@ -176,8 +142,8 @@ class MemoryWritingService:
         payload = plan.payload()
         if not isinstance(payload, dict) or set(payload) != {
             'version', 'requests', 'evidence', 'snapshots', 'decisions',
-            'forgotten', 'evidence_times', 'retrieval_fallback'
-        } or type(payload['version']) is not int or payload['version'] != 3:
+            'evidence_times', 'retrieval_fallback'
+        } or type(payload['version']) is not int or payload['version'] != 4:
             raise ValueError('invalid memory plan version or fields')
         input_hash = self.commits.input_hash(payload)
         with transaction(self.database):
@@ -185,12 +151,10 @@ class MemoryWritingService:
             if previous is not None:
                 return previous
             context = PlanningContext(payload['requests'], payload['evidence'], plan.snapshots,
-                                      plan.forgotten,
                                       payload['evidence_times'], payload['retrieval_fallback'])
             # A serialized plan can be constructed by a caller: validate again.
             reviewed = self.review(context, {'decisions': payload['decisions']})
             current = self.repository.validate_snapshots(context.snapshots)
-            self.repository.validate_forgotten(context.forgotten)
             now = time.time()
             results = []
             for decision in reviewed.decisions:
@@ -214,7 +178,6 @@ class MemoryWritingService:
                             self.repository.forget(current[identifier], source, now=now)
                         result['memory_ids'] = list(targets)
                     else:
-                        self._check_forgotten(context, decision)
                         identifier = self.repository.write(decision['memory'], targets, source, evidence, now=now)
                         result['memory_ids'] = [identifier]
                 results.append(result)

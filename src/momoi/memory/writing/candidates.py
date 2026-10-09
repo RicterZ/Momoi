@@ -24,8 +24,7 @@ def normalized(text):
     return unicodedata.normalize('NFC', text).strip()
 
 
-def check_budget(snapshots, forgotten):
-    rows = {**snapshots, **forgotten}
+def check_budget(rows):
     if len(rows) > MAX_CANDIDATES or sum(estimate_tokens(str(row['content'])) for row in rows.values()) > CANDIDATE_TOKENS:
         raise CandidateBudgetExceeded('memory candidate budget exceeded; split or defer this batch')
 
@@ -41,8 +40,7 @@ class WriteCandidates:
         if len(queries) > MAX_REQUESTS:
             raise CandidateBudgetExceeded('at most eight memory requests or searches per batch')
         by_id = {row['id']: row for row in rows}
-        mandatory = dict(context.snapshots)
-        forgotten = dict(context.forgotten)
+        mandatory = {identifier: row for identifier, row in context.snapshots.items() if identifier in by_id}
         pools = {}
         for query in queries:
             relevant_requests = context.requests if expressions else [r for r in context.requests if r['content'] == query]
@@ -53,8 +51,8 @@ class WriteCandidates:
             for row in eligible:
                 if (row['id'] in {r.get('target_id') for r in relevant_requests}
                         or normalized(row['content']) in {normalized(str(r['content'])) for r in relevant_requests}):
-                    self._add(row, mandatory, forgotten)
-        check_budget(mandatory, forgotten)
+                    mandatory[row['id']] = deepcopy(row)
+        check_budget(mandatory)
         dense = None
         if self.recall is not None and self.recall.dense_recall is not None and rows:
             dense = await self.recall.dense_recall(
@@ -92,27 +90,14 @@ class WriteCandidates:
             additions.extend(selected.values())
         # Mandatory records cannot be silently trimmed; optional records fit the remaining budget.
         for row in additions:
-            proposed, deleted = dict(mandatory), dict(forgotten)
-            self._add(row, proposed, deleted)
+            proposed = dict(mandatory)
+            proposed[row['id']] = deepcopy(row)
             try:
-                check_budget(proposed, deleted)
+                check_budget(proposed)
             except CandidateBudgetExceeded:
                 context.retrieval_fallback = 'candidate_budget_exceeded'
                 continue
-            mandatory, forgotten = proposed, deleted
+            mandatory = proposed
         context.snapshots.clear()
         context.snapshots.update(mandatory)
-        context.forgotten.clear()
-        context.forgotten.update(forgotten)
         return context
-
-    @staticmethod
-    def _add(row, snapshots, forgotten):
-        row = deepcopy(row)
-        if row['forgotten_at'] is not None:
-            forgotten[row['id']] = row
-            snapshots.pop(row['id'], None)
-        else:
-            for key in ('forgotten_at', 'forgotten_event_id', 'forgotten_quote'):
-                row.pop(key)
-            snapshots[row['id']] = row

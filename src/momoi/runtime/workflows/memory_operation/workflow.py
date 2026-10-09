@@ -72,7 +72,7 @@ class MemoryOperationWorkflow:
                 now=now, timestamp=self.store.context_timestamp(now),
                 operations=batch["operations"], visible=visible, snapshots=snapshots,
                 evidence=evidence_records,
-                goals=self.store.list_goals(), forgotten=context.forgotten,
+                goals=self.store.list_goals(),
                 retrieval_fallback=context.retrieval_fallback,
             )
             complete = False
@@ -91,7 +91,6 @@ class MemoryOperationWorkflow:
                     ):
                         return {"ok": False, "error": "invalid_memory_operation_query"}
                     previous_ids = set(context.snapshots)
-                    previous_forgotten = set(context.forgotten)
                     try:
                         await self.memory.writing.candidates.collect(context, [query])
                     except CandidateBudgetExceeded as error:
@@ -105,8 +104,6 @@ class MemoryOperationWorkflow:
                     return {
                         "ok": True,
                         "candidate_ids": sorted(context.snapshots),
-                        "forgotten_memories": [row for key, row in context.forgotten.items()
-                                               if key not in previous_forgotten],
                         "retrieval_fallback": context.retrieval_fallback,
                         "memories": [memory_record(row) for row in related.values()],
                         "owner_evidence": self.store.memory_operation_evidence_records(

@@ -264,7 +264,7 @@
     "event_age": 600
   },
   {
-    "name": "forgotten_old_evidence",
+    "name": "deleted_fact_can_be_recorded_again",
     "transcript": [
       {
         "role": "user",
@@ -285,9 +285,9 @@
     ],
     "expected": {
       "action": [
-        "defer"
+        "write"
       ],
-      "active_count": 0
+      "active_count": 1
     },
     "event_age": 600
   },

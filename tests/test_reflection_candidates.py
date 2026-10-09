@@ -157,3 +157,19 @@ def test_dashboard_candidate_auth_revision_and_manual_admission(store):
     with patch('momoi.storage.reflection.candidates.datetime') as clock:
         clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-11'
         asyncio.run(run())
+
+
+def test_manual_admission_is_not_blocked_by_previously_deleted_memory(store):
+    import hashlib
+    from tests.test_memory_repository import write
+    review(store, '2026-10-11', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'])
+    item = store.reflection_candidates(end='2026-10-11')[0]
+    key = 'reflection.' + hashlib.sha256(item['key'].encode()).hexdigest()[:24]
+    old = write(store.memories.repository, key=key, text=item['content'])
+    store.forget_memory_by_id(old, '删除旧记录')
+    with patch('momoi.storage.reflection.candidates.datetime') as clock:
+        clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-11'
+        result = store.change_reflection_candidate(item['id'], item['revision'], admit=True)
+    assert result['memory_id'] != old
+    assert not store.memories.snapshots([old])
+    assert store.memories.snapshots([result['memory_id']])

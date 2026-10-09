@@ -175,7 +175,7 @@ MEMORY_OPERATION_FINISH_SPEC: dict[str, Any] = {
 }
 MEMORY_OPERATION_SEARCH_SPEC = {
     "name": "memory_operation_search",
-    "description": '当提供的记忆无法识别目标或相关重复项时，可选的只读查找。同时做语义与字面候选检索，覆盖各种 activation，并按请求 scope 限制范围。只返回本轮新加入的记录；candidate_ids 包含此前候选。空 memories 不代表没有匹配，不提供分页；需要时换查询。遗忘候选不能作为修改目标。',
+    "description": '当提供的记忆无法识别目标或相关重复项时，可选的只读查找。同时做语义与字面候选检索，覆盖各种 activation，并按请求 scope 限制范围。只返回本轮新加入的记录；candidate_ids 包含此前候选。空 memories 不代表没有匹配，不提供分页；需要时换查询。只检索当前有效版本，已删除和被替代的记录不参与。',
     "input_schema": {
         "type": "object",
         "properties": {

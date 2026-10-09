@@ -74,21 +74,6 @@ def test_memory_xml_distinguishes_stale_and_deleted_snapshots_without_internal_f
 
 
 
-def test_forgotten_candidates_are_separate_from_current_targets_and_escape_quotes():
-    memory = {**example_memory(3), 'forgotten_at': 120,
-              'forgotten_event_id': 'forget"3', 'forgotten_quote': '忘记 <all> & 内容'}
-    rendered = render_memory_operation_request(
-        now=125, timestamp='now', operations=[], visible={}, snapshots={}, evidence=[],
-        forgotten={3: memory}, retrieval_fallback='disabled',
-    )
-    root = fromstring('<request>' + rendered + '</request>')
-    assert root.find('current_memories/memory') is None
-    assert root.find('forgotten_memories/memory').get('id') == '3'
-    assert root.findtext('forgotten_memories/memory/forgotten') == memory['forgotten_quote']
-    assert root.find('forgotten_memories/memory/forgotten').get('event_id') == 'forget"3'
-    assert root.find('candidate_retrieval').get('fallback') == 'disabled'
-
-
 def test_operation_scope_is_explicit_in_private_model_input():
     from momoi.runtime.workflows.memory_operation.rendering import render_memory_operation_request
     from xml.etree.ElementTree import fromstring

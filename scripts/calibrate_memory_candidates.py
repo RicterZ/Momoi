@@ -106,12 +106,13 @@ async def main(args):
     original_limit = module.PER_REQUEST
     expanded = []
     for case in cases:
-        case["pool"] = "with_forgotten"
-        expanded.append(case)
         valid = copy.deepcopy(case)
         valid["pool"] = "active_only"
         valid["rows"] = [r for r in valid["rows"] if r["forgotten_at"] is None]
         if set(valid["targets"]) <= {r["id"] for r in valid["rows"]}:
+            for row in valid["rows"]:
+                for field in ("forgotten_at", "forgotten_event_id", "forgotten_quote"):
+                    row.pop(field, None)
             expanded.append(valid)
     cases = expanded
     encoder = local_embedding()
@@ -192,21 +193,14 @@ async def main(args):
                     snapshots = {
                         r["id"]: copy.deepcopy(byid[r["id"]])
                         for r in case["context"]
-                        if r["id"] in byid and byid[r["id"]]["forgotten_at"] is None
+                        if r["id"] in byid
                     }
-                    for r in snapshots.values():
-                        for field in (
-                            "forgotten_at",
-                            "forgotten_event_id",
-                            "forgotten_quote",
-                        ):
-                            r.pop(field, None)
                 ctx = PlanningContext(req, {}, snapshots)
                 try:
                     await collector.collect(ctx)
                 except module.CandidateBudgetExceeded:
                     ctx.retrieval_fallback = "mandatory_budget_exceeded"
-                ids = set(ctx.snapshots) | set(ctx.forgotten)
+                ids = set(ctx.snapshots)
                 found = set(case["targets"]) & ids
                 xml = render_memory_operation_request(
                     now=0,
@@ -215,14 +209,12 @@ async def main(args):
                     visible={},
                     snapshots=ctx.snapshots,
                     evidence=[],
-                    forgotten=ctx.forgotten,
                     retrieval_fallback=ctx.retrieval_fallback,
                 )
                 results.append(
                     dict(
                         name=case["name"],
                         pool=case["pool"],
-                        guard_count=sum(i in ctx.forgotten for i in ids),
                         mode=mode,
                         k=limit,
                         targets=case["targets"],
@@ -233,7 +225,6 @@ async def main(args):
                         body_tokens=sum(
                             estimate_tokens(r["content"])
                             for r in list(ctx.snapshots.values())
-                            + list(ctx.forgotten.values())
                         ),
                         rendered_tokens=estimate_tokens(xml),
                         fallback=ctx.retrieval_fallback,
@@ -248,7 +239,7 @@ async def main(args):
     (ROOT / "measurements.json").write_text(
         json.dumps(results, ensure_ascii=False, indent=2)
     )
-    for pool in ("with_forgotten", "active_only"):
+    for pool in ("active_only",):
         for group in sorted({c["name"].split(":")[0] for c in cases}):
             for mode in ("retrieval", "host"):
                 print(pool, group, mode)

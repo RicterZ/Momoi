@@ -121,8 +121,6 @@ class ReflectionCandidateStore:
                     memory_id = matches[0]['id']
                 else:
                     key = 'reflection.' + hashlib.sha256(row['key'].encode()).hexdigest()[:24]
-                    if repository.tombstone(row['kind'], key):
-                        raise ValueError('memory_previously_forgotten')
                     evidence = {'event_id': f'dashboard:reflection:{identifier}:{revision}', 'quote': row['content']}
                     memory_id = repository.write(
                         {'kind': row['kind'], 'key': key, 'content': row['content'],
