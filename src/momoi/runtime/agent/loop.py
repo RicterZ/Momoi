@@ -16,6 +16,7 @@ from . import (
 )
 from ..parsing import response_text
 from .protocol import (
+    NO_TOOL_GUIDANCE,
     MAX_CONSECUTIVE_THOUGHT_ROUNDS, MAX_CONSECUTIVE_EXECUTION_FAILURES,
     assistant_history_message,
     handle_no_tool_response,
@@ -322,7 +323,7 @@ class AgentLoop:
                             "content": assistant_history_message(response.content)["content"],
                             "results": [{
                                 "type": "text",
-                                "text": "[No action executed; no message sent. Use a native tool call to continue.]",
+                                "text": NO_TOOL_GUIDANCE,
                             }],
                         },
                         trust="runtime",

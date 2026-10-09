@@ -10,6 +10,11 @@ from .workflow import TurnExecutionSpec, WorkflowProtocolError
 
 MAX_CONSECUTIVE_THOUGHT_ROUNDS = 6
 MAX_CONSECUTIVE_EXECUTION_FAILURES = 8
+NO_TOOL_GUIDANCE = (
+    "[运行时提示] 仅刚才这条纯文本是内部思考，不会发送给用户。"
+    "此前工具调用及结果仍然有效，不要因此重复 reply。"
+    "若本轮已完成，请调用当前阶段的结束工具；否则继续调用所需工具。"
+)
 
 _PRIVATE_REASONING_BLOCK_TYPES = frozenset(
     {"reasoning", "thinking", "redacted_thinking"}
@@ -69,10 +74,7 @@ def handle_no_tool_response(
     if failed_rounds >= max_failures:
         error_type = ExternalToolTurnError if external_effect and workflow_correction is None else WorkflowProtocolError
         raise error_type("consecutive_thought_round_limit")
-    guidance = (
-        "[运行时提示] 以上内容作为内部思考保留，没有执行操作或发送消息。"
-        "可以继续思考；准备好后调用工具行动，或调用当前阶段的结束工具。"
-    )
+    guidance = NO_TOOL_GUIDANCE
     if failed_rounds >= max_failures - 1:
         guidance += " 已接近连续无行动轮次上限，请在下一轮行动或结束。"
     messages.append({"role": "user", "content": guidance})
