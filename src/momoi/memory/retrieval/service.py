@@ -232,6 +232,19 @@ class MemoryRecallService:
                     if dense_evidence is not None
                     else None
                 )
+                thresholds = (
+                    dense_evidence.thresholds(document_type)
+                    if dense_evidence is not None else None
+                )
+                # Confirmed memory uses one semantic candidate floor before hybrid
+                # ranking. Known low-similarity hits cannot be rescued by generic words.
+                # Records awaiting indexing retain sparse recall.
+                semantic_gate = (
+                    document_type == "confirmed_memory" and thresholds is not None and dense_hit is not None
+                    and not getattr(dense_evidence, "fallback_reason", "")
+                )
+                if semantic_gate and dense_hit.cosine < thresholds.only:
+                    continue
                 if match is None and dense_hit is None:
                     continue
                 alias_scores = (
@@ -251,11 +264,6 @@ class MemoryRecallService:
                 if len(alias_scores) > 2:
                     sparse_score += _MEMORY_THIRD_ALIAS_WEIGHT * alias_scores[2]
                 cosine = float(dense_hit.cosine) if dense_hit is not None else None
-                thresholds = (
-                    dense_evidence.thresholds(document_type)
-                    if dense_evidence is not None
-                    else None
-                )
                 dense_score = (
                     thresholds.calibrated(cosine)
                     if thresholds is not None and cosine is not None
@@ -347,7 +355,7 @@ class MemoryRecallService:
             for sparse_score, cosine, hybrid_score, thresholds in signals:
                 if cosine is None or thresholds is None:
                     continue
-                if sparse_score <= 0 and cosine >= thresholds.only:
+                if cosine >= thresholds.only and (candidate["source"] == "confirmed" or sparse_score <= 0):
                     dense_admitted = True
                 if (
                     sparse_score > 0

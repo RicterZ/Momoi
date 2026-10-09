@@ -102,3 +102,48 @@ def test_unconfirmed_rows_are_opt_in_and_dense_hits_cannot_restore_deleted_memor
     assert asyncio.run(service.search(
         "用户喜欢什么饮品", dense_evidence=dense("用户喜欢什么饮品", identifier),
     )) == []
+
+
+@pytest.mark.parametrize('cosine,admitted', [(0.539, False), (0.54, True), (0.5461, True)])
+def test_confirmed_memory_semantic_floor_precedes_sparse_boost(database, cosine, admitted):
+    from momoi.memory.retrieval.dense import VectorMemoryEvidence
+    from momoi.runtime.retrieval.models import CALIBRATION_PROFILES
+
+    repo = MemoryRepository(database)
+    identifier = write(repo, text='用户喜欢无糖咖啡')
+    query = MemoryRecallQuery('用户', semantic_expression='用户喜欢什么饮品')
+    thresholds = DenseThresholds(*CALIBRATION_PROFILES['bge-small-zh-v1.5-momoi-v1']['confirmed_memory'])
+    evidence = VectorMemoryEvidence({query.dense_expression: {
+        ('confirmed_memory', str(identifier)): DenseMemoryHit(str(identifier), cosine),
+    }}, {'confirmed_memory': thresholds})
+    service = MemoryRecallService(repo)
+    assert service.rank([query], 6)  # Generic literal alone would qualify.
+    assert bool(service.rank([query], 6, dense_evidence=evidence)) is admitted
+
+
+@pytest.mark.parametrize('fallback', ['', 'timeout', 'no_active_space'])
+def test_sparse_recall_survives_unindexed_records_or_encoder_failure(database, fallback):
+    from momoi.memory.retrieval.dense import VectorMemoryEvidence
+
+    repo = MemoryRepository(database)
+    identifier = write(repo)
+    evidence = VectorMemoryEvidence({}, {'confirmed_memory': DenseThresholds(.54, .54, .86)}, fallback)
+    result = asyncio.run(MemoryRecallService(repo).search('无糖咖啡', dense_evidence=evidence))
+    assert [r['id'] for r in result] == [identifier]
+
+
+def test_semantic_candidates_reach_reranker_in_score_order_and_can_be_rejected(database):
+    from momoi.memory.retrieval.dense import VectorMemoryEvidence
+
+    repo = MemoryRepository(database)
+    first = write(repo)
+    second = write(repo, key='tea', text='喜欢无糖茶')
+    query = '用户喜欢什么饮品'
+    evidence = VectorMemoryEvidence({query: {
+        ('confirmed_memory', str(first)): DenseMemoryHit(str(first), .58),
+        ('confirmed_memory', str(second)): DenseMemoryHit(str(second), .68),
+    }}, {'confirmed_memory': DenseThresholds(.54, .54, .86)})
+    reranker = AsyncMock(return_value=[])
+    result = asyncio.run(MemoryRecallService(repo).search(query, dense_evidence=evidence, reranker=reranker))
+    assert result == []
+    assert [r['id'] for r in reranker.await_args.args[1]] == [second, first]

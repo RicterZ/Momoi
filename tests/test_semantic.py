@@ -305,7 +305,7 @@ class SemanticRecallTest(unittest.TestCase):
             memory={
                 query.expression: {
                     ("confirmed_memory", str(memory_id)): DenseMemoryHit(
-                        str(memory_id), 0.71
+                        str(memory_id), 0.539
                     )
                 }
             },
@@ -315,7 +315,7 @@ class SemanticRecallTest(unittest.TestCase):
             memory={
                 query.expression: {
                     ("confirmed_memory", str(memory_id)): DenseMemoryHit(
-                        str(memory_id), 0.80
+                        str(memory_id), 0.54
                     )
                 }
             },

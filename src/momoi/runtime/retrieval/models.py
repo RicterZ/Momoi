@@ -5,11 +5,11 @@ from ...storage.episode.episode_ranking import DenseEpisodeHit
 
 
 CALIBRATION_PROFILES: dict[str, dict[str, tuple[float, float, float]]] = {
-    # Calibrated against the private historical benchmark for this model. The
-    # episode-only gate is intentionally stricter: generic episode summaries
-    # otherwise produce high cosine scores without sparse/topic corroboration.
+    # Confirmed-memory floor: online-memory replay, 2026-10-09. Apply before
+    # hybrid ranking; support/only coincide so literal overlap cannot bypass it.
+    # Episode and reflection calibration remain independent of memory tuning.
     "bge-small-zh-v1.5-momoi-v1": {
-        "confirmed_memory": (0.55, 0.72, 0.86),
+        "confirmed_memory": (0.54, 0.54, 0.86),
         "reflection_memory": (0.58, 0.75, 0.87),
         "episode_summary": (0.52, 0.81, 0.84),
         "episode_turn": (0.56, 0.81, 0.86),
