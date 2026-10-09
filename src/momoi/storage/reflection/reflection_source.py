@@ -5,6 +5,7 @@ from .reflection_values import (
     reflection_window,
 )
 from ..conversation.transcripts import _MESSAGE_TIME_SQL
+from ..episode.episode_sql import runtime_archive_kind_sql
 
 
 class ReflectionSourceStore:
@@ -36,7 +37,8 @@ class ReflectionSourceStore:
                       emotional_context_json, outcomes_json, topics_json,
                       open_loops_json, created_at, updated_at
                FROM conversation_episodes
-               WHERE (created_at>=? AND created_at<?)
+               WHERE COALESCE(({runtime_archive_kind_sql("conversation_episodes")}), '') NOT IN ('webhook', 'goal')
+                 AND ((created_at>=? AND created_at<?)
                   OR (updated_at>=? AND updated_at<?)
                   OR EXISTS (
                       SELECT 1 FROM episode_turns et JOIN messages m ON m.turn_id=et.turn_id
@@ -46,6 +48,7 @@ class ReflectionSourceStore:
                       WHERE et.episode_id=conversation_episodes.id
                         AND ({_MESSAGE_TIME_SQL})>=? AND ({_MESSAGE_TIME_SQL})<?
                   )
+                 )
                ORDER BY updated_at""",
             (
                 start,

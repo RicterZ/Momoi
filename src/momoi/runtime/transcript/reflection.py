@@ -1,6 +1,7 @@
 """Text-only daily evidence, without replaying historical agent instructions."""
 import json
 
+from ...storage.episode.episode_sql import runtime_archive_kind_sql
 from ...storage.episode.execution_evidence import bounded_result, historical_result
 from ...storage.conversation.transcripts import TRANSCRIPT_PROTOCOL_TOOLS
 
@@ -93,19 +94,25 @@ def reflection_transcript(store, rows, window):
     # group instead of duplicating it and inflating the apparent sample count.
     turn_topics = {}
     titles = {}
+    excluded_turns = set()
     turn_ids = list(dict.fromkeys(item[4] for item in records))
     for offset in range(0, len(turn_ids), 500):
         chunk = turn_ids[offset:offset + 500]
         for row in store._db.execute(
-            "SELECT et.turn_id, e.id, e.title FROM episode_turns et "
+            f"SELECT et.turn_id, e.id, e.title, {runtime_archive_kind_sql('e')} AS archive_kind FROM episode_turns et "
             "JOIN conversation_episodes e ON e.id=et.episode_id "
             "WHERE et.relation='primary' AND et.turn_id IN ("
             + ",".join("?" for _ in chunk) + ") ORDER BY e.id", chunk,
         ).fetchall():
+            if row["archive_kind"] in {"webhook", "goal"}:
+                excluded_turns.add(str(row["turn_id"]))
+                continue
             turn_topics.setdefault(str(row["turn_id"]), []).append(str(row["id"]))
             titles[str(row["id"])] = str(row["title"])
     groups = {}
     for record in records:
+        if record[4] in excluded_turns:
+            continue
         key = tuple(turn_topics.get(record[4], []))
         groups.setdefault(key, []).append(record)
     sections = []

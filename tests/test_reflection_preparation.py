@@ -545,3 +545,28 @@ def test_reflection_excludes_internal_heartbeat_but_keeps_delivered_speech(daemo
     text = reflection_transcript(daemon.store, rows, (start, end))[0]['content']
     assert '内部心跳状态' not in text and 'HEARTBEAT:' not in text
     assert 'ASSISTANT: 记得喝水' in text
+
+
+@pytest.mark.parametrize('archive_kind', ['webhook', 'goal'])
+def test_reflection_excludes_whole_runtime_topic_and_summary(daemon, archive_kind):
+    start, end = day_window()
+    add_turn(daemon, 'archive-turn', start + 1)
+    add_turn(daemon, 'owner-turn', start + 2)
+    daemon.store.create_episode('排除的归档话题', episode_id='archive')
+    daemon.store.link_turn_to_episode('archive', 'archive-turn')
+    daemon.store.append_turn_journal('archive-turn', 'tool_result', {
+        'name': 'bash', 'tool_call_id': 'archive-call', 'ok': True,
+        'result': {'stdout': '归档工具结果'},
+    }, trust='runtime')
+    with daemon.store._db:
+        daemon.store._db.execute('UPDATE conversation_episodes SET archive_kind=? WHERE id=?',
+                                 (archive_kind, 'archive'))
+        daemon.store._db.execute('UPDATE turn_journal SET created_at=? WHERE turn_id=?',
+                                 (start + 3, 'archive-turn'))
+    rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
+    text = reflection_transcript(daemon.store, rows, (start, end))[0]['content']
+    assert '排除的归档话题' not in text and '归档工具结果' not in text
+    assert 'archive-turn完成项目' not in text
+    assert 'owner-turn完成项目' in text
+    source = daemon.store.reflection_source('2026-09-08')
+    assert '排除的归档话题' not in source['episode_timeline']
