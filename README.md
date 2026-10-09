@@ -179,7 +179,7 @@ docker compose -f docker-compose.yml --profile embedding up -d
 
 Configure the embedding service in Settings if you want semantic recall.
 
-The workspace is persisted in `~/.momoi` by default and initialized by `momoi run`;
+The workspace is persisted in `~/.momoi` by default and initialized by `momoi`;
 existing files are preserved. Only dashboard port 8788 is published by default.
 Webhook deployment requires an explicit port mapping and webhook configuration.
 See
@@ -198,7 +198,7 @@ From the repository root:
 
 ```bash
 uv tool install .
-momoi run
+momoi
 ```
 
 Open `http://127.0.0.1:8788`, sign in with the token printed at startup, and
@@ -207,7 +207,7 @@ complete setup in Settings.
 To use another workspace, place `--workspace` before the command:
 
 ```bash
-momoi --workspace /path/to/workspace run
+momoi --workspace /path/to/workspace
 ```
 
 To build the current checkout as a container, use the source Compose file:
@@ -242,7 +242,7 @@ Keyword recall remains available during indexing. See
 - Edit `~/.momoi/prompts/REPLYER.md` for natural expression in text and voice.
 - Edit `~/.momoi/prompts/HEARTBEAT.md` to shape what Momoi may explore, create,
   continue, share, or leave quiet during autonomous time.
-- Add optional image reactions with `momoi emotion add`; descriptions tell
+- Add optional image reactions with the Dashboard emotion manager; descriptions tell
   Replyer when each image fits.
 
 ### External API services
@@ -272,7 +272,7 @@ image reactions, usage, and thinking records; it can also edit memories, Goals,
 reaction assets, and prompt files. Enter the generated token from startup output,
 then configure providers and channels in Settings, including Weixin QR login.
 Configuration changes reload the business runtime without closing the dashboard.
-Use `momoi run --no-dashboard` for headless operation. Existing workspaces need
+Use `momoi --no-dashboard` for headless operation. Existing workspaces need
 `dashboard.token` or `MOMOI_DASHBOARD_TOKEN`. Keep the dashboard on localhost or a trusted network.
 
 ### Webhooks

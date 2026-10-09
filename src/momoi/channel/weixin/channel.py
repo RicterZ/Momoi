@@ -54,7 +54,7 @@ class WeixinChannel:
         stop: asyncio.Event,
     ) -> None:
         if self.state is None:
-            raise RuntimeError("Weixin is not logged in; run `momoi channel login`")
+            raise RuntimeError("Weixin is not logged in; log in from Dashboard channel settings")
         timeout = aiohttp.ClientTimeout(total=None, connect=20)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             self._session = session

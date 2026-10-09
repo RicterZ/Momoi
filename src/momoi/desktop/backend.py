@@ -34,7 +34,7 @@ def parse_args():
 async def serve(args):
     import httpx
     from uvicorn import Config, Server
-    from ..cli.service import run
+    from ..__main__ import run
     from ..config.manager import ConfigurationManager
     from ..dashboard.auth import issue_dashboard_jwt
 

@@ -157,7 +157,7 @@ QQ 用户单独部署 NapCat，在 Momoi 设置页填写可访问的 OneBot WebS
 私有 Embedding 地址填写
 `http://embedding:8002/v1/embeddings`。启动容器后仍需在设置页启用对应功能；微信不依赖该服务。
 
-工作区默认持久化在 `~/.momoi`，由 `momoi run` 初始化，已有文件不覆盖。
+工作区默认持久化在 `~/.momoi`，由 `momoi` 初始化，已有文件不覆盖。
 默认只发布 dashboard 的 8788 端口；使用 Webhook 时另行添加端口映射并配置功能。
 部署选项见[配置参考](./docs/CONFIG.zh-CN.md)。
 
@@ -173,7 +173,7 @@ QQ 用户单独部署 NapCat，在 Momoi 设置页填写可访问的 OneBot WebS
 
 ```bash
 uv tool install .
-momoi run
+momoi
 ```
 
 打开 `http://127.0.0.1:8788`，使用启动输出中的口令登录，在设置页完成配置。
@@ -181,7 +181,7 @@ momoi run
 使用其他 workspace 时，`--workspace` 必须放在子命令前：
 
 ```bash
-momoi --workspace /path/to/workspace run
+momoi --workspace /path/to/workspace
 ```
 
 需要从当前源码构建容器时，使用源码版 Compose：
@@ -211,7 +211,7 @@ Momoi 会在后台构建索引，覆盖完整后自动激活，期间关键词�
 - 编辑 `~/.momoi/prompts/REPLYER.md`，指导实际发言，文字气泡与语音共用这份表达规则。
 - 编辑 `~/.momoi/prompts/HEARTBEAT.md`，决定 Momoi 在自主时间可以探索、创作、继续、
   分享什么，以及什么时候保持安静。
-- 使用 `momoi emotion add` 添加可选图片反应；描述会告诉 Replyer 每张图适合什么情境，具体选择与排列由 Replyer 完成。
+- 使用 Dashboard 表情管理 添加可选图片反应；描述会告诉 Replyer 每张图适合什么情境，具体选择与排列由 Replyer 完成。
 
 ### 外部 API 服务
 
@@ -232,7 +232,7 @@ Momoi 提供内置工具，也支持在 workspace 的 `mcp.json` 中配置 stdio
 
 打开 `http://127.0.0.1:8788`。Dashboard 可以查看 Planner/Replyer 决策流、逐请求 token、缓存命中、延迟和费用估算，以及对话、召回证据、复盘、记忆、Goal、图片反应、用量和思考记录，也可以编辑记忆、Goal、图片反应与提示词文件。
 首次使用启动输出中的口令登录，然后在设置页配置 Provider、启用消息渠道并完成微信扫码登录。
-保存配置会自动重建业务实例，dashboard 保持可用。纯后台运行使用 `momoi run --no-dashboard`。
+保存配置会自动重建业务实例，dashboard 保持可用。纯后台运行使用 `momoi --no-dashboard`。
 已有工作区需设置 `dashboard.token` 或 `MOMOI_DASHBOARD_TOKEN`。
 请只在本机或可信网络中开放。
 

@@ -14,9 +14,9 @@ from momoi.channel.weixin import (
     WeixinChannel,
     WeixinConfig,
     WeixinState,
-    login,
     render_segments,
 )
+from momoi.channel.weixin.api import login
 from momoi.channel.weixin.media import (
     aes_key,
     decrypt,

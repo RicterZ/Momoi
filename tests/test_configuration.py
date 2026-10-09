@@ -2,16 +2,12 @@ from tests.support import write_app_config
 import json
 import tempfile
 import unittest
-from datetime import datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
-from zoneinfo import ZoneInfo
 import asyncio
 
 
-from momoi.cli.commands import emotion as emotion_command, goal as goal_command
-from momoi.cli.parser import parse_args
+from momoi.__main__ import parse_args
 from momoi.tools.agenda import AgendaTools
 from momoi.channel.napcat import NapCatConfig
 from momoi.channel.weixin import WeixinConfig
@@ -280,7 +276,7 @@ class ConfigurationTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "dashboard.token is required"):
                 asyncio.run(
-                    __import__("momoi.cli.service", fromlist=["run"]).run(
+                    __import__("momoi.__main__", fromlist=["run"]).run(
                         path, dashboard=True
                     )
                 )
@@ -307,63 +303,8 @@ class ConfigurationTest(unittest.TestCase):
                     load_config(path)
                 del config[section]
 
-    def test_emotion_cli_imports_deduplicates_lists_and_deletes_managed_files(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source = root / "source.jpg"
-            source.write_bytes(b"fake-image-content")
-            database = root / "data" / "momoi.sqlite3"
-            database.parent.mkdir()
-            fake_config = SimpleNamespace(
-                database=database,
-                thinking=None,
-                timezone="UTC",
-            )
-
-            def run(command: str, slug: str | None = None) -> list[object]:
-                arguments = SimpleNamespace(
-                    emotion_command=command,
-                    slug=slug,
-                    path=str(source),
-                    desc="开心时自然回应",
-                    workspace=root,
-                )
-                with (
-                    patch("momoi.cli.commands.load_config", return_value=fake_config),
-                    patch("builtins.print") as output,
-                ):
-                    emotion_command(arguments)
-                return [call.args for call in output.call_args_list]
-
-            run("add", "happy-1")
-            run("add", "happy-2")
-            store = Store(database, root)
-            rows = store.list_emotions()
-            self.assertEqual(len(rows), 2)
-            self.assertEqual(rows[0]["path"], rows[1]["path"])
-            managed = Path(str(rows[0]["path"]))
-            self.assertEqual(managed.parent, (root / "emotion").resolve())
-            self.assertEqual(managed.suffix, ".jpg")
-            self.assertTrue(managed.is_file())
-            self.assertEqual(
-                store._db.execute(
-                    "SELECT path FROM emotions WHERE slug='happy-1'"
-                ).fetchone()[0],
-                f"emotion/{managed.name}",
-            )
-            store.close()
-
-            listed = run("list")
-            self.assertEqual(len(listed), 2)
-            run("del", "happy-1")
-            self.assertTrue(managed.exists())
-            run("del", "happy-2")
-            self.assertFalse(managed.exists())
-
     def test_cli_workspace_defaults_and_can_be_overridden(self) -> None:
-        with patch("momoi.cli.parser.version", return_value="0.1.0"):
+        with patch("momoi.__main__.version", return_value="0.1.0"):
             with patch("sys.argv", ["momoi", "run"]):
                 args = parse_args()
                 self.assertEqual(args.workspace, Path.home() / ".momoi")
@@ -388,56 +329,17 @@ class ConfigurationTest(unittest.TestCase):
             with (
                 tempfile.TemporaryDirectory() as directory,
                 patch(
-                    "sys.argv", ["momoi", "--workspace", directory, "emotion", "list"]
+                    "sys.argv", ["momoi", "--workspace", directory]
                 ),
             ):
                 self.assertEqual(parse_args().workspace, Path(directory))
-            with patch("sys.argv", ["momoi", "channel", "login", "weixin"]):
-                self.assertEqual(parse_args().channel_name, "weixin")
-
-    def test_goal_cli_add_list_and_delete(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            database = root / "momoi.sqlite3"
-            config = SimpleNamespace(
-                database=database,
-                thinking=None,
-                timezone="Asia/Shanghai",
-            )
-
-            def invoke(command: str, **values: object) -> list[str]:
-                fields: dict[str, object] = dict(
-                    workspace=root,
-                    goal_command=command,
-                    title="检查天气",
-                    success="给出天气建议",
-                    action="查询天气",
-                    at=(
-                        datetime.now(ZoneInfo("Asia/Shanghai")) + timedelta(hours=1)
-                    ).isoformat(),
-                    every_seconds=None,
-                    daily=None,
-                    include_closed=False,
-                    goal_id="",
-                    reason="测试取消",
-                )
-                fields.update(values)
-                arguments = SimpleNamespace(**fields)
-                with (
-                    patch("momoi.cli.commands.load_config", return_value=config),
-                    patch("builtins.print") as output,
-                ):
-                    goal_command(arguments)
-                return [str(call.args[0]) for call in output.call_args_list]
-
-            added = invoke("add")
-            goal_id = added[0].split("\t")[1]
-            self.assertIn(goal_id, invoke("list")[0])
-            deleted = invoke("del", goal_id=goal_id[:10])
-            self.assertIn("\tcancelled\t", deleted[0])
-            self.assertEqual(invoke("list"), [])
-            all_rows = invoke("list", include_closed=True)
-            self.assertIn(goal_id, all_rows[0])
+            with patch("sys.argv", ["momoi"]):
+                self.assertTrue(parse_args().dashboard)
+            for command in ("goal", "emotion", "embedding", "channel"):
+                with self.subTest(command=command), patch("sys.argv", ["momoi", command]):
+                    with self.assertRaises(SystemExit) as error:
+                        parse_args()
+                    self.assertEqual(error.exception.code, 2)
 
     def test_goal_create_rejects_empty_unused_timestamp(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

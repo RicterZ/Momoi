@@ -16,7 +16,7 @@ docker run -d --name momoi --restart unless-stopped \
   ricterz/momoi:latest
 ```
 
-On an empty volume, `momoi run` creates a minimal workspace and prints the generated
+On an empty volume, `momoi` creates a minimal workspace and prints the generated
 dashboard passphrase in `docker logs momoi`. Existing files are preserved. Open
 `http://127.0.0.1:8788`, sign in, then configure models, channels and optional
 capabilities in Settings. Weixin QR login is available in the dashboard.

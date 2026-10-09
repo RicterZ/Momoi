@@ -124,7 +124,7 @@ an implemented scoring calibration matching the model. The built-in profile is
 Calibration and semantic-space consistency checks
 remain in place; switching models does not automatically calibrate scoring for
 the new model. Model and dimensions must match the encoder.
-Enable this binding before using `momoi embedding` commands.
+Enable this binding to build and maintain the semantic index automatically.
 Query failures still fall back to keyword recall and use the query circuit breaker.
 
 ### TTS

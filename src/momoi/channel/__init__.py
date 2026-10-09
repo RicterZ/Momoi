@@ -80,14 +80,6 @@ def create_channel(config: Any) -> Channel:
     return factory(config)
 
 
-async def login_channel(config: Any) -> None:
-    name = str(getattr(config, "plugin", ""))
-    login = getattr(_plugin(name), "login", None)
-    if not callable(login):
-        raise ValueError(f"channel plugin does not support login: {name}")
-    await login(config)
-
-
 def _plugin(name: str) -> Any:
     if not re.fullmatch(r"[a-z][a-z0-9_]{0,39}", name):
         raise ValueError("channel.plugin is invalid")
