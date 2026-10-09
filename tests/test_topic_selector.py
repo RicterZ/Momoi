@@ -69,6 +69,7 @@ def test_runtime_prefilter_bypasses_gate_and_keeps_selection_order(tmp_path):
         store._db.commit()
         service = ContextService()
         service.store = store
+        service.memory = store.memories
         service.config = config(str(tmp_path), summary_results=3)
         service.config.thinking_stages["topic_selection"] = "medium"
         plan = {'version': 7, 'intent_units': [{'id': 'u', 'recall_queries': [
@@ -179,6 +180,7 @@ def test_runtime_memory_service_uses_one_joint_rerank_and_keeps_model_order(tmp_
         store.create_episode("讨论饮品", episode_id="drinks")
         service = ContextService()
         service.store = store
+        service.memory = store.memories
         service.config = config(str(tmp_path), summary_results=3)
         returned_order = []
 

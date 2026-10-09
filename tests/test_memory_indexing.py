@@ -8,7 +8,7 @@ import pytest
 from momoi.memory.indexing.worker import IndexAdapter, IndexWorker
 from momoi.memory.retrieval.dense import DenseQueryService, MemoryVectorRecall
 from momoi.memory.retrieval.models import DenseThresholds
-from momoi.memory.retrieval.service import MemoryRecallService
+from momoi.memory import Memory
 from momoi.memory.retrieval.snapshot import SegmentedVectorSnapshot
 from momoi.memory.storage.index_documents import IndexDocuments
 from momoi.memory.storage.index_queue import IndexQueue
@@ -77,8 +77,8 @@ def test_index_worker_builds_searchable_memory_without_application(database, ind
     adapter = adapter_for(index, [document(source_id=str(identifier))])
     adapter.activate_ready.side_effect = lambda: snapshot.load('space')
     worker = IndexWorker(queue, encoder, adapter, document_batch_size=8)
-    memory = MemoryRecallService(
-        MemoryRepository(database), dense_recall=MemoryVectorRecall(
+    memory = Memory(
+        database, dense_recall=MemoryVectorRecall(
             DenseQueryService(snapshot, encoder),
             {'confirmed_memory': DenseThresholds(.5, .7, .9)},
         ),
@@ -91,6 +91,10 @@ def test_index_worker_builds_searchable_memory_without_application(database, ind
         assert await worker.maintain_once()
         return await memory.search('用户喜欢什么饮品')
 
+    adapter.materialize.side_effect = lambda claim: documents.materialize(
+        claim, memory.index_source.documents(str(claim['source_id'])),
+        document_type='confirmed_memory',
+    )
     results = asyncio.run(run())
     assert [row['id'] for row in results] == [identifier]
     assert results[0]['channels'] == ['dense']

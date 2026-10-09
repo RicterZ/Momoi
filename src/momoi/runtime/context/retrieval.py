@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 from ...config.models import AppConfig
 from ...observability.events import log_event
 from ...observability.values import safe_preview
-from ...storage import MemoryRecallQuery, Store
+from ...storage import Store
+from ...memory import MemoryRecallQuery
 from ...storage.context.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
 from ...storage.episode.episode_ranking import EpisodeRecallQuery, rank_recall_items
 
@@ -290,7 +291,7 @@ def build_plan_retrieval(
     ranked_memories = (
         selected_memory_rows
         if selected_memory_rows is not None
-        else store.rank_recalled_memories(
+        else store.memories.rank(
             [
                 MemoryRecallQuery(
                     expression=str(item["expression"]),

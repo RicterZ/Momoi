@@ -102,7 +102,7 @@ class MomoiDaemon(
             client=self.services.embedding,
         )
         self.semantic_recall.start()
-        self.store.memory_recall.dense_recall = self.semantic_recall.memory_dense_recall
+        self.memory = self.store.memories
         balance = self.services.balance
         accounting = balance.accounting if balance is not None else None
         if accounting is not None:
@@ -111,7 +111,7 @@ class MomoiDaemon(
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
         self.memory_tools = MemoryTools(
-            self.store, self.semantic_recall
+            self.store, self.semantic_recall, memory=self.memory,
         )
         self.thinking_tools = ThinkingTools(self.store)
         self.builtin_tools = BuiltinTools(
@@ -219,6 +219,7 @@ class MomoiDaemon(
             self.tool_results,
             self.outbox_changed,
             replyer=Replyer(config, self.store, self.provider),
+            memory=self.memory,
         )
         self.agenda_changed = asyncio.Event()
         self._active_turn: asyncio.Task[Any] | None = None

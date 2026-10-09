@@ -21,11 +21,10 @@ from .episode.episode_search import (
 from .episode.episode_annealing import EpisodeAnnealingStore
 from .episode.episode_consolidation import EpisodeConsolidationStore
 from .memory.memory_operations import MemoryOperationStore
-from ..memory.storage.repository import MemoryRepository
+from ..memory import Memory
 from ..memory.storage.vector_repository import VectorRepository
 from ..memory.storage.index_queue import IndexQueue
 from ..memory.storage.index_documents import IndexDocuments
-from ..memory.retrieval.service import MemoryRecallService
 from .memory.memory_recall import MemoryRecallStore
 from .memory.memory_maintenance_commits import MemoryMaintenanceCommitStore
 from .memory.memory_maintenance_evidence import MemoryMaintenanceEvidenceStore
@@ -155,13 +154,14 @@ class Store(
             self._db, archive_progress=self._archive_progress_messages,
             has_external_effect=self.turn_has_external_effect,
         )
-        self.memory = MemoryRepository(self._db)
+        self.memories = Memory(
+            self._db, search_backend=self._search_backend, reflection_rows=self._reflection_recall_rows,
+        )
+        self.memory = self.memories.repository
         self.memory_vectors = VectorRepository(self._db)
         self.memory_index_queue = IndexQueue(self._db)
         self.memory_index_documents = IndexDocuments(self._db)
-        self.memory_recall = MemoryRecallService(
-            self.memory, self._search_backend, reflection_rows=self._reflection_recall_rows,
-        )
+        self.memory_recall = self.memories.recall
         self.request_metrics = RequestMetricsRepository(self._db)
         try:
             self._initialize_database()

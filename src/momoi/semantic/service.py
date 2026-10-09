@@ -7,7 +7,8 @@ from typing import Callable, Iterable
 from ..integrations.models import EmbeddingSpaceConfig
 from ..observability.events import log_event
 from ..policies import SemanticPolicy
-from ..storage import MemoryRecallQuery, Store
+from ..storage import Store
+from ..memory import MemoryRecallQuery
 from ..storage.semantic.semantic_documents import DOCUMENT_TEMPLATE_VERSION, QUERY_TEMPLATE_VERSION
 from ..storage.episode.episode_ranking import EpisodeRecallQuery
 from ..integrations.contracts.embedding import Embedder
@@ -55,6 +56,7 @@ class SemanticRecallService:
             kind: DenseThresholds(*values)
             for kind, values in CALIBRATION_PROFILES.get(config.calibration_profile, {}).items()
         })
+        store.memories.recall.dense_recall = self.memory_dense_recall
         self.index_worker = IndexWorker(
             store.memory_index_queue, client,
             MomoiIndexAdapter(store, self.snapshot, self.queries, auto_activate=auto_activate),

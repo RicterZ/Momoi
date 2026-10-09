@@ -1,7 +1,7 @@
 import copy
 
 from ...models import IncomingMessage
-from ...storage import MemoryRecallQuery
+from ...memory import Memory, MemoryRecallQuery
 from ...storage import MEMORY_KINDS
 from ...storage.episode.episode_ranking import EpisodeRecallQuery
 from ...semantic.topic_selector import RecallSelection, TOPIC_CANDIDATE_LIMIT, select_topics
@@ -13,6 +13,8 @@ from .retrieval import build_plan_retrieval, select_plan_recall_queries
 
 
 class ContextService:
+    memory: Memory
+
     async def _select_recall_topics(self, request, selected, dense_evidence, diagnostics=None, *, model_selection=True, exclude_episode_ids=()):
         if diagnostics is not None:
             diagnostics.update(
@@ -65,7 +67,7 @@ class ContextService:
             )
             return [*selection.memories, *selection.reflections]
 
-        memories = await self.store.memory_recall.search(
+        memories = await self.memory.search(
             memory_queries, max(0, self.config.memory_results), request=request,
             dense_evidence=dense_evidence, reranker=joint_reranker,
         )
@@ -513,7 +515,7 @@ class ContextService:
         )
         return {
             "plan": plan,
-            "memory_snapshots": self.store.memory_snapshots([
+            "memory_snapshots": self.memory.snapshots([
                 item["id"] for item in retrieval["recall_memories"]
             ]),
             "context": assemble_main_context(

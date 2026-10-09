@@ -3,7 +3,7 @@ import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 
@@ -623,6 +623,10 @@ class SemanticRecallTest(unittest.TestCase):
         service.start()
         self.assertEqual(service.degraded_reason, "building_initial_space")
         tools = MemoryTools(self.store, service)
+        self.assertIs(tools.memory, self.store.memories)
+        self.assertIs(self.store.memory_recall, tools.memory.recall)
+        self.store.search_memories = Mock(side_effect=AssertionError("use Memory API"))
+        self.store.memory_snapshots = Mock(side_effect=AssertionError("use Memory API"))
         service.prepare = AsyncMock(side_effect=AssertionError("memory caller must use search"))
         draft = TurnDraft()
         call = ToolCall("search", "memory_search", {"query": "用户喜欢什么饮品"})

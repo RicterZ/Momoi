@@ -101,6 +101,7 @@ class ToolBatchExecutor:
         tool_results: Any,
         outbox_changed: Any,
         replyer: Any = None,
+        *, memory: Any,
     ) -> None:
         self.config = config
         self.store = store
@@ -109,6 +110,7 @@ class ToolBatchExecutor:
         self.bubble_delivery = bubble_delivery
         self.agenda_tools = agenda_tools
         self.memory_tools = memory_tools
+        self.memory = memory
         self.thinking_tools = thinking_tools
         self.tool_results = tool_results
         self.outbox_changed = outbox_changed
@@ -326,7 +328,7 @@ class ToolBatchExecutor:
                 if result.get("ok") and not execution.heartbeat:
                     record = self.store.context_plan(request.turn_id)
                     recalled = record.get("retrieval", {}).get("recall_memories", []) if record else []
-                    request.draft.memory_context.update(self.store.memory_snapshots(
+                    request.draft.memory_context.update(self.memory.snapshots(
                         [item["id"] for item in recalled if isinstance(item.get("id"), int)]
                     ))
             elif call.name == "episode_relations":

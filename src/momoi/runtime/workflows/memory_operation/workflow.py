@@ -6,7 +6,6 @@ from typing import Any
 
 from ....models import ToolCall
 from ....observability.events import log_event
-from ....storage import MemoryRecallQuery
 from ...agent import AgentWorkflow
 from ..memory_rendering import memory_record
 from .contracts import MEMORY_OPERATION_FINISH_SPEC, MEMORY_OPERATION_SEARCH_SPEC
@@ -57,7 +56,7 @@ class MemoryOperationWorkflow:
             current = self.store.active_memory(row["kind"], row["key"])
             if current is not None:
                 current_ids.add(int(current["id"]))
-        snapshots = self.store.memory_snapshots(sorted(current_ids))
+        snapshots = self.memory.snapshots(sorted(current_ids))
         evidence = {event["event_id"]: event["text"] for event in batch["events"]}
         for item in self.store.memory_maintenance_evidence_for_memories(
             list(snapshots)
@@ -86,18 +85,12 @@ class MemoryOperationWorkflow:
                     or len(query) > 240
                 ):
                     return {"ok": False, "error": "invalid_memory_operation_query"}
-                dense = await self.semantic_recall.prepare(
-                    [MemoryRecallQuery(query)], include_episode=False, output_limit=12
-                )
-                matches = self.store.search_memories(query, 12, include_scoped=True)
+                matches = self.memory.search_literal(query, 12, include_scoped=True)
                 matches += [
-                    item
-                    for item in self.store.rank_recalled_memories(
-                        [MemoryRecallQuery(query)], 6, dense_evidence=dense
-                    )
+                    item for item in await self.memory.search(query, 12)
                     if item["source"] == "confirmed"
                 ]
-                related = self.store.memory_snapshots(
+                related = self.memory.snapshots(
                     sorted({int(item["id"]) for item in matches})
                 )
                 snapshots.update(related)

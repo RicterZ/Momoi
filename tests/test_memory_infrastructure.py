@@ -21,7 +21,6 @@ spec = importlib.util.spec_from_file_location(
 )
 module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
-spec.loader.exec_module(module)
 
 # Fail even if an editable Momoi install happens to be visible to the subprocess.
 class RejectApplicationImports:
@@ -29,6 +28,9 @@ class RejectApplicationImports:
         if fullname == "momoi" or fullname.startswith("momoi."):
             raise AssertionError("memory depends on application: " + fullname)
 sys.meta_path.insert(0, RejectApplicationImports())
+spec.loader.exec_module(module)
+
+from standalone_memory import Memory
 
 from standalone_memory.retrieval.models import MemoryRecallQuery, DenseThresholds
 from standalone_memory.retrieval.sparse import StringSearchBackend, search_expression
@@ -47,6 +49,7 @@ from standalone_memory.retrieval.rerank import MemoryRerankCandidates
 import sqlite3
 
 with sqlite3.connect(":memory:") as db:
+    assert Memory(db).snapshots([]) == {}
     assert MemoryRepository(db).snapshots([]) == {}
     assert MemoryRecallService(MemoryRepository(db)).rank([], 6) == []
     snapshot = SegmentedVectorSnapshot(VectorRepository(db), 2)

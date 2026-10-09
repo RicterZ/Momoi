@@ -15,20 +15,7 @@ class SemanticSourceStore:
     _db: sqlite3.Connection
 
     def _eligible_source_ids(self) -> dict[str, set[str]]:
-        now = time.time()
-        confirmed = {
-            str(row["id"])
-            for row in self._db.execute(
-                """SELECT id FROM memories AS m
-                   WHERE superseded_by IS NULL AND activation='recall'
-                     AND (expires_at IS NULL OR expires_at>?)
-                     AND NOT EXISTS (
-                         SELECT 1 FROM memory_tombstones AS t
-                         WHERE t.kind=m.kind AND t.key=m.key
-                     )""",
-                (now,),
-            )
-        }
+        confirmed = self.memories.index_source.eligible_ids()
         reflections = {
             str(row["id"])
             for row in self._db.execute(
@@ -204,27 +191,8 @@ class SemanticSourceStore:
         self, source_type: str, source_id: str
     ) -> tuple[list[SemanticDocument], bool]:
         if source_type == "confirmed_memory":
-            row = self._db.execute(
-                """SELECT id, kind, key, content FROM memories AS m
-                   WHERE id=? AND superseded_by IS NULL AND activation='recall'
-                     AND (expires_at IS NULL OR expires_at>?)
-                     AND NOT EXISTS (
-                         SELECT 1 FROM memory_tombstones AS t
-                         WHERE t.kind=m.kind AND t.key=m.key
-                     )""",
-                (source_id, time.time()),
-            ).fetchone()
-            if row is None:
-                return [], False
-            return [
-                SemanticDocument(
-                    source_type,
-                    source_id,
-                    "",
-                    0,
-                    f"Kind: {row['kind']}\nKey: {row['key']}\nContent: {row['content']}",
-                )
-            ], True
+            documents = self.memories.index_source.documents(source_id)
+            return documents, bool(documents)
         if source_type == "reflection_memory":
             row = self._db.execute(
                 """SELECT rm.id, rm.kind, rm.key, rm.content

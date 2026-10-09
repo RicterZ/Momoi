@@ -296,3 +296,16 @@ class MemoryRepository:
                  )""",
             (time.time(), include_scoped, activation, activation),
         ).fetchall()
+
+    def recall_row(self, source_id: str):
+        row = self._db.execute(
+            """SELECT id, kind, key, content FROM memories AS m
+               WHERE id=? AND superseded_by IS NULL AND activation='recall'
+                 AND (expires_at IS NULL OR expires_at>?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=m.kind AND t.key=m.key
+                 )""",
+            (source_id, time.time()),
+        ).fetchone()
+        return dict(row) if row is not None else None

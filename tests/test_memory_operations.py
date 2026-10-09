@@ -544,7 +544,7 @@ def test_optional_private_search_can_resolve_missing_target(daemon):
     )
     submit(daemon.store, source, action="replace")
     count = 0
-    daemon.semantic_recall.prepare = AsyncMock(return_value=None)
+    daemon.semantic_recall.prepare = AsyncMock(side_effect=AssertionError("use Memory.search"))
 
     async def complete(system, messages, tools=None, **kwargs):
         nonlocal count
@@ -565,6 +565,7 @@ def test_optional_private_search_can_resolve_missing_target(daemon):
     daemon.provider = type("Provider", (), {"complete": staticmethod(complete)})()
     asyncio.run(daemon._complete_memory_operation_turn("source", asyncio.Event()))
     assert count == 2
+    daemon.semantic_recall.prepare.assert_not_awaited()
     assert not daemon.store.memory_snapshots([target])
 
 

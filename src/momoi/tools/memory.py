@@ -19,7 +19,7 @@ from ..storage import (
 from ..storage.episode.episode_ranking import EpisodeRecallQuery
 from ..semantic.models import DenseRecallEvidence
 from ..semantic.service import SemanticRecallService
-from ..memory.retrieval.service import MemoryRecallService
+from ..memory import Memory
 from .contracts.memory import MEMORY_TOOL_SPECS
 from .validation import validate_tool_arguments
 
@@ -128,14 +128,11 @@ class MemoryTools:
         self,
         store: Store,
         semantic_recall: SemanticRecallService | None = None,
+        *, memory: Memory | None = None,
     ) -> None:
         self.store = store
         self.semantic_recall = semantic_recall
-        self.memory_recall = (
-            MemoryRecallService(
-                store.memory, store.search_backend, dense_recall=semantic_recall.memory_dense_recall,
-            ) if semantic_recall is not None else store.memory_recall
-        )
+        self.memory = memory if memory is not None else store.memories
 
     async def execute_async(
         self,
@@ -153,9 +150,9 @@ class MemoryTools:
         try:
             if call.name == "memory_search":
                 query = str(call.arguments.get("query") or "").strip()
-                if not query or self.semantic_recall is None:
+                if not query:
                     return self._search(call.arguments, draft)
-                results = await self.memory_recall.search(
+                results = await self.memory.search(
                     query, min(10, max(1, int(call.arguments.get("limit", 6)))),
                 )
                 return self._memory_search_result(results, draft)
@@ -249,7 +246,7 @@ class MemoryTools:
             limit = min(10, max(1, int(arguments.get("limit", 6))))
         except (TypeError, ValueError):
             limit = 6
-        results = self.store.search_memories(query, limit)
+        results = self.memory.search_literal(query, limit)
         return self._memory_search_result(results, draft)
 
     def _memory_search_result(
@@ -261,7 +258,7 @@ class MemoryTools:
             if isinstance(item.get("id"), int)
             and item.get("source", "confirmed") == "confirmed"
         ]
-        draft.memory_context.update(self.store.memory_snapshots(ids))
+        draft.memory_context.update(self.memory.snapshots(ids))
         return {"ok": True, "count": len(results), "results": results}
 
     def _episode_search(
