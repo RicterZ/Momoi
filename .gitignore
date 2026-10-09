@@ -37,3 +37,8 @@ desktop/Momoi.Desktop/keys/*.pem
 
 # Local manual ASR experiments.
 /tools/asr/
+
+# Local weekly-memory replay experiments.
+/tools/weekly_memory_replay.py
+/tools/weekly_memory_replay.md
+/tests/test_weekly_memory_replay.py
