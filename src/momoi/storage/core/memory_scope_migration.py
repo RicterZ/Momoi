@@ -7,6 +7,9 @@ from pathlib import Path
 
 from ...memory.storage.records import MEMORY_KINDS
 
+# Previous migrations deliberately retained these rows behind tombstones.
+_RETIRED_KINDS = {"episodic", "shared", "routine", "owner_profile", "owner_preference", "tool_skill"}
+
 
 def split_legacy_key(key, activation=None):
     match = re.fullmatch(r'(goal\.[0-9a-f]{32}|heartbeat|webhook)\.([a-z0-9][a-z0-9_.-]*)', key)
@@ -28,19 +31,28 @@ def scope_preflight(database):
     issues, mappings, deleted = [], [], []
     existing = 'scope_key' in {row[1] for row in database.execute('PRAGMA table_info(memories)')}
     identities = {}
+    stamp = time.time()
+    forgotten = {(row.get('scope_key', ''), row['kind'], row['key']) for row in tombstones}
     for row in rows:
         try:
             scope, key = (row['scope_key'], row['key']) if existing else split_legacy_key(row['key'], row['activation'])
-            if row['activation'] not in ('always', 'recall', 'scoped'):
+            retired = (
+                row['superseded_by'] is not None
+                or (row['expires_at'] is not None and row['expires_at'] <= stamp)
+                or (row.get('scope_key', ''), row['kind'], row['key']) in forgotten
+            )
+            if row['activation'] not in ('always', 'recall', 'scoped') and not (
+                retired and row['activation'] == 'recent'
+            ):
                 raise ValueError('unsupported activation')
-            if row['kind'] not in MEMORY_KINDS:
+            if row['kind'] not in MEMORY_KINDS and not (retired and row['kind'] in _RETIRED_KINDS):
                 raise ValueError('unknown kind; explicit classification required')
             if (row['activation'] == 'scoped') != bool(scope):
                 raise ValueError('activation and scope disagree')
             if 'scope' in json.loads(row['meta_json']):
                 raise ValueError('scope already present in meta_json')
             identity = (scope, row['kind'], key)
-            if row['superseded_by'] is None and (row['expires_at'] is None or row['expires_at'] > time.time()):
+            if not retired:
                 if identity in identities:
                     raise ValueError(f'duplicate active identity with memory {identities[identity]}')
                 identities[identity] = row['id']
@@ -51,7 +63,7 @@ def scope_preflight(database):
     for row in tombstones:
         try:
             scope, key = (row['scope_key'], row['key']) if existing else split_legacy_key(row['key'])
-            if row['kind'] not in MEMORY_KINDS:
+            if row['kind'] not in MEMORY_KINDS | _RETIRED_KINDS:
                 raise ValueError('unknown tombstone kind')
             identity = (scope, row['kind'], key)
             if identity in seen:

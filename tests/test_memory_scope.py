@@ -253,3 +253,38 @@ def test_audit_cli_runs_outside_repository_and_leaves_source_untouched(legacy):
                             cwd=path.parent, capture_output=True, text=True, check=True)
     assert json.loads(result.stdout)['restore'] == 'ok'
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('retirement', ['forgotten', 'superseded', 'expired'])
+def test_scope_migration_preserves_retired_legacy_rows_without_reviving_them(legacy, retirement):
+    db, path = legacy
+    current = old_memory(db)
+    identifier = old_memory(db, 'old', activation='recent', kind='episodic')
+    if retirement == 'forgotten':
+        db.execute("INSERT INTO memory_tombstones VALUES ('episodic','old','forget','forgotten',2)")
+    elif retirement == 'superseded':
+        db.execute('UPDATE memories SET superseded_by=? WHERE id=?', (current, identifier))
+    else:
+        db.execute('UPDATE memories SET expires_at=2 WHERE id=?', (identifier,))
+    # Alias tombstones can outlive the rows they hid; their original identity must survive.
+    db.execute("INSERT INTO memory_tombstones VALUES ('routine','removed','forget','forgotten',2)")
+    db.commit()
+    assert audit(path)['preflight']['ready']
+    apply_migrations(db)
+    assert db.execute('SELECT kind,activation FROM memories WHERE id=?', (identifier,)).fetchone() == ('episodic', 'recent')
+    store = Store(path)
+    try:
+        assert set(store.memories.snapshots([current, identifier])) == {current}
+        assert store._db.execute("SELECT scope_key FROM memory_tombstones WHERE kind='routine'").fetchone()[0] == ''
+    finally:
+        store.close()
+
+
+def test_unknown_retired_kind_remains_a_migration_blocker(legacy):
+    db, _ = legacy
+    old_memory(db, 'old', kind='invented')
+    db.execute("INSERT INTO memory_tombstones VALUES ('invented','old','forget','forgotten',2)")
+    db.commit()
+    report = scope_preflight(db)
+    assert not report['ready']
+    assert len(report['issues']) == 2
