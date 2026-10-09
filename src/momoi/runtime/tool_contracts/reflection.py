@@ -16,7 +16,7 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                 "minLength": 1,
                 "maxLength": 6000,
                 "description": (
-                    '按话题分段的中文日记，每段以【话题标题】开头，记录本时段有意义的经历、感受、理解变化及必要的未决事项。同一事件跨话题不重复，不要求每个话题都产出内容。'
+                    '有意义经历、感受、观点、理解变化及未决问题的中文日记。'
                 ),
             },
             "conversation_actions": {
