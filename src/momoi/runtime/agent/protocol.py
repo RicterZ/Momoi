@@ -74,7 +74,7 @@ def handle_no_tool_response(
     if failed_rounds >= max_failures:
         error_type = ExternalToolTurnError if external_effect and workflow_correction is None else WorkflowProtocolError
         raise error_type("consecutive_thought_round_limit")
-    guidance = NO_TOOL_GUIDANCE
+    guidance = workflow_correction or NO_TOOL_GUIDANCE
     if failed_rounds >= max_failures - 1:
         guidance += " 已接近连续无行动轮次上限，请在下一轮行动或结束。"
     messages.append({"role": "user", "content": guidance})

@@ -37,7 +37,7 @@ def test_internal_thought_then_silent_completion_does_not_send(daemon, internal_
 
     daemon.provider = SimpleNamespace(complete=complete)
     asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), turn_id))
-    assert rounds == 4
+    assert rounds == 1
     assert not daemon.store.due_outbox()
     assert daemon.store._db.execute("SELECT state FROM turns WHERE id=?", (turn_id,)).fetchone()[0] == "completed"
 
@@ -126,9 +126,10 @@ def test_hidden_delivery_tools_cannot_bypass_replyer(stage):
 
 @pytest.mark.parametrize("recovery", ["blocked_tool", "silent_end", "text_forever", "provider_error", "sent_then_error"])
 def test_circuit_recovery_is_bounded_and_cannot_restart_task(daemon, recovery):
+    install_scripted_replyer(daemon)
     source = event(daemon.store, text="帮我处理一下")
     turn_id = daemon._turn_id(source.event_id)
-    limit = MAX_CONSECUTIVE_THOUGHT_ROUNDS
+    limit = daemon.config.turn_max_protocol_retries
     rounds = 0
     notices = []
 
@@ -136,9 +137,9 @@ def test_circuit_recovery_is_bounded_and_cannot_restart_task(daemon, recovery):
         nonlocal rounds
         rounds += 1
         if rounds <= limit:
-            return ProviderResponse([{"type": "text", "text": "没有调用工具"}], [])
-        assert {t["name"] for t in tools} == {"send_bubbles", "end_turn"}
-        assert "熔断" in str(system)
+            return response(ToolCall(str(rounds), "heartbeat_activity", {}))
+        assert {"reply", "end_turn"} <= {t["name"] for t in tools}
+        assert "熔断" in str(messages)
         assert "错误摘要" in str(messages)
         step = rounds - limit
         if recovery == "provider_error" or (recovery == "sent_then_error" and step > 1):
@@ -153,7 +154,7 @@ def test_circuit_recovery_is_bounded_and_cannot_restart_task(daemon, recovery):
             }))
         if recovery == "sent_then_error" or step == 2:
             notices.append("任务没做完，工具连续出错，我先停下了。")
-            return response(ToolCall("notice", "send_bubbles", {"bubbles": notices[-1:]}))
+            return response(reply_call("notice", bubbles=notices[-1:]))
         return response(ToolCall("finish", "end_turn", {
             "mood": {"decision": "unchanged"}, "reply_wait": {"wait": False},
         }))

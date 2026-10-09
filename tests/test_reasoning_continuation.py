@@ -17,7 +17,6 @@ from momoi.integrations.models import LLMConfig, ThinkingConfig
 from momoi.models import IncomingMessage
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent.protocol import (
-    NO_TOOL_GUIDANCE,
     assistant_history_message, handle_no_tool_response, owner_request_messages,
 )
 from tests.support import provider_catalog, recall_response
@@ -28,17 +27,14 @@ class ReasoningContinuationTest(unittest.IsolatedAsyncioTestCase):
         requests = []
         violations = []
         # Include empty and whitespace-only values: replay must be lossless.
-        thoughts = [" first thought\n", "", "  ", "fix arguments", "send reply", "done", "finish"]
+        thoughts = [" first thought\n", "", "  ", "send reply", "done"]
         recall = recall_response().tool_calls[0]
-        finish = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
         actions = [
             ("heartbeat_activity", "{}"),  # Rejected: unavailable in Owner stage.
             (recall.name, json.dumps(recall.arguments)),
-            None,  # Text-only reply must also retain its reasoning during correction.
             ("reply", "{"),  # Invalid tool arguments return an error to the model.
             ("reply", json.dumps({"intent": "回应", "reference": json.dumps(["修复后的回复"], ensure_ascii=False)})),
             None,  # Saying the turn is done must not invalidate the reply receipt.
-            ("end_turn", json.dumps(finish)),
         ]
 
         async def completion(request):
@@ -84,17 +80,13 @@ class ReasoningContinuationTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(violations, [])
                 self.assertEqual(len(requests), len(actions))
                 self.assertEqual([row.text for row in daemon.store.due_outbox()], ["修复后的回复"])
-                self.assertEqual(requests[-1]["messages"][-1]["content"], NO_TOOL_GUIDANCE)
-                self.assertIn("此前工具调用及结果仍然有效", NO_TOOL_GUIDANCE)
-                self.assertIn("不要因此重复 reply", NO_TOOL_GUIDANCE)
-                self.assertIn("结束工具", NO_TOOL_GUIDANCE)
-                receipts = [m for m in requests[-1]["messages"] if m.get("tool_call_id") == "call-4"]
+                receipts = [m for m in requests[-1]["messages"] if m.get("tool_call_id") == "call-3"]
                 self.assertIn("修复后的回复", json.dumps(receipts, ensure_ascii=False))
                 exchanges = daemon.store.turn_exchanges([daemon._turn_id(event.event_id)])
                 corrections = [result["text"] for items in exchanges.values() for item in items
                                for result in item.get("results", []) if result.get("type") == "text"]
-                self.assertEqual(corrections, [NO_TOOL_GUIDANCE, NO_TOOL_GUIDANCE])
-                self.assertIn("invalid_tool_arguments_json", json.dumps(requests[4]))
+                self.assertEqual(corrections, [])
+                self.assertIn("invalid_tool_arguments_json", json.dumps(requests[3]))
                 self.assertNotIn("provider_continuation", json.dumps(requests))
             finally:
                 daemon.store.close()

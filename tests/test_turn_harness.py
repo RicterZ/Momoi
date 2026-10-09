@@ -12,6 +12,19 @@ from momoi.runtime.agent.workflow import WorkflowProtocolError
 
 
 class TurnHarnessTest(unittest.TestCase):
+    def test_automatic_completion_preserves_stage_requirements(self):
+        self.assertIsNone(TurnHarness.for_stage("owner").completion_error())
+        heartbeat = TurnHarness.for_stage("heartbeat")
+        self.assertEqual(heartbeat.completion_error(), "heartbeat_begin_required")
+        heartbeat.started = True
+        self.assertEqual(heartbeat.completion_error(), "heartbeat_activity_required")
+        heartbeat.completed_tools.add("heartbeat_activity")
+        self.assertIsNone(heartbeat.completion_error())
+        goal = TurnHarness.for_stage("goal")
+        self.assertEqual(goal.completion_error(), "goal_review_required")
+        goal.completed_tools.add("goal_review")
+        self.assertIsNone(goal.completion_error())
+
     def test_thought_rounds_have_their_own_limit(self) -> None:
         for stage in TURN_HARNESS_SPECS:
             for started in (False, True):

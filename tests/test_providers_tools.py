@@ -1113,7 +1113,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(retry_sleep.await_args_list, [call(1), call(2), call(4)])
         self.assertEqual(attempts, 4)
 
-    async def test_owner_turn_corrects_openai_gateway_that_ignores_tool_choice(
+    async def test_owner_turn_ends_on_plain_output_without_sending_it(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1183,9 +1183,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 [event], asyncio.Event(), daemon._turn_id(event.event_id)
             )
             self.assertGreater(len(fake.calls[0]), 1)
-            self.assertEqual(fake.calls[1], fake.calls[0])
-            self.assertEqual(fake.calls[2], fake.calls[0])
-            self.assertEqual(daemon.store.due_outbox()[0].text, "已纠正")
+            self.assertEqual(len(fake.calls), 1)
+            self.assertEqual(daemon.store.due_outbox(), [])
             daemon.store.close()
 
     async def test_owner_turn_returns_argument_parse_error_to_model(self) -> None:

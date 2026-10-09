@@ -1823,6 +1823,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 daemon._complete_batch_turn([event], asyncio.Event(), turn_id),
                                 timeout=2,
                             )
+                            if response_kind in {"text", "mixed"}:
+                                self.assertEqual(provider.calls, 1)
+                                self.assertEqual(daemon.store.due_outbox(), [])
+                                self.assertFalse(daemon.store._db.execute(
+                                    "SELECT 1 FROM reconciliations WHERE turn_id=?", (turn_id,),
+                                ).fetchone())
+                                continue
                             self.assertEqual(provider.calls, limit + 1)
                             reconciliations = daemon.store._db.execute(
                                 "SELECT status FROM reconciliations WHERE turn_id=?", (turn_id,),
@@ -2215,10 +2222,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
             if main_call == 6:
                 return web.json_response(
-                    {"content": [{"type": "text", "text": "这段 raw text 不应发送"}]}
-                )
-            if main_call == 7:
-                return web.json_response(
                     {
                         "stop_reason": "tool_use",
                         "content": [
@@ -2231,22 +2234,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ],
                     }
                 )
-            return web.json_response(
-                {
-                    "stop_reason": "tool_use",
-                    "content": [
-                        {
-                            "type": "tool_use",
-                            "id": "end_turn-1",
-                            "name": "end_turn",
-                            "input": {
-                                "reply_wait": {"wait": False},
-                                "mood": {"decision": "unchanged"},
-                            },
-                        }
-                    ],
-                }
-            )
+            return web.json_response({"content": [{"type": "text", "text": "本轮完成"}]})
 
         async def napcat(request: web.Request) -> web.WebSocketResponse:
             socket = web.WebSocketResponse()
@@ -2324,7 +2312,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             await llm_server.close()
 
         self.assertEqual(sent, ["我先处理一下", "测试回复一", "测试回复二"])
-        self.assertEqual(len(llm_requests), 8)
+        self.assertEqual(len(llm_requests), 7)
         self.assertEqual(len(replyer_requests), 2)
         initial_tools = [tool["name"] for tool in llm_requests[0]["tools"]]
         second_tools = [tool["name"] for tool in llm_requests[1]["tools"]]
@@ -2333,13 +2321,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("end_turn", second_tools)
         self.assertNotIn("tool_choice", llm_requests[0])
         self.assertIn("reply", second_tools)
-        final_tools = [tool["name"] for tool in llm_requests[7]["tools"]]
+        final_tools = [tool["name"] for tool in llm_requests[6]["tools"]]
         self.assertIn("reply", final_tools)
         self.assertIn("end_turn", final_tools)
         self.assertIn("memory_search", final_tools)
         self.assertEqual(set(final_tools) - set(initial_tools), {"memory_search"})
         # The application requires a tool response independently of wire protocol.
-        self.assertNotIn("tool_choice", llm_requests[7])
+        self.assertNotIn("tool_choice", llm_requests[6])
         self.assertEqual(
             llm_requests[0]["system"][0]["cache_control"], {"type": "ephemeral"}
         )
@@ -2351,8 +2339,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("当前阶段：", str(llm_requests[0]["system"]))
         self.assertIn("当前阶段：owner", str(llm_requests[0]["messages"][-1]))
         self.assertNotIn("heartbeat_activity", llm_requests[0]["system"][2]["text"])
-        self.assertEqual(len(llm_requests[7]["system"]), 4)
-        self.assertEqual(llm_requests[0]["system"], llm_requests[7]["system"])
+        self.assertEqual(len(llm_requests[6]["system"]), 4)
+        self.assertEqual(llm_requests[0]["system"], llm_requests[6]["system"])
         self.assertEqual(
             llm_requests[1]["messages"][-1]["content"][0]["type"], "tool_result"
         )

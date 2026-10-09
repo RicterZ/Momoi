@@ -315,6 +315,28 @@ class AgentLoop:
                 remind_owner_bubbles = False
                 continue
             if not response.tool_calls:
+                completion_correction = None
+                if workflow is None and harness.spec.terminal_tool == "end_turn":
+                    error = harness.completion_error()
+                    missing_images = self.store.missing_image_summaries(current_events)
+                    if error or missing_images:
+                        completion_correction = (
+                            "[运行时提示] 尚有必需记录未提交："
+                            + (error or "save_image_summary: " + json.dumps(missing_images))
+                            + "。请调用对应工具补齐；不要重复发送已提交的回复。"
+                        )
+                    else:
+                        self.store.append_turn_journal(turn_id, "assistant_exchange", {
+                            "content": assistant_history_message(response.content)["content"],
+                            "results": [],
+                        }, trust="runtime")
+                        if stage in CURRENT_STATE_TRIGGER_STAGES and not circuit_reason:
+                            self.store.stage_current_state_task(
+                                turn_id, stage, model_round.request_system, model_round.request_tools,
+                            )
+                        log_event(logger, logging.DEBUG, "turn_auto_completed",
+                                  stage=stage, turn_id=turn_id, reason="no_tool_calls")
+                        return AgentReply([])
                 if stage in {"owner", "heartbeat", "reply_followup", "webhook", "goal", "plan_step"}:
                     self.store.append_turn_journal(
                         turn_id,
@@ -323,7 +345,7 @@ class AgentLoop:
                             "content": assistant_history_message(response.content)["content"],
                             "results": [{
                                 "type": "text",
-                                "text": NO_TOOL_GUIDANCE,
+                                "text": completion_correction or NO_TOOL_GUIDANCE,
                             }],
                         },
                         trust="runtime",
@@ -333,7 +355,7 @@ class AgentLoop:
                         messages,
                         response.content,
                         workflow_correction=(
-                            workflow.no_tool_correction if workflow is not None else None
+                            workflow.no_tool_correction if workflow is not None else completion_correction
                         ),
                         heartbeat_turn=heartbeat_turn,
                         harness_started=harness.started,

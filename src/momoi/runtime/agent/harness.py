@@ -88,6 +88,12 @@ class TurnHarness:
         """Keep opening, but invalidate recall when the owner context changes."""
         self.heartbeat_recall_ready = False
 
+    def completion_error(self) -> str | None:
+        if not self.started:
+            return f"{self.spec.first_tool}_required"
+        missing = self.spec.required_before_end - self.completed_tools
+        return f"{sorted(missing)[0]}_required" if missing else None
+
     def validate_surface(self, tool_names: set[str]) -> None:
         required = {self.spec.terminal_tool, *self.spec.required_before_end}
         if self.spec.first_tool is not None:
