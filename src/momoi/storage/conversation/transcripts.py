@@ -333,6 +333,7 @@ class TranscriptStore:
                        m.content,
                        {_MESSAGE_TIME_SQL} AS created_at,
                        m.delivery_state,
+                       t.failure_reason AS turn_failure_reason,
                        CASE WHEN m.role='event'
                             THEN CASE WHEN t.workflow_kind='channel_event'
                                       THEN COALESCE((

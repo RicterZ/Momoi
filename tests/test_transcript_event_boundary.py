@@ -83,3 +83,37 @@ def test_episode_index_keeps_pending_and_split_topics_without_duplicate_summarie
         assert store.transcript_episode_snapshot('updated') == rendered
     finally:
         store.close()
+
+
+def test_failed_turn_without_exchange_preserves_recent_dialogue(tmp_path):
+    daemon = MomoiDaemon(AppConfig(
+        providers=provider_catalog(LLMConfig('http://localhost', 'test', 'model', 100, 0, 1, 0)),
+        channel=NapCatConfig('ws://localhost', '123', 1, 60, 30, 30, 20),
+        system_prompt='test', transcript_turns_min=8, transcript_turns_max=8,
+        episode_unsummarized_tail_turns=2, memory_results=2,
+        database=tmp_path / 'store.sqlite3', log_level='INFO',
+    ))
+    try:
+        add_turn(daemon.store, 'resolved', 'HA重启了，重新发了Webhook，已经结案', 1)
+        message = IncomingMessage('failed', '1', '前几天聊过的和纱，你没recall就忘了', 2, 2)
+        daemon.store.add_event(message)
+        failure = 'This turn stopped because of an internal error and was not retried automatically.'
+        daemon.store.commit_turn([message], message.text, AgentReply([failure]), turn_id='failed')
+        daemon.store.record_turn_failure('failed', 'TypeError')
+        assert not daemon.store.turn_exchanges(['failed'])
+
+        # Both the immediate next input and subsequent inputs retain the evidence,
+        # even while the resolution has not yet been archived into an episode.
+        for active in ('next', 'subsequent'):
+            daemon.store.begin_turn(active, 'owner', [active])
+            shared = daemon.shared_turn_context(active)
+            assert {'resolved', 'failed'} <= {r['turn_id'] for r in shared['rows']}
+            text = json.dumps(shared['history'], ensure_ascii=False)
+            assert 'HA重启了' in text
+            assert message.text in text
+            assert failure in text
+            assert text.index('HA重启了') < text.index(message.text) < text.index(failure)
+            if active == 'next':
+                add_turn(daemon.store, 'clarification', '没，是你报错了', 3)
+    finally:
+        daemon.store.close()

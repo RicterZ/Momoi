@@ -123,11 +123,11 @@ class ContextService:
         rows = self.store.retained_transcript_rows(self._recent_conversation_rows(cutoff))
         ids = list(dict.fromkeys(str(row["turn_id"]) for row in rows))
         exchanges = self.store.turn_exchanges(ids, include_reply_messages=True)
-        # Only unreplayable historical assistant speech marks a legacy boundary.
-        # Runtime events and silent turns legitimately have no LLM exchange.
+        # Runtime failure notices, events and silent turns need no LLM exchange.
         legacy_speech = {str(row["turn_id"]) for row in rows
                          if row["role"] == "assistant"
                          and row.get("delivery_state") != "internal"
+                         and not row.get("turn_failure_reason")
                          and not exchanges.get(str(row["turn_id"]))}
         last_legacy = max(
             (index for index, identifier in enumerate(ids) if identifier in legacy_speech),
