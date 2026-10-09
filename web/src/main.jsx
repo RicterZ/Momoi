@@ -2403,7 +2403,7 @@ function ThinkingCall({ call, children = [], nested = false }) {
         <p className="message-content thinking-body">{call.reasoning || call.excerpt}</p>
       </section> : <p className="thinking-empty">接口未返回可见推理；可以从实际工具调用查看决策。</p>}
       {call.assistant_text && <section className="thinking-part assistant-part">
-        <h4>{replyer ? "生成的发言" : "内部正文"}<span>{replyer ? "是否送达以投递记录为准" : "assistant text，不等于对用户发言"}</span></h4>
+        <h4>{replyer ? "生成的发言" : "内部正文"}{replyer && <span>是否送达以投递记录为准</span>}</h4>
         <EmotionContent className="message-content thinking-body" text={call.assistant_text} />
       </section>}
     </div>
