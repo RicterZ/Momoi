@@ -6,7 +6,7 @@ from ...storage import MEMORY_KINDS
 REFLECTION_FINISH_SPEC: dict[str, Any] = {
     "name": "reflection_finish",
     "description": (
-        '存储每日反思、持久记忆和对话结束内容，然后结束此私有 Turn。'
+        '存储当日日记、待跨天验证的观察和对话收尾决定，然后结束此私有 Turn。'
     ),
     "input_schema": {
         "type": "object",
@@ -52,7 +52,7 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                 "type": "array",
                 "maxItems": 12,
                 "description": (
-                    '值得保留至今天的持久主张。可为空；不要编造教训以填充列表。不要记录特定或共享的经历/事件；这些属于话题摘要。'
+                    '值得跨天比较的当天观察，可为空。允许单次样本，但须限定为当天所见，不直接推断长期规律；完整事件经过留在 Episode。观察按天保存，暂不参与日常召回。'
                 ),
                 "items": {
                     "type": "object",
@@ -61,19 +61,19 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                             "type": "string",
                             "enum": sorted(MEMORY_KINDS),
                             "description": (
-                                'profile：用户身份、背景、节奏与习惯；preference：用户的需求，包括约束条件及既定措辞；relationship：关系纽带及其边界、称呼方式与约定；third_party：关于他人的稳定事实；practice：可复用的方法或决策流程（含工具使用）；world_knowledge：对世界的观察所得知识；self_insight：对自身感受或倾向的主观理解；cross_event_state：超越产生它的事件而持续存在的状态。具体或共享的经历属于当天的 Episode，不在此记录；仅记录符合所选类型的持久性主张。'
+                                'profile：用户身份、背景、节奏与习惯；preference：用户的需求，包括约束条件及既定措辞；relationship：关系纽带及其边界、称呼方式与约定；third_party：关于他人的稳定事实；practice：可复用的方法或决策流程（含工具使用）；world_knowledge：对世界的观察所得知识；self_insight：对自身感受或倾向的主观理解；cross_event_state：超越产生它的事件而持续存在的状态。选择观察所属类型；单次现象保留当天范围，不能仅因归为 profile 就断言稳定习惯。'
                             ),
                         },
                         "key": {
                             "type": "string",
-                            "description": '稳定的小写点分隔键。',
+                            "description": '稳定的小写点分隔主题键，不含日期；运行时自动添加日期 namespace，避免跨天覆盖。',
                         },
                         "content": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 1000,
                             "description": (
-                                '根据类型，在证据范围内简明描述发生、被理解或被学习的内容。对于 practice，需包含适用性及可观察的结果；未受批评并非成功的证据。'
+                                '简述当天观察、情境及不确定性，区分直接事实与推测。单次样本不写成通常规律，反复提及不算独立样本。practice 包含适用条件和可观察结果；未受批评不是成功证据。'
                             ),
                         },
                         "evidence": {
@@ -89,7 +89,7 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                             "minimum": 0,
                             "maximum": 1,
                             "description": (
-                                '证据支持所记录主张（含其范围）的确信度；非其重要性或你的决心。'
+                                '证据对本条观察及其范围的支持程度，不代表习惯已稳定、出现频率或重要性。'
                             ),
                         },
                     },
