@@ -5,7 +5,7 @@ from xml.etree import ElementTree
 
 from momoi.integrations.request_context import requested_thinking_effort
 from momoi.models import ProviderResponse, ToolCall
-from momoi.semantic.topic_selector import RecallSelection, select_topics
+from momoi.runtime.context.selection import RecallSelection, select_topics
 from momoi.storage.episode.episode_ranking import EpisodeRecallQuery
 
 
@@ -175,8 +175,8 @@ def test_runtime_memory_service_uses_one_joint_rerank_and_keeps_model_order(tmp_
 
     store = Store(tmp_path / "db")
     try:
-        first = write(store.memory, key="coffee", text="饮品偏好：无糖咖啡")
-        second = write(store.memory, key="tea", text="饮品偏好：无糖茶")
+        first = write(store.memories.repository, key="coffee", text="饮品偏好：无糖咖啡")
+        second = write(store.memories.repository, key="tea", text="饮品偏好：无糖茶")
         store.create_episode("讨论饮品", episode_id="drinks")
         service = ContextService()
         service.store = store

@@ -1,6 +1,6 @@
 from typing import Any
 
-from ....semantic.cue_contract import CUE_ARCHIVE_CONTRACT
+from .cue_contract import CUE_ARCHIVE_CONTRACT
 
 
 _TURN_IDS_SCHEMA: dict[str, Any] = {

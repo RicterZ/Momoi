@@ -27,7 +27,9 @@ from momoi.models import (
 from momoi.runtime import (
     MomoiDaemon,
 )
-from momoi.storage import MemoryRecallQuery, Store, estimate_tokens
+from momoi.memory.retrieval.models import MemoryRecallQuery
+from momoi.storage import Store
+from momoi.memory.text import estimate_tokens
 from momoi.storage.core.integrity import StorageIntegrityError
 from momoi.storage.core.scheduling import next_schedule_at, normalize_schedule
 
@@ -64,7 +66,7 @@ class StorageMemoryTest(unittest.TestCase):
                     (now, now),
                 )
 
-            ranked = store.rank_recalled_memories(
+            ranked = store.memories.rank(
                 [MemoryRecallQuery("打开客厅空调", ("home",), 0)],
                 1,
                 now=now,
@@ -107,7 +109,7 @@ class StorageMemoryTest(unittest.TestCase):
                     (now, now),
                 )
 
-            ranked = store.rank_recalled_memories(
+            ranked = store.memories.rank(
                 [
                     MemoryRecallQuery("空调", ("home",), 0),
                     MemoryRecallQuery("客厅", ("home",), 1),
@@ -169,7 +171,7 @@ class StorageMemoryTest(unittest.TestCase):
                     ],
                 )
 
-            ranked = store.rank_recalled_memories(
+            ranked = store.memories.rank(
                 [MemoryRecallQuery("空调", ("home",), 0)],
                 6,
                 now=now,
@@ -205,7 +207,7 @@ class StorageMemoryTest(unittest.TestCase):
                     (now, now),
                 )
 
-            ranked = store.rank_recalled_memories(
+            ranked = store.memories.rank(
                 [MemoryRecallQuery("空调", ("home",), 2)],
                 6,
                 now=now,
@@ -240,13 +242,13 @@ class StorageMemoryTest(unittest.TestCase):
                     (now, now),
                 )
 
-            primary = store.rank_recalled_memories(
+            primary = store.memories.rank(
                 [MemoryRecallQuery("小爱音箱", ("home",), 0)],
                 6,
                 now=now,
                 include_reflections=True,
             )
-            tertiary = store.rank_recalled_memories(
+            tertiary = store.memories.rank(
                 [MemoryRecallQuery("小爱音箱", ("home",), 2)],
                 6,
                 now=now,
@@ -2489,7 +2491,7 @@ class StorageMemoryTest(unittest.TestCase):
                 draft=draft,
                 memory_events=[event],
             )
-            self.assertFalse(store.has_memory("shared", "shared.weibo.session_check"))
+            self.assertFalse(store.memories.repository.has("shared", "shared.weibo.session_check"))
             self.assertEqual(store.pending_memory_operation(), "heartbeat-tools")
             store.close()
 
@@ -3673,7 +3675,7 @@ class StorageMemoryTest(unittest.TestCase):
                 seed_memory(store, event, key=key, content=content, activation=activation)
 
             always = store.always_memory_context()
-            recalled = str(store.search_memories("骑车", 6))
+            recalled = str(store.memories.search_literal("骑车", 6))
             self.assertIn("波浪号", always)
             self.assertNotIn("骑车", always)
             self.assertIn("喜欢骑车", recalled)
@@ -3740,12 +3742,12 @@ class StorageMemoryTest(unittest.TestCase):
             store.add_event(event)
             seed_memory(store, event, key="current.sofa", content="小桃现在抱着靠枕窝在沙发上。",
                         activation="recall", expires_at=time.time()+2*3600)
-            self.assertIn("沙发", str(store.search_memories("沙发", 6)))
+            self.assertIn("沙发", str(store.memories.search_literal("沙发", 6)))
             store._db.execute(
                 "UPDATE memories SET expires_at=? WHERE key='current.sofa'",
                 (time.time() - 1,),
             )
             store._db.commit()
-            self.assertNotIn("沙发", str(store.search_memories("沙发", 6)))
+            self.assertNotIn("沙发", str(store.memories.search_literal("沙发", 6)))
             self.assertEqual(store.list_memories(), [])
             store.close()

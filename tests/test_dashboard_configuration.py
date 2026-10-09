@@ -18,7 +18,8 @@ from momoi.dashboard.app import create_dashboard_app
 from momoi.dashboard.auth import issue_dashboard_jwt
 from momoi.dashboard.settings import DashboardSettings
 from momoi.runtime.supervisor import RuntimeSupervisor
-from momoi.storage import Store, MemoryRecallQuery
+from momoi.storage import Store
+from momoi.memory.retrieval.models import MemoryRecallQuery
 
 
 LLM = {
@@ -466,7 +467,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         evidence = await daemon.semantic_recall.prepare([query])
         self.assertEqual(evidence.fallback_reason, "disabled")
         self.assertFalse(await daemon.semantic_recall.maintain_once())
-        recalled = daemon.store.rank_recalled_memories(
+        recalled = daemon.store.memories.rank(
             [query], 6, dense_evidence=evidence
         )
         self.assertEqual(recalled[0]["key"], "section-test")

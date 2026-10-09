@@ -4,7 +4,7 @@ import time
 from typing import Any
 
 from ...observability.events import TRACE, log_event
-from ...storage import estimate_tokens
+from ...memory.text import estimate_tokens
 from ..context.presentation import recent_episode_lines
 from ..turn_support import (
     TurnBudgetExceeded,
@@ -132,7 +132,7 @@ class ContextWindow:
             # Another executor may have compacted while this request was alive.
             # Replay the effective overrides rather than silently skipping a revision.
             if state["snapshot_revision"] > snapshot["revision"]:
-                from ...storage.memory.memory_values import format_memory
+                from ...storage.memory.presentation import format_memory
                 effective = "\n".join(
                     f'<replace id="{row["id"]}" revision="{state["revision"]}">'
                     + format_memory(row) + "</replace>"

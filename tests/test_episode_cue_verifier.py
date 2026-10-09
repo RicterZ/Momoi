@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from momoi.semantic.episode_cue_verifier import verify_episode_cues
+from momoi.runtime.workflows.episode.cue_verifier import verify_episode_cues
 
 
 class EpisodeCueVerifierTest(unittest.IsolatedAsyncioTestCase):

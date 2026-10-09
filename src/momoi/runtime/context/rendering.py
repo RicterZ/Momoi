@@ -7,13 +7,10 @@ from xml.sax.saxutils import escape, quoteattr
 from ...models import speaker_label
 
 from ...observability.events import log_event
-from ...storage import (
-    Store,
-    estimate_tokens,
-    truncate_tokens,
-)
+from ...storage import Store
+from ...memory.text import estimate_tokens, truncate_tokens
 from ...storage.episode.episode_ranking import rank_recall_items
-from ...storage.memory.memory_values import format_memory
+from ...storage.memory.presentation import format_memory
 from ..agent.budget import SECTION_BUDGET_ALLOCATOR
 from .retrieval import _merge_matches
 

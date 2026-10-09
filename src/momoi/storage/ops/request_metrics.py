@@ -2,7 +2,7 @@
 import json
 import time
 from collections.abc import Callable
-from ..core.transactions import transaction
+from ...memory.storage.transactions import transaction
 
 from ..contracts import MetricsPage, RequestMetricRecord, RequestShape
 

@@ -5,12 +5,11 @@ from ..episode.episode_cues import stored_cue_texts
 import json
 import sqlite3
 
-from ...memory.storage.vectors import encode_vector, decode_vector
-from ...memory.storage.index_records import IndexDocument as SemanticDocument
+from ...memory.storage.index_records import IndexDocument
 
 from ...models import speaker_label
 from ..core.integrity import decode_stored_json
-from ..memory.memory_values import estimate_tokens, token_chunk
+from ...memory.text import estimate_tokens, token_chunk
 
 
 QUERY_TEMPLATE_VERSION = 1
@@ -34,7 +33,7 @@ def _json_strings(value: object) -> list[str]:
     )
     return [str(item).strip() for item in parsed if str(item).strip()]
 
-def _episode_summary_document(row: sqlite3.Row) -> SemanticDocument | None:
+def _episode_summary_document(row: sqlite3.Row) -> IndexDocument | None:
     parts: list[str] = []
     for label, value in (
         ("Title", row["title"]),
@@ -50,15 +49,15 @@ def _episode_summary_document(row: sqlite3.Row) -> SemanticDocument | None:
     if not parts:
         return None
     episode_id = str(row["id"])
-    return SemanticDocument(
+    return IndexDocument(
         "episode_summary", episode_id, episode_id, 0, "\n".join(parts)
     )
 
 
-def _episode_cue_documents(row) -> list[SemanticDocument]:
+def _episode_cue_documents(row) -> list[IndexDocument]:
     """One independently searchable vector per cue, owned by its Episode."""
     episode_id = str(row["id"])
-    return [SemanticDocument("episode_cue", episode_id, episode_id, index, text)
+    return [IndexDocument("episode_cue", episode_id, episode_id, index, text)
             for index, text in enumerate(stored_cue_texts(row["recall_cues_json"]))]
 
 def _message_parts(row: sqlite3.Row) -> list[str]:
@@ -81,7 +80,7 @@ def _message_parts(row: sqlite3.Row) -> list[str]:
 
 def _episode_turn_documents(
     episode_id: str, rows: list[sqlite3.Row]
-) -> list[SemanticDocument]:
+) -> list[IndexDocument]:
     by_turn: dict[str, list[sqlite3.Row]] = {}
     order: list[str] = []
     for row in rows:
@@ -90,7 +89,7 @@ def _episode_turn_documents(
             by_turn[turn_id] = []
             order.append(turn_id)
         by_turn[turn_id].append(row)
-    documents: list[SemanticDocument] = []
+    documents: list[IndexDocument] = []
     for turn_id in order:
         turn_rows = by_turn[turn_id]
         parts = [part for row in turn_rows for part in _message_parts(row)]
@@ -123,7 +122,7 @@ def _episode_turn_documents(
         ends_at = max(float(row["created_at"]) for row in turn_rows)
         for index, chunk in enumerate(chunks):
             documents.append(
-                SemanticDocument(
+                IndexDocument(
                     "episode_turn",
                     json.dumps([episode_id, turn_id], separators=(",", ":")),
                     episode_id,

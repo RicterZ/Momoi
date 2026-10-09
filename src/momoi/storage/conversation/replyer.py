@@ -2,7 +2,7 @@
 import json
 
 from ..core.integrity import decode_stored_json
-from ..core.transactions import transaction
+from ...memory.storage.transactions import transaction
 
 REPLYER_HISTORY_RETAIN = 12
 REPLYER_HISTORY_MAX = 48

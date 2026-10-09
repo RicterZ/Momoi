@@ -5,7 +5,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-from ..memory.memory_values import estimate_tokens
+from ...memory.text import estimate_tokens
 
 
 EMOTION_PREFIX = "emotion://"

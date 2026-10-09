@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from typing import Any
 
-from ....storage import MEMORY_ACTIVATIONS
+from ....memory.storage.records import MEMORY_ACTIVATIONS
 from .contracts import MAINTENANCE_ACTIONS
 
 

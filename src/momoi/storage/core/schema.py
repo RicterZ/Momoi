@@ -2,7 +2,7 @@
 from pathlib import Path
 import sqlite3
 from .migrations import apply_migrations, validate_schema_version
-from .transactions import transaction
+from ...memory.storage.transactions import transaction
 
 
 def execute_schema(database: sqlite3.Connection, script: str) -> None:

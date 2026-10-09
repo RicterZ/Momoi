@@ -7,7 +7,7 @@ from time import monotonic, time
 from uuid import uuid4
 
 from ..observability.context import current_log_context
-from ..storage import estimate_tokens
+from ..memory.text import estimate_tokens
 from ..storage.contracts import PromptFingerprint, RequestShape
 
 _active = ContextVar("llm_request_metric", default=None)

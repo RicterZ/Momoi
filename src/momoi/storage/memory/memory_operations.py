@@ -4,7 +4,7 @@ import json
 import time
 
 from ...models import IncomingMessage, TurnDraft
-from ...memory import MemoryPlan, PlanningContext
+from ...memory import MemoryPlan
 from ...memory.storage.transactions import transaction
 
 MEMORY_OPERATION_MAX_ATTEMPTS = 5
@@ -187,9 +187,7 @@ class MemoryOperationStore:
     def apply_memory_operation(
         self,
         batch: dict[str, object],
-        decisions: list[dict[str, object]],
-        snapshots: dict[int, dict[str, object]],
-        *, plan: MemoryPlan | None = None,
+        plan: MemoryPlan,
     ) -> None:
         now = time.time()
         with transaction(self._db):
@@ -198,20 +196,9 @@ class MemoryOperationStore:
             ).fetchone()
             if state is None or state["state"] != "running":
                 raise ValueError("memory_operation_not_running")
-            if plan is None:
-                # Temporary adapter for reviewed callers; runtime supplies its plan.
-                evidence = {event["event_id"]: event["text"] for event in batch["events"]}
-                for item in self.memory_maintenance_evidence_for_memories(list(snapshots)):
-                    evidence[item["event_id"]] = item["content"]
-                plan = self.memories.writing.review(
-                    PlanningContext(batch["operations"], evidence, snapshots, evidence_times={
-                        row["event_id"]: row["received_at"]
-                        for row in self.memory_operation_evidence_records(evidence)
-                    }), {"decisions": decisions},
-                )
             payload = plan.payload()
-            if (payload["requests"] != batch["operations"] or plan.decisions != decisions
-                    or plan.snapshots != snapshots):
+            decisions = plan.decisions
+            if payload["requests"] != batch["operations"]:
                 raise ValueError("memory_operation_plan_mismatch")
             # events are authenticated owner input, unlike channel_events or model text.
             for event_id, text in payload["evidence"].items():

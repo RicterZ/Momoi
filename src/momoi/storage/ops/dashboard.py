@@ -100,7 +100,7 @@ class DashboardStore:
     def list_memories(self, limit: int = 200) -> list[dict[str, object]]:
         if limit <= 0:
             return []
-        self.purge_expired_memories()
+        self.memories.repository.purge_expired()
         now = time.time()
         rows = self._db.execute(
             """SELECT id, kind, key, scope_key, content, activation, authority,
@@ -199,7 +199,7 @@ class DashboardStore:
             row = self._active_memory_row(memory_id)
             if row is None:
                 return False
-            self.memory.forget(
+            self.memories.repository.forget(
                 {**dict(row), "meta": {"scope": row["scope_key"]}},
                 {"event_id": "dashboard:forget", "quote": text}, now=now,
             )

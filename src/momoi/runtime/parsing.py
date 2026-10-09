@@ -11,7 +11,7 @@ from ..channel import (
 from ..storage.delivery.emotions import EMOTION_PREFIX
 from ..models import AgentReply
 from ..storage.delivery.reply_wait import REPLY_WAIT_MAX_MINUTES, REPLY_WAIT_MIN_MINUTES
-from ..storage import MEMORY_KINDS
+from ..memory.storage.records import MEMORY_KINDS
 
 
 def response_text(content: list[dict[str, Any]]) -> str:

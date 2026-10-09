@@ -23,7 +23,7 @@ def test_host_classifies_with_validated_catalog_and_preserves_batch_atomicity(st
     result = asyncio.run(store.memories.search('喝茶', filters={'tags_any': ['food_drink']}))
     assert len(result) == 1 and result[0]['meta'] == {'tags': ['food_drink'], 'scope': ''}
     schema = MEMORY_OPERATION_FINISH_SPEC['input_schema']['properties']['decisions']['items']['properties']['memory']
-    assert set(schema['properties']['meta']['properties']['tags']['items']['enum']) == set(store.memory.tags.tags)
+    assert set(schema['properties']['meta']['properties']['tags']['items']['enum']) == set(store.memories.repository.tags.tags)
 
 
 def test_host_rejects_invented_model_tag(store):
@@ -34,12 +34,12 @@ def test_host_rejects_invented_model_tag(store):
     command['memory']['meta'] = {'tags': ['invented']}
     with pytest.raises(ValueError, match='predefined'):
         apply(store, batch, [command])
-    assert store.memory.inventory() == []
+    assert store.memories.repository.inventory() == []
     assert store._db.execute("SELECT state FROM memory_operation_batches WHERE id='source'").fetchone()[0] == 'running'
 
 
 def test_tag_update_preserves_vector_and_does_not_dirty_index(store):
-    identifier = write(store.memory)
+    identifier = write(store.memories.repository)
     space = store.ensure_semantic_space(model='fake', dimensions=2, calibration_profile='test')
     with transaction(store._db):
         store._db.execute(
@@ -51,7 +51,7 @@ def test_tag_update_preserves_vector_and_does_not_dirty_index(store):
         store._db.execute('DELETE FROM semantic_dirty_sources')
     before = [tuple(row) for row in store._db.execute('SELECT * FROM semantic_documents')]
     original = store.memories.snapshots([identifier])[identifier]
-    store.memory.update_meta(original, {'tags': ['food_drink']})
+    store.memories.repository.update_meta(original, {'tags': ['food_drink']})
     assert store._db.execute('SELECT COUNT(*) FROM semantic_dirty_sources').fetchone()[0] == 0
     assert [tuple(row) for row in store._db.execute('SELECT * FROM semantic_documents')] == before
     assert store.memories.snapshots([identifier])[identifier]['updated_at'] >= original['updated_at']
@@ -61,9 +61,9 @@ def test_legacy_migration_rehearsal_is_read_only_and_reopen_keeps_evidence_and_v
     path = tmp_path / 'legacy.sqlite3'
     store = Store(path)
     try:
-        identifier = write(store.memory)
-        forgotten = write(store.memory, key='forgotten')
-        store.memory.forget(store.memories.snapshots([forgotten])[forgotten],
+        identifier = write(store.memories.repository)
+        forgotten = write(store.memories.repository, key='forgotten')
+        store.memories.repository.forget(store.memories.snapshots([forgotten])[forgotten],
                             {'event_id': 'forget', 'quote': 'forget'}, now=1)
         space = store.ensure_semantic_space(model='fake', dimensions=2, calibration_profile='test')
         with transaction(store._db):
@@ -87,7 +87,7 @@ def test_legacy_migration_rehearsal_is_read_only_and_reopen_keeps_evidence_and_v
     assert report['tables']['semantic_documents']['count'] == 1
     reopened = Store(path)
     try:
-        assert reopened.memory.active('preference', 'drink')['meta'] == {'tags': [], 'scope': ''}
+        assert reopened.memories.repository.active('preference', 'drink')['meta'] == {'tags': [], 'scope': ''}
         assert reopened.memories.snapshots([forgotten]) == {}
         assert asyncio.run(reopened.memories.search('无糖咖啡'))
         assert asyncio.run(reopened.memories.search('无糖咖啡', filters={'tags_any': ['food_drink']})) == []

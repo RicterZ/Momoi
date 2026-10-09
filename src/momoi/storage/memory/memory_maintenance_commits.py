@@ -16,7 +16,7 @@ class MemoryMaintenanceCommitStore:
         with transaction(self._db):
             if self.latest_owner_event_marker() != owner_marker:
                 raise ValueError("owner_evidence_changed")
-            current = self.memory.validate_snapshots(mutable_memories)
+            current = self.memories.repository.validate_snapshots(mutable_memories)
 
             created_ids = []
             for change in decision.get("changes", []):
@@ -49,7 +49,7 @@ class MemoryMaintenanceCommitStore:
                         source_event_id = str(row["source_event_id"])
                         evidence_quote = str(row["evidence_quote"])
                         updated_at = float(row["updated_at"])
-                    replacement_id = self.memory.replace(
+                    replacement_id = self.memories.repository.replace(
                         memory_id, str(change["content"]), activation, expires_at,
                         {"event_id": source_event_id, "quote": evidence_quote},
                         updated_at=updated_at,
@@ -76,7 +76,7 @@ class MemoryMaintenanceCommitStore:
                     ).fetchall()
                     if len(cited_events) != len(evidence_event_ids):
                         raise ValueError("invalid_memory_maintenance_evidence")
-                    replacement_id = self.memory.merge(
+                    replacement_id = self.memories.repository.merge(
                         survivor_id, source_ids, str(change["content"]),
                         activation, expires_at, cited_events,
                     )
@@ -93,7 +93,7 @@ class MemoryMaintenanceCommitStore:
                     ).fetchone()
                     if event is None or quote not in str(event["content"]):
                         raise ValueError("invalid_memory_maintenance_evidence")
-                    self.memory.forget(
+                    self.memories.repository.forget(
                         row, {"event_id": event_id, "quote": quote},
                         now=now, require_unique=True,
                     )

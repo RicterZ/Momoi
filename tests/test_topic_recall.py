@@ -5,9 +5,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-from momoi.storage import Store, encode_vector
+from momoi.storage import Store
+from momoi.memory.storage.vectors import encode_vector
 from momoi.storage.episode.episode_ranking import EpisodeRecallQuery
-from momoi.semantic.service import SemanticRecallService
+from momoi.runtime.retrieval.service import SemanticRecallService
 from momoi.integrations.models import EmbeddingConfig
 from tests.test_semantic import vector
 
@@ -85,10 +86,11 @@ class TopicRecallTest(unittest.TestCase):
 
     def test_reported_confidence_matches_hybrid_admission(self):
         from dataclasses import replace
-        from momoi.semantic.models import DenseRecallEvidence, DenseEpisodeHit
+        from momoi.runtime.retrieval.models import DenseRecallEvidence
+        from momoi.storage.episode.episode_ranking import DenseEpisodeHit
         from momoi.storage.episode.episode_ranking import rank_episode_matches
         from momoi.storage.episode.episode_search import EpisodeSearchField, EpisodeQueryService, StringEpisodeSearchBackend
-        from momoi.storage.core.search import StringSearchBackend
+        from momoi.memory.retrieval.sparse import StringSearchBackend
         from tests.test_episode_search import document
         docs=[replace(document('a'),fields=(EpisodeSearchField('narrative_summary','邮箱'),),messages=())]
         query=EpisodeRecallQuery('邮箱')
@@ -102,10 +104,11 @@ class TopicRecallTest(unittest.TestCase):
 
     def test_semantic_route_cannot_bypass_requested_confidence_floor(self):
         from dataclasses import replace
-        from momoi.semantic.models import DenseRecallEvidence, DenseEpisodeHit
+        from momoi.runtime.retrieval.models import DenseRecallEvidence
+        from momoi.storage.episode.episode_ranking import DenseEpisodeHit
         from momoi.storage.episode.episode_ranking import rank_episode_matches
         from momoi.storage.episode.episode_search import EpisodeQueryService, StringEpisodeSearchBackend
-        from momoi.storage.core.search import StringSearchBackend
+        from momoi.memory.retrieval.sparse import StringSearchBackend
         from tests.test_episode_search import document
         docs=[replace(document('a'),fields=(),messages=())]
         matcher=EpisodeQueryService(StringEpisodeSearchBackend(StringSearchBackend()))

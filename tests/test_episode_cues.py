@@ -5,7 +5,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from momoi.storage.core.search import StringSearchBackend
+from momoi.memory.retrieval.sparse import StringSearchBackend
 from momoi.storage import Store
 from momoi.storage.episode.episode_ranking import EpisodeRecallQuery, rank_episode_matches
 from momoi.storage.episode.episode_search import (

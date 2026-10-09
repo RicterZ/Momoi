@@ -1,6 +1,6 @@
 from collections.abc import Iterable, Mapping, Sequence
 
-from ....storage import estimate_tokens
+from ....memory.text import estimate_tokens
 from ....memory.storage.records import memory_scope
 from .selection import _key_family, _key_terms, _normalized_content
 

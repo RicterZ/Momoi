@@ -21,7 +21,9 @@ from momoi.models import (
 )
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent.harness import TurnHarness
-from momoi.runtime.workflows.memory_operation.parsing import parse_decisions
+from momoi.memory.writing.validation import parse_decisions
+from momoi.memory import PlanningContext
+from momoi.storage.memory.catalog import MOMOI_MEMORY_TAGS
 from momoi.storage import Store
 from momoi.storage.memory.memory_operations import MEMORY_OPERATION_MAX_ATTEMPTS
 from momoi.storage.core.migrations import MIGRATIONS
@@ -90,10 +92,13 @@ def apply(store, batch, decisions, snapshots=None):
     evidence = {item["event_id"]: item["text"] for item in batch["events"]}
     for item in store.memory_maintenance_evidence_for_memories(list(snapshots)):
         evidence[item["event_id"]] = item["content"]
-    decisions = parse_decisions(
-        {"decisions": decisions}, batch["operations"], snapshots, evidence
+    plan = store.memories.writing.review(
+        PlanningContext(batch["operations"], evidence, snapshots, evidence_times={
+            row["event_id"]: row["received_at"]
+            for row in store.memory_operation_evidence_records(evidence)
+        }), {"decisions": decisions},
     )
-    store.apply_memory_operation(batch, decisions, snapshots)
+    store.apply_memory_operation(batch, plan)
 
 
 def test_scoped_memory_write_requires_explicit_scope(store):
@@ -103,10 +108,10 @@ def test_scoped_memory_write_requires_explicit_scope(store):
     decision["memory"]["meta"] = {"tags": [], "scope": "goal:" + "a" * 32}
     decision["memory"]["activation"] = "scoped"
     arguments = {"decisions": [decision]}
-    assert parse_decisions(arguments, [operation], {}, {source.event_id: source.text})
+    assert parse_decisions(arguments, [operation], {}, {source.event_id: source.text}, tags=MOMOI_MEMORY_TAGS)
     decision["memory"]["meta"]["scope"] = ""
     with pytest.raises(ValueError, match="scoped memory requires"):
-        parse_decisions(arguments, [operation], {}, {source.event_id: source.text})
+        parse_decisions(arguments, [operation], {}, {source.event_id: source.text}, tags=MOMOI_MEMORY_TAGS)
 
 
 def test_frontend_queues_only_on_commit_and_deduplicates(store):
@@ -121,12 +126,12 @@ def test_frontend_queues_only_on_commit_and_deduplicates(store):
     assert tools.execute(call, [source], draft) == result
     assert len(draft.memory_operations) == 1
     assert store.pending_memory_operation() is None
-    assert not store.has_memory("preference", "drink")
+    assert not store.memories.repository.has("preference", "drink")
     changed = ToolCall("op", "memory_operation", {**call.arguments, "content": "喝水"})
     assert tools.execute(changed, [source], draft)["error"] == "tool_call_id_conflict"
     store.commit_turn([source], source.text, AgentReply([]), draft, turn_id="source")
     assert store.pending_memory_operation() == "source"
-    assert not store.maintenance_memory_inventory()
+    assert not store.memories.repository.inventory()
 
 
 def test_memory_operation_and_runtime_completion_share_outer_transaction(store):
@@ -136,13 +141,13 @@ def test_memory_operation_and_runtime_completion_share_outer_transaction(store):
     with pytest.raises(RuntimeError, match="abort after completion"):
         with store.transaction():
             apply(store, batch, [write(source)])
-            assert store.has_memory("preference", "drink")
+            assert store.memories.repository.has("preference", "drink")
             assert store._db.execute(
                 "SELECT state FROM memory_operation_batches WHERE id='source'"
             ).fetchone()[0] == "completed"
             assert store._db.in_transaction
             raise RuntimeError("abort after completion")
-    assert not store.has_memory("preference", "drink")
+    assert not store.memories.repository.has("preference", "drink")
     assert store._db.execute(
         "SELECT state FROM memory_operation_batches WHERE id='source'"
     ).fetchone()[0] == "running"
@@ -193,14 +198,14 @@ def test_add_replace_merge_and_forget_are_atomic(store):
     first = seed_memory(store, old, key="drink", content="咖啡")
     second = seed_memory(store, old, key="drink.duplicate", content="爱喝咖啡")
     source = event(store)
-    snapshots = store.memory_snapshots([first, second])
+    snapshots = store.memories.snapshots([first, second])
     submit(store, source, target=first, action="replace", context=snapshots)
     batch = store.claim_memory_operation("source")
     apply(store, batch, [write(source, targets=[first, second])], snapshots)
-    current = store.active_memory("preference", "drink")
+    current = store.memories.repository.active("preference", "drink")
     assert current["content"] == "主人喝茶"
-    assert not store.memory_snapshots([first, second])
-    assert len(store.maintenance_memory_inventory()) == 1
+    assert not store.memories.snapshots([first, second])
+    assert len(store.memories.repository.inventory()) == 1
     assert (
         len(
             store._db.execute(
@@ -210,7 +215,7 @@ def test_add_replace_merge_and_forget_are_atomic(store):
         == 2
     )
     forgotten = event(store, "forget", "忘记饮品偏好", time.time() + 1)
-    snapshots = store.memory_snapshots([current["id"]])
+    snapshots = store.memories.snapshots([current["id"]])
     submit(
         store,
         forgotten,
@@ -228,8 +233,8 @@ def test_add_replace_merge_and_forget_are_atomic(store):
         "evidence": [{"event_id": forgotten.event_id, "quote": forgotten.text}],
     }
     apply(store, batch, [decision], snapshots)
-    assert store.active_memory("preference", "drink") is None
-    assert not store.search_memories("喝茶", 10)
+    assert store.memories.repository.active("preference", "drink") is None
+    assert not store.memories.search_literal("喝茶", 10)
 
 
 @pytest.mark.parametrize("action", ["noop", "defer"])
@@ -247,7 +252,7 @@ def test_noop_defer_complete_without_writes(store, action):
         store._db.execute("SELECT state FROM memory_operation_batches").fetchone()[0]
         == "completed"
     )
-    assert not store.maintenance_memory_inventory()
+    assert not store.memories.repository.inventory()
 
 
 def test_grouped_requests_require_complete_coverage_and_evidence(store):
@@ -259,7 +264,7 @@ def test_grouped_requests_require_complete_coverage_and_evidence(store):
     ]
     decision = write(source, ids=["op", "second"])
     assert parse_decisions(
-        {"decisions": [decision]}, operations, {}, {source.event_id: source.text}
+        {"decisions": [decision]}, operations, {}, {source.event_id: source.text}, tags=MOMOI_MEMORY_TAGS
     )
     for invalid in (
         [write(source)],
@@ -271,7 +276,7 @@ def test_grouped_requests_require_complete_coverage_and_evidence(store):
                 {"decisions": invalid},
                 operations,
                 {},
-                {source.event_id: source.text}
+                {source.event_id: source.text}, tags=MOMOI_MEMORY_TAGS
             )
 
 
@@ -296,17 +301,17 @@ def test_failure_rolls_back_whole_batch_then_accepts_correction(store):
         apply(
             store, batch, [write(source), write(source, ids=["second"], key="conflict")]
         )
-    assert store.active_memory("preference", "drink") is None
-    assert store.memory_snapshots([existing])
+    assert store.memories.repository.active("preference", "drink") is None
+    assert store.memories.snapshots([existing])
     apply(store, batch, [write(source, ids=["op", "second"])])
-    assert store.active_memory("preference", "drink")
+    assert store.memories.repository.active("preference", "drink")
 
 
 def test_concurrent_memory_edit_prevents_commit(store):
     old = event(store, "old", "旧偏好", time.time() - 10)
     target = seed_memory(store, old, key="drink", content=old.text)
     source = event(store)
-    snapshots = store.memory_snapshots([target])
+    snapshots = store.memories.snapshots([target])
     submit(store, source, target=target, action="replace", context=snapshots)
     batch = store.claim_memory_operation("source")
     with store._db:
@@ -314,8 +319,8 @@ def test_concurrent_memory_edit_prevents_commit(store):
             "UPDATE memories SET content='后台更正' WHERE id=?", (target,)
         )
     with pytest.raises(ValueError, match="snapshot_changed"):
-        store.apply_memory_operation(
-            batch, [write(source, targets=[target])], snapshots
+        apply(
+            store, batch, [write(source, targets=[target])], snapshots
         )
     assert (
         store._db.execute("SELECT state FROM memory_operation_batches").fetchone()[0]
@@ -405,8 +410,8 @@ def test_readd_never_unhides_deleted_versions(store):
     submit(store, source)
     batch = store.claim_memory_operation("source")
     apply(store, batch, [write(source)])
-    assert not store.memory_snapshots([target])
-    assert len(store.maintenance_memory_inventory()) == 1
+    assert not store.memories.snapshots([target])
+    assert len(store.memories.repository.inventory()) == 1
 
 
 def test_search_captures_authoritative_targets(store):
@@ -498,7 +503,7 @@ def test_real_workflow_prompt_tool_correction_commit_and_usage(daemon):
     memory_id = seed_memory(
         daemon.store, source, key="other", content="上文事实", activation="always"
     )
-    submit(daemon.store, source, context=daemon.store.memory_snapshots([memory_id]))
+    submit(daemon.store, source, context=daemon.store.memories.snapshots([memory_id]))
     calls = []
 
     async def complete(system, messages, tools=None, **kwargs):
@@ -529,7 +534,7 @@ def test_real_workflow_prompt_tool_correction_commit_and_usage(daemon):
     asyncio.run(daemon._complete_memory_operation_turn("source", asyncio.Event()))
     assert len(calls) == 2
     assert "invalid_tool_arguments" in json.dumps(calls[1])
-    assert daemon.store.active_memory("preference", "drink")
+    assert daemon.store.memories.repository.active("preference", "drink")
     row = daemon.store._db.execute(
         "SELECT * FROM turns WHERE workflow_kind='memory_operation'"
     ).fetchone()
@@ -567,7 +572,7 @@ def test_optional_private_search_can_resolve_missing_target(daemon):
     asyncio.run(daemon._complete_memory_operation_turn("source", asyncio.Event()))
     assert count == 2
     daemon.semantic_recall.prepare.assert_not_awaited()
-    assert not daemon.store.memory_snapshots([target])
+    assert not daemon.store.memories.snapshots([target])
 
 
 @pytest.mark.parametrize("rejected_rounds", [1, 3])
@@ -581,7 +586,7 @@ def test_forbidden_tool_rejection_is_logged_before_retry_or_abort(
     async def complete(*args, **kwargs):
         nonlocal count
         count += 1
-        assert not daemon.store.active_memory("preference", "drink")
+        assert not daemon.store.memories.repository.active("preference", "drink")
         result = response(
             ToolCall(
                 f"finish-{count}",
@@ -614,12 +619,12 @@ def test_forbidden_tool_rejection_is_logged_before_retry_or_abort(
     if rejected_rounds == 1:
         assert count == 2
         assert batch["state"] == "completed"
-        assert daemon.store.active_memory("preference", "drink")
+        assert daemon.store.memories.repository.active("preference", "drink")
     else:
         assert count == 3
         assert batch["state"] == "pending"
         assert batch["error"] == "tool_not_allowed"
-        assert not daemon.store.active_memory("preference", "drink")
+        assert not daemon.store.memories.repository.active("preference", "drink")
 
 
 def test_new_owner_input_waits_for_running_review(daemon):
@@ -652,7 +657,7 @@ def test_new_owner_input_waits_for_running_review(daemon):
         await asyncio.wait_for(task, 2)
 
     asyncio.run(run())
-    assert daemon.store.active_memory("preference", "drink")
+    assert daemon.store.memories.repository.active("preference", "drink")
     assert daemon.store.pending_events()[0].event_id == "new"
 
 
@@ -678,7 +683,7 @@ def test_explicit_cancellation_requeues_review(daemon):
 
     asyncio.run(run())
     assert daemon.store.pending_memory_operation() == "source"
-    assert not daemon.store.maintenance_memory_inventory()
+    assert not daemon.store.memories.repository.inventory()
 
 
 def test_private_harness_rejects_messaging_and_combined_finish():
@@ -760,7 +765,7 @@ def test_scoped_migration_preserves_memory_and_cross_table_triggers(tmp_path):
     db.close()
     store = Store(path)
     try:
-        assert store.active_memory("preference", "old.key")["content"] == "旧记忆"
+        assert store.memories.repository.active("preference", "old.key")["content"] == "旧记忆"
         assert "'scoped'" in store._db.execute(
             "SELECT sql FROM sqlite_master WHERE name='memories'"
         ).fetchone()[0]
@@ -784,7 +789,7 @@ def test_forget_only_request_cannot_create_memory(store):
             {"decisions": [write(source)]},
             draft.memory_operations,
             {},
-            {source.event_id: source.text}
+            {source.event_id: source.text}, tags=MOMOI_MEMORY_TAGS
         )
 
 
@@ -810,7 +815,7 @@ def test_agent_worker_dispatches_memory_operation_without_extra_steps(daemon):
         await asyncio.wait_for(daemon._agent_worker(stop), 2)
 
     asyncio.run(run())
-    assert daemon.store.active_memory("preference", "drink")
+    assert daemon.store.memories.repository.active("preference", "drink")
     assert not daemon._queued_memory_operations
 
 
@@ -892,7 +897,7 @@ def test_assistant_text_can_accompany_private_finish(daemon, caplog, commentary)
     with caplog.at_level('DEBUG', logger='momoi.runtime.turns'):
         asyncio.run(daemon._complete_memory_operation_turn('source', asyncio.Event()))
     assert calls == 1
-    assert daemon.store.active_memory('preference', 'drink')
+    assert daemon.store.memories.repository.active('preference', 'drink')
     assert not daemon.store.due_outbox()
 
 

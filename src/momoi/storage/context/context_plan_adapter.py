@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 
-from ..core.search import search_alternatives
+from ...memory.retrieval.sparse import search_alternatives
 
 
 CURRENT_RETRIEVAL_VERSION = 6

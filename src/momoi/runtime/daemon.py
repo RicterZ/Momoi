@@ -18,7 +18,7 @@ from ..tools.memory import MemoryTools
 from ..tools.thinking import ThinkingTools
 from ..mcp.manager import MCPManager
 from ..models import AgentReply, IncomingMessage
-from ..semantic.service import SemanticRecallService
+from .retrieval.service import SemanticRecallService
 from ..storage import Store
 from ..webhooks.service import WebhookService
 from .jobs import AutonomousJob

@@ -1,14 +1,9 @@
 """Compatibility entry points; implementations live in composed repositories."""
 from __future__ import annotations
 from typing import Any
-from .memory.memory_values import format_memory
-from .contracts import ActiveMemory, InventoryMemory, PlanCreateInput, PlanRecord, PlanStepInput, RequestMetricRecord, MetricsPage
+from .contracts import PlanCreateInput, PlanRecord, PlanStepInput, RequestMetricRecord, MetricsPage
 
 class RepositoryFacade:
-    def _memory_context(self, rows):
-        return "\n\n".join(format_memory(dict(row)) for row in rows)
-
-
     def task_plan(self, plan_id: str) -> PlanRecord | None:
         return self.plans.task_plan(plan_id)
 
@@ -56,30 +51,6 @@ class RepositoryFacade:
 
     def finish_task_plan_step(self, plan_id: str, turn_id: str, outcome: str, summary: str, output_refs: list[str], abort: bool=False) -> dict[str, Any]:
         return self.plans.finish_task_plan_step(plan_id, turn_id, outcome, summary, output_refs, abort)
-
-    def maintenance_memory_inventory(self) -> list[InventoryMemory]:
-        return self.memory.inventory()
-
-    def purge_expired_memories(self, *, now: float | None=None) -> int:
-        return self.memory.purge_expired(now=now)
-
-    def always_memory_context(self) -> str:
-        return self._memory_context(self.memory.rows("always"))
-
-    def scoped_memory_context(self, scope: str) -> str:
-        return self._memory_context(self.memory.rows("scoped", scope=scope))
-
-    def has_memory(self, kind: str, key: str, *, scope: str = "") -> bool:
-        return self.memory.has(kind, key, scope=scope)
-
-    def active_memory(self, kind: str, key: str, *, scope: str = "") -> ActiveMemory | None:
-        return self.memory.active(kind, key, scope=scope)
-
-    def memory_snapshots(self, ids: list[int]) -> dict[int, dict[str, object]]:
-        return self.memory.snapshots(ids)
-
-    def _add_memory_evidence(self, memory_id, source_event_id, quote, now):
-        self.memory.add_evidence(memory_id, source_event_id, quote, now)
 
     def record_first_tool(self, turn_id: str, call_id: str, name: str) -> None:
         return self.request_metrics.record_first_tool(turn_id, call_id, name)

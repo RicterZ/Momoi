@@ -5,8 +5,9 @@ from typing import Any
 
 from ....observability.events import log_event
 from ....models import ToolCall
-from ....semantic.episode_cue_verifier import verify_episode_cues
-from ....storage import EPISODE_CONSOLIDATION_BATCH_SIZE, estimate_tokens
+from .cue_verifier import verify_episode_cues
+from ....storage import EPISODE_CONSOLIDATION_BATCH_SIZE
+from ....memory.text import estimate_tokens
 from ...agent import AgentWorkflow
 from ...turn_support import EPISODE_SUMMARY_SYSTEM_PROMPT
 from .contracts import EPISODE_SUMMARY_FINISH_SPEC

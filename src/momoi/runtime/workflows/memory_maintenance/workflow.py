@@ -131,7 +131,7 @@ class MemoryMaintenanceWorkflow:
             )
             journal = self.store.memory_maintenance_journal(turn_id)
 
-        inventory = self.store.maintenance_memory_inventory()
+        inventory = self.store.memories.repository.inventory()
         by_id = {int(item["id"]): item for item in inventory}
         evidence_through = (
             float(plan.get("evidence_through_at") or 0),

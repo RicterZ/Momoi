@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from momoi.storage.core.search import StringSearchBackend
+from momoi.memory.retrieval.sparse import StringSearchBackend
 from momoi.storage.episode.episode_ranking import (
     EpisodeRecallQuery,
     _saturate_sparse_score,

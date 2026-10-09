@@ -1,12 +1,6 @@
 import unittest
 
-from momoi.storage.core.search import (
-    StringSearchBackend,
-    alternative_weights,
-    document_frequency,
-    search_alternatives,
-    search_expression,
-)
+from momoi.memory.retrieval.sparse import StringSearchBackend, alternative_weights, document_frequency, search_alternatives, search_expression
 
 
 class ScoredBackend:

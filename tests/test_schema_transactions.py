@@ -2,7 +2,7 @@ import sqlite3
 import pytest
 from momoi.storage.core import migrations
 from momoi.storage.core.schema import initialize_schema, execute_schema
-from momoi.storage.core.transactions import transaction
+from momoi.memory.storage.transactions import transaction
 
 
 def test_future_schema_is_rejected_before_creating_tables():

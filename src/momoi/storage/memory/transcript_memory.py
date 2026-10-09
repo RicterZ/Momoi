@@ -4,8 +4,8 @@ import time
 from xml.etree import ElementTree
 from xml.sax.saxutils import quoteattr
 
-from ..core.transactions import transaction
-from .memory_values import format_memory
+from ...memory.storage.transactions import transaction
+from .presentation import format_memory
 
 
 class TranscriptMemoryStore:
@@ -116,7 +116,7 @@ class TranscriptMemoryStore:
         with transaction(self._db):
             current = {
                 str(row["id"]): dict(row)
-                for row in self.maintenance_memory_inventory()
+                for row in self.memories.repository.inventory()
                 if row["activation"] == "always"
             }
             raw = self._db.execute(

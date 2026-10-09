@@ -16,10 +16,10 @@ from .episode_search import (
     EpisodeSearchField,
     EpisodeSearchMessage,
 )
-from ..memory.memory_values import estimate_tokens, token_chunk, truncate_tokens
+from ...memory.text import estimate_tokens, token_chunk, truncate_tokens
 
 if TYPE_CHECKING:
-    from ...semantic.models import DenseRecallEvidence
+    from ...runtime.retrieval.models import DenseRecallEvidence
 
 
 def keyword_sentence_excerpt(content: str, keyword: str, max_chars: int = 100):

@@ -66,7 +66,7 @@ class LifecycleStore:
                  )""",
             (EPISODE_MAINTENANCE_RESTART_REASON, now),
         )
-        self.recover_semantic_encoding()
+        self.memory_index_queue.recover_encoding()
         self._db.commit()
     
     def _recover_outbox(self) -> None:

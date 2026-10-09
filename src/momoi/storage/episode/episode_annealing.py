@@ -7,7 +7,7 @@ import time
 from ...observability.events import log_event
 from .episode_cues import normalize_cues
 from .episode_claims import render_verified_claims
-from ..memory.memory_values import estimate_tokens
+from ...memory.text import estimate_tokens
 from .episode_sql import runtime_archive_kind_sql
 
 EPISODE_ANNEAL_MAX_FAILURES = 3

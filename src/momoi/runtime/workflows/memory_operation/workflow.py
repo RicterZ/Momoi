@@ -53,7 +53,7 @@ class MemoryOperationWorkflow:
         visible = {int(row["id"]): row for row in batch["context"]}
         current_ids = set(visible)
         for row in visible.values():
-            current = self.store.active_memory(row["kind"], row["key"], scope=row.get("meta", {}).get("scope", ""))
+            current = self.store.memories.repository.active(row["kind"], row["key"], scope=row.get("meta", {}).get("scope", ""))
             if current is not None:
                 current_ids.add(int(current["id"]))
         snapshots = self.memory.snapshots(sorted(current_ids))
@@ -167,7 +167,7 @@ class MemoryOperationWorkflow:
             evidence_times={row["event_id"]: row["received_at"]
                             for row in self.store.memory_operation_evidence_records(evidence)},
         )
-        self.store.apply_memory_operation(batch, plan.decisions, plan.snapshots, plan=plan)
+        self.store.apply_memory_operation(batch, plan)
         log_event(
             logger,
             logging.INFO,

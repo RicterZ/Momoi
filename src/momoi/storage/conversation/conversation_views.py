@@ -3,7 +3,7 @@ import re
 
 from ..episode.episode_sql import runtime_archive_kind_sql
 from ..core.integrity import decode_stored_json
-from ..memory.memory_values import estimate_tokens, token_chunk
+from ...memory.text import estimate_tokens, token_chunk
 
 
 class ConversationViewStore:

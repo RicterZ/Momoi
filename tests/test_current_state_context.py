@@ -12,7 +12,7 @@ from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context.current_state import pack_current_turn_context
-from momoi.semantic.episode_cue_verifier import verify_episode_cues
+from momoi.runtime.workflows.episode.cue_verifier import verify_episode_cues
 from momoi.storage.memory.current_state import CurrentStateManager, SlotInput
 from tests.support import provider_catalog
 

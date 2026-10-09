@@ -904,8 +904,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             "SELECT 1 FROM semantic_dirty_sources WHERE source_type='reflection_memory' AND source_id=?",
             (str(memory_id),),
         ).fetchone())
-        from momoi.storage.memory.memory_values import MemoryRecallQuery
-        recalled = self.store.rank_recalled_memories(
+        from momoi.memory.retrieval.models import MemoryRecallQuery
+        recalled = self.store.memories.rank(
             [MemoryRecallQuery("复盘日记", ("复盘日记",))], 6
         )
         self.assertEqual(recalled, [])
@@ -916,7 +916,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         response = await self.client.get("/api/reflection-memories", headers=auth)
         self.assertEqual((await response.json())["items"], [])
-        self.assertEqual(self.store.rank_recalled_memories(
+        self.assertEqual(self.store.memories.rank(
             [MemoryRecallQuery("复盘日记", ("复盘日记",))], 6
         ), [])
         self.assertIsNotNone(self.store._db.execute(

@@ -4,7 +4,7 @@ from xml.etree.ElementTree import fromstring
 from momoi.runtime.workflows.memory_operation.rendering import render_memory_operation_request
 from momoi.runtime.workflows.memory_maintenance.rendering import render_memory_maintenance_request
 from momoi.runtime.workflows.memory_rendering import memory_record
-from momoi.semantic.episode_cue_verifier import render_cue_review
+from momoi.runtime.workflows.episode.cue_verifier import render_cue_review
 
 
 def test_cue_xml_keeps_uncited_corrections_identity_and_multiple_quotes():

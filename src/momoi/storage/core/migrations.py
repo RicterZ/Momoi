@@ -6,7 +6,7 @@ import json
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
-from .transactions import transaction
+from ...memory.storage.transactions import transaction
 from .memory_scope_migration import add_memory_scope
 
 from ..episode.episode_claims import render_verified_claims

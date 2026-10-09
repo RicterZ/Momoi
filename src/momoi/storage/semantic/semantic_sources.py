@@ -3,12 +3,8 @@ import time
 
 from ...memory.storage.transactions import transaction
 
-from .semantic_documents import (
-    SemanticDocument,
-    _episode_summary_document,
-    _episode_turn_documents,
-    _episode_cue_documents,
-)
+from ...memory.storage.index_records import IndexDocument
+from .semantic_documents import _episode_summary_document, _episode_turn_documents, _episode_cue_documents
 
 
 class SemanticSourceStore:
@@ -184,12 +180,10 @@ class SemanticSourceStore:
                 queued += 1
         return queued
 
-    def claim_semantic_sources(self, limit: int = 16):
-        return self.memory_index_queue.claim_sources(limit)
 
     def _source_documents(
         self, source_type: str, source_id: str
-    ) -> tuple[list[SemanticDocument], bool]:
+    ) -> tuple[list[IndexDocument], bool]:
         if source_type == "confirmed_memory":
             documents = self.memories.index_source.documents(source_id)
             return documents, bool(documents)
@@ -207,7 +201,7 @@ class SemanticSourceStore:
             if row is None:
                 return [], False
             return [
-                SemanticDocument(
+                IndexDocument(
                     source_type,
                     source_id,
                     "",
@@ -253,6 +247,3 @@ class SemanticSourceStore:
                 include_children=source_type == "episode",
                 keep_removed=source_type == "episode" and exists,
             )
-
-    def fail_semantic_source(self, claim: dict[str, object], error: Exception) -> None:
-        self.memory_index_queue.fail_source(claim, error)

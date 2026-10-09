@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..core.search import SearchBackend, search_alternatives
+from ...memory.retrieval.sparse import SearchBackend, search_alternatives
 
 
 @dataclass(frozen=True)

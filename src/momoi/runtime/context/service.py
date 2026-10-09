@@ -2,9 +2,9 @@ import copy
 
 from ...models import IncomingMessage
 from ...memory import Memory, MemoryRecallQuery
-from ...storage import MEMORY_KINDS
+from ...memory.storage.records import MEMORY_KINDS
 from ...storage.episode.episode_ranking import EpisodeRecallQuery
-from ...semantic.topic_selector import RecallSelection, TOPIC_CANDIDATE_LIMIT, select_topics
+from .selection import RecallSelection, TOPIC_CANDIDATE_LIMIT, select_topics
 from ..agent.context_window import context_compaction_tokens
 from ..turn_support import context_data_message
 from .presentation import recent_episode_lines, recall_context_lines

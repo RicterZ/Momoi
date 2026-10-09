@@ -1,11 +1,11 @@
 """Momoi source ownership, index activation policy, and indexing observability."""
 import logging
 
-from ..memory.retrieval.dense import DenseQueryService
-from ..memory.retrieval.snapshot import SegmentedVectorSnapshot
-from ..observability.events import log_event
-from ..storage import Store
-from ..storage.semantic.semantic_documents import semantic_source_key
+from ...memory.retrieval.dense import DenseQueryService
+from ...memory.retrieval.snapshot import SegmentedVectorSnapshot
+from ...observability.events import log_event
+from ...storage import Store
+from ...storage.semantic.semantic_documents import semantic_source_key
 
 logger = logging.getLogger(__name__)
 

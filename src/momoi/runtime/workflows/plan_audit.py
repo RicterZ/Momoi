@@ -1,7 +1,7 @@
 """Independent plan-direction audit; no persona or conversation system prompt."""
 import asyncio
 import json
-from ...storage import estimate_tokens
+from ...memory.text import estimate_tokens
 
 from ...observability.context import log_context, new_trace_id
 from ...integrations.request_context import model_request

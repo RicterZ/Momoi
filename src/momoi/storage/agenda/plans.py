@@ -1,7 +1,7 @@
 """Finite, immediate plans, independent of scheduled goals."""
 import json
 import time
-from ..core.transactions import transaction
+from ...memory.storage.transactions import transaction
 import uuid
 from typing import Any, cast
 

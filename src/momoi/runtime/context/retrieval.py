@@ -14,7 +14,7 @@ from ...storage.context.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
 from ...storage.episode.episode_ranking import EpisodeRecallQuery, rank_recall_items
 
 if TYPE_CHECKING:
-    from ...semantic.models import DenseRecallEvidence
+    from ..retrieval.models import DenseRecallEvidence
 
 
 logger = logging.getLogger(__name__)
@@ -242,7 +242,7 @@ def build_plan_retrieval(
                     for unit_id in unit_ids
                 ):
                     continue
-                current = store.active_memory(str(item["kind"]), str(item["key"]))
+                current = store.memories.repository.active(str(item["kind"]), str(item["key"]))
                 if current is not None:
                     inherited_memories.append({
                         **{key: current[key] for key in ("id", "kind", "key", "content")},

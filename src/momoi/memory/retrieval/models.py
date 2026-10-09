@@ -53,19 +53,3 @@ class MemoryDenseRecall(Protocol):
         self, queries: list[MemoryRecallQuery], limit: int, *,
         eligible_ids: Mapping[str, frozenset[str]] | None = None,
     ) -> MemoryDenseEvidence: ...
-
-
-@dataclass(frozen=True)
-class DenseEpisodeHit:
-    episode_id: str
-    summary_cosine: float | None = None
-    turn_cosine: float | None = None
-    cue_cosine: float | None = None
-
-    @property
-    def cosine(self) -> float:
-        return max(
-            value
-            for value in (self.summary_cosine, self.turn_cosine, self.cue_cosine)
-            if value is not None
-        )

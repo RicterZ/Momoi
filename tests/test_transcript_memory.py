@@ -36,8 +36,8 @@ def test_scoped_memory_only_appears_in_matching_workflow(store):
     assert "心跳" in store.scoped_memory_context("heartbeat")
     assert "webhook" in store.scoped_memory_context("webhook")
     assert not store.always_memory_context()
-    assert not store.search_memories("喝水|心跳|webhook", 10)
-    assert store.search_memories("喝水", 10, include_scoped=True)
+    assert not store.memories.search_literal("喝水|心跳|webhook", 10)
+    assert store.memories.search_literal("喝水", 10, include_scoped=True)
     state = store.transcript_memory_context(["turn"])
     assert not state["observed"]
 
@@ -50,12 +50,12 @@ def test_dashboard_replace_delete_and_restart_preserve_snapshot(store):
     assert changed["snapshot"] == first["snapshot"]
     assert 'replace' in changed["events"][0]["content"]
     assert "新偏好" in changed["events"][0]["content"]
-    assert store.active_memory("preference", "test")["content"] == "新偏好"
+    assert store.memories.repository.active("preference", "test")["content"] == "新偏好"
     store.forget_memory_by_id(identifier, "撤销")
     deleted = store.transcript_memory_context(["a", "b"])
     assert deleted["snapshot"] == first["snapshot"]
     assert '<delete' in deleted["events"][1]["content"]
-    assert store.active_memory("preference", "test") is None
+    assert store.memories.repository.active("preference", "test") is None
     # Read durable state through another connection, as after a restart.
     other = Store(store._db.execute("PRAGMA database_list").fetchone()[2])
     assert other.transcript_memory_context(["a", "b"]) == deleted
@@ -88,7 +88,7 @@ def test_only_always_memory_changes_enter_transcript(store):
 def test_old_recall_deltas_are_removed_from_replay_and_overrides(store):
     identifier = add(store, "旧召回", activation="recall", key="old.recall")
     stale = store.transcript_memory_context(["a"])
-    stale["snapshot"][str(identifier)] = dict(store.maintenance_memory_inventory()[0])
+    stale["snapshot"][str(identifier)] = dict(store.memories.repository.inventory()[0])
     stale["observed"][str(identifier)] = stale["snapshot"][str(identifier)]
     stale["snapshot_overrides"][str(identifier)] = f'<delete id="{identifier}">旧召回</delete>'
     stale["overrides"][str(identifier)] = stale["snapshot_overrides"][str(identifier)]

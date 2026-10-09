@@ -35,7 +35,7 @@ from momoi.models import (
 from momoi.llm.errors import (
     ProviderError,
 )
-from momoi.storage import estimate_tokens
+from momoi.memory.text import estimate_tokens
 from tests.support import (
     recall_response,
     with_owner_recall,

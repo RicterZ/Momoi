@@ -389,7 +389,7 @@ class MemoryMaintenanceStorageTest(unittest.TestCase):
             store.claim_memory_maintenance_turn(turn_id)
             snapshots = {
                 int(item["id"]): item
-                for item in store.maintenance_memory_inventory()
+                for item in store.memories.repository.inventory()
             }
             decision = {
                 "reviewed_ids": [],
@@ -415,7 +415,7 @@ class MemoryMaintenanceStorageTest(unittest.TestCase):
                 snapshots,
                 owner_marker=store.latest_owner_event_marker(),
             )
-            merged_id = store.active_memory("preference", "home.light")["id"]
+            merged_id = store.memories.repository.active("preference", "home.light")["id"]
             self.assertNotIn(merged_id, [first_id, second_id])
             self.assertFalse(store.memories.snapshots([first_id, second_id]))
             self.assertEqual(
@@ -460,7 +460,7 @@ class MemoryMaintenanceStorageTest(unittest.TestCase):
             turn_id = "maintenance-stale"
             store.queue_memory_maintenance_turn(turn_id, "manual:test")
             store.claim_memory_maintenance_turn(turn_id)
-            snapshot = store.maintenance_memory_inventory()[0]
+            snapshot = store.memories.repository.inventory()[0]
             store._db.execute(
                 "UPDATE memories SET content='主人偶尔吃辣。' WHERE id=?",
                 (memory_id,),

@@ -83,7 +83,7 @@ def test_dashboard_forget_and_index_invalidation_are_scope_specific(tmp_path):
         with store.transaction():
             store._db.execute('DELETE FROM semantic_dirty_sources')
         assert store.forget_memory_by_id(second, 'forget heartbeat only')
-        assert store.active_memory('preference', 'drink')['id'] == first
+        assert store.memories.repository.active('preference', 'drink')['id'] == first
         assert {row['id'] for row in store.list_memories()} == {first}
         assert [row[0] for row in store._db.execute('SELECT source_id FROM semantic_dirty_sources')] == [str(second)]
         with store.transaction():
@@ -105,14 +105,14 @@ def test_host_rejects_invented_scope_but_accepts_existing_goal(tmp_path):
         ctx = PlanningContext(batch['operations'], {source.event_id: source.text}, {})
         plan = store.memories.writing.review(ctx, {'decisions': [decision]})
         with pytest.raises(ValueError, match='supplied Momoi workflow'):
-            store.apply_memory_operation(batch, plan.decisions, plan.snapshots, plan=plan)
-        assert store.memory.inventory() == []
+            store.apply_memory_operation(batch, plan)
+        assert store.memories.repository.inventory() == []
         with store.transaction():
             store._db.execute('''INSERT INTO goals(id,title,success_criteria,source_event_id,status,plan_json,created_at,updated_at)
                 VALUES (?,'coffee','coffee',?,'active','[]',1,1)''', ('a' * 32, source.event_id))
-        store.apply_memory_operation(batch, plan.decisions, plan.snapshots, plan=plan)
-        assert store.memory.inventory()[0]['meta']['scope'] == 'goal:' + 'a' * 32
-        assert store.memory.inventory()[0]['key'] == 'drink'
+        store.apply_memory_operation(batch, plan)
+        assert store.memories.repository.inventory()[0]['meta']['scope'] == 'goal:' + 'a' * 32
+        assert store.memories.repository.inventory()[0]['key'] == 'drink'
         store.validate_memory_scopes([], [{**decision, 'memory': {**decision['memory'], 'meta': {'scope': 'heartbeat'}}}])
     finally:
         store.close()
@@ -161,7 +161,7 @@ def test_scope_migration_rehearsal_preserves_ids_evidence_history_and_source(leg
     store = Store(path)
     try:
         assert set(store.memories.snapshots(identifiers)) == {identifiers[0], identifiers[2]}
-        assert store.memory.snapshots([identifiers[2]])[identifiers[2]]['meta'] == {'scope': 'goal:' + 'a' * 32, 'tags': ['food_drink']}
+        assert store.memories.repository.snapshots([identifiers[2]])[identifiers[2]]['meta'] == {'scope': 'goal:' + 'a' * 32, 'tags': ['food_drink']}
     finally:
         store.close()
 

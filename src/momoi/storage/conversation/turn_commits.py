@@ -5,7 +5,7 @@ import time
 import uuid
 
 from ...models import AgentReply, IncomingMessage, TurnDraft
-from ..core.transactions import transaction
+from ...memory.storage.transactions import transaction
 from ..core.scheduling import next_schedule_at
 
 

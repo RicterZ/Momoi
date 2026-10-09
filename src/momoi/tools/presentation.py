@@ -213,7 +213,7 @@ def project_tool_result(result, name):
         from .episode_timeline import project_episode
         result = project_episode(result)
     if name == 'thinking_read' and isinstance(result.get('calls'), list):
-        from ..storage import truncate_tokens
+        from ..memory.text import truncate_tokens
         fields = {'turn_id', 'call_id', 'created_at', 'stage', 'round', 'tools', 'reasoning_chars', 'reasoning'}
         calls = []
         omitted = set(result.get('omitted_fields', []))

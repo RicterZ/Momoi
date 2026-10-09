@@ -351,7 +351,7 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
                             ]
                         },
                     )
-                    with self.assertNoLogs("momoi.semantic.service", level="WARNING"):
+                    with self.assertNoLogs("momoi.runtime.retrieval.service", level="WARNING"):
                         result = await recall_owner_context(
                             call,
                             current_events=[event],

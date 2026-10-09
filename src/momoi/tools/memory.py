@@ -11,14 +11,12 @@ from ..models import (
     TurnDraft,
     speaker_label,
 )
-from ..storage.core.search import SearchBackend, search_expression
-from ..storage import (
-    Store,
-    truncate_tokens,
-)
+from ..memory.retrieval.sparse import SearchBackend, search_expression
+from ..storage import Store
+from ..memory.text import truncate_tokens
 from ..storage.episode.episode_ranking import EpisodeRecallQuery
-from ..semantic.models import DenseRecallEvidence
-from ..semantic.service import SemanticRecallService
+from ..runtime.retrieval.models import DenseRecallEvidence
+from ..runtime.retrieval.service import SemanticRecallService
 from ..memory import Memory
 from .contracts.memory import MEMORY_TOOL_SPECS
 from .validation import validate_tool_arguments

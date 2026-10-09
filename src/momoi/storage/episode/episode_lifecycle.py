@@ -4,7 +4,7 @@ import logging
 import uuid
 
 from ...observability.events import log_event
-from ..memory.memory_values import estimate_tokens
+from ...memory.text import estimate_tokens
 
 logger = logging.getLogger(__name__)
 

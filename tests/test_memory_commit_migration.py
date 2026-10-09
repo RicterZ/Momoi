@@ -13,8 +13,8 @@ def test_commit_migration_preserves_tagged_records_and_backup_recovery(tmp_path)
     path = tmp_path / 'legacy.sqlite3'
     store = Store(path)
     try:
-        identifier = write(store.memory)
-        store.memory.update_meta(store.memories.snapshots([identifier])[identifier], {'tags': ['food_drink']})
+        identifier = write(store.memories.repository)
+        store.memories.repository.update_meta(store.memories.snapshots([identifier])[identifier], {'tags': ['food_drink']})
         with transaction(store._db):
             store._db.execute('DROP TABLE memory_commits')
             store._db.execute(f'PRAGMA user_version={migrations.MIGRATIONS.index(migrations._add_memory_commits)}')

@@ -7,7 +7,7 @@ from typing import Any
 from ...observability.context import log_context, new_trace_id
 from ...models import ProviderResponse
 from ...integrations.request_context import model_request
-from ...storage import estimate_tokens
+from ...memory.text import estimate_tokens
 from .context_window import ContextWindow
 from .protocol import owner_request_messages
 

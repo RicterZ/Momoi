@@ -36,6 +36,12 @@ class RejectApplicationImports:
 sys.meta_path.insert(0, RejectApplicationImports())
 spec.loader.exec_module(module)
 
+# Import every library module to catch hidden host dependencies in optional paths.
+import importlib
+import pkgutil
+for item in pkgutil.walk_packages(module.__path__, module.__name__ + "."):
+    importlib.import_module(item.name)
+
 from standalone_memory import Memory, MemoryPlan, PlanningContext
 
 from standalone_memory.retrieval.models import MemoryRecallQuery, DenseThresholds

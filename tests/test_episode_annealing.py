@@ -24,12 +24,8 @@ from momoi.runtime.workflows.episode import (
     EPISODE_CONSOLIDATION_FINISH_SPEC,
     EPISODE_SUMMARY_FINISH_SPEC,
 )
-from momoi.storage import (
-    EPISODE_CONSOLIDATION_BATCH_SIZE,
-    EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
-    EPISODE_CONSOLIDATION_PARTIAL_IDLE_SECONDS,
-    estimate_tokens,
-)
+from momoi.storage import EPISODE_CONSOLIDATION_BATCH_SIZE, EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS, EPISODE_CONSOLIDATION_PARTIAL_IDLE_SECONDS
+from momoi.memory.text import estimate_tokens
 
 
 def prompt_section(prompt: str, name: str) -> str:

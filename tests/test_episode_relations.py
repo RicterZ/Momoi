@@ -9,7 +9,7 @@ import pytest
 from momoi.config.models import AppConfig
 from momoi.runtime.context.service import ContextService
 from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC
-from momoi.semantic.topic_selector import RecallSelection
+from momoi.runtime.context.selection import RecallSelection
 from momoi.storage import Store
 from momoi.models import ToolCall
 from momoi.runtime.workflows.episode.relations import EpisodeRelationWorkflow

@@ -11,7 +11,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ...observability.events import log_event
-from ..core.search import (
+from ...memory.retrieval.sparse import (
     SearchBackend,
     StringSearchBackend,
     alternative_weights,

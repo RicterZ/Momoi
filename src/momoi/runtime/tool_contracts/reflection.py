@@ -1,6 +1,6 @@
 from typing import Any
 
-from ...storage import MEMORY_KINDS
+from ...memory.storage.records import MEMORY_KINDS
 
 
 REFLECTION_FINISH_SPEC: dict[str, Any] = {

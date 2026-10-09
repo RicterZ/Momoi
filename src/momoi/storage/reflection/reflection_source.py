@@ -1,4 +1,4 @@
-from ..memory.memory_values import truncate_tokens
+from ...memory.text import truncate_tokens
 from .reflection_values import (
     _reflection_compact_value,
     _reflection_json,

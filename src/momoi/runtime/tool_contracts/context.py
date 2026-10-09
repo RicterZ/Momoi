@@ -5,7 +5,7 @@ from typing import Any
 CUE_QUERY_TOOL_DESCRIPTION = (
     '用对话语言描述当前需要的历史场景、意图、人物、任务和关键词，保留可区分的姓名与标识符。仅依据已知上下文解析指代、缩小范围，不猜答案或关联无关事件。无需知道原始措辞；同时语义检索话题摘要及单独嵌入的 CUES。'
 )
-from ...storage import MEMORY_KINDS
+from ...memory.storage.records import MEMORY_KINDS
 
 
 RECALL_SKIP_EXAMPLE = {"units": [{

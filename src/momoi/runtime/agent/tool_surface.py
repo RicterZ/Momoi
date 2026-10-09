@@ -9,7 +9,7 @@ from ...observability.events import TRACE, log_event
 from ...tools.contracts.memory import MEMORY_TOOL_SPECS
 from ...tools.contracts.thinking import THINKING_TOOL_SPECS
 from ...tools.contracts.images import IMAGE_TOOL_SPECS
-from ...storage import estimate_tokens
+from ...memory.text import estimate_tokens
 from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
 from ..tool_contracts.episode_relations import EPISODE_RELATIONS_TOOL_SPEC
 from ..tool_contracts.current_state import current_state_finish_spec

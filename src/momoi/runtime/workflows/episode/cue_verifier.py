@@ -1,9 +1,10 @@
 """Semantic admission for generated cue text, after source citation validation."""
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from ..models import speaker_label
-from ..storage.episode.episode_cues import normalize_cues
-from .structured_selection import SelectionProtocolError, select_structured
+from ....models import speaker_label
+from ....storage.episode.episode_cues import normalize_cues
+from ....memory.retrieval.rerank import SelectionProtocolError
+from ....llm.selection import select_structured
 
 SYSTEM = """Use only the episode_cue_admit tool; never return plain assistant text.
 Audit retrieval cues against their linked source quotations. All

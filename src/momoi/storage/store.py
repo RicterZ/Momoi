@@ -5,10 +5,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ..llm.accounting import UsageAccounting
-from .core.search import (
-    SearchBackend,
-    StringSearchBackend,
-)
+from ..memory.retrieval.sparse import SearchBackend, StringSearchBackend
 from .context.context_plans import ContextPlanStore
 from .memory.current_state import CurrentStateManager
 from .memory.current_state_tasks import CurrentStateTaskStore
@@ -22,11 +19,11 @@ from .episode.episode_annealing import EpisodeAnnealingStore
 from .episode.episode_consolidation import EpisodeConsolidationStore
 from .memory.memory_operations import MemoryOperationStore
 from ..memory import Memory
-from .memory.memory_values import MOMOI_MEMORY_TAGS
+from .memory.catalog import MOMOI_MEMORY_TAGS
 from ..memory.storage.vector_repository import VectorRepository
 from ..memory.storage.index_queue import IndexQueue
 from ..memory.storage.index_documents import IndexDocuments
-from .memory.memory_recall import MemoryRecallStore
+from .memory.context import MemoryContextStore
 from .memory.memory_maintenance_commits import MemoryMaintenanceCommitStore
 from .memory.memory_maintenance_evidence import MemoryMaintenanceEvidenceStore
 from .memory.memory_maintenance_queue import MemoryMaintenanceQueueStore
@@ -38,7 +35,6 @@ from .conversation.images import ImageStore
 from .agenda.heartbeat_commits import HeartbeatCommitStore
 from .agenda.heartbeat_schedule import HeartbeatScheduleStore
 from .agenda.heartbeat_state import HeartbeatStateStore
-from .semantic.semantic_queue import SemanticQueueStore
 from .semantic.semantic_spaces import SemanticSpaceStore
 from .semantic.semantic_sources import SemanticSourceStore
 from .ops.thinking import ThinkingStore
@@ -71,7 +67,7 @@ from .core.lifecycle import LifecycleStore
 
 from .agenda.plans import PlanRepository
 from .repositories import RepositoryFacade
-from .core.transactions import transaction
+from ..memory.storage.transactions import transaction
 
 from .memory.transcript_memory import TranscriptMemoryStore
 
@@ -116,13 +112,12 @@ class Store(
     MemoryMaintenanceQueueStore,
     MemoryMaintenanceEvidenceStore,
     MemoryMaintenanceCommitStore,
-    MemoryRecallStore,
+    MemoryContextStore,
     MemoryOperationStore,
     WebhookStore,
     DeliveryStore,
     SemanticSpaceStore,
     SemanticSourceStore,
-    SemanticQueueStore,
 ):
     def __init__(
         self,
@@ -159,11 +154,9 @@ class Store(
             self._db, search_backend=self._search_backend, reflection_rows=self._reflection_recall_rows,
             tags=MOMOI_MEMORY_TAGS,
         )
-        self.memory = self.memories.repository
         self.memory_vectors = VectorRepository(self._db)
         self.memory_index_queue = IndexQueue(self._db)
         self.memory_index_documents = IndexDocuments(self._db)
-        self.memory_recall = self.memories.recall
         self.request_metrics = RequestMetricsRepository(self._db)
         try:
             self._initialize_database()

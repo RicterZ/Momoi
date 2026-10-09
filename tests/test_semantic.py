@@ -9,16 +9,17 @@ import httpx
 
 from momoi.integrations.models import EmbeddingConfig
 from momoi.policies import SemanticPolicy
-from momoi.storage.core.search import StringSearchBackend
+from momoi.memory.retrieval.sparse import StringSearchBackend
 from momoi.integrations.adapters.embedding import EmbeddingClient
 from momoi.integrations.errors import error_category
-from momoi.semantic.models import (
-    DenseEpisodeHit,
-    DenseMemoryHit,
-    DenseRecallEvidence,
-)
-from momoi.semantic.service import SemanticRecallService
-from momoi.storage import MemoryRecallQuery, Store, encode_vector
+from momoi.storage.episode.episode_ranking import DenseEpisodeHit
+from momoi.memory.retrieval.models import DenseMemoryHit
+from momoi.runtime.retrieval.models import DenseRecallEvidence
+from momoi.runtime.retrieval.service import SemanticRecallService
+from momoi.memory.retrieval.models import MemoryRecallQuery
+from momoi.storage import Store
+from momoi.storage.semantic.semantic_documents import semantic_source_key
+from momoi.memory.storage.vectors import encode_vector
 from momoi.storage.episode.episode_ranking import EpisodeRecallQuery, rank_episode_matches
 from momoi.storage.episode.episode_search import (
     EpisodeQueryService,
@@ -181,7 +182,7 @@ class SemanticRecallTest(unittest.TestCase):
         )
 
     def materialize_all(self) -> None:
-        while claims := self.store.claim_semantic_sources(100):
+        while claims := self.store.memory_index_queue.claim_sources(100):
             for claim in claims:
                 self.store.materialize_semantic_source(claim)
 
@@ -225,13 +226,15 @@ class SemanticRecallTest(unittest.TestCase):
         space = self.space()
         self.store.reconcile_semantic_sources(str(space["id"]))
         self.materialize_all()
-        rows = self.store.claim_semantic_documents(str(space["id"]), 8)
+        rows = self.store.memory_index_queue.claim_documents(str(space["id"]), 8)
         self.assertEqual(len(rows), 1)
         with self.store._db:
             self.store._db.execute(
                 "UPDATE memories SET content='new procedure' WHERE id=?", (memory_id,)
             )
-        updated = self.store.finish_semantic_documents(rows, [vector()], 512)
+        updated = self.store.memory_index_queue.finish_documents(
+            rows, [vector()], 512, [semantic_source_key(row) for row in rows],
+        )
         self.assertEqual(updated, [])
         state = self.store._db.execute(
             "SELECT state FROM semantic_documents WHERE space_id=?",
@@ -251,14 +254,16 @@ class SemanticRecallTest(unittest.TestCase):
         space = self.space()
         self.store.reconcile_semantic_sources(str(space["id"]))
         self.materialize_all()
-        rows = self.store.claim_semantic_documents(str(space["id"]), 8)
-        self.store.finish_semantic_documents(rows, [vector()], 512)
+        rows = self.store.memory_index_queue.claim_documents(str(space["id"]), 8)
+        self.store.memory_index_queue.finish_documents(
+            rows, [vector()], 512, [semantic_source_key(row) for row in rows],
+        )
         embedded_at = self.store._db.execute(
             "SELECT embedded_at FROM semantic_documents"
         ).fetchone()["embedded_at"]
         self.store.reconcile_semantic_sources(str(space["id"]))
-        self.assertEqual(self.store.claim_semantic_sources(10), [])
-        self.assertEqual(self.store.claim_semantic_documents(str(space["id"]), 8), [])
+        self.assertEqual(self.store.memory_index_queue.claim_sources(10), [])
+        self.assertEqual(self.store.memory_index_queue.claim_documents(str(space["id"]), 8), [])
         self.assertEqual(
             self.store._db.execute(
                 "SELECT embedded_at FROM semantic_documents"
@@ -316,9 +321,9 @@ class SemanticRecallTest(unittest.TestCase):
             },
         )
         self.assertEqual(
-            self.store.rank_recalled_memories([query], 6, dense_evidence=low), []
+            self.store.memories.rank([query], 6, dense_evidence=low), []
         )
-        selected = self.store.rank_recalled_memories([query], 6, dense_evidence=high)
+        selected = self.store.memories.rank([query], 6, dense_evidence=high)
         self.assertEqual([row["id"] for row in selected], [memory_id])
         self.assertTrue(selected[0]["dense_only"])
 
@@ -335,7 +340,7 @@ class SemanticRecallTest(unittest.TestCase):
                 }
             },
         )
-        selected = self.store.rank_recalled_memories(
+        selected = self.store.memories.rank(
             [query], 6, dense_evidence=evidence
         )
         self.assertEqual([row["id"] for row in selected], [memory_id])
@@ -344,8 +349,8 @@ class SemanticRecallTest(unittest.TestCase):
         first = self.add_memory("exact", "first", importance=0.9)
         second = self.add_memory("exact", "second", importance=0.1)
         query = MemoryRecallQuery("exact")
-        baseline = self.store.rank_recalled_memories([query], 6)
-        fallback = self.store.rank_recalled_memories(
+        baseline = self.store.memories.rank([query], 6)
+        fallback = self.store.memories.rank(
             [query],
             6,
             dense_evidence=DenseRecallEvidence(
@@ -367,7 +372,7 @@ class SemanticRecallTest(unittest.TestCase):
             semantic_expression="老师此前如何处理客厅设备",
         )
 
-        selected = self.store.rank_recalled_memories([query], 6)
+        selected = self.store.memories.rank([query], 6)
 
         self.assertEqual([row["id"] for row in selected], [keyword_hit])
         self.assertNotIn(semantic_only, [row["id"] for row in selected])
@@ -389,7 +394,7 @@ class SemanticRecallTest(unittest.TestCase):
             },
         )
 
-        selected = self.store.rank_recalled_memories(
+        selected = self.store.memories.rank(
             [query], 6, dense_evidence=evidence
         )
 
@@ -400,7 +405,7 @@ class SemanticRecallTest(unittest.TestCase):
     def test_sparse_dense_agreement_adds_an_explainable_bonus(self) -> None:
         memory_id = self.add_memory("exact", "stored fact")
         query = MemoryRecallQuery("exact")
-        baseline = self.store.rank_recalled_memories([query], 6)[0]
+        baseline = self.store.memories.rank([query], 6)[0]
         evidence = DenseRecallEvidence(
             calibration_profile="bge-small-zh-v1.5-momoi-v1",
             memory={
@@ -411,7 +416,7 @@ class SemanticRecallTest(unittest.TestCase):
                 }
             },
         )
-        hybrid = self.store.rank_recalled_memories([query], 6, dense_evidence=evidence)[
+        hybrid = self.store.memories.rank([query], 6, dense_evidence=evidence)[
             0
         ]
         self.assertGreater(hybrid["search_score"], baseline["search_score"])
@@ -477,8 +482,10 @@ class SemanticRecallTest(unittest.TestCase):
         space = self.space()
         self.store.reconcile_semantic_sources(str(space["id"]))
         self.materialize_all()
-        rows = self.store.claim_semantic_documents(str(space["id"]), 8)
-        self.store.finish_semantic_documents(rows, [vector()] * len(rows), 512)
+        rows = self.store.memory_index_queue.claim_documents(str(space["id"]), 8)
+        self.store.memory_index_queue.finish_documents(
+            rows, [vector()] * len(rows), 512, [semantic_source_key(row) for row in rows],
+        )
         self.assertGreater(len(rows), 1)
         with self.store._db:
             self.store._db.execute(
@@ -515,10 +522,10 @@ class SemanticRecallTest(unittest.TestCase):
             self.add_reflection(f"exact {index}", f"reflection {index}")
             for index in range(8)
         ]
-        rows = self.store.rank_recalled_memories([MemoryRecallQuery("exact")], 6)
+        rows = self.store.memories.rank([MemoryRecallQuery("exact")], 6)
         self.assertEqual(len(rows), 6)
         self.assertTrue(all(row["source"] == "confirmed" for row in rows))
-        rows = self.store.rank_recalled_memories(
+        rows = self.store.memories.rank(
             [MemoryRecallQuery("exact")], 6, include_reflections=True,
         )
         self.assertEqual(sum(row["source"] == "confirmed" for row in rows), 6)
@@ -627,9 +634,8 @@ class SemanticRecallTest(unittest.TestCase):
         self.assertEqual(service.degraded_reason, "building_initial_space")
         tools = MemoryTools(self.store, service)
         self.assertIs(tools.memory, self.store.memories)
-        self.assertIs(self.store.memory_recall, tools.memory.recall)
-        self.store.search_memories = Mock(side_effect=AssertionError("use Memory API"))
-        self.store.memory_snapshots = Mock(side_effect=AssertionError("use Memory API"))
+        self.assertIs(self.store.memories.recall, tools.memory.recall)
+        self.store.memories.search_literal = Mock(side_effect=AssertionError("use Memory API"))
         service.prepare = AsyncMock(side_effect=AssertionError("memory caller must use search"))
         draft = TurnDraft()
         call = ToolCall("search", "memory_search", {"query": "用户喜欢什么饮品"})

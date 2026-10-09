@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from ...integrations.request_context import model_request
 from ...observability.context import log_context, new_trace_id, current_log_context
-from ...storage import estimate_tokens
+from ...memory.text import estimate_tokens
 from ...storage.delivery.emotions import EMOTION_REACTION_POLICY
 from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_POLICY
 from ..transcript.replyer import visible_dialogue

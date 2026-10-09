@@ -4,25 +4,22 @@ import asyncio
 import logging
 from typing import Callable, Iterable
 
-from ..integrations.models import EmbeddingSpaceConfig
-from ..observability.events import log_event
-from ..policies import SemanticPolicy
-from ..storage import Store
-from ..memory import MemoryRecallQuery
-from ..storage.semantic.semantic_documents import DOCUMENT_TEMPLATE_VERSION, QUERY_TEMPLATE_VERSION
-from ..storage.episode.episode_ranking import EpisodeRecallQuery
-from ..integrations.contracts.embedding import Embedder
-from ..integrations.errors import error_category
-from .models import (
-    CALIBRATION_PROFILES,
-    DenseEpisodeHit,
-    DenseThresholds,
-    DenseRecallEvidence,
-)
-from ..memory.indexing.worker import IndexWorker
+from ...integrations.models import EmbeddingSpaceConfig
+from ...observability.events import log_event
+from ...policies import SemanticPolicy
+from ...storage import Store
+from ...memory import MemoryRecallQuery
+from ...storage.semantic.semantic_documents import DOCUMENT_TEMPLATE_VERSION, QUERY_TEMPLATE_VERSION
+from ...storage.episode.episode_ranking import EpisodeRecallQuery
+from ...integrations.contracts.embedding import Embedder
+from ...integrations.errors import error_category
+from .models import CALIBRATION_PROFILES, DenseRecallEvidence
+from ...storage.episode.episode_ranking import DenseEpisodeHit
+from ...memory.retrieval.models import DenseThresholds
+from ...memory.indexing.worker import IndexWorker
 from .indexing import MomoiIndexAdapter
-from ..memory.retrieval.snapshot import SegmentedVectorSnapshot
-from ..memory.retrieval.dense import DenseQueryService, DenseSearchPool, MemoryVectorRecall
+from ...memory.retrieval.snapshot import SegmentedVectorSnapshot
+from ...memory.retrieval.dense import DenseQueryService, DenseSearchPool, MemoryVectorRecall
 
 logger = logging.getLogger(__name__)
 QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："

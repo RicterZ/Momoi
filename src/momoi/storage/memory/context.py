@@ -1,24 +1,18 @@
-"""Temporary Store entry points and Momoi-specific recall rendering."""
-from .memory_values import (
-    REFLECTION_MEMORY_CAUTION, MemoryRecallQuery, format_reflection_memory, format_memory,
-)
-from ...memory.retrieval.service import MAX_MEMORY_RECALL_RESULTS
+"""Momoi context rendering and reflection source adapter."""
+from .presentation import REFLECTION_MEMORY_CAUTION, format_reflection_memory, format_memory
+from ...memory.retrieval.models import MemoryRecallQuery
 
 
-class MemoryRecallStore:
-    def rank_recalled_memories(self, queries, max_results, *, now=None,
-                               include_reflections=False, dense_evidence=None):
-        return self.memory_recall.rank(
-            queries, max_results, now=now, include_reflections=include_reflections,
-            dense_evidence=dense_evidence,
-        )
+class MemoryContextStore:
+    def _memory_context(self, rows):
+        return "\n\n".join(format_memory(dict(row)) for row in rows)
 
-    def search_memories(self, query, max_results, *, include_core=False,
-                        activation=None, include_scoped=False):
-        return self.memory_recall.search_literal(
-            query, max_results, include_core=include_core,
-            activation=activation, include_scoped=include_scoped,
-        )
+    def always_memory_context(self) -> str:
+        return self._memory_context(self.memories.repository.rows("always"))
+
+    def scoped_memory_context(self, scope: str) -> str:
+        return self._memory_context(self.memories.repository.rows("scoped", scope=scope))
+
 
     def _reflection_recall_rows(self):
         return self._db.execute(
@@ -44,7 +38,7 @@ class MemoryRecallStore:
 
         if max_results <= 0 or not query.strip():
             return "", ""
-        ranked = self.rank_recalled_memories(
+        ranked = self.memories.rank(
             [MemoryRecallQuery(query.strip())],
             max_results,
             include_reflections=include_reflections,

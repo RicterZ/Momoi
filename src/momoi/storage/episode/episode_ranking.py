@@ -15,7 +15,23 @@ from .episode_search import (
 )
 
 if TYPE_CHECKING:
-    from ...semantic.models import DenseRecallEvidence
+    from ...runtime.retrieval.models import DenseRecallEvidence
+
+
+@dataclass(frozen=True)
+class DenseEpisodeHit:
+    episode_id: str
+    summary_cosine: float | None = None
+    turn_cosine: float | None = None
+    cue_cosine: float | None = None
+
+    @property
+    def cosine(self) -> float:
+        return max(
+            value
+            for value in (self.summary_cosine, self.turn_cosine, self.cue_cosine)
+            if value is not None
+        )
 
 
 _QUERY_PRIORITY_WEIGHTS = (1.0, 0.5, 0.3)

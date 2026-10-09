@@ -8,14 +8,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from .structured_selection import SelectionProtocolError, select_structured
-from ..memory.retrieval.rerank import MemoryRerankCandidates, select_indices
-from ..storage.episode.episode_cues import cue_texts
-from ..observability.events import log_event
+from ...memory.retrieval.rerank import SelectionProtocolError
+from ...llm.selection import select_structured
+from ...memory.retrieval.rerank import MemoryRerankCandidates, select_indices
+from ...storage.episode.episode_cues import cue_texts
+from ...observability.events import log_event
 
 logger = logging.getLogger(__name__)
 TOPIC_CANDIDATE_LIMIT = 8
-SYSTEM = (Path(__file__).resolve().parents[1] / "prompts/topic_selection.md").read_text(encoding="utf-8").strip()
+SYSTEM = (Path(__file__).resolve().parents[2] / "prompts/topic_selection.md").read_text(encoding="utf-8").strip()
 
 
 @dataclass(frozen=True)

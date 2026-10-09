@@ -127,7 +127,7 @@ def seed_memory(store, event, *, key, content, kind='preference', activation='re
                VALUES (?,?,?,?,'owner',?,?,?,?,?)""",
             (kind,key,content,activation,event.event_id,event.text,now,now,expires_at),
         )
-        store._add_memory_evidence(cursor.lastrowid,event.event_id,event.text,now)
+        store.memories.repository.add_evidence(cursor.lastrowid,event.event_id,event.text,now)
     return cursor.lastrowid
 
 

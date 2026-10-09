@@ -1,6 +1,6 @@
 import json
 
-from ..core.search import search_alternatives
+from ...memory.retrieval.sparse import search_alternatives
 from ..context.context_plan_adapter import normalize_context_plan
 from ..context.context_plans import recall_query_texts
 

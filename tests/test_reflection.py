@@ -550,7 +550,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(reflection["state"], "completed")
             always = {
                 (row["kind"], row["key"]): row
-                for row in daemon.store.maintenance_memory_inventory()
+                for row in daemon.store.memories.repository.inventory()
                 if row["activation"] == "always"
             }
             self.assertEqual(len(always), len(seeds) - 1)
@@ -558,7 +558,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 always[("preference", "food.avoids_cilantro")]["content"],
                 "老师希望后续日常回复末尾不使用中文句号。",
             )
-            self.assertTrue(daemon.store.has_memory("preference", "food.no_cilantro"))
+            self.assertTrue(daemon.store.memories.repository.has("preference", "food.no_cilantro"))
             self.assertEqual(
                 daemon.store._db.execute(
                     "SELECT activation FROM memories WHERE id=?",
@@ -585,7 +585,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 ).fetchone()["activation"],
                 "always",
             )
-            self.assertTrue(daemon.store.has_memory("episodic", "trip.last_summer"))
+            self.assertTrue(daemon.store.memories.repository.has("episodic", "trip.last_summer"))
             daemon.store.close()
 
     async def test_manual_reflect_overwrites_completed_day(self) -> None:

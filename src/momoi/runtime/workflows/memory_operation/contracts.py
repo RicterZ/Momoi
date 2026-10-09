@@ -1,11 +1,8 @@
 from typing import Any
 
-from ....storage.memory.memory_values import (
-    ALWAYS_MEMORY_KINDS,
-    MEMORY_ACTIVATIONS,
-    MEMORY_KINDS,
-    MOMOI_MEMORY_TAGS,
-)
+from ....memory.writing.validation import ALWAYS_MEMORY_KINDS
+from ....memory.storage.records import MEMORY_ACTIVATIONS, MEMORY_KINDS
+from ....storage.memory.catalog import MOMOI_MEMORY_TAGS
 
 _EVIDENCE = {
     "type": "array",
