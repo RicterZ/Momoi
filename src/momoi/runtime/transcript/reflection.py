@@ -34,19 +34,16 @@ def reflection_tool_result(payload, name):
     elif isinstance(value, dict):
         value = {key: item for key, item in value.items()
                  if key not in {"ok", "error", "result_ref"}}
+    if not isinstance(value, dict):
+        value = {"message": value} if error else {"content": value}
+    if error:
+        value = {"error": error, **value}
+    elif failed:
+        value = {"ok": False, **value}
     reduced = bounded_result(value)
-    body = reduced if isinstance(reduced, str) else json.dumps(
-        reduced, ensure_ascii=False, separators=(",", ":"),
-    )
-    parts = ["失败" if failed or error else "成功" if payload.get("ok") is True else "结果"]
-    if error and str(error) not in body:
-        parts.append(str(error))
-    if body not in ("", "{}", "null"):
-        parts.append(body)
-    # Only excerpts need an explicit read-back handle in the daily presentation.
-    if reference and (reduced != value or "[...truncated...]" in body):
-        parts.append(f"完整结果：{reference}")
-    return f"TOOL {name}: " + "；".join(parts)
+    if reference and (reduced != value or "[...truncated...]" in json.dumps(reduced)):
+        reduced["result_ref"] = reference
+    return "TOOL RESULT: " + json.dumps(reduced, ensure_ascii=False, separators=(",", ":"))
 
 
 def reflection_transcript(store, rows, window):
@@ -73,7 +70,20 @@ def reflection_transcript(store, rows, window):
         name = str(payload.get("name") or "")
         if not name or name in BACKGROUND_TOOLS or name in TRANSCRIPT_PROTOCOL_TOOLS:
             continue
-        text = reflection_tool_result(payload, name)
+        call = store._db.execute(
+            "SELECT payload_json FROM turn_journal WHERE turn_id=? AND item_type='tool_call' "
+            "AND sequence<? AND json_extract(payload_json, '$.tool_call_id')=? "
+            "ORDER BY sequence DESC LIMIT 1",
+            (row["turn_id"], row["sequence"], payload.get("tool_call_id")),
+        ).fetchone()
+        arguments = json.loads(call["payload_json"]).get("arguments") if call else None
+        if arguments is None:
+            rendered_arguments = "参数未记录"
+        else:
+            if name == "bash" and isinstance(arguments, dict) and len(arguments) == 1:
+                arguments = arguments.get("command", arguments.get("cmd", arguments))
+            rendered_arguments = json.dumps(bounded_result(arguments), ensure_ascii=False, separators=(",", ":"))
+        text = f"TOOL CALL: {name}({rendered_arguments})\n" + reflection_tool_result(payload, name)
         records.append((float(row["created_at"]), 0, int(row["sequence"]), text, str(row["turn_id"])))
     records.sort(key=lambda item: item[:3])
     # A Turn may belong to multiple topics. Keep its evidence once in a shared

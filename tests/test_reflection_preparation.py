@@ -432,9 +432,9 @@ def test_text_reflection_keeps_speech_and_bounded_execution_evidence(daemon):
     assert len(messages) == 1 and messages[0]['role'] == 'user'
     text = messages[0]['content']
     assert '## 尚未归类 | ' in text
-    assert text.index('USER: today完成项目') < text.index('TOOL web_fetch') < text.index('ASSISTANT (uncertain):')
+    assert text.index('USER: today完成项目') < text.index('TOOL CALL: web_fetch') < text.index('ASSISTANT (uncertain):')
     assert 'ASSISTANT (uncertain): 保留完整正文<&>' + '原话' * 1000 in text
-    tool = text.split('TOOL web_fetch', 1)[1].split('\n\nASSISTANT', 1)[0]
+    tool = text.split('TOOL CALL: web_fetch', 1)[1].split('\n\nASSISTANT', 1)[0]
     assert len(tool) < 1200
     assert 'timeout' in tool and 'tr_test' in tool
     assert text.count('+08:00') == 1
@@ -481,7 +481,7 @@ def test_reflection_tool_validation_drops_retry_protocol_and_keeps_failure():
                    'details': [{'field': 'status'}], 'allowed_fields': ['goal_id', 'status'],
                    'required_fields': ['goal_id'], 'examples': [], 'result_ref': 'tr_validation'},
     }, 'goal_update')
-    assert text == 'TOOL goal_update: 失败；invalid_tool_arguments；' + message
+    assert json.loads(text.removeprefix('TOOL RESULT: ')) == {'error': 'invalid_tool_arguments', 'message': message}
 
 
 def test_reflection_tool_nested_failure_is_not_reported_as_success():
@@ -490,9 +490,28 @@ def test_reflection_tool_nested_failure_is_not_reported_as_success():
     text = reflection_tool_result({'ok': True, 'result': {
         'ok': False, 'error': 'timeout', 'result': {'message': '远程设备无响应'},
     }}, 'remote_start')
-    assert '失败；timeout' in text and '远程设备无响应' in text
+    assert json.loads(text.removeprefix('TOOL RESULT: ')) == {'error': 'timeout', 'message': '远程设备无响应'}
     assert '成功' not in text and '"result"' not in text
     success = reflection_tool_result({'ok': True, 'result': {
         'ok': True, 'result': {'remaining': 6},
     }}, 'inventory')
-    assert success == 'TOOL inventory: 成功；{"remaining":6}'
+    assert success == 'TOOL RESULT: {"remaining":6}'
+
+
+def test_reflection_pairs_call_arguments_by_id_and_preserves_raw_outcome(daemon):
+    start, end = day_window()
+    add_turn(daemon, 'commands', start + 1)
+    for call_id, command in [('first', 'docker ps'), ('second', 'pwd')]:
+        daemon.store.append_turn_journal('commands', 'tool_call', {
+            'name': 'bash', 'tool_call_id': call_id, 'arguments': {'command': command},
+        }, trust='runtime')
+    daemon.store.append_turn_journal('commands', 'tool_result', {
+        'name': 'bash', 'tool_call_id': 'first', 'ok': True,
+        'result': {'exit_code': 0, 'stdout_tail': 'bash: line 1: docker: command not found\n'},
+    }, trust='runtime')
+    with daemon.store._db:
+        daemon.store._db.execute('UPDATE turn_journal SET created_at=? WHERE turn_id=?',
+                                 (start + 2, 'commands'))
+    text = reflection_transcript(daemon.store, [], (start, end))[0]['content']
+    assert 'TOOL CALL: bash("docker ps")\nTOOL RESULT: {"exit_code":0,"stdout_tail":"bash: line 1: docker: command not found\\n"}' in text
+    assert 'pwd' not in text and '成功' not in text and '失败' not in text
