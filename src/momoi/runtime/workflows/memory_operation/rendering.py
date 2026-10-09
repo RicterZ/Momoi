@@ -9,7 +9,7 @@ def render_memory_operation_request(*, now, timestamp,
     clock = Element("current_time", {"at": timestamp, "unix": str(now)})
     requests = Element("operation_requests")
     for operation in operations:
-        attrs = {key: str(operation[key]) for key in ("id", "type", "target_id") if key in operation}
+        attrs = {key: str(operation[key]) for key in ("id", "type", "target_id", "scope") if key in operation}
         request = SubElement(requests, "operation", attrs)
         SubElement(request, "content").text = operation["content"]
         SubElement(request, "evidence", {"event_id": operation["event_id"]}).text = operation["evidence"]

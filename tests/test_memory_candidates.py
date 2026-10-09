@@ -188,3 +188,42 @@ def test_noop_cannot_satisfy_global_request_with_scoped_memory(database):
             'operation_ids': ['op'], 'action': 'noop', 'reason': '重复', 'target_ids': [scoped],
             'evidence': [{'event_id': 'owner:new', 'quote': '喜欢无糖咖啡'}],
         }]})
+
+
+def test_literal_noise_cannot_crowd_out_best_semantic_candidate(database):
+    memory = Memory(database)
+    direct = write(memory.repository, key='drink', text='喝咖啡时不要加糖')
+    for index in range(8):
+        write(memory.repository, key=f'noise{index}', text=f'饮品杯子颜色偏好 {index}')
+    memory.recall.dense_recall = AsyncMock(return_value=VectorMemoryEvidence(
+        {'饮品': {('confirmed_memory', str(direct)): DenseMemoryHit(str(direct), .9)}},
+        {'confirmed_memory': DenseThresholds(.4, .6, .8)},
+    ))
+    ctx = PlanningContext([request(content='饮品')], {'owner:new': '喜欢无糖咖啡'}, {})
+    asyncio.run(memory.writing.candidates.collect(ctx))
+    assert direct in ctx.snapshots
+    assert len(ctx.snapshots) == 8
+
+
+def test_full_keyword_coverage_beats_newer_partial_hits(database):
+    memory = Memory(database)
+    direct = write(memory.repository, key='drink', text='用户喝咖啡不要糖')
+    for index in range(8):
+        write(memory.repository, key=f'noise{index}', text=f'用户喜欢咖啡杯款式 {index}')
+    ctx = PlanningContext([request()], {'owner:new': '喜欢无糖咖啡'}, {})
+    asyncio.run(memory.writing.candidates.collect(ctx, ['咖啡 糖']))
+    assert direct in ctx.snapshots
+
+
+def test_optional_budget_exhaustion_is_reported_instead_of_silent_loss(database):
+    memory = Memory(database, tags=TagCatalog({'food_drink': '饮食'}))
+    for group in range(5):
+        for index in range(8):
+            write(memory.repository, key=f'group{group}.{index}', text=f'group{group} coffee {index}')
+    ctx = PlanningContext([request()], {'owner:new': '喜欢无糖咖啡'}, {})
+    for group in range(5):
+        asyncio.run(memory.writing.candidates.collect(ctx, [f'group{group}']))
+    assert ctx.retrieval_fallback == 'candidate_budget_exceeded'
+    assert len(ctx.snapshots) == 32
+    with pytest.raises(ValueError, match='candidate recall failed'):
+        memory.writing.review(ctx, {'decisions': [decision()]})

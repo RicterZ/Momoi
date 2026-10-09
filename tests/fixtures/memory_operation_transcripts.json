@@ -1,0 +1,410 @@
+[
+  {
+    "name": "new_fact",
+    "transcript": [
+      {
+        "role": "user",
+        "content": "我平常喝无糖咖啡，这个可以记住。"
+      }
+    ],
+    "request": {
+      "type": "add",
+      "content": "用户喜欢无糖咖啡",
+      "scope": ""
+    },
+    "seeds": [],
+    "expected": {
+      "action": [
+        "write"
+      ],
+      "active_count": 1
+    }
+  },
+  {
+    "name": "paraphrase",
+    "transcript": [
+      {
+        "role": "user",
+        "content": "咖啡我还是喜欢不放糖，帮我记着。"
+      }
+    ],
+    "request": {
+      "type": "add",
+      "content": "用户喜欢无糖咖啡",
+      "scope": ""
+    },
+    "seeds": [
+      {
+        "content": "用户喝咖啡时不要加糖",
+        "key": "drink"
+      }
+    ],
+    "expected": {
+      "action": [
+        "noop"
+      ],
+      "active_count": 1,
+      "unchanged": [
+        "drink"
+      ]
+    }
+  },
+  {
+    "name": "correction",
+    "transcript": [
+      {
+        "role": "assistant",
+        "content": "你以前说咖啡要加糖。"
+      },
+      {
+        "role": "user",
+        "content": "现在改了，我只喜欢无糖咖啡，把原来的偏好改掉。"
+      }
+    ],
+    "request": {
+      "type": "replace",
+      "content": "用户现在喜欢无糖咖啡",
+      "scope": ""
+    },
+    "seeds": [
+      {
+        "content": "用户喜欢加糖咖啡",
+        "key": "drink"
+      }
+    ],
+    "expected": {
+      "action": [
+        "write"
+      ],
+      "active_count": 1,
+      "superseded": [
+        "drink"
+      ]
+    }
+  },
+  {
+    "name": "merge_duplicates",
+    "transcript": [
+      {
+        "role": "user",
+        "content": "我不喜欢往咖啡里加糖，重复的偏好合成一条就好。"
+      }
+    ],
+    "request": {
+      "type": "add",
+      "content": "用户喜欢无糖咖啡",
+      "scope": ""
+    },
+    "seeds": [
+      {
+        "content": "用户喜欢无糖咖啡",
+        "key": "drink"
+      },
+      {
+        "content": "用户喝咖啡不放糖",
+        "key": "coffee.sugar"
+      }
+    ],
+    "expected": {
+      "action": [
+        "write"
+      ],
+      "active_count": 1,
+      "superseded": [
+        "drink",
+        "coffee.sugar"
+      ]
+    }
+  },
+  {
+    "name": "independent_rules",
+    "transcript": [
+      {
+        "role": "user",
+        "content": "还有，替我向别人发消息之前，必须先让我确认。"
+      }
+    ],
+    "request": {
+      "type": "add",
+      "content": "向他人发消息前必须先征得用户确认",
+      "scope": ""
+    },
+    "seeds": [
+      {
+        "content": "用户希望日常回应简短，不复述用户原话",
+        "key": "short",
+        "activation": "always"
+      }
+    ],
+    "expected": {
+      "action": [
+        "write"
+      ],
+      "active_count": 2,
+      "unchanged": [
+        "short"
+      ]
+    }
+  },
+  {
+    "name": "forget",
+    "transcript": [
+      {
+        "role": "user",
+        "content": "把关于我咖啡口味的偏好忘掉，不用再记。"
+      }
+    ],
+    "request": {
+      "type": "forget",
+      "content": "忘记用户的咖啡口味偏好",
+      "scope": ""
+    },
+    "seeds": [
+      {
+        "content": "用户喝咖啡时不要加糖",
+        "key": "drink"
+      }
+    ],
+    "expected": {
+      "action": [
+        "forget"
+      ],
+      "active_count": 0
+    }
+  },
+  {
+    "name": "assistant_suggestion",
+    "transcript": [
+      {
+        "role": "assistant",
+        "content": "你可以每天跑五公里，我替你定下来吧。"
+      },
+      {
+        "role": "user",
+        "content": "我还没决定，先别当成我的习惯。"
+      }
+    ],
+    "request": {
+      "type": "add",
+      "content": "用户习惯每天跑五公里",
+      "scope": ""
+    },
+    "seeds": [],
+    "expected": {
+      "action": [
+        "noop",
+        "defer"
+      ],
+      "active_count": 0
+    }
+  },
+  {
+    "name": "scope_isolation",
+    "transcript": [
+      {
+        "role": "user",
+        "content": "不只是在自主心跳里，今后所有场合要主动联系别人都先问我。"
+      }
+    ],
+    "request": {
+      "type": "add",
+      "content": "主动联系别人前先征求用户同意",
+      "scope": ""
+    },
+    "seeds": [
+      {
+        "content": "主动联系别人前先征求用户同意",
+        "key": "contact",
+        "scope": "heartbeat",
+        "activation": "scoped"
+      }
+    ],
+    "expected": {
+      "action": [
+        "write"
+      ],
+      "active_count": 2,
+      "unchanged": [
+        "contact"
+      ]
+    },
+    "visible": true
+  },
+  {
+    "name": "manual_correction",
+    "transcript": [
+      {
+        "role": "user",
+        "content": "记住我喜欢甜咖啡。"
+      }
+    ],
+    "request": {
+      "type": "add",
+      "content": "用户喜欢甜咖啡",
+      "scope": ""
+    },
+    "seeds": [
+      {
+        "content": "用户喜欢甜咖啡",
+        "key": "drink",
+        "manual_content": "用户喜欢无糖咖啡"
+      }
+    ],
+    "expected": {
+      "action": [
+        "noop",
+        "defer"
+      ],
+      "active_count": 1,
+      "contains": "无糖"
+    },
+    "event_age": 600
+  },
+  {
+    "name": "forgotten_old_evidence",
+    "transcript": [
+      {
+        "role": "user",
+        "content": "记住我喜欢无糖咖啡。"
+      }
+    ],
+    "request": {
+      "type": "add",
+      "content": "用户喜欢无糖咖啡",
+      "scope": ""
+    },
+    "seeds": [
+      {
+        "content": "用户喜欢无糖咖啡",
+        "key": "drink",
+        "forgotten": true
+      }
+    ],
+    "expected": {
+      "action": [
+        "defer"
+      ],
+      "active_count": 0
+    },
+    "event_age": 600
+  },
+  {
+    "name": "literal_only_search",
+    "transcript": [
+      {
+        "role": "assistant",
+        "content": "你的饮品偏好记录过了。"
+      },
+      {
+        "role": "user",
+        "content": "我的拿铁现在不要糖了，请更新原来的偏好。"
+      }
+    ],
+    "request": {
+      "type": "replace",
+      "content": "用户的拿铁偏好改为无糖",
+      "scope": ""
+    },
+    "seeds": [
+      {
+        "content": "用户点拿铁时要三分糖",
+        "key": "drink"
+      }
+    ],
+    "expected": {
+      "action": [
+        "write"
+      ],
+      "active_count": 1,
+      "superseded": [
+        "drink"
+      ],
+      "searched": true
+    },
+    "literal_only": true
+  },
+  {
+    "name": "trigger_metadata",
+    "transcript": [
+      {
+        "role": "user",
+        "content": "以后我发喵，就是在叫你出来聊天。把喵作为这条记忆的触发词。"
+      }
+    ],
+    "request": {
+      "type": "add",
+      "content": "为呼唤含义记忆设置字面触发词喵",
+      "scope": ""
+    },
+    "seeds": [
+      {
+        "content": "用户发喵等呼唤时，通常想找小桃聊天、确认小桃在不在",
+        "key": "call"
+      }
+    ],
+    "expected": {
+      "action": [
+        "metadata"
+      ],
+      "active_count": 1,
+      "triggers": [
+        "喵"
+      ]
+    }
+  },
+  {
+    "name": "single_episode",
+    "transcript": [
+      {
+        "role": "user",
+        "content": "今天路过买了杯拿铁，只是偶尔喝一次，不用当成偏好。"
+      }
+    ],
+    "request": {
+      "type": "add",
+      "content": "用户今天买了拿铁",
+      "scope": ""
+    },
+    "seeds": [],
+    "expected": {
+      "action": [
+        "noop"
+      ],
+      "active_count": 0
+    }
+  },
+  {
+    "name": "negated_preference",
+    "transcript": [
+      {
+        "role": "assistant",
+        "content": "你喜欢甜咖啡对吧？"
+      },
+      {
+        "role": "user",
+        "content": "说反了，我不喜欢甜咖啡，记忆要改成不喜欢。"
+      }
+    ],
+    "request": {
+      "type": "replace",
+      "content": "用户不喜欢甜咖啡",
+      "scope": ""
+    },
+    "seeds": [
+      {
+        "key": "drink",
+        "content": "用户喜欢甜咖啡"
+      }
+    ],
+    "expected": {
+      "action": [
+        "write"
+      ],
+      "active_count": 1,
+      "superseded": [
+        "drink"
+      ],
+      "contains": "不喜欢"
+    }
+  }
+]

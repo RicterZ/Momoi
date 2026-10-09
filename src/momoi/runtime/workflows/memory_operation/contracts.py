@@ -175,7 +175,7 @@ MEMORY_OPERATION_FINISH_SPEC: dict[str, Any] = {
 }
 MEMORY_OPERATION_SEARCH_SPEC = {
     "name": "memory_operation_search",
-    "description": '当提供的记忆无法识别目标或相关重复项时，可选的只读查找。有界检索各种 activation 的当前记录和遗忘警戒候选；仅 memories 中的记录可作为修改目标。不要仅为了重复提供的证据而搜索。',
+    "description": '当提供的记忆无法识别目标或相关重复项时，可选的只读查找。同时做语义与字面候选检索，覆盖各种 activation，并按请求 scope 限制范围。只返回本轮新加入的记录；candidate_ids 包含此前候选。空 memories 不代表没有匹配，不提供分页；需要时换查询。遗忘候选不能作为修改目标。',
     "input_schema": {
         "type": "object",
         "properties": {
@@ -184,7 +184,7 @@ MEMORY_OPERATION_SEARCH_SPEC = {
                 "minLength": 1,
                 "maxLength": 240,
                 "description": (
-                    '字面关键词用空格分隔，词之间为 OR，例如：可爱 夸小桃 真心话 老师喜欢小桃。只提供与目标记忆相关的词，不拼接无关术语或日期。'
+                    '填写待核对的事实或行为；也可用空格分隔的关键词做字面 OR 匹配。整段输入同时用于向量检索，中文长句不会自动分词；未启用向量时应使用短关键词。不要只搜 key 或拼接无关术语。'
                 ),
             },
         },

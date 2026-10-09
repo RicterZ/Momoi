@@ -1,5 +1,6 @@
 """Bounded private candidates; similarity proposes comparisons, never mutations."""
 from copy import deepcopy
+from itertools import zip_longest
 import unicodedata
 
 from ..retrieval.models import MemoryRecallQuery
@@ -63,7 +64,7 @@ class WriteCandidates:
             context.retrieval_fallback = fallback
         additions = []
         for query in queries:
-            scored = []
+            literal, semantic = [], []
             for row in rows:
                 if str(row['id']) not in pools[query]:
                     continue
@@ -71,10 +72,22 @@ class WriteCandidates:
                 hit = dense.memory.get(query, {}).get(('confirmed_memory', str(row['id']))) if dense else None
                 thresholds = dense.thresholds('confirmed_memory') if dense else None
                 cosine = hit.cosine if hit and thresholds and hit.cosine >= thresholds.support else 0.0
-                if match or cosine:
-                    scored.append((bool(match), cosine, row['updated_at'], row['id'], row))
-            scored.sort(key=lambda item: item[:-1], reverse=True)
-            additions.extend(item[-1] for item in scored[:PER_REQUEST])
+                coverage = match.score if match else 0.0
+                if match:
+                    literal.append((coverage, cosine, row['updated_at'], row['id'], row))
+                if cosine:
+                    semantic.append((cosine, coverage, row['updated_at'], row['id'], row))
+            literal.sort(key=lambda item: item[:-1], reverse=True)
+            semantic.sort(key=lambda item: item[:-1], reverse=True)
+            # Give both retrieval paths space: literal noise must not hide a paraphrase.
+            selected = {}
+            for pair in zip_longest(semantic, literal):
+                for item in pair:
+                    if item is not None and len(selected) < PER_REQUEST:
+                        selected.setdefault(item[-1]['id'], item[-1])
+                if len(selected) == PER_REQUEST:
+                    break
+            additions.extend(selected.values())
         # Mandatory records cannot be silently trimmed; optional records fit the remaining budget.
         for row in additions:
             proposed, deleted = dict(mandatory), dict(forgotten)
@@ -82,6 +95,7 @@ class WriteCandidates:
             try:
                 check_budget(proposed, deleted)
             except CandidateBudgetExceeded:
+                context.retrieval_fallback = 'candidate_budget_exceeded'
                 continue
             mandatory, forgotten = proposed, deleted
         context.snapshots.clear()

@@ -87,3 +87,19 @@ def test_forgotten_candidates_are_separate_from_current_targets_and_escape_quote
     assert root.findtext('forgotten_memories/memory/forgotten') == memory['forgotten_quote']
     assert root.find('forgotten_memories/memory/forgotten').get('event_id') == 'forget"3'
     assert root.find('candidate_retrieval').get('fallback') == 'disabled'
+
+
+def test_operation_scope_is_explicit_in_private_model_input():
+    from momoi.runtime.workflows.memory_operation.rendering import render_memory_operation_request
+    from xml.etree.ElementTree import fromstring
+    operations = [
+        {'id': name, 'type': 'add', 'content': '先征得同意', 'event_id': 'owner', 'evidence': '同意', **fields}
+        for name, fields in [('global', {'scope': ''}), ('heartbeat', {'scope': 'heartbeat'}), ('legacy', {})]
+    ]
+    text = render_memory_operation_request(now=1, timestamp='now', operations=operations,
+                                          visible={}, snapshots={}, evidence=[])
+    root = fromstring('<request>' + text + '</request>')
+    global_, heartbeat, legacy = root.findall('operation_requests/operation')
+    assert global_.attrib['scope'] == ''
+    assert heartbeat.attrib['scope'] == 'heartbeat'
+    assert 'scope' not in legacy.attrib
