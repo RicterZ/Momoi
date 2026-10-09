@@ -794,7 +794,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(daemon.store.reflection(local_date)["state"], "running")
             daemon.store.close()
 
-    async def test_manual_tidy_command_queues_one_persistent_job(self) -> None:
+    async def test_manual_tidy_command_preserves_pending_job_while_paused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
@@ -823,19 +823,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._receive(command)
             await daemon._receive(command)
 
-            queued = await daemon.autonomous.get()
-            self.assertEqual(queued.kind, "memory_maintenance")
             self.assertTrue(daemon.autonomous.empty())
-            self.assertEqual(
-                daemon.store.pending_memory_maintenance_turn(), queued.id
-            )
-            self.assertTrue(
-                daemon.store.claim_memory_maintenance_turn(queued.id)
-            )
-            self.assertEqual(
-                daemon.store.recover_memory_maintenance_turns(),
-                [queued.id],
-            )
+            turn_id = daemon.store.pending_memory_maintenance_turn()
+            self.assertIsNotNone(turn_id)
+            self.assertTrue(daemon.store.claim_memory_maintenance_turn(turn_id))
+            self.assertEqual(daemon.store.recover_memory_maintenance_turns(), [turn_id])
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
