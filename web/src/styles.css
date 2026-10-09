@@ -2299,8 +2299,8 @@ a.tag:hover {
   margin-block: 6px;
 }
 
-.memory-filters { width: 280px; max-width: 100%; }
-.memory-filters label { display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; }
+.memory-filters { width: 100%; }
+.memory-filters label { display: grid; gap: 6px; width: 280px; max-width: 100%; min-width: 0; color: var(--muted); font-size: 12px; }
 .memory-filters .dash-input { width: 100%; max-width: 100%; min-width: 0; font-size: 14px; }
 .memory-metadata { display: grid; gap: 8px; margin: 12px 0; }
 .memory-metadata .memory-scope { margin: 0; }
