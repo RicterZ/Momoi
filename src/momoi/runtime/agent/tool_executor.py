@@ -68,6 +68,7 @@ class ToolExecutor:
         if name in {
             "end_turn",
             "wait",
+            "mood_change",
             "reply",
             "send_bubbles",
             "send_voice",

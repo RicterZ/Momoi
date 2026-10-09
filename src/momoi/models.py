@@ -120,6 +120,7 @@ class ProviderResponse:
 
 @dataclass
 class TurnDraft:
+    mood_update: dict[str, Any] | None = None
     heartbeat_activity: dict[str, Any] | None = None
     memory_operations: list[dict[str, Any]] = field(default_factory=list)
     memory_context: dict[int, dict[str, Any]] = field(default_factory=dict)

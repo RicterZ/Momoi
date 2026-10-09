@@ -336,7 +336,7 @@ class AgentLoop:
                             )
                         log_event(logger, logging.DEBUG, "turn_auto_completed",
                                   stage=stage, turn_id=turn_id, reason="no_tool_calls")
-                        return AgentReply([])
+                        return AgentReply([], mood_update=None if circuit_reason else draft.mood_update)
                 if stage in {"owner", "heartbeat", "reply_followup", "webhook", "goal", "plan_step"}:
                     self.store.append_turn_journal(
                         turn_id,
@@ -533,7 +533,10 @@ class AgentLoop:
                         turn_id, stage, model_round.request_system,
                         model_round.request_tools,
                     )
-                return AgentReply([]) if circuit_reason else batch.reply
+                reply = batch.reply
+                if reply is not None and draft.mood_update is not None:
+                    reply = replace(reply, mood_update=draft.mood_update)
+                return AgentReply([]) if circuit_reason else reply
             if workflow is not None and workflow.is_complete():
                 return workflow.completion_result() or {"ok": True}
             if any(not block["is_error"] for block in results):

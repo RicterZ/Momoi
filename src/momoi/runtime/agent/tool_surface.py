@@ -14,7 +14,7 @@ from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
 from ..tool_contracts.episode_relations import EPISODE_RELATIONS_TOOL_SPEC
 from ..tool_contracts.current_state import current_state_finish_spec
 from ..tool_contracts.conversation import (
-    HEARTBEAT_ACTIVITY_TOOL_SPEC, GOAL_REVIEW_TOOL_SPEC,
+    HEARTBEAT_ACTIVITY_TOOL_SPEC, GOAL_REVIEW_TOOL_SPEC, MOOD_CHANGE_TOOL_SPEC,
 )
 from ..tool_contracts.runtime import (
     READ_TOOL_RESULT_SPEC, MCP_RELOAD_SPEC, WAIT_TOOL_SPEC,
@@ -169,6 +169,7 @@ class ToolSurface:
         tools = [
             copy.deepcopy(RECALL_TOOL_SPEC),
             copy.deepcopy(WAIT_TOOL_SPEC),
+            copy.deepcopy(MOOD_CHANGE_TOOL_SPEC),
             heartbeat_begin_spec(),
             copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC),
             copy.deepcopy(GOAL_REVIEW_TOOL_SPEC),
@@ -201,7 +202,7 @@ class ToolSurface:
         thinking = {str(spec["name"]) for spec in THINKING_TOOL_SPECS}
         channel_tools = {spec["name"] for group, specs in self.discovery_groups().items()
                          if group in {"builtin_qq_messages", "builtin_calls", "builtin_mcp_management"} for spec in specs}
-        shared = {"reply", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
+        shared = {"reply", "mood_change", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
         general_chat = {
             "recall",
             "episode_relations",
@@ -236,7 +237,7 @@ class ToolSurface:
                 }
             )
         if stage == "webhook":
-            return frozenset({"reply", "web_fetch", "read_tool_result", "end_turn"})
+            return frozenset({"reply", "mood_change", "web_fetch", "read_tool_result", "end_turn"})
         if stage == "reply_followup":
             return frozenset(general_chat)
         if stage == "goal":
