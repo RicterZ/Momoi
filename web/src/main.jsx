@@ -11,6 +11,7 @@ import EmotionContent from "./EmotionContent.jsx";
 import ConfigurationSettings, { ApplyDialog, SaveBar } from "./ConfigurationSettings.jsx";
 
 const TOKEN_KEY = "momoi-dashboard-token";
+const REFLECTION_PAGE = 14;
 const ConfirmContext = createContext(null);
 
 const pages = {
@@ -503,7 +504,7 @@ function OverviewBody({ data, token, routeParam }) {
         ["聊天主题", data.counts.conversations, "#conversations"],
         ["消息", data.counts.messages, "#conversations"],
         ["记忆", data.counts.memories, "#memories"],
-        ["复盘候选", data.counts.reflection_candidates ?? 0, "#reflections"],
+        ["每日复盘", data.counts.reflections ?? 0, "#reflections"],
       ],
     },
     {
@@ -1135,12 +1136,149 @@ function ConversationDetail({ item }) {
   );
 }
 
-function Reflections(props) {
-  return <Memories {...props} initialActivation="reflection" />;
+function Reflections({ refreshKey, token, routeParam }) {
+  const [items, setItems] = useState([]);
+  const [status, setStatus] = useState({ loading: true });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const cursorRef = useRef(null);
+  const busy = useRef(false);
+  const moreRef = useRef(null);
+  const loadOlderRef = useRef(async () => {});
+
+  useEffect(() => {
+    if (!token) {
+      setStatus({ error: new Error("unauthorized") });
+      return undefined;
+    }
+    const controller = new AbortController();
+    busy.current = false;
+    cursorRef.current = null;
+    setItems([]);
+    setHasMore(false);
+    setLoadingMore(false);
+    setStatus({ loading: true });
+    api(`/api/reflections?${new URLSearchParams({ limit: String(REFLECTION_PAGE), ...(routeParam ? { date: routeParam } : {}) })}`, {
+      signal: controller.signal,
+      token,
+    })
+      .then((data) => {
+        cursorRef.current = data.next_cursor ?? null;
+        setItems(data.items || []);
+        setHasMore(data.next_cursor != null);
+        setStatus({});
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") setStatus({ error });
+      });
+    return () => controller.abort();
+  }, [refreshKey, token, routeParam]);
+
+  loadOlderRef.current = async () => {
+    if (busy.current || cursorRef.current == null || !token) return;
+    busy.current = true;
+    setLoadingMore(true);
+    try {
+      const query = new URLSearchParams({
+        limit: String(REFLECTION_PAGE),
+        cursor: cursorRef.current,
+      });
+      const data = await api(`/api/reflections?${query}`, { token });
+      const incoming = data.items || [];
+      cursorRef.current = data.next_cursor ?? null;
+      if (incoming.length) {
+        setItems((rows) => {
+          const seen = new Set(rows.map((item) => item.id));
+          return [...rows, ...incoming.filter((item) => !seen.has(item.id))];
+        });
+      }
+      setHasMore(data.next_cursor != null);
+    } catch (error) {
+      if (error.name !== "AbortError") setStatus({ error });
+    } finally {
+      busy.current = false;
+      setLoadingMore(false);
+    }
+  };
+
+  useEffect(() => {
+    const target = moreRef.current;
+    if (!target || !hasMore || status.loading) return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadOlderRef.current();
+        }
+      },
+      { rootMargin: "240px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMore, items.length, status.loading]);
+
+  if (status.loading) return <Loading>正在读取复盘…</Loading>;
+  if (status.error) return <ErrorState error={status.error} />;
+  if (!items.length) return <Empty />;
+
+  return (
+    <>
+      <section className="section-tools">
+        <p>按日期保留 Momoi 对每天经历的整理与学习。</p>
+        {routeParam && <a className="quiet-button" href="#reflections">全部复盘</a>}
+      </section>
+      <section className="card-list">
+        {items.map((item) => (
+          <article className="reflection-card" key={item.id}>
+            <div className="card-head">
+              <h2>{item.local_date}</h2>
+              <span className="status">{item.state}</span>
+            </div>
+            <p className="summary">
+              {item.summary ||
+                (item.error ? `等待重试：${item.error}` : "尚未生成复盘。")}
+            </p>
+            {!!item.memories?.length && (
+              <div className="reflection-snapshot">
+                <div className="memory-list">
+                  {item.memories.map((memory) => (
+                    <div className="memory" key={`${memory.kind}:${memory.key}`}>
+                      <div className="memory-head">
+                        <span className="memory-kind">
+                          {memoryKindLabel(memory.kind)}
+                        </span>
+                        {Number.isFinite(Number(memory.confidence)) && (
+                          <span className="memory-confidence">
+                            可信度 {Math.round(Number(memory.confidence) * 100)}%
+                          </span>
+                        )}
+                      </div>
+                      <p>{memory.content}</p>
+                      {memory.evidence && <small>依据：{memory.evidence}</small>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </article>
+        ))}
+      </section>
+      {hasMore || loadingMore ? (
+        <button
+          className="record-list-more"
+          type="button"
+          ref={moreRef}
+          disabled={loadingMore}
+          onClick={() => loadOlderRef.current()}
+        >
+          {loadingMore ? "正在加载…" : "更早的复盘"}
+        </button>
+      ) : null}
+    </>
+  );
 }
 
-function Memories({ refreshKey, token, onMutated, initialActivation = "always" }) {
-  const [activation, setActivation] = useState(initialActivation);
+function Memories({ refreshKey, token, onMutated }) {
+  const [activation, setActivation] = useState("always");
   const [query, setQuery] = useState("");
   const candidateMode = activation === "reflection";
   const path = candidateMode ? "/api/reflection-candidates" : "/api/memories?limit=400";
