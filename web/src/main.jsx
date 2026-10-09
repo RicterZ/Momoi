@@ -1135,26 +1135,22 @@ function ConversationDetail({ item }) {
   );
 }
 
-function Reflections({ refreshKey, token, onMutated }) {
-  const [activation, setActivation] = useState("all");
-  const [query, setQuery] = useState("");
-  return (
-    <DataView path="/api/reflection-candidates" refreshKey={refreshKey} token={token}>
-      {(data) => <MemoryInventory candidateMode
-        items={data.items.map(item => ({ ...item, resource: "reflection-candidates",
-          identity: `candidate:${item.id}`, activation: item.status === "pending" ? "pending" : "observation" }))}
-        {...{ token, onMutated, activation, setActivation, query, setQuery }} />}
-    </DataView>
-  );
+function Reflections(props) {
+  return <Memories {...props} initialActivation="reflection" />;
 }
 
-function Memories({ refreshKey, token, onMutated }) {
-  const [activation, setActivation] = useState("all");
+function Memories({ refreshKey, token, onMutated, initialActivation = "always" }) {
+  const [activation, setActivation] = useState(initialActivation);
   const [query, setQuery] = useState("");
+  const candidateMode = activation === "reflection";
+  const path = candidateMode ? "/api/reflection-candidates" : "/api/memories?limit=400";
   return (
-    <DataView path="/api/memories?limit=400" refreshKey={refreshKey} token={token}>
-      {(data) => <MemoryInventory
-        items={data.items.map(item => ({ ...item, resource: "memories", identity: `memory:${item.id}` }))}
+    <DataView key={candidateMode ? "reflection" : "confirmed"} path={path} refreshKey={refreshKey} token={token}>
+      {(data) => <MemoryInventory candidateMode={candidateMode}
+        items={data.items.map(item => candidateMode
+          ? { ...item, resource: "reflection-candidates", identity: `candidate:${item.id}`,
+              activation: item.status === "pending" ? "pending" : "observation" }
+          : { ...item, resource: "memories", identity: `memory:${item.id}` })}
         {...{ token, onMutated, activation, setActivation, query, setQuery }} />}
     </DataView>
   );
@@ -1226,7 +1222,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
 
   const labels = candidateMode ? { observation: "观察记忆", pending: "待准入记忆" } : activationLabels;
 
-  const visible = filterMemories(items, { activation, query });
+  const visible = filterMemories(items, { activation: candidateMode ? "all" : activation, query });
   const groups = (candidateMode ? ["pending", "observation"] : activationOrder)
     .map((name) => [
       name,
@@ -1242,7 +1238,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
             onChange={(event) => setQuery(event.target.value)} />
         </div>
         <div className="dash-tabs" role="tablist" aria-label="记忆筛选">
-          {[["all", "全部"], ...Object.entries(labels)].map(
+          {[...Object.entries(activationLabels), ["reflection", "复盘"]].map(
             ([value, label]) => (
               <button
                 type="button"
@@ -1378,7 +1374,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
           </section>
         ))
       ) : (
-        <Empty />
+        <Empty text={candidateMode ? "暂无累计达到 2 次的观察；达到 5 次且无冲突后，可在此手动准入召回记忆。" : undefined} />
       )}
     </>
   );
