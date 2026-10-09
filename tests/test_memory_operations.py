@@ -557,7 +557,7 @@ def test_optional_private_search_can_resolve_missing_target(daemon):
         count += 1
         if count == 1:
             return response(
-                ToolCall("search", "memory_operation_search", {"query": "tea|喝茶"})
+                ToolCall("search", "memory_operation_search", {"query": "tea 喝茶"})
             )
         assert "喝茶" in json.dumps(messages, ensure_ascii=False)
         return response(

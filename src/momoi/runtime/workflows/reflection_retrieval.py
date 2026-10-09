@@ -2,6 +2,8 @@
 
 import copy
 
+from ...memory.retrieval.sparse import search_alternatives
+
 from ...models import ToolCall, TurnDraft
 from ...tools.contracts.memory import MEMORY_TOOL_SPECS
 from ...tools.time_range import parse_history_time_range
@@ -23,7 +25,7 @@ REFLECTION_RETRIEVAL_SPECS = [
     {
         "name": "conversation_search",
         "description": (
-            "搜索复盘时段结束前的原始用户和助手消息。query 按字面匹配，| 分隔候选词；"
+            "搜索复盘时段结束前的原始用户和助手消息。query 按字面匹配，空格分隔关键词，词之间为 OR；"
             "空 query 浏览时间范围。结果保留说话者、时间和投递状态；内部或不确定消息"
             "不能证明用户已收到。用 next_cursor 继续翻页。"
         ),
@@ -86,7 +88,7 @@ class ReflectionRetrieval:
         if after is not None:
             clauses.append("created_at >= ?")
             values.append(after)
-        terms = [term.strip() for term in args["query"].split("|") if term.strip()]
+        terms = list(search_alternatives(args["query"]))
         if terms:
             clauses.append("(" + " OR ".join("instr(lower(content), lower(?)) > 0" for _ in terms) + ")")
             values.extend(terms)

@@ -9,10 +9,11 @@ MIN_WEIGHTED_CORPUS = 10
 
 
 def search_alternatives(query: str) -> tuple[str, ...]:
+    """Whitespace-separated OR terms; accept legacy pipes in stored queries."""
     return tuple(
         dict.fromkeys(
             normalized
-            for part in query.replace("｜", "|").split("|")
+            for part in re.split(r"[\s|]+", unicodedata.normalize("NFKC", query))
             if (normalized := unicodedata.normalize("NFKC", part).casefold().strip())
         )
     )[:12]

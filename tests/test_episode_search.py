@@ -83,7 +83,7 @@ class EpisodeSearchTest(unittest.TestCase):
         service = EpisodeQueryService(backend)
 
         results = service.match_many(
-            ["房间|屋子", "屋子|卧室"],
+            ["房间 屋子", "屋子 卧室"],
             [],
         )
 
@@ -161,7 +161,7 @@ class EpisodeSearchTest(unittest.TestCase):
             EpisodeRecallQuery("红色礼盒", ("u1",), 0),
             EpisodeRecallQuery("联机模式", ("u1",), 1),
             EpisodeRecallQuery(
-                "签收礼物|交换卡片|确认约定",
+                "签收礼物 交换卡片 确认约定",
                 ("u1",),
                 2,
             ),
@@ -236,7 +236,7 @@ class EpisodeSearchTest(unittest.TestCase):
             ),
         ]
         query = EpisodeRecallQuery(
-            "连接超时|服务异常",
+            "连接超时 服务异常",
             ("u1",),
             0,
         )
@@ -495,7 +495,7 @@ class EpisodeSearchTest(unittest.TestCase):
             document(f"strong-{index}", title="紫罗兰钥匙")
             for index in range(9)
         ] + [document("weak", message="钥匙")]
-        query = EpisodeRecallQuery("钥匙|紫罗兰钥匙")
+        query = EpisodeRecallQuery("钥匙 紫罗兰钥匙")
         service = EpisodeQueryService(
             StringEpisodeSearchBackend(StringSearchBackend())
         )

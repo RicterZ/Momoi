@@ -105,21 +105,22 @@ class EpisodeCuesTest(unittest.TestCase):
                     "episode-main", 1, claims, recall_cues=cues
                 )
 
+            # Each space-separated term must clear the existing sparse relevance gate.
             messy = [
-                {"text": " 初次  交流 ", "evidence_message_ids": [row["id"]]},
-                {"text": "初次 交流", "evidence_message_ids": [row["id"]]},
+                {"text": " 初次见面  交流问候 ", "evidence_message_ids": [row["id"]]},
+                {"text": "初次见面 交流问候", "evidence_message_ids": [row["id"]]},
             ]
             finish(messy)
             self.assertEqual(
-                store.episode("episode-main")["recall_cues"], ["初次 交流"]
+                store.episode("episode-main")["recall_cues"], ["初次见面 交流问候"]
             )
             self.assertEqual(
-                len(store.search_episode_queries([EpisodeRecallQuery("初次 交流")], 8)),
+                len(store.search_episode_queries([EpisodeRecallQuery("初次见面 交流问候")], 8)),
                 1,
             )
             self.assertEqual(
                 store.search_episode_queries(
-                    [EpisodeRecallQuery("初次 交流")], 8, after=0
+                    [EpisodeRecallQuery("初次见面 交流问候")], 8, after=0
                 ),
                 [],
             )
@@ -129,7 +130,7 @@ class EpisodeCuesTest(unittest.TestCase):
             self.assertTrue(any("初次" in r[0] for r in terms))
             source = store._db.execute("SELECT * FROM conversation_episodes").fetchone()
             before = _episode_summary_document(source).content
-            self.assertEqual(_episode_cue_documents(source)[0].content, "初次 交流")
+            self.assertEqual(_episode_cue_documents(source)[0].content, "初次见面 交流问候")
             for invalid in (
                 [{"text": "", "evidence_message_ids": [row["id"]]}],
                 [{"text": "x" * 101, "evidence_message_ids": [row["id"]]}],
@@ -141,7 +142,7 @@ class EpisodeCuesTest(unittest.TestCase):
                 with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                     finish(invalid)
                 self.assertEqual(
-                    store.episode("episode-main")["recall_cues"], ["初次 交流"]
+                    store.episode("episode-main")["recall_cues"], ["初次见面 交流问候"]
                 )
             linked = [{"text": "有来源的线索", "evidence_message_ids": [row["id"]]}]
             finish(linked)
@@ -154,7 +155,7 @@ class EpisodeCuesTest(unittest.TestCase):
             store._db.execute("DELETE FROM semantic_dirty_sources")
             finish([])
             self.assertEqual(
-                store.search_episode_queries([EpisodeRecallQuery("初次 交流")], 8), []
+                store.search_episode_queries([EpisodeRecallQuery("初次见面 交流问候")], 8), []
             )
             source = store._db.execute("SELECT * FROM conversation_episodes").fetchone()
             self.assertEqual(_episode_summary_document(source).content, before)

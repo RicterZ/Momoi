@@ -21,7 +21,7 @@ THINKING_TOOL_SPECS: list[dict[str, Any]] = [
                 "query": {
                     "type": "string",
                     "description": (
-                        '精确关键词或用 `|` 分隔的备选项。'
+                        '字面关键词用空格分隔，词之间为 OR，例如：部署 Docker。'
                     ),
                 },
                 "time_range": {

@@ -297,7 +297,7 @@ class ContextAssemblerTest(unittest.TestCase):
             selected,
             [
                 {
-                    "expression": "客厅设备|device-42|设备别名",
+                    "expression": "客厅设备 device-42 设备别名",
                     "semantic_expression": "老师此前如何处理客厅设备",
                     "keywords": ["客厅设备", "device-42", "设备别名"],
                     "unit_ids": ["first", "second"],

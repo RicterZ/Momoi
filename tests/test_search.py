@@ -14,13 +14,17 @@ class ScoredBackend:
 class SearchContractTest(unittest.TestCase):
     def test_alternatives_remain_normalized_deduplicated_or_phrases(self) -> None:
         self.assertEqual(
-            search_alternatives(" 房间 | 屋子｜ＦＯＯ | 房间 "),
+            search_alternatives(" 房间  屋子\tＦＯＯ\n房间　foo "),
             ("房间", "屋子", "foo"),
         )
 
+    def test_legacy_pipes_match_space_separators(self):
+        self.assertEqual(search_alternatives("可爱|夸小桃｜真心话 老师喜欢小桃"),
+                         search_alternatives("可爱 夸小桃 真心话 老师喜欢小桃"))
+
     def test_expression_preserves_backend_scores_without_changing_coverage(self) -> None:
         match = search_expression(
-            "房间|屋子|院子",
+            "房间 屋子 院子",
             ("irrelevant",),
             ScoredBackend({"房间": 0.91, "屋子": 0.55}),
         )

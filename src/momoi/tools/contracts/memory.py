@@ -24,7 +24,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "query": {
                     "type": "string",
                     "description": (
-                        '简洁的主题；使用 `|` 表示同一主题的替代名称。'
+                        '字面关键词用空格分隔，词之间为 OR，例如：可爱 夸奖 喜欢小桃。'
                     ),
                 },
                 "filters": {
@@ -73,7 +73,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "query": {
                     "type": "string",
                     "description": (
-                        '简洁的主题，可选带 `|` 别名；为空时则按时间顺序浏览时间范围。'
+                        '字面关键词用空格分隔，词之间为 OR，例如：通勤 上班 地铁；为空时按时间顺序浏览时间范围。'
                     ),
                 },
                 "time_range": {

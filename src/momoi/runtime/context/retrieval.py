@@ -109,14 +109,14 @@ def select_plan_recall_queries(
                 existing_keywords[:] = list(
                     dict.fromkeys([*existing_keywords, *keywords])
                 )[:8]
-                existing["expression"] = "|".join(existing_keywords)
+                existing["expression"] = " ".join(existing_keywords)
                 continue
             if len(selected) >= PLAN_RECALL_QUERY_LIMIT:
                 if unit_id:
                     skipped_unit_ids.add(unit_id)
                 continue
             item = {
-                "expression": "|".join(keywords),
+                "expression": " ".join(keywords),
                 "semantic_expression": semantic,
                 "keywords": keywords,
                 "unit_ids": [unit_id] if unit_id else [],

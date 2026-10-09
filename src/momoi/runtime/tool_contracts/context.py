@@ -45,7 +45,7 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
             "keyword": {
                 "type": "array", "maxItems": 6, "uniqueItems": True,
                 "items": {"type": "string", "minLength": 1, "maxLength": 60, "pattern": r"\S"},
-                "description": "可选，共用的字面关键词 OR 锚点；只用已知名称或具体短语，无可靠词时省略。",
+                "description": "可选，共用的字面关键词 OR 锚点；每项内多个词用空格分隔，数组项之间也为 OR，例如 [可爱 夸奖, 喜欢小桃]。只用已知关键词，无可靠词时省略。",
             },
             "kind": {
                 "type": "array", "uniqueItems": True, "maxItems": len(MEMORY_KINDS),
