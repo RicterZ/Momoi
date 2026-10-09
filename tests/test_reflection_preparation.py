@@ -532,3 +532,16 @@ def test_reflection_excludes_goal_records_and_tools_but_keeps_dialogue(daemon):
     text = reflection_transcript(daemon.store, rows, (start, end))[0]['content']
     assert 'USER: goal-turn完成项目' in text
     assert '内部目标' not in text and 'GOAL:' not in text and 'TOOL CALL:' not in text
+
+
+def test_reflection_excludes_internal_heartbeat_but_keeps_delivered_speech(daemon):
+    start, end = day_window()
+    add_turn(daemon, 'heartbeat-turn', start + 1)
+    rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
+    rows = [
+        {**rows[0], 'role': 'heartbeat', 'content': '内部心跳状态'},
+        {**rows[0], 'role': 'assistant', 'content': '记得喝水', 'delivery_state': 'delivered'},
+    ]
+    text = reflection_transcript(daemon.store, rows, (start, end))[0]['content']
+    assert '内部心跳状态' not in text and 'HEARTBEAT:' not in text
+    assert 'ASSISTANT: 记得喝水' in text

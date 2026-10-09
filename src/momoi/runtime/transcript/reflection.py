@@ -51,7 +51,7 @@ def reflection_transcript(store, rows, window):
     records = []
     for row in rows:
         role = str(row["role"])
-        if role == "goal":
+        if role in {"goal", "heartbeat"}:
             continue
         delivery = str(row.get("delivery_state") or "unknown")
         label = role.upper()
