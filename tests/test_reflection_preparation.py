@@ -547,7 +547,7 @@ def test_reflection_excludes_internal_heartbeat_but_keeps_delivered_speech(daemo
     assert 'ASSISTANT: 记得喝水' in text
 
 
-@pytest.mark.parametrize('archive_kind', ['webhook', 'goal'])
+@pytest.mark.parametrize('archive_kind', ['webhook', 'goal', 'heartbeat'])
 def test_reflection_excludes_whole_runtime_topic_and_summary(daemon, archive_kind):
     start, end = day_window()
     add_turn(daemon, 'archive-turn', start + 1)

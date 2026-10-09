@@ -37,7 +37,7 @@ class ReflectionSourceStore:
                       emotional_context_json, outcomes_json, topics_json,
                       open_loops_json, created_at, updated_at
                FROM conversation_episodes
-               WHERE COALESCE(({runtime_archive_kind_sql("conversation_episodes")}), '') NOT IN ('webhook', 'goal')
+               WHERE COALESCE(({runtime_archive_kind_sql("conversation_episodes")}), '') NOT IN ('webhook', 'goal', 'heartbeat')
                  AND ((created_at>=? AND created_at<?)
                   OR (updated_at>=? AND updated_at<?)
                   OR EXISTS (

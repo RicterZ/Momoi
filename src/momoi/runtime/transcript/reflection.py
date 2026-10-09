@@ -104,7 +104,7 @@ def reflection_transcript(store, rows, window):
             "WHERE et.relation='primary' AND et.turn_id IN ("
             + ",".join("?" for _ in chunk) + ") ORDER BY e.id", chunk,
         ).fetchall():
-            if row["archive_kind"] in {"webhook", "goal"}:
+            if row["archive_kind"] in {"webhook", "goal", "heartbeat"}:
                 excluded_turns.add(str(row["turn_id"]))
                 continue
             turn_topics.setdefault(str(row["turn_id"]), []).append(str(row["id"]))
