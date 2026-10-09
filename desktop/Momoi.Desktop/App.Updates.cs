@@ -45,8 +45,7 @@ public partial class App
         if (!asr.TryGetProperty("adapter", out var adapter) || adapter.GetString() != "sherpa" ||
             (asr.TryGetProperty("enabled", out var enabled) && enabled.ValueKind == JsonValueKind.False)) return false;
         if (!asr.TryGetProperty("options", out var options)) return true;
-        foreach (string key in new[] { "endpoint", "model_path" })
-            if (options.TryGetProperty(key, out var value) && !string.IsNullOrWhiteSpace(value.GetString())) return false;
+        if (options.TryGetProperty("model_path", out var value) && !string.IsNullOrWhiteSpace(value.GetString())) return false;
         return true;
     }
 

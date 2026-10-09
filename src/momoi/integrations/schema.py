@@ -42,11 +42,9 @@ SCHEMAS = {
     },
     ("anthropic", "llm"): LLM,
     ("sherpa", "asr"): {
-        "endpoint": field(default=""),
         "model_path": field(default=""),
         "num_threads": field("integer", 2),
         "trailing_silence": field("number", 0.8),
-        "timeout_seconds": field("number", 30),
     },
     ("tencent", "asr"): {
         "secret_id": field(secret=True),
@@ -151,10 +149,8 @@ def builtin_schema(name, capability):
     for key in required[capability]:
         fields[key]["required"] = True
     if (name, capability) == ("sherpa", "asr"):
-        fields["endpoint"].update(label="远程 ASR 服务地址", advanced=True,
-            description="留空使用内置模型；仅连接独立 Sherpa 服务时填写。")
         fields["model_path"].update(label="本地 ASR 模型目录", advanced=True,
-            description="留空使用内置模型；仅自定义本地模型时填写，与远程地址二选一。")
+            description="留空使用内置模型；仅自定义本地模型时填写。")
         fields["num_threads"]["label"] = "CPU 推理线程数"
         fields["trailing_silence"]["label"] = "断句静音（秒）"
     if (name, capability) == ("deepseek", "balance"):

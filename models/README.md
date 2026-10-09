@@ -22,7 +22,6 @@ For source execution, run Momoi from the repository root. Local ASR also needs
 Override the paths with `MOMOI_EMBEDDING_MODEL_PATH` and `MOMOI_ASR_MODEL_PATH`.
 Windows uses its installation directory for the built-in ASR component.
 
-In Settings, select Sherpa and leave its endpoint and model path empty to use
-built-in speech recognition. Tencent Cloud and custom remote Sherpa services
-remain selectable. The old default `http://asr:8003` migrates to in-process ASR;
+In Settings, select Sherpa and leave its model path empty to use
+built-in speech recognition. Tencent Cloud remains selectable; Sherpa only runs locally. Obsolete Sherpa endpoint and network timeout options migrate to in-process ASR;
 after checking the upgrade, remove the old ASR container from custom deployments.

@@ -287,13 +287,13 @@ adapter; application consumers and runtime replacement remain unchanged.
 
 ## Built-in speech recognition
 
-Select Sherpa with both endpoint and model path empty to use built-in ASR.
-Tencent Cloud and custom remote Sherpa services remain selectable. Linux images
+Select Sherpa with model path empty to use built-in ASR.
+Tencent Cloud remains selectable; Sherpa only runs locally. Linux images
 include the dependencies and model; Windows uses the optional ASR component.
 The model loads on demand, without a separate container.
 For source execution, run `uv sync --locked --extra asr` and
 `uv run --locked python packaging/prepare_asr.py`, then start from the repository root.
 The default directory is `models/asr/`; override it with `MOMOI_ASR_MODEL_PATH`
-or the model path in Settings. The old `http://asr:8003` default migrates while
+or the model path in Settings. Obsolete Sherpa endpoint and network timeout options are discarded while
 preserving enabled state, thread count and silence settings.
 See [model preparation](../models/README.md) before building images.

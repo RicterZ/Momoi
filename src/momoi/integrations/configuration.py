@@ -96,14 +96,17 @@ def managed_catalog(raw):
             settings, options = service.get("settings", {}), asr.get("options", {})
             if isinstance(settings, dict) and isinstance(options, dict):
                 merged = {**settings, **options}
-                if merged.get("endpoint") in ("http://asr:8003", "http://asr:8003/") and not merged.get("model_path"):
+                if "endpoint" in merged or "timeout_seconds" in merged or "timeout_seconds" in service:
                     raw = copy.deepcopy(raw)
                     services, bindings = raw["services"], raw["bindings"]
                     name = "local_asr"
                     while name in services:
                         name += "_local"
-                    merged.pop("endpoint")
-                    services[name] = {**services[asr["service"]], "settings": {}}
+                    merged.pop("endpoint", None)
+                    merged.pop("timeout_seconds", None)
+                    services[name] = {key: value for key, value in services[asr["service"]].items()
+                                      if key != "timeout_seconds"}
+                    services[name]["settings"] = {}
                     bindings["asr"] = {**asr, "service": name, "options": merged}
     binding = bindings.get("embedding", {})
     if not desktop:

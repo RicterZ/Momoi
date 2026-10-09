@@ -2,45 +2,11 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from aiohttp import web, WSMessage, WSMsgType
-from aiohttp.test_utils import TestServer
+from aiohttp import WSMessage, WSMsgType
 
 from momoi.integrations.adapters.sherpa import SherpaASRProvider
 from momoi.integrations.contracts.asr import ASRError, AudioInput
 from momoi.channel.napcat.voice_call.channel import QQCallChannel
-
-
-def test_remote_asr_batch_and_stream_share_provider():
-    async def run():
-        async def batch(request):
-            assert await request.read() == b'wav-data'
-            assert request.query['trailing_silence'] == '0.8'
-            assert request.query['num_threads'] == '3'
-            return web.json_response({'text': '测试'})
-        async def stream(request):
-            assert request.query['trailing_silence'] == '0.8'
-            assert request.query['num_threads'] == '3'
-            ws = web.WebSocketResponse()
-            await ws.prepare(request)
-            async for message in ws:
-                assert message.data == b'\0\0' * 320
-                await ws.send_json({'text': '流式测试', 'final': True})
-            return ws
-        app = web.Application()
-        app.router.add_post('/v1/transcribe', batch)
-        app.router.add_get('/v1/stream', stream)
-        async with TestServer(app) as server:
-            provider = SherpaASRProvider(endpoint=str(server.make_url('')).rstrip('/'), num_threads=3)
-            try:
-                assert await provider.transcribe(AudioInput(b'wav-data', 'wav')) == '测试'
-                session = await provider.create_stream()
-                assert await session.feed(b'\0\0' * 320) == {'text': '流式测试', 'final': True}
-                await session.close()
-                with pytest.raises(ASRError):
-                    await provider.transcribe(AudioInput(b'data', 'mp3'))
-            finally:
-                await provider.close()
-    asyncio.run(run())
 
 
 def test_stream_isolated_across_calls_and_only_final_is_delivered():
@@ -83,10 +49,10 @@ def test_stream_isolated_across_calls_and_only_final_is_delivered():
 
 
 def test_bad_local_configuration_does_not_load_models():
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         SherpaASRProvider(endpoint='http://localhost:8003', model_path='/models')
     with pytest.raises(ValueError):
-        SherpaASRProvider(endpoint='http://localhost:8003', num_threads=17)
+        SherpaASRProvider(num_threads=17)
 
 
 def test_dashboard_switches_asr_without_cloud_credentials(tmp_path):
@@ -120,23 +86,8 @@ def test_windows_optional_component_defaults_without_loading(monkeypatch, tmp_pa
     monkeypatch.setattr('momoi.integrations.adapters.sherpa.sys.platform', 'win32')
     monkeypatch.setenv('MOMOI_INSTALL_DIR', str(tmp_path))
     provider = SherpaASRProvider()
-    assert provider.endpoint == ''
     assert provider.model_path == str(tmp_path / 'models' / 'asr')
     assert provider._engine is None
-    remote = SherpaASRProvider(endpoint='http://asr:8003')
-    assert remote.endpoint == 'http://asr:8003'
-    assert remote.model_path == ''
-    assert remote._engine is None
-
-
-def test_linux_remote_endpoint_is_preserved(monkeypatch, tmp_path):
-    monkeypatch.setattr('momoi.integrations.adapters.sherpa.sys.platform', 'linux')
-    monkeypatch.setenv('MOMOI_INSTALL_DIR', str(tmp_path))
-    remote = SherpaASRProvider(endpoint='http://asr:8003')
-    assert remote.endpoint == 'http://asr:8003'
-    assert remote.model_path == ''
-    with pytest.raises(ValueError):
-        SherpaASRProvider(endpoint='http://asr:8003', model_path='/models')
 
 
 def test_optional_component_resolves_relative_install_directory(monkeypatch, tmp_path):
@@ -151,10 +102,9 @@ def test_windows_shell_respects_custom_model_and_provider_switches(monkeypatch, 
     monkeypatch.setenv('MOMOI_INSTALL_DIR', str(tmp_path))
     monkeypatch.setattr('momoi.integrations.adapters.sherpa.sys.platform', 'win32')
     provider = SherpaASRProvider(model_path='/custom/models')
-    assert provider.endpoint == ''
     assert provider.model_path == '/custom/models'
     assert provider._engine is None
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         SherpaASRProvider(endpoint='http://asr:8003', model_path='/custom/models')
     test_dashboard_switches_asr_without_cloud_credentials(tmp_path)
 
@@ -169,7 +119,6 @@ def test_builtin_model_paths_and_lazy_loading(monkeypatch, tmp_path):
     monkeypatch.setenv('MOMOI_ASR_MODEL_PATH', '/opt/momoi/models/asr')
     assert SherpaASRProvider().model_path == '/opt/momoi/models/asr'
     assert SherpaASRProvider(model_path='/custom').model_path == '/custom'
-    assert SherpaASRProvider(endpoint='https://custom.example').model_path == ''
 
 
 def test_legacy_asr_catalog_migration_preserves_options_and_input():
@@ -188,7 +137,7 @@ def test_legacy_asr_catalog_migration_preserves_options_and_input():
     assert updated['services'][binding['service']]['settings'] == {}
     assert managed_catalog(updated) == updated
     raw['services']['sherpa']['settings']['endpoint'] = 'https://custom.example'
-    assert managed_catalog(raw) == raw
+    assert 'endpoint' not in managed_catalog(raw)['bindings']['asr']['options']
 
 
 def test_builtin_asr_reuses_engine_and_isolates_streams(monkeypatch):
@@ -216,3 +165,21 @@ def test_builtin_asr_reuses_engine_and_isolates_streams(monkeypatch):
         await second.close()
         await provider.close()
     asyncio.run(run())
+
+
+def test_local_asr_schema_has_no_network_options():
+    from momoi.integrations.registry import adapter_definition
+    fields = adapter_definition('sherpa', 'asr').schema
+    assert 'endpoint' not in fields
+    assert 'timeout_seconds' not in fields
+
+
+def test_legacy_network_timeout_does_not_break_local_catalog(tmp_path):
+    from momoi.integrations.configuration import parse_provider_catalog
+    raw = {'version': 1, 'services': {'asr': {'adapter': 'sherpa',
+           'timeout_seconds': 30, 'settings': {'endpoint': 'https://old.example', 'num_threads': 3}}},
+           'bindings': {'asr': {'service': 'asr', 'options': {'model_path': '/custom/asr', 'timeout_seconds': 10}}}}
+    catalog = parse_provider_catalog(raw, tmp_path / 'providers.yaml')
+    options = catalog.options_for('asr')
+    assert 'endpoint' not in options and 'timeout_seconds' not in options
+    assert options['model_path'] == '/custom/asr' and options['num_threads'] == 3

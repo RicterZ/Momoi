@@ -39,13 +39,13 @@ test('LLM protocol switch without supplier defaults retains relay endpoint', () 
   assert.deepEqual(switchProviderAdapter('llm', value, 'anthropic', protocols).options, value.options);
 });
 
-test('ASR switches between Tencent credentials and local endpoint without leaking options', () => {
+test('ASR switches between Tencent credentials and local model without leaking options', () => {
   const adapters = [
     { capability: 'asr', adapter: 'tencent', fields: {
       secret_id: { secret: true }, secret_key: { secret: true }, timeout_seconds: { default: 30 },
     } },
     { capability: 'asr', adapter: 'sherpa', fields: {
-      endpoint: { default: '' }, model_path: { default: '' }, timeout_seconds: { default: 30 },
+      model_path: { default: '' },
     } },
   ];
   const local = switchProviderAdapter('asr', {
@@ -55,7 +55,7 @@ test('ASR switches between Tencent credentials and local endpoint without leakin
   assert.equal(local.enabled, true);
   assert.equal(local.options.secret_id, undefined);
   assert.equal(local.options.secret_key, undefined);
-  local.options.endpoint = 'http://asr:8003';
+  local.options.model_path = '/models/asr';
   const cloud = switchProviderAdapter('asr', local, 'tencent', adapters);
   assert.equal(cloud.options.endpoint, undefined);
   assert.equal(cloud.options.model_path, undefined);

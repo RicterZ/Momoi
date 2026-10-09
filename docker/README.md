@@ -30,8 +30,7 @@ verifying the upgrade, remove the old encoder container and any `depends_on` ent
 from a custom deployment file. For QQ, deploy NapCat separately and configure its
 reachable OneBot WebSocket URL in Settings.
 Local Sherpa ASR also runs inside Momoi. Select Sherpa in Settings and leave its
-endpoint and model path empty; the model loads only when used. Tencent Cloud and
-custom remote Sherpa services remain available. The old `http://asr:8003` default
+model path empty; the model loads only when used. Tencent Cloud remains available. The old `http://asr:8003` default
 migrates automatically; remove the old ASR service from custom Compose files after
 verifying the upgrade.
 

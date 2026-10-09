@@ -1,14 +1,12 @@
-"""Local CPU ASR with optional remote Sherpa service support."""
+"""In-process local CPU speech recognition."""
 import asyncio
 import io
-import json
 import os
 import sys
 from pathlib import Path
 import threading
 import wave
 
-import aiohttp
 import numpy as np
 
 from ..contracts.asr import ASRError, ASRProvider, AudioInput
@@ -70,52 +68,23 @@ class LocalStream:
         self.stream = None
 
 
-class RemoteStream:
-    def __init__(self, ws, timeout):
-        self.ws, self.timeout = ws, timeout
-
-    async def feed(self, pcm):
-        try:
-            await self.ws.send_bytes(pcm)
-            message = await self.ws.receive(timeout=self.timeout)
-            if message.type != aiohttp.WSMsgType.TEXT:
-                raise ASRError('本地 ASR 流连接已关闭')
-            value = json.loads(message.data)
-            if not isinstance(value.get('text'), str) or type(value.get('final')) is not bool:
-                raise ASRError('本地 ASR 返回无效流结果')
-            return value
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
-            raise ASRError('本地 ASR 流请求失败') from error
-
-    async def close(self):
-        await self.ws.close()
-
-
 class SherpaASRProvider(ASRProvider):
     engine = 'zipformer-zh-int8-2025-06-30'
 
-    def __init__(self, *, endpoint='', model_path='', num_threads=2,
-                 trailing_silence=0.8, timeout_seconds=30):
+    def __init__(self, *, model_path='', num_threads=2, trailing_silence=0.8):
         install = os.environ.get('MOMOI_INSTALL_DIR')
-        if not endpoint and not model_path:
+        if not model_path:
             model_path = str(Path(install).resolve() / 'models' / 'asr') if install else (
                 os.environ.get('MOMOI_ASR_MODEL_PATH') or str(Path('models/asr').resolve()))
-        if bool(endpoint) == bool(model_path):
-            raise ValueError('本地 ASR 必须填写 endpoint 或 model_path，二选一')
-        from ..validation import url, number
-        if endpoint:
-            url({'endpoint': endpoint}, 'endpoint')
+        from ..validation import number
         number({'num_threads': num_threads}, 'num_threads', 2, integer=True)
         number({'trailing_silence': trailing_silence}, 'trailing_silence', 0.8)
-        number({'timeout_seconds': timeout_seconds}, 'timeout_seconds', 30)
         if num_threads > 16 or trailing_silence > 5:
             raise ValueError('本地 ASR 线程数不能超过 16，断句静音不能超过 5 秒')
-        self.endpoint = endpoint.rstrip('/')
         self.model_path, self.num_threads = model_path, num_threads
-        self.trailing_silence, self.timeout = trailing_silence, timeout_seconds
+        self.trailing_silence = trailing_silence
         self._engine = None
         self._dll_directory = None
-        self._http = None
         self._load_lock = asyncio.Lock()
 
     async def _local(self):
@@ -136,42 +105,17 @@ class SherpaASRProvider(ASRProvider):
                     raise ASRError('本地 ASR 加载失败，请安装本地 ASR 组件并检查模型目录') from error
         return self._engine
 
-    def _client(self):
-        if self._http is None:
-            self._http = aiohttp.ClientSession(trust_env=False,
-                timeout=aiohttp.ClientTimeout(total=self.timeout))
-        return self._http
-
     async def create_stream(self):
-        if not self.endpoint:
-            engine = await self._local()
-            return LocalStream(engine, await asyncio.to_thread(engine.create_stream))
-        try:
-            ws = await self._client().ws_connect(self.endpoint + '/v1/stream', heartbeat=10,
-                params={'trailing_silence': self.trailing_silence, 'num_threads': self.num_threads})
-            return RemoteStream(ws, self.timeout)
-        except (aiohttp.ClientError, asyncio.TimeoutError) as error:
-            raise ASRError('无法连接远程 ASR 服务') from error
+        engine = await self._local()
+        return LocalStream(engine, await asyncio.to_thread(engine.create_stream))
 
     async def transcribe(self, audio: AudioInput):
         if audio.format != 'wav' or not audio.data or len(audio.data) > self.max_audio_bytes:
             raise ASRError('本地 ASR 需要有效 WAV，大小不超过 3 MiB')
         try:
-            if not self.endpoint:
-                return await asyncio.to_thread((await self._local()).transcribe, audio.data)
-            async with self._client().post(self.endpoint + '/v1/transcribe', data=audio.data,
-                                          params={'trailing_silence': self.trailing_silence, 'num_threads': self.num_threads},
-                                          headers={'Content-Type': 'audio/wav'}) as response:
-                response.raise_for_status()
-                result = await response.json()
-                if not isinstance(result.get('text'), str):
-                    raise ASRError('本地 ASR 返回无效文本')
-                return result['text']
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, OSError, wave.Error) as error:
+            return await asyncio.to_thread((await self._local()).transcribe, audio.data)
+        except (ValueError, OSError, wave.Error) as error:
             raise ASRError('本地 ASR 识别失败') from error
 
     async def close(self):
-        if self._http is not None:
-            await self._http.close()
-            self._http = None
         self._engine = None

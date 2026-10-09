@@ -272,9 +272,9 @@ Provider 配置不接受 `{"$secret":"keep"}` 占位符。环境变量字段返�
 
 ## 内置语音识别
 
-选择 Sherpa 后，服务地址和模型目录均留空即可使用内置 ASR；仍可切换腾讯云或自定义远程 Sherpa 服务。
+选择 Sherpa 后，模型目录留空即可使用内置 ASR；仍可切换腾讯云。Sherpa 仅支持本地识别，不再提供远程地址或网络超时设置。
 Linux 镜像自带依赖与模型，Windows 使用可选 ASR 组件。模型按需加载，无需独立容器。
 源码运行先执行 `uv sync --locked --extra asr` 和 `uv run --locked python packaging/prepare_asr.py`，
 再从仓库根目录启动。模型默认位于 `models/asr/`，可用 `MOMOI_ASR_MODEL_PATH` 或设置中的模型目录覆盖。
-旧默认 `http://asr:8003` 自动迁移至内置调用，保留启停状态、线程数与断句参数。
+旧 Sherpa 地址及网络超时配置移除，统一使用内置调用，保留启停状态、线程数与断句参数。
 构建前的模型准备步骤见 [models/README.md](../models/README.md)。
