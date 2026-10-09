@@ -65,6 +65,18 @@ CREATE TABLE IF NOT EXISTS reflections (
 );
 CREATE INDEX IF NOT EXISTS reflections_due
     ON reflections(scheduled_at, retry_at) WHERE state='pending';
+CREATE TABLE IF NOT EXISTS weekly_reflections (
+    period_end TEXT PRIMARY KEY,
+    scheduled_at REAL NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('pending', 'running', 'completed')),
+    claimed_at REAL,
+    retry_at REAL,
+    input_json TEXT NOT NULL,
+    result_json TEXT,
+    error TEXT,
+    created_at REAL NOT NULL,
+    completed_at REAL
+);
 CREATE TABLE IF NOT EXISTS reflection_memories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,
@@ -221,7 +233,7 @@ CREATE TABLE IF NOT EXISTS turns (
     kind TEXT NOT NULL CHECK (kind IN ('owner', 'autonomous')),
     workflow_kind TEXT CHECK (workflow_kind IN (
         'owner', 'webhook', 'goal', 'heartbeat', 'reply_followup',
-        'reflection', 'memory_maintenance', 'memory_operation', 'episode_consolidate',
+        'reflection', 'weekly_reflection', 'memory_maintenance', 'memory_operation', 'episode_consolidate',
         'episode_anneal', 'episode_relation', 'current_state_maintenance', 'plan_step', 'channel_event'
     )),
     source_ids_json TEXT NOT NULL,

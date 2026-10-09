@@ -678,6 +678,10 @@ def _add_replyer_history_windows(database: sqlite3.Connection) -> None:
     database.execute(REPLYER_HISTORY_SCHEMA)
 
 
+def _add_weekly_reflection_workflow(database):
+    _add_turn_workflow(database, "weekly_reflection")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -711,6 +715,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_replyer_history_windows,
     _add_tool_discovery,
     _add_channel_event_workflow,
+    _add_weekly_reflection_workflow,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 
