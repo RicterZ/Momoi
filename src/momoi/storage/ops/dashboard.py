@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import time
+from uuid import uuid4
 from dataclasses import asdict
 
 from ..core.timestamps import add_context_timestamps
@@ -185,16 +186,27 @@ class DashboardStore:
             row = self._active_memory_row(memory_id)
             if row is None:
                 return None
-            if content is not None:
-                self._db.execute(
-                    "UPDATE memories SET content=?, updated_at=? WHERE id=?",
-                    (content.strip(), time.time(), memory_id),
-                )
-            if triggers is not ...:
-                repository = self.memories.repository
-                snapshot = repository.snapshots([memory_id])[memory_id]
-                repository.update_meta(snapshot, {**snapshot['meta'], 'triggers': triggers})
-        return self._memory_public_dict(self._active_memory_row(memory_id))
+            repository = self.memories.repository
+            snapshot = repository.snapshots([memory_id])[memory_id]
+            updated_content = content.strip() if content is not None else snapshot['content']
+            updated_triggers = snapshot['meta'].get('triggers', []) if triggers is ... else triggers
+            if updated_content == snapshot['content'] and updated_triggers == snapshot['meta'].get('triggers', []):
+                return self._memory_public_dict(row)
+            # A dashboard edit is owner evidence, not an incoming chat message.
+            changes = {}
+            if updated_content != snapshot['content']:
+                changes['content'] = updated_content
+            if updated_triggers != snapshot['meta'].get('triggers', []):
+                changes['triggers'] = updated_triggers
+            source = {
+                'event_id': 'dashboard:memory:' + uuid4().hex,
+                'quote': '用户手动编辑记忆：' + json.dumps(changes, ensure_ascii=False),
+            }
+            new_id = repository.replace(
+                memory_id, updated_content, snapshot['activation'], snapshot['expires_at'],
+                source, updated_at=time.time(), triggers=updated_triggers,
+            )
+            return self._memory_public_dict(self._active_memory_row(new_id))
 
     def forget_memory_by_id(self, memory_id: int, reason: str) -> bool:
         text = reason.strip() or "Deleted from dashboard"

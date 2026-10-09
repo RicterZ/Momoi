@@ -6,11 +6,15 @@ class MemoryEvidenceStore:
             return []
         placeholders = ",".join("?" for _ in memory_ids)
         rows = self._db.execute(
-            f"""SELECT DISTINCT v.id, v.content, v.occurred_at, v.received_at
+            f"""SELECT DISTINCT e.source_event_id AS id,
+                       COALESCE(v.content, e.quote) AS content,
+                       COALESCE(v.occurred_at, e.created_at) AS occurred_at,
+                       COALESCE(v.received_at, e.created_at) AS received_at
                 FROM memory_evidence AS e
-                JOIN events AS v ON v.id=e.source_event_id
+                LEFT JOIN events AS v ON v.id=e.source_event_id
                 WHERE e.memory_id IN ({placeholders})
-                ORDER BY v.received_at, v.id""",
+                  AND (v.id IS NOT NULL OR e.source_event_id LIKE 'dashboard:memory:%')
+                ORDER BY received_at, id""",
             memory_ids,
         ).fetchall()
         return [

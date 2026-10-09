@@ -45,13 +45,14 @@ def test_scoped_memory_only_appears_in_matching_workflow(store):
 def test_dashboard_replace_delete_and_restart_preserve_snapshot(store):
     identifier = add(store, "旧偏好")
     first = store.transcript_memory_context(["a"])
-    store.update_memory_content(identifier, "新偏好")
+    updated_id = store.update_memory_content(identifier, "新偏好")["id"]
     changed = store.transcript_memory_context(["a", "b"])
     assert changed["snapshot"] == first["snapshot"]
-    assert 'replace' in changed["events"][0]["content"]
+    assert '<delete' in changed["events"][0]["content"]
+    assert '<add' in changed["events"][0]["content"]
     assert "新偏好" in changed["events"][0]["content"]
     assert store.memories.repository.active("preference", "test")["content"] == "新偏好"
-    store.forget_memory_by_id(identifier, "撤销")
+    store.forget_memory_by_id(updated_id, "撤销")
     deleted = store.transcript_memory_context(["a", "b"])
     assert deleted["snapshot"] == first["snapshot"]
     assert '<delete' in deleted["events"][1]["content"]
@@ -116,7 +117,7 @@ def test_running_turn_appends_changes_then_compaction_folds_them(store):
                 {"role": "user", "content": "当前"}]
     original = json.dumps(prefix["content"])
     window = ContextWindow(SimpleNamespace(max_input_tokens=100000, context_compaction_ratio=1), store, None)
-    store.update_memory_content(identifier, "新偏好")
+    updated_id = store.update_memory_content(identifier, "新偏好")["id"]
     count = window.fit([], messages, [], 2)
     assert count == 2
     assert json.dumps(prefix["content"]) == original
@@ -132,7 +133,7 @@ def test_running_turn_appends_changes_then_compaction_folds_them(store):
     assert not any(m.get("_memory_change") for m in messages)
     persisted = store.transcript_memory_context(["a"])
     assert not persisted["events"]
-    assert persisted["snapshot"][str(identifier)]["content"] == "新偏好"
+    assert persisted["snapshot"][str(updated_id)]["content"] == "新偏好"
 
 
 def test_fold_does_not_consume_newer_revision(store):

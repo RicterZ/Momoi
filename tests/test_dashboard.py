@@ -839,6 +839,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             )
         ).json()
         self.assertEqual(updated["content"], "主人非常不吃香菜。")
+        self.assertNotEqual(updated["id"], memory_id)
+        memory_id = updated["id"]
         deleted = await self.client.delete(f"/api/memories/{memory_id}", headers=auth)
         self.assertEqual(deleted.status, 200)
         remaining = await (await self.client.get("/api/memories", headers=auth)).json()
@@ -897,6 +899,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         item = await response.json()
         self.assertEqual(item['meta']['triggers'], ['喵', '晚安'])
         self.assertEqual(item['content'], original['content'])
+        self.assertNotEqual(item['id'], original['id'])
+        path = f"/api/memories/{item['id']}"
         for invalid in [None, '喵', [''], ['a', 'Ａ'], ['x' * 41], list('123456789')]:
             response = await self.client.patch(path, headers=self._auth(), json={'content': '不应写入', 'triggers': invalid})
             self.assertEqual(response.status, 400)

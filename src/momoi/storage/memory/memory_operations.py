@@ -46,13 +46,19 @@ class MemoryOperationStore:
         records = []
         for event_id, content in evidence.items():
             row = self._db.execute(
-                "SELECT occurred_at, received_at FROM events WHERE id=?", (event_id,)
+                "SELECT content, occurred_at, received_at FROM events WHERE id=?", (event_id,)
             ).fetchone()
+            if row is None and event_id.startswith("dashboard:memory:"):
+                row = self._db.execute(
+                    """SELECT quote AS content, created_at AS occurred_at, created_at AS received_at
+                       FROM memory_evidence WHERE source_event_id=? AND quote=? LIMIT 1""",
+                    (event_id, content),
+                ).fetchone()
             if row:
                 records.append(
                     {
                         "event_id": event_id,
-                        "content": content,
+                        "content": row["content"],
                         "occurred_at": self.context_timestamp(row["occurred_at"]),
                         "occurred_at_unix": row["occurred_at"],
                         "received_at": row["received_at"],
@@ -200,9 +206,10 @@ class MemoryOperationStore:
             decisions = plan.decisions
             if payload["requests"] != batch["operations"]:
                 raise ValueError("memory_operation_plan_mismatch")
-            # events are authenticated owner input, unlike channel_events or model text.
+            # Only persisted owner input and authenticated dashboard edits are evidence.
+            records = {row["event_id"]: row for row in self.memory_operation_evidence_records(payload["evidence"])}
             for event_id, text in payload["evidence"].items():
-                row = self._db.execute("SELECT content, received_at FROM events WHERE id=?", (event_id,)).fetchone()
+                row = records.get(event_id)
                 if (row is None or text != row["content"]
                         or (event_id in payload["evidence_times"]
                             and payload["evidence_times"][event_id] != row["received_at"])):
