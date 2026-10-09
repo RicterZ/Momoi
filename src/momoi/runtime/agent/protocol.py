@@ -13,7 +13,7 @@ MAX_CONSECUTIVE_EXECUTION_FAILURES = 8
 NO_TOOL_GUIDANCE = (
     "[运行时提示] 仅刚才这条纯文本是内部思考，不会发送给用户。"
     "此前工具调用及结果仍然有效，不要因此重复 reply。"
-    "若本轮已完成，请调用当前阶段的结束工具；否则继续调用所需工具。"
+    "专用工作流须提交其要求的结果；普通对话完成后停止调用工具即可。"
 )
 
 _PRIVATE_REASONING_BLOCK_TYPES = frozenset(

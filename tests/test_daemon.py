@@ -1271,7 +1271,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             )
                         )
                     else:
-                        assert {"reply", "end_turn", "recall"} <= {tool["name"] for tool in tools}
+                        assert {"reply", "recall"} <= {tool["name"] for tool in tools}
                         calls = [reply_call("notify", bubbles=["创建任务没成功，我先停下了。"]),
                                  ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}, "reply_wait": {"wait": False}})]
                     return ProviderResponse(
@@ -1290,7 +1290,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 @staticmethod
                 def assert_terminal_tools(tools: list[dict[str, object]]) -> None:
                     names = [tool["name"] for tool in tools]
-                    if "reply" not in names or "end_turn" not in names:
+                    if "reply" not in names or "end_turn" in names:
                         raise AssertionError(tools)
                     if "goal_create" not in names:
                         raise AssertionError(tools)
@@ -1491,9 +1491,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     **___: object,
                 ) -> ProviderResponse:
                     # Every heartbeat round keeps the shared schema.
-                    terminal = next(tool for tool in tools if tool["name"] == "end_turn")
-                    if terminal != END_TURN_TOOL_SPEC:
-                        raise AssertionError("Heartbeat changed the shared end_turn schema")
+                    assert "end_turn" not in {tool["name"] for tool in tools}
                     self.calls += 1
                     names = {str(tool["name"]) for tool in tools}
                     if self.calls == 1:
@@ -1520,7 +1518,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "heartbeat_begin",
                             "web_fetch",
                             "reply",
-                            "end_turn",
                         }
                         if not expected.issubset(names):
                             raise AssertionError(names)
@@ -1797,7 +1794,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     self.calls += 1
                                     if self.calls > limit:
                                         assert self.calls == limit + 1
-                                        assert {"reply", "end_turn", "recall"} <= {tool["name"] for tool in _args[2]}
+                                        assert {"reply", "recall"} <= {tool["name"] for tool in _args[2]}
                                         calls = [reply_call("notify", bubbles=["这次出错了，我先停下来，结果还没确认。"]),
                                                  ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}, "reply_wait": {"wait": False}})]
                                         return ProviderResponse([{"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments} for c in calls], calls)
@@ -2318,12 +2315,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         second_tools = [tool["name"] for tool in llm_requests[1]["tools"]]
         self.assertEqual(initial_tools, second_tools)
         self.assertIn("reply", second_tools)
-        self.assertIn("end_turn", second_tools)
+        self.assertNotIn("end_turn", second_tools)
         self.assertNotIn("tool_choice", llm_requests[0])
         self.assertIn("reply", second_tools)
         final_tools = [tool["name"] for tool in llm_requests[6]["tools"]]
         self.assertIn("reply", final_tools)
-        self.assertIn("end_turn", final_tools)
+        self.assertNotIn("end_turn", final_tools)
         self.assertIn("memory_search", final_tools)
         self.assertEqual(set(final_tools) - set(initial_tools), {"memory_search"})
         # The application requires a tool response independently of wire protocol.

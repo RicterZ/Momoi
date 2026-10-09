@@ -633,7 +633,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
         surface = {
             tool["name"] for tool in self.daemon.tool_surface.conversation_specs()
         }
-        self.assertIn("end_turn", surface)
+        self.assertNotIn("end_turn", surface)
         permitted = self.daemon.tool_surface.permitted_names("goal")
         harness = TurnHarness.for_stage("goal", permitted_tool_names=permitted)
         for name in ("goal_update", "goal_finish", "goal_cancel"):
@@ -777,8 +777,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             daemon.provider = provider  # type: ignore[assignment]
             await daemon._complete_goal_turn(goal_id, asyncio.Event())
 
-            end_turn = next(tool for tool in provider.first_tools if tool["name"] == "end_turn")
-            self.assertEqual(end_turn["input_schema"], END_TURN_TOOL_SPEC["input_schema"])
+            self.assertNotIn("end_turn", {tool["name"] for tool in provider.first_tools})
             rendered = str(provider.first_messages)
             self.assertNotIn("<workflow_contract>", str(provider.first_system))
             self.assertIn("<workflow_contract>", rendered)

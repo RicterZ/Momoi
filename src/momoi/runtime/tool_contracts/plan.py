@@ -32,7 +32,7 @@ PLAN_START = {
     }, "required": ["plan_id", "version", "approval_quote"], "additionalProperties": False},
 }
 PLAN_STEP_FINISH = {
-    "name": "plan_step_finish", "description": '以结果结束当前步骤。为后续步骤引用必要的输出。当共享前置条件失败时设置 abort_remaining。运行时将进入下一步；请勿调用 end_turn。',
+    "name": "plan_step_finish", "description": '以结果结束当前步骤。为后续步骤引用必要的输出。当共享前置条件失败时设置 abort_remaining。运行时将进入下一步。',
     "input_schema": {"type": "object", "properties": {
         "outcome": {"enum": ["succeeded", "failed", "blocked"]},
         "summary": {"type": "string", "minLength": 1, "maxLength": 4000},

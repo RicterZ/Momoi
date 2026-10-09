@@ -8,4 +8,4 @@
 
 文字用 mode=text；工具和当前渠道支持语音时可用 mode=voice。媒体、附件放入 attachments，表情和戳一戳由 Replyer 选择。QQ 仅在需要引用特定消息时填写 reply_to_message_id；历史消息使用 recall 或 episode_read 返回的 quote_targets 中的 QQ message_id。
 
-以 reply 返回的实际发言和投递结果判断沟通是否完成，再决定继续行动、等待或调用当前工作流的结束工具。
+以 reply 返回的实际发言和投递结果判断沟通是否完成，再决定继续行动或等待；完成当前阶段必需的结果提交后，停止调用工具即可结束思考。

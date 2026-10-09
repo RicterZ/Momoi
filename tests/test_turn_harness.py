@@ -147,9 +147,9 @@ class TurnHarnessTest(unittest.TestCase):
     def test_harness_requires_its_boundary_tools_on_the_surface(self) -> None:
         harness = TurnHarness.for_stage("owner")
 
-        with self.assertRaisesRegex(ValueError, "end_turn"):
-            harness.validate_surface(set())
-        harness.validate_surface({"recall", "reply", "end_turn"})
+        harness.validate_surface({"recall", "reply"})
+        with self.assertRaisesRegex(ValueError, "heartbeat_activity"):
+            TurnHarness.for_stage("heartbeat").validate_surface({"heartbeat_begin"})
 
     def test_heartbeat_requires_separate_successful_recall_for_each_batch(self) -> None:
         harness = TurnHarness.for_stage("heartbeat")

@@ -328,8 +328,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     [tool for tool in request_tools if tool["name"] != "end_turn"],
                     [tool for tool in tools if tool["name"] != "end_turn"],
                 )
-                terminal_schema = next(tool["input_schema"] for tool in request_tools if tool["name"] == "end_turn")
-                self.assertEqual(set(terminal_schema["properties"]), {"reply_wait", "mood"})
+                self.assertNotIn("end_turn", {tool["name"] for tool in request_tools})
                 if rounds == 1:
                     call = reply_call("voice", text=self.text, mode="voice")
                 else:

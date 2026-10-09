@@ -117,10 +117,10 @@ class AgentLoop:
             )
             messages.append({"role": "user", "content": (
                 "[运行时通知] 本轮连续多次工具或协议错误，已触发熔断，任务执行已停止。"
-                "现在只允许 reply 和 end_turn；此前的开场和任务流程要求不再适用。"
+                "现在只允许 reply；此前的开场和任务流程要求不再适用。"
                 "请通过 reply(mode=text) 简短告诉用户这次处理出错、未完成的部分，"
                 "不要照抄内部错误、堆栈或工具参数，不要声称已完成或承诺自动重试。"
-                "已有操作可能生效时如实说明不确定性。发出通知后调用 end_turn，"
+                "已有操作可能生效时如实说明不确定性。发出通知后停止调用工具，"
                 "不要要求等待用户回复。错误摘要仅供理解："
                 + json.dumps(reason[:500], ensure_ascii=False)
             )})
@@ -174,7 +174,7 @@ class AgentLoop:
                 required_tool = None
             # Keep the provider-facing tool surface stable across stages and rounds.
             # Stage-specific rules are enforced by the harness after the response.
-            request_tools = tools
+            request_tools = [tool for tool in tools if tool["name"] != "end_turn"]
             llm_round += 1
             require_tool = bool(required_tool)
 
@@ -421,7 +421,7 @@ class AgentLoop:
                 # Stage-specific guidance belongs only in appended error results.
                 end_schema = (
                     end_turn_tool_spec(stage)["input_schema"]
-                    if workflow is None and any(spec["name"] == "end_turn" for spec in request_tools)
+                    if workflow is None and harness.spec.terminal_tool == "end_turn"
                     else None
                 )
                 for call in response.tool_calls:
@@ -488,7 +488,8 @@ class AgentLoop:
                     context_messages=model_round.request_messages,
                     response=response,
                     messages=messages,
-                    request_tools=request_tools,
+                    request_tools=([*request_tools, end_turn_tool_spec(stage)]
+                                   if harness.spec.terminal_tool == "end_turn" else request_tools),
                     tools=tools,
                     enable_tool_groups=enable_tool_groups,
                     current_events=current_events,

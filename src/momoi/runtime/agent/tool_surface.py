@@ -14,7 +14,7 @@ from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
 from ..tool_contracts.episode_relations import EPISODE_RELATIONS_TOOL_SPEC
 from ..tool_contracts.current_state import current_state_finish_spec
 from ..tool_contracts.conversation import (
-    END_TURN_TOOL_SPEC, HEARTBEAT_ACTIVITY_TOOL_SPEC, GOAL_REVIEW_TOOL_SPEC,
+    HEARTBEAT_ACTIVITY_TOOL_SPEC, GOAL_REVIEW_TOOL_SPEC,
 )
 from ..tool_contracts.runtime import (
     READ_TOOL_RESULT_SPEC, MCP_RELOAD_SPEC, WAIT_TOOL_SPEC,
@@ -184,7 +184,6 @@ class ToolSurface:
             ],
             *([tool_search_spec(), copy.deepcopy(TOOL_ENABLE_SPEC)] if groups else []),
             current_state_finish_spec(),
-            copy.deepcopy(END_TURN_TOOL_SPEC),
         ]
         catalog = {spec["name"]: spec for specs in groups.values() for spec in specs}
         if self.store is not None:

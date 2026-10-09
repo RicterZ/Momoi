@@ -184,7 +184,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
 HEARTBEAT_ACTIVITY_TOOL_SPEC: dict[str, Any] = {
     "name": "heartbeat_activity",
     "description": (
-        '仅心跳阶段调用，暂存实际活动或休息、结果和下次检查计划。必须成功后再 end_turn，可同批依次调用；结束时原子提交最新报告。'
+        '仅心跳阶段调用，暂存实际活动或休息、结果和下次检查计划。成功提交后，停止调用工具即可结束；结束时原子提交最新报告。'
     ),
     "input_schema": {
         "type": "object",
@@ -221,7 +221,7 @@ HEARTBEAT_ACTIVITY_TOOL_SPEC: dict[str, Any] = {
 GOAL_REVIEW_TOOL_SPEC: dict[str, Any] = {
     "name": "goal_review",
     "description": (
-        '仅 Goal 阶段调用，暂存当前目标结果、后续行动或调度；结束时提交。目标 ID 自动提供，不传 goal_id/latest_result，只传 status、result 及该状态需要的字段。必须成功后 end_turn({})，可同批依次调用。'
+        '仅 Goal 阶段调用，暂存当前目标结果、后续行动或调度；结束时提交。目标 ID 自动提供，不传 goal_id/latest_result，只传 status、result 及该状态需要的字段。成功提交后，停止调用工具即可结束本轮。'
     ),
     "input_schema": GOAL_REVIEW_SCHEMA,
 }

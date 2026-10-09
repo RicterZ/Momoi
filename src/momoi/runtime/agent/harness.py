@@ -95,7 +95,9 @@ class TurnHarness:
         return f"{sorted(missing)[0]}_required" if missing else None
 
     def validate_surface(self, tool_names: set[str]) -> None:
-        required = {self.spec.terminal_tool, *self.spec.required_before_end}
+        required = set(self.spec.required_before_end)
+        if self.spec.terminal_tool != "end_turn":
+            required.add(self.spec.terminal_tool)
         if self.spec.first_tool is not None:
             required.add(self.spec.first_tool)
         missing = required - tool_names

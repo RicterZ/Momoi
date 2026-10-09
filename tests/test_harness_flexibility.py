@@ -138,7 +138,7 @@ def test_circuit_recovery_is_bounded_and_cannot_restart_task(daemon, recovery):
         rounds += 1
         if rounds <= limit:
             return response(ToolCall(str(rounds), "heartbeat_activity", {}))
-        assert {"reply", "end_turn"} <= {t["name"] for t in tools}
+        assert {"reply"} <= {t["name"] for t in tools}
         assert "熔断" in str(messages)
         assert "错误摘要" in str(messages)
         step = rounds - limit

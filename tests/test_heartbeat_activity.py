@@ -139,9 +139,10 @@ def test_real_heartbeat_retries_gate_and_commits_only_on_completion(daemon, canc
             if cancel:
                 raise asyncio.CancelledError
         call = calls.pop(0)
-        schema = next(
+        from momoi.runtime.tool_contracts.conversation import end_turn_tool_spec
+        schema = (end_turn_tool_spec("heartbeat")["input_schema"] if call.name == "end_turn" else next(
             spec["input_schema"] for spec in tools if spec["name"] == call.name
-        )
+        ))
         assert Draft202012Validator(schema).is_valid(call.arguments) == (
             call is not invalid
         )

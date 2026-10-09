@@ -962,8 +962,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     tools: list[dict[str, object]],
                     **___: object,
                 ) -> ProviderResponse:
-                    end_turn = next(tool for tool in tools if tool["name"] == "end_turn")
-                    case.assertNotIn("bubbles", end_turn["input_schema"]["properties"])
+                    case.assertNotIn("end_turn", {tool["name"] for tool in tools})
                     call = ToolCall(
                         "silent-close",
                         "end_turn",
