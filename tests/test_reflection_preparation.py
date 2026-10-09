@@ -432,13 +432,41 @@ def test_text_reflection_keeps_speech_and_bounded_execution_evidence(daemon):
     assert len(messages) == 1 and messages[0]['role'] == 'user'
     from xml.etree import ElementTree
     root = ElementTree.fromstring(messages[0]['content'])
-    assert [item.tag for item in root] == ['message', 'tool_result', 'message']
-    speech = root.findall('message')[-1]
+    group = root.find('topic_group')
+    assert group.get('kind') == 'unassigned'
+    assert [item.tag for item in group] == ['message', 'tool_result', 'message']
+    speech = root.findall('.//message')[-1]
     assert speech.get('speaker') == 'assistant' and speech.get('delivery') == 'uncertain'
     assert speech.text == '保留完整正文<&>' + '原话' * 1000
-    tool = root.find('tool_result')
+    tool = root.find('.//tool_result')
     assert len(tool.text) < 1000
     assert 'timeout' in tool.text and 'tr_test' in tool.text
     assert '不重放旧召回' not in messages[0]['content']
     assert '不能用旧复盘自证' not in messages[0]['content']
     assert '窗口外结果' not in messages[0]['content']
+
+
+def test_reflection_groups_topics_without_duplicate_or_outside_evidence(daemon):
+    from xml.etree import ElementTree
+
+    start, end = day_window()
+    for name, at in [('old', start - 1), ('a1', start + 1), ('b1', start + 2),
+                     ('a2', start + 3), ('shared', start + 4), ('loose', start + 5)]:
+        add_turn(daemon, name, at)
+    for topic, title in [('a', '项目<&>'), ('b', '日常')]:
+        daemon.store.create_episode(title, episode_id=topic)
+    for topic, turn in [('a', 'old'), ('a', 'a1'), ('b', 'b1'), ('a', 'a2'),
+                        ('a', 'shared'), ('b', 'shared')]:
+        daemon.store.link_turn_to_episode(topic, turn)
+    daemon.store.link_turn_to_episode('b', 'a1', relation='related')
+    rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
+    rendered = reflection_transcript(daemon.store, rows, (start, end))[0]['content']
+    root = ElementTree.fromstring(rendered)
+    groups = root.findall('topic_group')
+    assert [group.get('kind') for group in groups] == ['topic', 'topic', 'shared', 'unassigned']
+    assert groups[0].find('topic').get('title') == '项目<&>'
+    assert [message.text for message in groups[0].findall('message')] == ['a1完成项目', 'a2完成项目']
+    assert [topic.get('id') for topic in groups[2].findall('topic')] == ['a', 'b']
+    assert len(root.findall('.//message')) == len(rows) == 5
+    assert rendered.count('shared完成项目') == 1
+    assert 'old完成项目' not in rendered

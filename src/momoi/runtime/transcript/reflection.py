@@ -24,7 +24,7 @@ def reflection_transcript(store, rows, window):
             f'time={quoteattr(store.context_timestamp(float(row["created_at"])))} '
             f'delivery={quoteattr(delivery)}>{escape(str(row["content"]))}</message>'
         )
-        records.append((float(row["created_at"]), 1, int(row["id"]), text))
+        records.append((float(row["created_at"]), 1, int(row["id"]), text, str(row["turn_id"])))
     for row in store._db.execute(
         "SELECT turn_id, sequence, created_at, payload_json FROM turn_journal "
         "WHERE item_type='tool_result' AND created_at>=? AND created_at<? "
@@ -49,7 +49,38 @@ def reflection_transcript(store, rows, window):
                                  "result": result}, ensure_ascii=False))
             + '</tool_result>'
         )
-        records.append((float(row["created_at"]), 0, int(row["sequence"]), text))
+        records.append((float(row["created_at"]), 0, int(row["sequence"]), text, str(row["turn_id"])))
     records.sort(key=lambda item: item[:3])
+    # A Turn may belong to multiple topics. Keep its evidence once in a shared
+    # group instead of duplicating it and inflating the apparent sample count.
+    turn_topics = {}
+    titles = {}
+    turn_ids = list(dict.fromkeys(item[4] for item in records))
+    for offset in range(0, len(turn_ids), 500):
+        chunk = turn_ids[offset:offset + 500]
+        for row in store._db.execute(
+            "SELECT et.turn_id, e.id, e.title FROM episode_turns et "
+            "JOIN conversation_episodes e ON e.id=et.episode_id "
+            "WHERE et.relation='primary' AND et.turn_id IN ("
+            + ",".join("?" for _ in chunk) + ") ORDER BY e.id", chunk,
+        ).fetchall():
+            turn_topics.setdefault(str(row["turn_id"]), []).append(str(row["id"]))
+            titles[str(row["id"])] = str(row["title"])
+    groups = {}
+    for record in records:
+        key = tuple(turn_topics.get(record[4], []))
+        groups.setdefault(key, []).append(record[3])
+    sections = []
+    for topic_ids, evidence in groups.items():
+        topics = "\n".join(
+            f'<topic id={quoteattr(topic_id)} title={quoteattr(titles[topic_id])} />'
+            for topic_id in topic_ids
+        )
+        kind = "shared" if len(topic_ids) > 1 else "topic" if topic_ids else "unassigned"
+        sections.append(
+            f'<topic_group kind={quoteattr(kind)}>\n'
+            + (topics + "\n" if topics else "")
+            + "\n".join(evidence) + "\n</topic_group>"
+        )
     return [{"role": "user", "content": "<conversation_history>\n"
-             + "\n".join(item[3] for item in records) + "\n</conversation_history>"}]
+             + "\n".join(sections) + "\n</conversation_history>"}]
