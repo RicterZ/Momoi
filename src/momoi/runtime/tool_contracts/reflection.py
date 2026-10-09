@@ -61,7 +61,7 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                             "type": "string",
                             "enum": sorted(MEMORY_KINDS),
                             "description": (
-                                'profile：用户身份、背景、节奏与习惯；preference：用户的需求，包括约束条件及既定措辞；relationship：关系纽带及其边界、称呼方式与约定；third_party：关于他人的稳定事实；practice：可复用的方法或决策流程（含工具使用）；world_knowledge：对世界的观察所得知识；self_insight：对自身感受或倾向的主观理解；cross_event_state：超越产生它的事件而持续存在的状态。选择观察所属类型；单次现象保留当天范围，不能仅因归为 profile 就断言稳定习惯。'
+                                'profile：用户身份、背景、节奏与习惯；preference：用户的需求，包括约束条件及既定措辞；relationship：关系纽带及其边界、称呼方式与约定；third_party：关于他人的观察；practice：方法或决策过程及其结果（含工具使用）；world_knowledge：对外部事物的认识；self_insight：对自身感受或倾向的主观理解；cross_event_state：超越产生它的事件而持续存在的状态。类型仅用于分类，不要求逐类填写，也不代表观察已成为稳定规律。'
                             ),
                         },
                         "key": {
