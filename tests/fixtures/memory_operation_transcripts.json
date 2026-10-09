@@ -79,7 +79,8 @@
       "active_count": 1,
       "superseded": [
         "drink"
-      ]
+      ],
+      "tombstone_count": 0
     }
   },
   {
@@ -169,7 +170,8 @@
       "action": [
         "forget"
       ],
-      "active_count": 0
+      "active_count": 0,
+      "tombstone_count": 1
     }
   },
   {
@@ -256,7 +258,8 @@
         "defer"
       ],
       "active_count": 1,
-      "contains": "无糖"
+      "contains": "无糖",
+      "tombstone_count": 0
     },
     "event_age": 600
   },
@@ -404,7 +407,8 @@
       "superseded": [
         "drink"
       ],
-      "contains": "不喜欢"
+      "contains": "不喜欢",
+      "tombstone_count": 0
     }
   }
 ]

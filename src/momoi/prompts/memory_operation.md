@@ -27,7 +27,7 @@ forgotten_memories 只是遗忘警戒候选，不能作为当前事实或修改�
 请求的 add、replace、forget 是修改意图，最终决定使用工具 schema：
 
 - write：新增、修正或合并。target_ids 包含被替代的全部当前版本；新增为空。优先复用原 kind/key，在 reason 说明新增事实与现有记忆的实质区别。
-- forget：用户要求忘记或明确否定相关事实时删除匹配目标，不另写替代。用户纠正为另一事实且要求更新时用 write。
+- forget：仅在用户明确要求删除或不再保留信息时使用，不另写替代。用户否定旧事实、纠正内容时用 write 保存有证据支持的新结论（包括否定结论），替代旧版本；不写成“不要记住旧事实”，也不为纠正建立遗忘警戒。保留证据的不确定性，“尚未确诊”不等于“没有疾病”。
 - noop：事实已覆盖时提供 target_ids 和 evidence 追加证据；请求不适合长期记忆、只是助手建议或已被更新证据取代时，只填 operation_ids、action、reason，省略 target_ids 和 evidence，不能填空数组。
 - metadata：仅修改 tags 或 triggers，提供目标、meta 和证据，不改正文或 scope。
 - defer：目标、证据或范围不清，或检索无法完成时写明原因。本次审阅结束，不生效，也不靠同一证据自动重试。

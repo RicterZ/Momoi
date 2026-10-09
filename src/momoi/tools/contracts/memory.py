@@ -185,7 +185,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
             "properties": {
                 "type": {
                     "type": "string", "enum": ["add", "replace", "forget"],
-                    "description": '操作类型，而非记忆类别。add 仅创建持久化记忆请求；replace 更新或更正现有事实；forget 删除已结束、被证伪或明确不需要的事实。对于 current_state，replace 原子性地替换现有主题/键的值和 TTL；无需单独的 forget。',
+                    "description": '操作类型，而非记忆类别。add 仅创建持久化记忆请求；replace 更新或更正现有事实，包括用户否定旧说法后给出的新结论；持久化记忆的 forget 仅用于用户明确要求删除或不再保留信息，事实纠正不能当作遗忘。对于 current_state，replace 原子性地替换现有主题/键的值和 TTL；无需单独的 forget。',
                 },
                 "content": {
                     "type": "string",

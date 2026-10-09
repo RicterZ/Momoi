@@ -39,6 +39,8 @@ def verify(case, result):
     for key in expected.get('superseded', []):
         if not result['superseded'].get(key):
             failures.append(f'original {key} not superseded')
+    if 'tombstone_count' in expected and result['tombstone_count'] != expected['tombstone_count']:
+        failures.append('unexpected forget tombstone')
     if expected.get('contains') and not any(expected['contains'] in row['content'] for row in rows):
         failures.append('expected corrected content missing')
     if expected.get('triggers') and not any(row['meta'].get('triggers') == expected['triggers'] for row in rows):
@@ -125,6 +127,7 @@ async def replay(case, catalog, output):
             row = store._db.execute("SELECT result_json FROM memory_operation_batches WHERE id='synthetic-owner'").fetchone()
             result['decisions'] = json.loads(row['result_json'])
             result['active'] = store.memories.repository.inventory()
+            result['tombstone_count'] = store._db.execute('SELECT COUNT(*) FROM memory_tombstones').fetchone()[0]
             result['superseded'] = {key: store._db.execute('SELECT superseded_by FROM memories WHERE id=?', (mid,)).fetchone()[0]
                                     for key, mid in result['seed_ids'].items()}
             result['failures'] = verify(case, result)

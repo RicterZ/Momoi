@@ -9,6 +9,8 @@ from ..text import estimate_tokens
 from ..storage.records import memory_scope
 
 MAX_REQUESTS = 8
+# Production replay: larger caps add context cost without gains once known targets are retained.
+# See docs/memory-candidate-calibration.md for the dataset and limits.
 PER_REQUEST = 8
 MAX_CANDIDATES = 32
 CANDIDATE_TOKENS = 8000

@@ -54,3 +54,11 @@ def test_replay_runs_real_host_with_scripted_provider_and_only_temporary_databas
     assert len(result['exchanges']) == 1
     assert json.loads((tmp_path/'result/result.json').read_text())['decisions'][0]['action'] == 'noop'
     assert not list(tmp_path.rglob('*.sqlite3'))
+
+
+def test_replay_distinguishes_correction_from_forgetting():
+    case = {'expected': {'action': ['write'], 'active_count': 1, 'tombstone_count': 0}}
+    result = {'decisions': [{'action': 'write'}], 'active': [{'id': 2}], 'tombstone_count': 0}
+    assert replay.verify(case, result) == []
+    result['tombstone_count'] = 1
+    assert replay.verify(case, result) == ['unexpected forget tombstone']
