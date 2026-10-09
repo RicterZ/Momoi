@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Mapping
 from xml.sax.saxutils import escape, quoteattr
 
 from ...memory.models import MemoryRecallQuery
+from ...memory.records import MEMORY_ACTIVATIONS, memory_snapshot_fingerprint
 from ...memory.text import estimate_tokens, truncate_tokens, token_chunk
 
 
@@ -30,7 +29,6 @@ MEMORY_KINDS = {
     "cross_event_state", # a durable state that outlives the event that produced it
 }
 
-MEMORY_ACTIVATIONS = {"always", "recall", "scoped"}
 
 
 def valid_scoped_memory_key(key: str) -> bool:
@@ -48,31 +46,6 @@ REFLECTION_MEMORY_CAUTION = (
     "Daily reflection memories are fallible and may be outdated or no longer "
     "applicable; use them only as supporting context and prefer current evidence."
 )
-
-def memory_snapshot_fingerprint(memory: Mapping[str, object]) -> str:
-    payload = {
-        key: memory.get(key)
-        for key in (
-            "id",
-            "kind",
-            "key",
-            "content",
-            "activation",
-            "expires_at",
-            "source_event_id",
-            "evidence_quote",
-            "updated_at",
-            "superseded_by",
-        )
-    }
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    ).encode()
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 def format_memory(row: Mapping[str, object]) -> str:
     attributes = {"id": row["id"], "kind": row["kind"], "key": row["key"]}

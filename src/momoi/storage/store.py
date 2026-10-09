@@ -21,8 +21,7 @@ from .episode.episode_search import (
 from .episode.episode_annealing import EpisodeAnnealingStore
 from .episode.episode_consolidation import EpisodeConsolidationStore
 from .memory.memory_operations import MemoryOperationStore
-from .memory.memory_mutations import MemoryMutationStore
-from .memory.memory_inventory import MemoryInventoryRepository
+from ..memory.repository import MemoryRepository
 from .memory.memory_recall import MemoryRecallStore
 from .memory.memory_maintenance_commits import MemoryMaintenanceCommitStore
 from .memory.memory_maintenance_evidence import MemoryMaintenanceEvidenceStore
@@ -114,7 +113,6 @@ class Store(
     MemoryMaintenanceEvidenceStore,
     MemoryMaintenanceCommitStore,
     MemoryRecallStore,
-    MemoryMutationStore,
     MemoryOperationStore,
     WebhookStore,
     DeliveryStore,
@@ -153,7 +151,7 @@ class Store(
             self._db, archive_progress=self._archive_progress_messages,
             has_external_effect=self.turn_has_external_effect,
         )
-        self.memory_inventory = MemoryInventoryRepository(self._db)
+        self.memory = MemoryRepository(self._db)
         self.request_metrics = RequestMetricsRepository(self._db)
         try:
             self._initialize_database()

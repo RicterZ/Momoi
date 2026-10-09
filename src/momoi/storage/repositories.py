@@ -1,11 +1,12 @@
 """Compatibility entry points; implementations live in composed repositories."""
 from __future__ import annotations
 from typing import Any
+from .memory.memory_values import format_memory
 from .contracts import ActiveMemory, InventoryMemory, PlanCreateInput, PlanRecord, PlanStepInput, RequestMetricRecord, MetricsPage
 
 class RepositoryFacade:
     def _memory_context(self, rows):
-        return self.memory_inventory._memory_context(rows)
+        return "\n\n".join(format_memory(dict(row)) for row in rows)
 
 
     def task_plan(self, plan_id: str) -> PlanRecord | None:
@@ -57,22 +58,35 @@ class RepositoryFacade:
         return self.plans.finish_task_plan_step(plan_id, turn_id, outcome, summary, output_refs, abort)
 
     def maintenance_memory_inventory(self) -> list[InventoryMemory]:
-        return self.memory_inventory.maintenance_memory_inventory()
+        return self.memory.inventory()
 
     def purge_expired_memories(self, *, now: float | None=None) -> int:
-        return self.memory_inventory.purge_expired_memories(now=now)
+        return self.memory.purge_expired(now=now)
 
     def always_memory_context(self) -> str:
-        return self.memory_inventory.always_memory_context()
+        return self._memory_context(self.memory.rows("always"))
 
     def scoped_memory_context(self, scope: str) -> str:
-        return self.memory_inventory.scoped_memory_context(scope)
+        if not (scope == "heartbeat" or scope == "webhook" or
+                (scope.startswith("goal.") and len(scope) == 37 and
+                 all(char in "0123456789abcdef" for char in scope[5:]))):
+            raise ValueError("invalid memory scope")
+        return self._memory_context([
+            row for row in self.memory.rows("scoped")
+            if str(row["key"]).startswith(scope + ".")
+        ])
 
     def has_memory(self, kind: str, key: str) -> bool:
-        return self.memory_inventory.has_memory(kind, key)
+        return self.memory.has(kind, key)
 
     def active_memory(self, kind: str, key: str) -> ActiveMemory | None:
-        return self.memory_inventory.active_memory(kind, key)
+        return self.memory.active(kind, key)
+
+    def memory_snapshots(self, ids: list[int]) -> dict[int, dict[str, object]]:
+        return self.memory.snapshots(ids)
+
+    def _add_memory_evidence(self, memory_id, source_event_id, quote, now):
+        self.memory.add_evidence(memory_id, source_event_id, quote, now)
 
     def record_first_tool(self, turn_id: str, call_id: str, name: str) -> None:
         return self.request_metrics.record_first_tool(turn_id, call_id, name)

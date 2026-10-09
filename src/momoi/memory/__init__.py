@@ -1,4 +1,5 @@
-"""Memory infrastructure, independent of Momoi runtime and storage.
+"""Memory infrastructure and repositories independent of Momoi runtime.
 
-Persistence and the high-level Memory API are introduced in later milestones.
+The caller owns the SQLite connection and schema. The high-level Memory API
+is introduced in a later milestone.
 """

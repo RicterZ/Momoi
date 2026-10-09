@@ -4,25 +4,12 @@ import json
 import time
 
 from ...models import IncomingMessage, TurnDraft
-from .memory_values import memory_snapshot_fingerprint
+from ...memory.transactions import transaction
 
 MEMORY_OPERATION_MAX_ATTEMPTS = 5
 
 
 class MemoryOperationStore:
-    def memory_snapshots(self, ids: list[int]) -> dict[int, dict[str, object]]:
-        if not ids:
-            return {}
-        placeholders = ",".join("?" for _ in ids)
-        rows = self._db.execute(
-            f"""SELECT * FROM memories AS m WHERE m.id IN ({placeholders})
-                AND m.superseded_by IS NULL AND (m.expires_at IS NULL OR m.expires_at>?)
-                AND NOT EXISTS (SELECT 1 FROM memory_tombstones t WHERE t.kind=m.kind AND t.key=m.key)
-                ORDER BY m.id""",
-            (*ids, time.time()),
-        ).fetchall()
-        return {int(row["id"]): dict(row) for row in rows}
-
     def _queue_memory_operations(
         self,
         source_turn_id: str,
@@ -193,19 +180,13 @@ class MemoryOperationStore:
         snapshots: dict[int, dict[str, object]],
     ) -> None:
         now = time.time()
-        with self._db:
+        with transaction(self._db):
             state = self._db.execute(
                 "SELECT state FROM memory_operation_batches WHERE id=?", (batch["id"],)
             ).fetchone()
             if state is None or state["state"] != "running":
                 raise ValueError("memory_operation_not_running")
-            current = self.memory_snapshots(list(snapshots))
-            if set(current) != set(snapshots) or any(
-                memory_snapshot_fingerprint(current[key])
-                != memory_snapshot_fingerprint(snapshot)
-                for key, snapshot in snapshots.items()
-            ):
-                raise ValueError("memory_snapshot_changed")
+            current = self.memory.validate_snapshots(snapshots)
             for decision in decisions:
                 action = decision["action"]
                 if action in {"noop", "defer"}:
@@ -230,74 +211,9 @@ class MemoryOperationStore:
                 target_ids = decision["target_ids"]
                 if action == "forget":
                     for memory_id in target_ids:
-                        memory = current[memory_id]
-                        self._db.execute(
-                            """INSERT INTO memory_tombstones(kind,key,source_event_id,evidence_quote,created_at)
-                               VALUES (?,?,?,?,?) ON CONFLICT(kind,key) DO UPDATE SET
-                               source_event_id=excluded.source_event_id,evidence_quote=excluded.evidence_quote,
-                               created_at=excluded.created_at""",
-                            (
-                                memory["kind"],
-                                memory["key"],
-                                source["event_id"],
-                                source["quote"],
-                                now,
-                            ),
-                        )
+                        self.memory.forget(current[memory_id], source, now=now)
                     continue
-                memory = decision["memory"]
-                existing = self._db.execute(
-                    """SELECT id FROM memories WHERE kind=? AND key=? AND superseded_by IS NULL
-                       AND (expires_at IS NULL OR expires_at>?)""",
-                    (memory["kind"], memory["key"], now),
-                ).fetchall()
-                tombstone = self._db.execute(
-                    "SELECT * FROM memory_tombstones WHERE kind=? AND key=?",
-                    (memory["kind"], memory["key"]),
-                ).fetchone()
-                hidden_ids = []
-                if tombstone is not None:
-                    # Re-adding a fact must not unhide its previously deleted versions.
-                    hidden_ids = [int(row["id"]) for row in existing]
-                    self._db.execute(
-                        "DELETE FROM memory_tombstones WHERE kind=? AND key=?",
-                        (memory["kind"], memory["key"]),
-                    )
-                elif any(int(row["id"]) not in target_ids for row in existing):
-                    raise ValueError(
-                        "memory_key_conflict: include the existing target or choose the correct distinct key"
-                    )
-                cursor = self._db.execute(
-                    """INSERT INTO memories (kind,key,content,activation,authority,source_event_id,
-                       evidence_quote,importance,created_at,updated_at,expires_at)
-                       VALUES (?,?,?,?,'owner',?,?,0.5,?,?,?)""",
-                    (
-                        memory["kind"],
-                        memory["key"],
-                        memory["content"],
-                        memory["activation"],
-                        source["event_id"],
-                        source["quote"],
-                        now,
-                        now,
-                        memory["expires_at"],
-                    ),
-                )
-                memory_id = int(cursor.lastrowid)
-                for old_id in dict.fromkeys([*target_ids, *hidden_ids]):
-                    self._db.execute(
-                        "UPDATE memories SET superseded_by=?,updated_at=? WHERE id=?",
-                        (memory_id, now, old_id),
-                    )
-                    self._db.execute(
-                        """INSERT OR IGNORE INTO memory_evidence(memory_id,source_event_id,quote,created_at)
-                           SELECT ?,source_event_id,quote,created_at FROM memory_evidence WHERE memory_id=?""",
-                        (memory_id, old_id),
-                    )
-                for citation in evidence:
-                    self._add_memory_evidence(
-                        memory_id, citation["event_id"], citation["quote"], now
-                    )
+                self.memory.write(decision["memory"], target_ids, source, evidence, now=now)
             self._db.execute(
                 """UPDATE memory_operation_batches SET state='completed',result_json=?,error=NULL,updated_at=? WHERE id=?""",
                 (json.dumps(decisions, ensure_ascii=False), now, batch["id"]),

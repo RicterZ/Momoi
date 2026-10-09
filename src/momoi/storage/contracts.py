@@ -5,6 +5,8 @@ validation remains responsible for rejecting malformed commands.
 """
 from typing import Any, Literal, NotRequired, TypedDict
 
+from ..memory.records import ActiveMemory, InventoryMemory
+
 
 class PlanStepInput(TypedDict):
     task: str
@@ -44,25 +46,6 @@ class PlanRecord(TypedDict):
     version: int
     context: dict[str, Any] | None
     review: dict[str, Any]
-
-
-class ActiveMemory(TypedDict):
-    id: int
-    kind: str
-    key: str
-    content: str
-    importance: float
-
-
-class InventoryMemory(ActiveMemory):
-    activation: str
-    authority: str
-    source_event_id: str | None
-    evidence_quote: str | None
-    created_at: float
-    updated_at: float
-    expires_at: float | None
-    superseded_by: int | None
 
 
 class PromptFingerprint(TypedDict):

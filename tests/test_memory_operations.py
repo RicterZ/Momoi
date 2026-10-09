@@ -128,6 +128,28 @@ def test_frontend_queues_only_on_commit_and_deduplicates(store):
     assert not store.maintenance_memory_inventory()
 
 
+def test_memory_operation_and_runtime_completion_share_outer_transaction(store):
+    source = event(store)
+    submit(store, source)
+    batch = store.claim_memory_operation("source")
+    with pytest.raises(RuntimeError, match="abort after completion"):
+        with store.transaction():
+            apply(store, batch, [write(source)])
+            assert store.has_memory("preference", "drink")
+            assert store._db.execute(
+                "SELECT state FROM memory_operation_batches WHERE id='source'"
+            ).fetchone()[0] == "completed"
+            assert store._db.in_transaction
+            raise RuntimeError("abort after completion")
+    assert not store.has_memory("preference", "drink")
+    assert store._db.execute(
+        "SELECT state FROM memory_operation_batches WHERE id='source'"
+    ).fetchone()[0] == "running"
+    assert store._db.execute(
+        "SELECT state FROM turns WHERE id=?", (batch["turn_id"],)
+    ).fetchone()[0] == "running"
+
+
 def test_frontend_rejects_invalid_requests(store):
     invalid = [
         {"type": "forge"},

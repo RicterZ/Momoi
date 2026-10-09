@@ -1,6 +1,6 @@
 import time
 
-from .memory_values import memory_snapshot_fingerprint
+from ...memory.transactions import transaction
 
 
 class MemoryMaintenanceCommitStore:
@@ -13,32 +13,10 @@ class MemoryMaintenanceCommitStore:
         owner_marker: tuple[float, str],
     ) -> None:
         now = time.time()
-        with self._db:
+        with transaction(self._db):
             if self.latest_owner_event_marker() != owner_marker:
                 raise ValueError("owner_evidence_changed")
-            current: dict[int, dict[str, object]] = {}
-            for memory_id, snapshot in mutable_memories.items():
-                row = self._db.execute(
-                    """SELECT id, kind, key, content, activation, authority,
-                              source_event_id, evidence_quote, importance,
-                              created_at, updated_at, expires_at, superseded_by
-                       FROM memories AS m
-                       WHERE m.id=? AND m.superseded_by IS NULL
-                         AND (m.expires_at IS NULL OR m.expires_at>?)
-                         AND NOT EXISTS (
-                           SELECT 1 FROM memory_tombstones AS t
-                           WHERE t.kind=m.kind AND t.key=m.key
-                         )""",
-                    (memory_id, now),
-                ).fetchone()
-                if row is None:
-                    raise ValueError("memory_snapshot_changed")
-                item = dict(row)
-                if memory_snapshot_fingerprint(item) != memory_snapshot_fingerprint(
-                    snapshot
-                ):
-                    raise ValueError("memory_snapshot_changed")
-                current[memory_id] = item
+            current = self.memory.validate_snapshots(mutable_memories)
 
             for change in decision.get("changes", []):
                 if not isinstance(change, dict):
@@ -70,22 +48,13 @@ class MemoryMaintenanceCommitStore:
                         source_event_id = str(row["source_event_id"])
                         evidence_quote = str(row["evidence_quote"])
                         updated_at = float(row["updated_at"])
-                    self._db.execute(
-                        """UPDATE memories SET content=?, activation=?,
-                           expires_at=?, source_event_id=?, evidence_quote=?,
-                           updated_at=? WHERE id=? AND superseded_by IS NULL""",
-                        (
-                            str(change["content"]),
-                            activation,
-                            expires_at,
-                            source_event_id,
-                            evidence_quote,
-                            updated_at,
-                            memory_id,
-                        ),
+                    self.memory.replace(
+                        memory_id, str(change["content"]), activation, expires_at,
+                        {"event_id": source_event_id, "quote": evidence_quote},
+                        updated_at=updated_at,
                     )
                     if isinstance(evidence, dict):
-                        self._add_memory_evidence(
+                        self.memory.add_evidence(
                             memory_id, source_event_id, evidence_quote, updated_at
                         )
                 elif action == "merge":
@@ -109,42 +78,9 @@ class MemoryMaintenanceCommitStore:
                     ).fetchall()
                     if len(cited_events) != len(evidence_event_ids):
                         raise ValueError("invalid_memory_maintenance_evidence")
-                    newest_event = max(
-                        cited_events, key=lambda item: float(item["occurred_at"])
-                    )
-                    for source_id in source_ids:
-                        self._db.execute(
-                            """INSERT OR IGNORE INTO memory_evidence
-                               (memory_id, source_event_id, quote, created_at)
-                               SELECT ?, source_event_id, quote, created_at
-                               FROM memory_evidence WHERE memory_id=?""",
-                            (survivor_id, source_id),
-                        )
-                        self._db.execute(
-                            """UPDATE memories SET superseded_by=?
-                               WHERE id=? AND superseded_by IS NULL""",
-                            (survivor_id, source_id),
-                        )
-                    for event in cited_events:
-                        self._add_memory_evidence(
-                            survivor_id,
-                            str(event["id"]),
-                            str(event["content"]),
-                            float(event["occurred_at"]),
-                        )
-                    self._db.execute(
-                        """UPDATE memories SET content=?, activation=?, expires_at=?,
-                           source_event_id=?, evidence_quote=?, updated_at=?
-                           WHERE id=? AND superseded_by IS NULL""",
-                        (
-                            str(change["content"]),
-                            activation,
-                            expires_at,
-                            newest_event["id"],
-                            newest_event["content"],
-                            newest_event["occurred_at"],
-                            survivor_id,
-                        ),
+                    self.memory.merge(
+                        survivor_id, source_ids, str(change["content"]),
+                        activation, expires_at, cited_events,
                     )
                 elif action == "retire":
                     memory_id = int(change["memory_id"])
@@ -158,23 +94,9 @@ class MemoryMaintenanceCommitStore:
                     ).fetchone()
                     if event is None or quote not in str(event["content"]):
                         raise ValueError("invalid_memory_maintenance_evidence")
-                    sibling = self._db.execute(
-                        """SELECT 1 FROM memories
-                           WHERE kind=? AND key=? AND id<>?
-                             AND superseded_by IS NULL LIMIT 1""",
-                        (row["kind"], row["key"], memory_id),
-                    ).fetchone()
-                    if sibling is not None:
-                        raise ValueError("memory_maintenance_tombstone_conflict")
-                    self._db.execute(
-                        """INSERT INTO memory_tombstones
-                           (kind, key, source_event_id, evidence_quote, created_at)
-                           VALUES (?, ?, ?, ?, ?)
-                           ON CONFLICT(kind,key) DO UPDATE SET
-                             source_event_id=excluded.source_event_id,
-                             evidence_quote=excluded.evidence_quote,
-                             created_at=excluded.created_at""",
-                        (row["kind"], row["key"], event_id, quote, now),
+                    self.memory.forget(
+                        row, {"event_id": event_id, "quote": quote},
+                        now=now, require_unique=True,
                     )
                 else:
                     raise ValueError("invalid_memory_maintenance_change")
