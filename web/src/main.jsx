@@ -1181,7 +1181,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
       await api(`/api/${item.resource}/${item.id}`, {
         method: "PATCH",
         token,
-        body: { content: draft, ...(candidateMode ? { revision: item.revision } : { triggers: triggerDraft.split("\n").map(word => word.trim()).filter(Boolean) }) },
+        body: { content: draft, ...(candidateMode ? { revision: item.revision } : item.activation === "recall" ? { triggers: triggerDraft.split("\n").map(word => word.trim()).filter(Boolean) } : {}) },
       });
       setEditingId(null);
       onMutated();
@@ -1303,7 +1303,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                   ) : (
                     <p className="summary">{item.content}</p>
                   )}
-                  {!candidateMode && editingId === item.identity && (
+                  {!candidateMode && item.activation === "recall" && editingId === item.identity && (
                     <label className="memory-trigger-editor">触发词
                       <textarea className="edit-area" aria-label="记忆触发词" rows={3}
                         value={triggerDraft} onChange={event => setTriggerDraft(event.target.value)}
