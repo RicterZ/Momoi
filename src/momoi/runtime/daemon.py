@@ -102,6 +102,7 @@ class MomoiDaemon(
             client=self.services.embedding,
         )
         self.semantic_recall.start()
+        self.store.memory_recall.dense_recall = self.semantic_recall.memory_dense_recall
         balance = self.services.balance
         accounting = balance.accounting if balance is not None else None
         if accounting is not None:

@@ -591,6 +591,40 @@ class SemanticRecallTest(unittest.TestCase):
         self.assertIsNone(hit.summary_cosine)
         self.assertAlmostEqual(hit.turn_cosine or 0, 0.0, places=5)
 
+    def test_memory_tool_uses_search_and_observes_index_activation(self) -> None:
+        from momoi.models import ToolCall, TurnDraft
+        from momoi.tools.memory import MemoryTools
+
+        memory_id = self.add_memory("drink", "喜欢无糖咖啡")
+        encoder = AsyncMock()
+        encoder.encode.side_effect = lambda texts, query: [vector() for _ in texts]
+        service = SemanticRecallService(
+            self.store, EmbeddingConfig(enabled=True), client=encoder,
+        )
+        service.start()
+        self.assertEqual(service.degraded_reason, "building_initial_space")
+        tools = MemoryTools(self.store, service)
+        service.prepare = AsyncMock(side_effect=AssertionError("memory caller must use search"))
+        draft = TurnDraft()
+        call = ToolCall("search", "memory_search", {"query": "用户喜欢什么饮品"})
+
+        async def run():
+            before = await tools.execute_async(call, [], draft)
+            self.assertTrue(before["ok"])
+            self.assertEqual(before["results"], [])
+            encoder.encode.assert_not_awaited()
+            await service.maintain_once()
+            self.assertEqual(service.degraded_reason, "")
+            return await tools.execute_async(call, [], draft)
+
+        result = asyncio.run(run())
+        self.assertTrue(result["ok"])
+        self.assertEqual([row["id"] for row in result["results"]], [memory_id])
+        self.assertEqual(result["results"][0]["channels"], ["dense"])
+        self.assertEqual(draft.memory_context[memory_id]["content"], "喜欢无糖咖啡")
+        service.prepare.assert_not_awaited()
+        self.assertEqual(sum(call.kwargs["query"] for call in encoder.encode.await_args_list), 1)
+
     def test_dense_query_uses_semantic_rewrite_once_not_sparse_aliases(self) -> None:
         memory_id = self.add_memory("stored", "semantic")
         space = self.space(state="active")

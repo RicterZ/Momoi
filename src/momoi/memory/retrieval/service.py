@@ -38,7 +38,7 @@ class MemoryRecallService:
         self.repository = repository
         self._search_backend = search_backend or StringSearchBackend()
         self._reflection_rows = reflection_rows
-        self._dense_recall = dense_recall
+        self.dense_recall = dense_recall
         self._reranker = reranker
 
     async def search(
@@ -54,8 +54,8 @@ class MemoryRecallService:
         queries = [MemoryRecallQuery(query.strip())] if isinstance(query, str) else list(query)
         if not queries or any(not item.dense_expression for item in queries):
             raise ValueError("memory search requires a nonempty query")
-        if dense_evidence is None and self._dense_recall is not None and limit > 0:
-            dense_evidence = await self._dense_recall(queries, limit)
+        if dense_evidence is None and self.dense_recall is not None and limit > 0:
+            dense_evidence = await self.dense_recall(queries, limit)
         candidates = self.rank(queries, limit, dense_evidence=dense_evidence)
         reranker = reranker or self._reranker
         if reranker is None:

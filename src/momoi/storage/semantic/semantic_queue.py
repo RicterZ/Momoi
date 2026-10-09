@@ -129,71 +129,14 @@ class SemanticQueueStore:
                     ),
                 )
 
-    def semantic_ready_documents(
-        self, space_id: str, *, page_size: int = 512
-    ) -> Iterable[list[dict[str, object]]]:
-        offset = 0
-        while True:
-            rows = self._db.execute(
-                """SELECT document_type, source_id, parent_id, chunk_index,
-                          starts_at, ends_at, vector, dimensions, content_sha256
-                   FROM semantic_documents
-                   WHERE space_id=? AND state='ready'
-                   ORDER BY document_type, source_id, chunk_index LIMIT ? OFFSET ?""",
-                (space_id, page_size, offset),
-            ).fetchall()
-            if not rows:
-                break
-            yield [dict(row) for row in rows]
-            offset += len(rows)
+    def semantic_ready_documents(self, space_id: str, *, page_size: int = 512):
+        return self.memory_vectors.ready_documents(space_id, page_size=page_size)
 
-    def semantic_ready_source_documents(
-        self, space_id: str, source_type: str, source_id: str
-    ) -> list[dict[str, object]]:
-        if source_type == "episode":
-            rows = self._db.execute(
-                """SELECT document_type, source_id, parent_id, chunk_index,
-                          starts_at, ends_at, vector, dimensions, content_sha256
-                   FROM semantic_documents
-                   WHERE space_id=? AND state='ready'
-                     AND (parent_id=? OR document_type='episode_summary' AND source_id=?)
-                   ORDER BY document_type, source_id, chunk_index""",
-                (space_id, source_id, source_id),
-            ).fetchall()
-        else:
-            rows = self._db.execute(
-                """SELECT document_type, source_id, parent_id, chunk_index,
-                          starts_at, ends_at, vector, dimensions, content_sha256
-                   FROM semantic_documents
-                   WHERE space_id=? AND state='ready'
-                     AND document_type=? AND source_id=?
-                   ORDER BY chunk_index""",
-                (space_id, source_type, source_id),
-            ).fetchall()
-        return [dict(row) for row in rows]
+    def semantic_ready_source_documents(self, space_id: str, source_type: str, source_id: str):
+        return self.memory_vectors.ready_source_documents(
+            space_id, "episode_summary" if source_type == "episode" else source_type,
+            source_id, include_children=source_type == "episode",
+        )
 
-    def invalidate_semantic_document(
-        self,
-        space_id: str,
-        document_type: str,
-        source_id: str,
-        chunk_index: int,
-        error: str,
-    ) -> None:
-        with self._db:
-            self._db.execute(
-                """UPDATE semantic_documents
-                   SET state='retry', vector=NULL, dimensions=NULL, retry_at=0,
-                       last_error=?, updated_at=?
-                   WHERE space_id=? AND document_type=? AND source_id=?
-                     AND chunk_index=?""",
-                (
-                    error[:240],
-                    time.time(),
-                    space_id,
-                    document_type,
-                    source_id,
-                    chunk_index,
-                ),
-            )
-
+    def invalidate_semantic_document(self, space_id, document_type, source_id, chunk_index, error):
+        self.memory_vectors.invalidate(space_id, document_type, source_id, chunk_index, error)

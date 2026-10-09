@@ -35,6 +35,9 @@ from standalone_memory.retrieval.sparse import StringSearchBackend, search_expre
 from standalone_memory.text import estimate_tokens, token_chunk
 from standalone_memory.retrieval.vectors import encode_vector, decode_vector
 from standalone_memory.storage.repository import MemoryRepository
+from standalone_memory.storage.vector_repository import VectorRepository
+from standalone_memory.retrieval.snapshot import SegmentedVectorSnapshot
+from standalone_memory.retrieval.dense import DenseQueryService, DenseSearchPool, MemoryVectorRecall
 from standalone_memory.retrieval.service import MemoryRecallService
 from standalone_memory.retrieval.rerank import MemoryRerankCandidates
 import sqlite3
@@ -42,6 +45,11 @@ import sqlite3
 with sqlite3.connect(":memory:") as db:
     assert MemoryRepository(db).snapshots([]) == {}
     assert MemoryRecallService(MemoryRepository(db)).rank([], 6) == []
+    snapshot = SegmentedVectorSnapshot(VectorRepository(db), 2)
+    engine = DenseQueryService(snapshot, None)
+    import asyncio
+    assert asyncio.run(engine.search(["饮品"], [DenseSearchPool({"confirmed_memory"})])).fallback_reason == "no_active_space"
+    assert MemoryVectorRecall(engine, {}) is not None
 assert MemoryRerankCandidates([]).select({"memory_indices": [], "reflection_indices": []}) == ([], [])
 
 assert MemoryRecallQuery("咖啡").dense_expression == "咖啡"

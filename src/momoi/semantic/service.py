@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import Callable, Iterable
-
-import numpy as np
 
 from ..integrations.models import EmbeddingSpaceConfig
 from ..observability.events import log_event
@@ -18,10 +15,11 @@ from ..integrations.errors import error_category
 from .models import (
     CALIBRATION_PROFILES,
     DenseEpisodeHit,
-    DenseMemoryHit,
+    DenseThresholds,
     DenseRecallEvidence,
 )
-from .snapshot import SegmentedVectorSnapshot, VectorMetadata
+from ..memory.retrieval.snapshot import SegmentedVectorSnapshot
+from ..memory.retrieval.dense import DenseQueryService, DenseSearchPool, MemoryVectorRecall
 
 logger = logging.getLogger(__name__)
 QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
@@ -43,8 +41,18 @@ class SemanticRecallService:
         self.client = client
         if config.enabled and client is None:
             raise ValueError("enabled semantic recall requires an embedder")
-        self.snapshot = SegmentedVectorSnapshot(store, config.dimensions)
-        self.degraded_reason = "disabled" if not config.enabled else "no_active_space"
+        self.snapshot = SegmentedVectorSnapshot(store.memory_vectors, config.dimensions)
+        self.queries = DenseQueryService(
+            self.snapshot, client, instruction=QUERY_INSTRUCTION,
+            candidate_floor=policy.candidate_floor,
+            candidate_multiplier=policy.candidate_multiplier,
+            unavailable_reason="disabled" if not config.enabled else "no_active_space",
+            on_failure=self._query_failure,
+        )
+        self.memory_dense_recall = MemoryVectorRecall(self.queries, {
+            kind: DenseThresholds(*values)
+            for kind, values in CALIBRATION_PROFILES.get(config.calibration_profile, {}).items()
+        })
         self.auto_activate = auto_activate
         self._needs_reconciliation = False
 
@@ -91,14 +99,22 @@ class SemanticRecallService:
         self._needs_reconciliation = True
         self.degraded_reason = ""
 
+    @property
+    def degraded_reason(self) -> str:
+        return self.queries.unavailable_reason
+
+    @degraded_reason.setter
+    def degraded_reason(self, value: str) -> None:
+        self.queries.unavailable_reason = value
+
     @staticmethod
-    def _expressions(
-        queries: Iterable[MemoryRecallQuery | EpisodeRecallQuery],
-    ) -> list[str]:
-        return list(
-            dict.fromkeys(
-                query.dense_expression for query in queries if query.dense_expression
-            )
+    def _query_failure(error: Exception, batch_size: int) -> None:
+        log_event(
+            logger, logging.WARNING, "semantic_query_fallback",
+            reason=f"{type(error).__name__}: {str(error)[:160]}",
+            error_type=type(error).__name__,
+            category="timeout" if error_category(error) == "timeout" else "error",
+            query_batch_size=batch_size,
         )
 
     async def prepare(
@@ -111,113 +127,49 @@ class SemanticRecallService:
         episode_before: float | None = None,
         output_limit: int = 8,
     ) -> DenseRecallEvidence:
-        queries = list(queries)
-        expressions = self._expressions(queries)
-        if not expressions:
-            return DenseRecallEvidence(
-                space_id=self.snapshot.space_id,
-                calibration_profile=self.config.calibration_profile,
-            )
-        if (
-            not self.config.enabled
-            or self.degraded_reason
-            or not self.snapshot.space_id
-        ):
-            return DenseRecallEvidence(
-                space_id=self.snapshot.space_id,
-                calibration_profile=self.config.calibration_profile,
-                fallback_reason=self.degraded_reason or "disabled",
-            )
-        request_started = time.monotonic()
-        try:
-            vectors = await self.client.encode(
-                [QUERY_INSTRUCTION + expression for expression in expressions],
-                query=True,
-            )
-        except Exception as error:
-            error_type = type(error).__name__
-            reason = f"{error_type}: {str(error)[:160]}"
-            category = "timeout" if error_category(error) == "timeout" else "error"
-            log_event(
-                logger,
-                logging.WARNING,
-                "semantic_query_fallback",
-                reason=reason,
-                error_type=error_type,
-                category=category,
-                query_batch_size=len(expressions),
-            )
-            return DenseRecallEvidence(
-                space_id=self.snapshot.space_id,
-                calibration_profile=self.config.calibration_profile,
-                query_batch_size=len(expressions),
-                request_ms=(time.monotonic() - request_started) * 1000,
-                fallback_reason=reason,
-            )
-        request_ms = (time.monotonic() - request_started) * 1000
-        matrix = np.asarray(vectors, dtype=np.float32)
-        candidate_width = max(
-            self.policy.candidate_floor,
-            max(1, output_limit) * self.policy.candidate_multiplier,
-        )
-        search_started = time.monotonic()
-        memory_hits: dict[int, list[tuple[VectorMetadata, float]]] = {}
-        if include_memory:
-            memory_hits = self.snapshot.search(
-                matrix, {"confirmed_memory"}, candidate_width
-            )
-        episode_types = (
-            {"episode_turn"}
-            if episode_after is not None or episode_before is not None
-            else {"episode_summary", "episode_cue"}
-        )
-        episode_hits: dict[int, list[tuple[VectorMetadata, float]]] = {}
+        pools = [DenseSearchPool({"confirmed_memory"})] if include_memory else []
         if include_episode:
-            for document_type in episode_types:
-                per_pool = self.snapshot.search(
-                    matrix,
-                    {document_type},
-                    candidate_width,
-                    after=episode_after,
-                    before=episode_before,
-                )
-                for index, hits in per_pool.items():
-                    episode_hits.setdefault(index, []).extend(hits)
-        memory: dict[str, dict[tuple[str, str], DenseMemoryHit]] = {}
+            episode_types = (
+                {"episode_turn"}
+                if episode_after is not None or episode_before is not None
+                else {"episode_summary", "episode_cue"}
+            )
+            pools.extend(
+                DenseSearchPool({kind}, episode_after, episode_before, group_by_parent=True)
+                for kind in episode_types
+            )
+        result = await self.queries.search(
+            (query.dense_expression for query in queries), pools, limit=output_limit,
+        )
         episodes: dict[str, dict[str, DenseEpisodeHit]] = {}
-        for index, expression in enumerate(expressions):
-            expression_memory: dict[tuple[str, str], DenseMemoryHit] = {}
-            episode_values: dict[str, dict[str, float]] = {}
-            for meta, cosine in memory_hits.get(index, []):
-                key = (meta.document_type, meta.source_id)
-                previous = expression_memory.get(key)
-                if previous is None or cosine > previous.cosine:
-                    expression_memory[key] = DenseMemoryHit(meta.source_id, cosine)
-            for meta, cosine in episode_hits.get(index, []):
-                episode_id = meta.parent_id or meta.source_id
-                field_name = (
-                    "summary_cosine"
-                    if meta.document_type == "episode_summary"
-                    else "cue_cosine" if meta.document_type == "episode_cue" else "turn_cosine"
-                )
-                values = episode_values.setdefault(episode_id, {})
-                values[field_name] = max(cosine, values.get(field_name, -1.0))
-            memory[expression] = expression_memory
+        for expression, hits in result.hits.items():
+            values: dict[str, dict[str, float]] = {}
+            for meta, cosine in hits:
+                field_name = {
+                    "episode_summary": "summary_cosine",
+                    "episode_cue": "cue_cosine",
+                    "episode_turn": "turn_cosine",
+                }.get(meta.document_type)
+                if field_name is None:
+                    continue
+                fields = values.setdefault(meta.parent_id or meta.source_id, {})
+                fields[field_name] = max(cosine, fields.get(field_name, -1.0))
             episodes[expression] = {
-                episode_id: DenseEpisodeHit(episode_id, **values)
-                for episode_id, values in episode_values.items()
+                episode_id: DenseEpisodeHit(episode_id, **fields)
+                for episode_id, fields in values.items()
             }
-        evidence = DenseRecallEvidence(
-            space_id=self.snapshot.space_id,
-            calibration_profile=self.config.calibration_profile,
-            memory=memory,
-            episodes=episodes,
-            query_batch_size=len(expressions),
-            request_ms=request_ms,
-            search_ms=(time.monotonic() - search_started) * 1000,
+        return DenseRecallEvidence(
+            space_id=result.space_id, calibration_profile=self.config.calibration_profile,
+            memory=result.memory, episodes=episodes, query_batch_size=result.query_batch_size,
+            request_ms=result.request_ms, search_ms=result.search_ms,
+            fallback_reason=result.fallback_reason,
         )
 
-        return evidence
+    def _refresh_source(self, source_type: str, source_id: str) -> None:
+        self.snapshot.replace_source(
+            "episode_summary" if source_type == "episode" else source_type,
+            source_id, include_children=source_type == "episode",
+        )
 
     async def maintain_once(self, *, allow_encoding: bool = True) -> bool:
         if not self.config.enabled:
@@ -229,7 +181,7 @@ class SemanticRecallService:
                 changed = self.store.materialize_semantic_source(claim)
                 worked = worked or bool(changed)
                 if self.snapshot.space_id:
-                    self.snapshot.replace_source(
+                    self._refresh_source(
                         str(claim["source_type"]), str(claim["source_id"])
                     )
             except Exception as error:
@@ -272,7 +224,7 @@ class SemanticRecallService:
                         )
                         for row in rows
                     ):
-                        self.snapshot.replace_source(source_type, source_id)
+                        self._refresh_source(source_type, source_id)
             except Exception as error:
                 self.store.fail_semantic_documents(rows, error)
                 log_event(

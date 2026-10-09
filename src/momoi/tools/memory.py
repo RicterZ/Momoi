@@ -14,12 +14,12 @@ from ..models import (
 from ..storage.core.search import SearchBackend, search_expression
 from ..storage import (
     Store,
-    MemoryRecallQuery,
     truncate_tokens,
 )
 from ..storage.episode.episode_ranking import EpisodeRecallQuery
 from ..semantic.models import DenseRecallEvidence
 from ..semantic.service import SemanticRecallService
+from ..memory.retrieval.service import MemoryRecallService
 from .contracts.memory import MEMORY_TOOL_SPECS
 from .validation import validate_tool_arguments
 
@@ -131,6 +131,11 @@ class MemoryTools:
     ) -> None:
         self.store = store
         self.semantic_recall = semantic_recall
+        self.memory_recall = (
+            MemoryRecallService(
+                store.memory, store.search_backend, dense_recall=semantic_recall.memory_dense_recall,
+            ) if semantic_recall is not None else store.memory_recall
+        )
 
     async def execute_async(
         self,
@@ -148,18 +153,12 @@ class MemoryTools:
         try:
             if call.name == "memory_search":
                 query = str(call.arguments.get("query") or "").strip()
-                dense = (
-                    await self.semantic_recall.prepare(
-                        [MemoryRecallQuery(query)],
-                        include_episode=False,
-                        output_limit=min(
-                            10, max(1, int(call.arguments.get("limit", 6)))
-                        ),
-                    )
-                    if self.semantic_recall is not None and query
-                    else None
+                if not query or self.semantic_recall is None:
+                    return self._search(call.arguments, draft)
+                results = await self.memory_recall.search(
+                    query, min(10, max(1, int(call.arguments.get("limit", 6)))),
                 )
-                return self._search(call.arguments, draft, dense_evidence=dense)
+                return self._memory_search_result(results, draft)
             if call.name == "episode_search":
                 query = str(call.arguments.get("query") or "").strip()
                 try:
@@ -242,8 +241,6 @@ class MemoryTools:
         self,
         arguments: dict[str, Any],
         draft: TurnDraft,
-        *,
-        dense_evidence: DenseRecallEvidence | None = None,
     ) -> dict[str, Any]:
         query = str(arguments.get("query") or "").strip()
         if not query:
@@ -252,13 +249,12 @@ class MemoryTools:
             limit = min(10, max(1, int(arguments.get("limit", 6))))
         except (TypeError, ValueError):
             limit = 6
-        if dense_evidence is None:
-            results = self.store.search_memories(query, limit)
-        else:
-            results = self.store.rank_recalled_memories(
-                [MemoryRecallQuery(query)], limit, dense_evidence=dense_evidence
-            )
+        results = self.store.search_memories(query, limit)
+        return self._memory_search_result(results, draft)
 
+    def _memory_search_result(
+        self, results: list[dict[str, object]], draft: TurnDraft,
+    ) -> dict[str, Any]:
         ids = [
             int(item["id"])
             for item in results
