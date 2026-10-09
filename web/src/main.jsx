@@ -11,7 +11,6 @@ import EmotionContent from "./EmotionContent.jsx";
 import ConfigurationSettings, { ApplyDialog, SaveBar } from "./ConfigurationSettings.jsx";
 
 const TOKEN_KEY = "momoi-dashboard-token";
-const REFLECTION_PAGE = 14;
 const ConfirmContext = createContext(null);
 
 const pages = {
@@ -510,7 +509,7 @@ function OverviewBody({ data, token, routeParam }) {
         ["聊天主题", data.counts.conversations, "#conversations"],
         ["消息", data.counts.messages, "#conversations"],
         ["记忆", data.counts.memories, "#memories"],
-        ["每日复盘", data.counts.reflections, "#reflections"],
+        ["复盘候选", data.counts.reflection_candidates ?? 0, "#reflections"],
       ],
     },
     {
@@ -1142,144 +1141,17 @@ function ConversationDetail({ item }) {
   );
 }
 
-function Reflections({ refreshKey, token, routeParam }) {
-  const [items, setItems] = useState([]);
-  const [status, setStatus] = useState({ loading: true });
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const cursorRef = useRef(null);
-  const busy = useRef(false);
-  const moreRef = useRef(null);
-  const loadOlderRef = useRef(async () => {});
-
-  useEffect(() => {
-    if (!token) {
-      setStatus({ error: new Error("unauthorized") });
-      return undefined;
-    }
-    const controller = new AbortController();
-    busy.current = false;
-    cursorRef.current = null;
-    setItems([]);
-    setHasMore(false);
-    setLoadingMore(false);
-    setStatus({ loading: true });
-    api(`/api/reflections?${new URLSearchParams({ limit: String(REFLECTION_PAGE), ...(routeParam ? { date: routeParam } : {}) })}`, {
-      signal: controller.signal,
-      token,
-    })
-      .then((data) => {
-        cursorRef.current = data.next_cursor ?? null;
-        setItems(data.items || []);
-        setHasMore(data.next_cursor != null);
-        setStatus({});
-      })
-      .catch((error) => {
-        if (error.name !== "AbortError") setStatus({ error });
-      });
-    return () => controller.abort();
-  }, [refreshKey, token, routeParam]);
-
-  loadOlderRef.current = async () => {
-    if (busy.current || cursorRef.current == null || !token) return;
-    busy.current = true;
-    setLoadingMore(true);
-    try {
-      const query = new URLSearchParams({
-        limit: String(REFLECTION_PAGE),
-        cursor: cursorRef.current,
-      });
-      const data = await api(`/api/reflections?${query}`, { token });
-      const incoming = data.items || [];
-      cursorRef.current = data.next_cursor ?? null;
-      if (incoming.length) {
-        setItems((rows) => {
-          const seen = new Set(rows.map((item) => item.id));
-          return [...rows, ...incoming.filter((item) => !seen.has(item.id))];
-        });
-      }
-      setHasMore(data.next_cursor != null);
-    } catch (error) {
-      if (error.name !== "AbortError") setStatus({ error });
-    } finally {
-      busy.current = false;
-      setLoadingMore(false);
-    }
-  };
-
-  useEffect(() => {
-    const target = moreRef.current;
-    if (!target || !hasMore || status.loading) return undefined;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          loadOlderRef.current();
-        }
-      },
-      { rootMargin: "240px" },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [hasMore, items.length, status.loading]);
-
-  if (status.loading) return <Loading>正在读取复盘…</Loading>;
-  if (status.error) return <ErrorState error={status.error} />;
-  if (!items.length) return <Empty />;
-
+function Reflections({ refreshKey, token, onMutated }) {
+  const [activation, setActivation] = useState("all");
+  const [scope, setScope] = useState(null);
+  const [query, setQuery] = useState("");
   return (
-    <>
-      <section className="section-tools">
-        <p>按日期保留 Momoi 对每天经历的整理与学习。</p>
-        {routeParam && <a className="quiet-button" href="#reflections">全部复盘</a>}
-      </section>
-      <section className="card-list">
-        {items.map((item) => (
-          <article className="reflection-card" key={item.id}>
-            <div className="card-head">
-              <h2>{item.local_date}</h2>
-              <span className="status">{item.state}</span>
-            </div>
-            <p className="summary">
-              {item.summary ||
-                (item.error ? `等待重试：${item.error}` : "尚未生成复盘。")}
-            </p>
-            {!!item.memories?.length && (
-              <div className="reflection-snapshot">
-                <div className="memory-list">
-                  {item.memories.map((memory) => (
-                    <div className="memory" key={`${memory.kind}:${memory.key}`}>
-                      <div className="memory-head">
-                        <span className="memory-kind">
-                          {memoryKindLabel(memory.kind)}
-                        </span>
-                        {Number.isFinite(Number(memory.confidence)) && (
-                          <span className="memory-confidence">
-                            可信度 {Math.round(Number(memory.confidence) * 100)}%
-                          </span>
-                        )}
-                      </div>
-                      <p>{memory.content}</p>
-                      {memory.evidence && <small>依据：{memory.evidence}</small>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </article>
-        ))}
-      </section>
-      {hasMore || loadingMore ? (
-        <button
-          className="record-list-more"
-          type="button"
-          ref={moreRef}
-          disabled={loadingMore}
-          onClick={() => loadOlderRef.current()}
-        >
-          {loadingMore ? "正在加载…" : "更早的复盘"}
-        </button>
-      ) : null}
-    </>
+    <DataView path="/api/reflection-candidates" refreshKey={refreshKey} token={token}>
+      {(data) => <MemoryInventory candidateMode
+        items={data.items.map(item => ({ ...item, resource: "reflection-candidates",
+          identity: `candidate:${item.id}`, activation: item.status === "pending" ? "pending" : "observation" }))}
+        {...{ token, onMutated, activation, setActivation, scope, setScope, query, setQuery }} />}
+    </DataView>
   );
 }
 
@@ -1289,31 +1161,14 @@ function Memories({ refreshKey, token, onMutated }) {
   const [query, setQuery] = useState("");
   return (
     <DataView path="/api/memories?limit=400" refreshKey={refreshKey} token={token}>
-      {(confirmed) => (
-        <DataView path="/api/reflection-memories" refreshKey={refreshKey} token={token}>
-          {(reflections) => (
-            <MemoryInventory
-              activation={activation}
-              setActivation={setActivation}
-              scope={scope}
-              setScope={setScope}
-              query={query}
-              setQuery={setQuery}
-              items={[
-                ...confirmed.items.map((item) => ({ ...item, resource: "memories", identity: `memory:${item.id}` })),
-                ...reflections.items.map((item) => ({ ...item, resource: "reflection-memories", identity: `reflection:${item.id}`, activation: "reflection" })),
-              ]}
-              token={token}
-              onMutated={onMutated}
-            />
-          )}
-        </DataView>
-      )}
+      {(data) => <MemoryInventory
+        items={data.items.map(item => ({ ...item, resource: "memories", identity: `memory:${item.id}` }))}
+        {...{ token, onMutated, activation, setActivation, scope, setScope, query, setQuery }} />}
     </DataView>
   );
 }
 
-function MemoryInventory({ items, token, onMutated, activation, setActivation, scope, setScope, query, setQuery }) {
+function MemoryInventory({ candidateMode = false, items, token, onMutated, activation, setActivation, scope, setScope, query, setQuery }) {
   const confirm = useConfirm();
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
@@ -1327,7 +1182,7 @@ function MemoryInventory({ items, token, onMutated, activation, setActivation, s
       await api(`/api/${item.resource}/${item.id}`, {
         method: "PATCH",
         token,
-        body: { content: draft },
+        body: { content: draft, ...(candidateMode ? { revision: item.revision } : {}) },
       });
       setEditingId(null);
       onMutated();
@@ -1341,8 +1196,8 @@ function MemoryInventory({ items, token, onMutated, activation, setActivation, s
   async function remove(item) {
     const ok = await confirm({
       title: "删除这条记忆？",
-      message: item.activation === "reflection"
-        ? "这条复盘记忆将从召回中移除，来源日记保留当时的记录。"
+      message: candidateMode
+        ? "删除这条候选，后续复盘不会恢复同一条候选。原始日记保留。"
         : "删掉之后 Momoi 不会再使用它，也找不回来了。",
       confirmLabel: "删除记忆",
       cancelLabel: "先留着",
@@ -1351,7 +1206,7 @@ function MemoryInventory({ items, token, onMutated, activation, setActivation, s
     setBusyId(item.identity);
     setError("");
     try {
-      await api(`/api/${item.resource}/${item.id}`, { method: "DELETE", token });
+      await api(`/api/${item.resource}/${item.id}`, { method: "DELETE", token, ...(candidateMode ? { body: { revision: item.revision } } : {}) });
       onMutated();
     } catch (err) {
       setError(err.message);
@@ -1360,11 +1215,27 @@ function MemoryInventory({ items, token, onMutated, activation, setActivation, s
     }
   }
 
-  const labels = { ...activationLabels, reflection: "复盘" };
+  async function admit(item) {
+    const ok = await confirm({ title: "准入召回记忆？",
+      message: `准入后 Momoi 会在相关话题中使用这条记忆：${item.content}`,
+      confirmLabel: "准入 recall", cancelLabel: "继续观察" });
+    if (!ok) return;
+    setBusyId(item.identity);
+    setError("");
+    try {
+      await api(`/api/reflection-candidates/${item.id}/admit`, {
+        method: "POST", token, body: { revision: item.revision },
+      });
+      onMutated();
+    } catch (err) { setError(err.message); }
+    finally { setBusyId(null); }
+  }
+
+  const labels = candidateMode ? { observation: "观察记忆", pending: "待准入记忆" } : activationLabels;
 
   const scopes = new Map(items.map((item) => [memoryScope(item), memoryScopeLabel(item)]));
   const visible = filterMemories(items, { activation, scope, query });
-  const groups = [...activationOrder, "reflection"]
+  const groups = (candidateMode ? ["pending", "observation"] : activationOrder)
     .map((name) => [
       name,
       visible.filter((item) => item.activation === name),
@@ -1373,21 +1244,21 @@ function MemoryInventory({ items, token, onMutated, activation, setActivation, s
   return (
     <>
       <section className="section-tools memory-toolbar">
-        <p>{visible.length} / {items.length} 条记忆</p>
+        <p>{visible.length} / {items.length} 条记忆{candidateMode && " · 2 次起观察，5 次起待准入，最多累计一个月"}</p>
         <div className="memory-filters">
           <label>搜索记忆
-            <input type="search" value={query} placeholder="内容、触发词或标签"
+            <input className="dash-input" type="search" value={query} placeholder="内容、触发词或标签"
               onChange={(event) => setQuery(event.target.value)} />
           </label>
-          <label>作用域
-            <select value={scope === null ? "" : `scope:${scope}`}
+          {!candidateMode && <label>作用域
+            <select className="dash-input" value={scope === null ? "" : `scope:${scope}`}
               onChange={(event) => setScope(event.target.value === "" ? null : event.target.value.slice(6))}>
               <option value="">全部作用域</option>
               {[...scopes].map(([value, label]) => (
                 <option key={value} value={`scope:${value}`}>{label}</option>
               ))}
             </select>
-          </label>
+          </label>}
         </div>
         <div className="dash-tabs" role="tablist" aria-label="记忆筛选">
           {[["all", "全部"], ...Object.entries(labels)].map(
@@ -1421,16 +1292,14 @@ function MemoryInventory({ items, token, onMutated, activation, setActivation, s
                   <div className="card-head">
                     <h2>{memoryKindLabel(item.kind)}</h2>
                     <span className="status">
-                      {item.activation === "reflection"
-                        ? `置信度 ${Math.round(item.confidence * 100)}%`
-                        : labels[item.activation] || item.activation}
+                      {candidateMode ? `${item.count} 次独立观察${item.status === "blocked" ? " · 存在冲突" : ""}` : labels[item.activation] || item.activation}
                     </span>
                   </div>
-                  <MemoryMetadata item={item} />
+                  {!candidateMode && <MemoryMetadata item={item} />}
                   {editingId === item.identity ? (
                     <textarea
                       aria-label="记忆内容"
-                      maxLength={item.activation === "reflection" ? 1000 : 2000}
+                      maxLength={candidateMode ? 1000 : 2000}
                       className="edit-area"
                       value={draft}
                       onChange={(event) => setDraft(event.target.value)}
@@ -1459,10 +1328,9 @@ function MemoryInventory({ items, token, onMutated, activation, setActivation, s
                     ]}
                   />
                   <div className="card-actions">
-                    {item.activation === "reflection" && item.local_date && (
-                      <a className="memory-source-link" href={`#reflections/${item.local_date}`}>
-                        {item.local_date} 复盘日记 ↗
-                      </a>
+                    {candidateMode && item.status === "pending" && editingId !== item.identity && (
+                      <button type="button" className="quiet-button" disabled={busyId === item.identity}
+                        onClick={() => admit(item)}>准入 recall</button>
                     )}
                     {editingId === item.identity ? (
                       <>

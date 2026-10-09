@@ -8,10 +8,7 @@ export default function MemoryMetadata({ item }) {
   const triggerActive = item.activation === "recall" && !scope;
   return (
     <div className="memory-metadata">
-      <p className="memory-scope">
-        作用域：{memoryScopeLabel(item)}
-        {scope && item.scope_label && item.scope_label !== scope && <code>{scope}</code>}
-      </p>
+      {scope && <p className="memory-scope">作用于 {memoryScopeLabel(item)}</p>}
       {!!tags.length && (
         <div className="memory-chips" aria-label="主题标签">
           {tags.map((tag) => <span className="memory-tag" key={tag} title={tag}>{memoryTagLabels[tag] || tag}</span>)}
