@@ -167,7 +167,7 @@ class GoalWorkflow:
         )
         current_input = pack_current_turn_context(
             self.store, "goal",
-            ("scoped_memories", self.store.scoped_memory_context(f"goal.{goal_id}")),
+            ("scoped_memories", self.store.scoped_memory_context(f"goal:{goal_id}")),
             (
                 "workflow_contract",
                 _live_prompt(GOAL_PROMPT_PATH, GOAL_SYSTEM_PROMPT),

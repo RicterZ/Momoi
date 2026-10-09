@@ -5,7 +5,7 @@ import unicodedata
 from ..retrieval.models import MemoryRecallQuery
 from ..retrieval.sparse import StringSearchBackend, search_expression
 from ..text import estimate_tokens
-from ..storage.records import legacy_scope
+from ..storage.records import memory_scope
 
 MAX_REQUESTS = 8
 PER_REQUEST = 8
@@ -43,9 +43,9 @@ class WriteCandidates:
         pools = {}
         for query in queries:
             relevant_requests = context.requests if expressions else [r for r in context.requests if r['content'] == query]
-            scopes = {r.get('scope', legacy_scope(by_id[r['target_id']]) if r.get('target_id') in by_id else None)
+            scopes = {r.get('scope', memory_scope(by_id[r['target_id']]) if r.get('target_id') in by_id else None)
                       for r in relevant_requests}
-            eligible = [row for row in rows if None in scopes or legacy_scope(row) in scopes]
+            eligible = [row for row in rows if None in scopes or memory_scope(row) in scopes]
             pools[query] = frozenset(str(row['id']) for row in eligible)
             for row in eligible:
                 if (row['id'] in {r.get('target_id') for r in relevant_requests}

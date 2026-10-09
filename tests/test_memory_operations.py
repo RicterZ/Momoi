@@ -96,14 +96,15 @@ def apply(store, batch, decisions, snapshots=None):
     store.apply_memory_operation(batch, decisions, snapshots)
 
 
-def test_scoped_memory_write_requires_stable_scope_key(store):
+def test_scoped_memory_write_requires_explicit_scope(store):
     source = event(store, text="喝水提醒只在任务执行时使用")
     operation = {"id": "op", "type": "add", "event_id": source.event_id}
-    decision = write(source, key=f"goal.{'a' * 32}.water")
+    decision = write(source, key="water")
+    decision["memory"]["meta"] = {"tags": [], "scope": "goal:" + "a" * 32}
     decision["memory"]["activation"] = "scoped"
     arguments = {"decisions": [decision]}
     assert parse_decisions(arguments, [operation], {}, {source.event_id: source.text})
-    decision["memory"]["key"] = "goal.water"
+    decision["memory"]["meta"]["scope"] = ""
     with pytest.raises(ValueError, match="scoped memory requires"):
         parse_decisions(arguments, [operation], {}, {source.event_id: source.text})
 

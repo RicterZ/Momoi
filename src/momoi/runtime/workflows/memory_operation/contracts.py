@@ -43,6 +43,10 @@ _MEMORY = {
         "meta": {
             "type": "object",
             "properties": {
+                "scope": {
+                    "type": "string", "maxLength": 200,
+                    "description": "全局填空字符串；工作流范围为 heartbeat、webhook 或 goal:<提供的 Goal ID>。key 不包含范围前缀。",
+                },
                 "tags": {
                     "type": "array", "maxItems": 3, "uniqueItems": True,
                     "items": {"type": "string", "enum": sorted(MOMOI_MEMORY_TAGS.tags)},

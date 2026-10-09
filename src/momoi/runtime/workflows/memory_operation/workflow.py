@@ -53,7 +53,7 @@ class MemoryOperationWorkflow:
         visible = {int(row["id"]): row for row in batch["context"]}
         current_ids = set(visible)
         for row in visible.values():
-            current = self.store.active_memory(row["kind"], row["key"])
+            current = self.store.active_memory(row["kind"], row["key"], scope=row.get("meta", {}).get("scope", ""))
             if current is not None:
                 current_ids.add(int(current["id"]))
         snapshots = self.memory.snapshots(sorted(current_ids))
@@ -115,6 +115,7 @@ class MemoryOperationWorkflow:
                     }
                 try:
                     plan = self.memory.writing.review(context, call.arguments)
+                    self.store.validate_memory_scopes(context.requests, plan.decisions)
                     planned_arguments = {"decisions": plan.decisions}
                 except (TypeError, ValueError, KeyError) as error:
                     return {

@@ -37,7 +37,7 @@ def test_reject_invalid_metadata_before_writing(database, meta):
 
 
 @pytest.mark.parametrize('filters', [{'tags_any': ['unknown']}, {'tags_any': 'health'},
-                                    {'kinds': ['unknown']}, {'scope': 'heartbeat'},
+                                    {'kinds': ['unknown']}, {'scope': ['heartbeat']},
                                     {'tags_any': [None]}, {'tags_any': ['health', 'health']}])
 def test_invalid_filters_do_not_silently_expand_search(database, filters):
     memory = Memory(database, tags=CATALOG, dense_recall=AsyncMock())
@@ -63,10 +63,10 @@ def test_sparse_filters_intersect_fields_and_keep_untagged_defaults(database):
     assert [r['id'] for r in memory.search_literal('无糖咖啡', 6, filters=filters)] == [coffee]
     assert asyncio.run(memory.search('无糖咖啡', filters={'tags_any': ['social']})) == []
     assert len(asyncio.run(memory.search('无糖咖啡', filters={'tags_any': [], 'kinds': []}))) == 3
-    assert memory.repository.inventory()[0]['meta'] == {'tags': ['food_drink']}
-    assert memory.repository.rows('recall')[0]['meta'] == {'tags': ['food_drink']}
+    assert memory.repository.inventory()[0]['meta'] == {'tags': ['food_drink'], 'scope': ''}
+    assert memory.repository.rows('recall')[0]['meta'] == {'tags': ['food_drink'], 'scope': ''}
     # Reading historical metadata is independent of a later catalog change.
-    assert Memory(database).snapshots([coffee])[coffee]['meta'] == {'tags': ['food_drink']}
+    assert Memory(database).snapshots([coffee])[coffee]['meta'] == {'tags': ['food_drink'], 'scope': ''}
 
 
 @pytest.mark.parametrize('constraint', ['tags', 'kinds', 'query_kinds', 'visibility'])
@@ -114,7 +114,7 @@ def test_meta_edits_invalidate_snapshots_and_compose_transactions(database):
     with pytest.raises(RuntimeError, match='abort'):
         with transaction(database):
             memory.repository.update_meta(original, {'tags': ['health']})
-            assert memory.snapshots([identifier])[identifier]['meta'] == {'tags': ['health']}
+            assert memory.snapshots([identifier])[identifier]['meta'] == {'tags': ['health'], 'scope': ''}
             raise RuntimeError('abort')
     assert memory.snapshots([identifier])[identifier] == original
     # Even when timestamps coincide, meta is part of the fingerprint.
@@ -125,11 +125,11 @@ def test_meta_edits_invalidate_snapshots_and_compose_transactions(database):
         memory.repository.update_meta(original, {'tags': ['health']})
     assert memory.index_source.documents(str(identifier)) == document
     replacement = write(memory.repository, targets=[identifier])
-    assert memory.snapshots([replacement])[replacement]['meta'] == {'tags': ['food_drink']}
+    assert memory.snapshots([replacement])[replacement]['meta'] == {'tags': ['food_drink'], 'scope': ''}
     snapshot = memory.snapshots([replacement])[replacement]
     memory.repository.write({**snapshot, 'meta': {'tags': []}}, [replacement],
                             {'event_id': 'new', 'quote': '无糖'}, [], now=30)
-    assert memory.repository.active('preference', 'drink')['meta'] == {'tags': []}
+    assert memory.repository.active('preference', 'drink')['meta'] == {'tags': [], 'scope': ''}
 
 
 def test_reranker_sees_bounded_wider_pool_and_final_limit_is_enforced(database):
@@ -165,5 +165,5 @@ def test_maintenance_merge_preserves_tags_and_rejects_overflow_atomically(databa
     assert memory.repository.validate_snapshots(snapshots) == snapshots
     tag(memory, other, ['social'])
     merged = memory.repository.merge(survivor, [other], '咖啡', 'recall', None, events)
-    assert memory.snapshots([merged])[merged]['meta'] == {'tags': ['food_drink', 'health', 'social']}
+    assert memory.snapshots([merged])[merged]['meta'] == {'tags': ['food_drink', 'health', 'social'], 'scope': ''}
     assert memory.snapshots([other]) == {}

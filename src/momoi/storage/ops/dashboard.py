@@ -51,7 +51,7 @@ class DashboardStore:
                          AND (m.expires_at IS NULL OR m.expires_at > ?)
                          AND NOT EXISTS (
                              SELECT 1 FROM memory_tombstones AS t
-                             WHERE t.kind=m.kind AND t.key=m.key
+                             WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
                          )""",
                     (time.time(),),
                 ).fetchone()[0]
@@ -103,7 +103,7 @@ class DashboardStore:
         self.purge_expired_memories()
         now = time.time()
         rows = self._db.execute(
-            """SELECT id, kind, key, content, activation, authority,
+            """SELECT id, kind, key, scope_key, content, activation, authority,
                       evidence_quote, importance, created_at, updated_at,
                       expires_at
                FROM memories AS m
@@ -111,7 +111,7 @@ class DashboardStore:
                  AND (m.expires_at IS NULL OR m.expires_at > ?)
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key
+                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
                  )
                ORDER BY CASE m.activation
                           WHEN 'always' THEN 0
@@ -125,12 +125,7 @@ class DashboardStore:
             (now, limit),
         ).fetchall()
         results: list[dict[str, object]] = []
-        scoped_goal_ids = {
-            str(row["key"]).split(".", 2)[1]
-            for row in rows
-            if row["activation"] == "scoped" and str(row["key"]).startswith("goal.")
-            and len(str(row["key"]).split(".", 2)) == 3
-        }
+        scoped_goal_ids = {row["scope_key"][5:] for row in rows if row["scope_key"].startswith("goal:")}
         goal_titles = {}
         if scoped_goal_ids:
             placeholders = ",".join("?" for _ in scoped_goal_ids)
@@ -144,12 +139,9 @@ class DashboardStore:
         for row in rows:
             item = self._memory_public_dict(row)
             if item["activation"] == "scoped":
-                parts = str(item["key"]).split(".", 2)
-                scope = f"goal.{parts[1]}" if parts[0] == "goal" and len(parts) == 3 else parts[0]
-                item["scope"] = scope
+                scope = item["scope"]
                 item["scope_label"] = (
-                    f"Goal · {goal_titles.get(parts[1], parts[1])}"
-                    if parts[0] == "goal" and len(parts) == 3
+                    f"Goal · {goal_titles.get(scope[5:], scope[5:])}" if scope.startswith("goal:")
                     else {"heartbeat": "心跳", "webhook": "Webhook"}.get(scope, scope)
                 )
             results.append(item)
@@ -158,6 +150,7 @@ class DashboardStore:
     def _memory_public_dict(self, row: sqlite3.Row) -> dict[str, object]:
         item = dict(row)
         item["evidence"] = item.pop("evidence_quote")
+        item["scope"] = item.pop("scope_key")
         add_context_timestamps(
             item, ("created_at", "updated_at", "expires_at"), self._timezone
         )
@@ -165,7 +158,7 @@ class DashboardStore:
 
     def _active_memory_row(self, memory_id: int) -> sqlite3.Row | None:
         return self._db.execute(
-            """SELECT id, kind, key, content, activation, authority,
+            """SELECT id, kind, key, scope_key, content, activation, authority,
                       evidence_quote, importance, created_at, updated_at,
                       expires_at
                FROM memories AS m
@@ -174,7 +167,7 @@ class DashboardStore:
                  AND (m.expires_at IS NULL OR m.expires_at > ?)
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key
+                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
                  )""",
             (memory_id, time.time()),
         ).fetchone()
@@ -206,20 +199,8 @@ class DashboardStore:
             row = self._active_memory_row(memory_id)
             if row is None:
                 return False
-            self._db.execute(
-                """INSERT INTO memory_tombstones
-                   (kind, key, source_event_id, evidence_quote, created_at)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(kind, key) DO UPDATE SET
-                     source_event_id=excluded.source_event_id,
-                     evidence_quote=excluded.evidence_quote,
-                     created_at=excluded.created_at""",
-                (
-                    row["kind"],
-                    row["key"],
-                    "dashboard:forget",
-                    text,
-                    now,
-                ),
+            self.memory.forget(
+                {**dict(row), "meta": {"scope": row["scope_key"]}},
+                {"event_id": "dashboard:forget", "quote": text}, now=now,
             )
         return True

@@ -44,7 +44,8 @@ def test_index_source_retains_private_write_candidates(database, state):
     identifier = write(memory.repository)
     with transaction(database):
         if state in {'always', 'scoped'}:
-            database.execute('UPDATE memories SET activation=? WHERE id=?', (state, identifier))
+            database.execute('UPDATE memories SET activation=?,scope_key=? WHERE id=?',
+                             (state, 'heartbeat' if state == 'scoped' else '', identifier))
         elif state == 'expired':
             database.execute('UPDATE memories SET expires_at=? WHERE id=?', (time.time() - 1, identifier))
         elif state == 'superseded':

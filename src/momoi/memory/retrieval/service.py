@@ -119,7 +119,7 @@ class MemoryRecallService:
             self._reflection_rows() if include_reflections and self._reflection_rows else []
         )
 
-        reflection_rows = [row for row in reflection_rows if not filters["tags_any"]
+        reflection_rows = [row for row in reflection_rows if not filters["scope"] and not filters["tags_any"]
                            and (not filters["kinds"] or row["kind"] in filters["kinds"])]
         confirmed_candidates: list[dict[str, object]] = []
         for row in confirmed_rows:
@@ -405,7 +405,7 @@ class MemoryRecallService:
         include_scoped: bool = False,
         filters: MemoryFilters | None = None,
     ) -> list[dict[str, object]]:
-        filters = self.repository.tags.filters(filters)
+        self.repository.tags.filters(filters)
         if max_results <= 0:
             return []
         if activation is not None and activation not in MEMORY_ACTIVATIONS:

@@ -29,7 +29,7 @@ def render_memory_operation_request(*, now, timestamp,
     retrieval = Element("candidate_retrieval", {"fallback": retrieval_fallback})
     goal_directory = Element("goal_directory")
     for goal in goals:
-        SubElement(goal_directory, "goal", {"id": str(goal["id"]),
+        SubElement(goal_directory, "goal", {"id": str(goal["id"]), "scope": "goal:" + str(goal["id"]),
                                              "status": str(goal["status"])}).text = str(goal["title"])
     return xml_sections(clock, requests, goal_directory, memories, outdated, deleted, retrieval,
                         owner_evidence_element(evidence))

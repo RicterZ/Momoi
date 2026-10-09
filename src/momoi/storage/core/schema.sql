@@ -106,7 +106,8 @@ CREATE TABLE IF NOT EXISTS memories (
     updated_at REAL NOT NULL,
     expires_at REAL,
     superseded_by INTEGER,
-    meta_json TEXT NOT NULL DEFAULT '{}'
+    meta_json TEXT NOT NULL DEFAULT '{}',
+    scope_key TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS memories_active
     ON memories(kind, key) WHERE superseded_by IS NULL;
@@ -131,12 +132,13 @@ CREATE TABLE IF NOT EXISTS memory_commits (
 );
 
 CREATE TABLE IF NOT EXISTS memory_tombstones (
+    scope_key TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL,
     key TEXT NOT NULL,
     source_event_id TEXT NOT NULL,
     evidence_quote TEXT NOT NULL,
     created_at REAL NOT NULL,
-    PRIMARY KEY (kind, key)
+    PRIMARY KEY (scope_key, kind, key)
 );
 CREATE TABLE IF NOT EXISTS memory_evidence (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

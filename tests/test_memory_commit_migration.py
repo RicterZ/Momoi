@@ -29,7 +29,7 @@ def test_commit_migration_preserves_tagged_records_and_backup_recovery(tmp_path)
     assert report['restore'] == 'ok'
     store = Store(path)
     try:
-        assert store._db.execute('PRAGMA user_version').fetchone()[0] == 35
+        assert store._db.execute('PRAGMA user_version').fetchone()[0] == migrations.SCHEMA_VERSION
         assert fingerprint(store._db, include_meta=True) == before
         assert store._db.execute('SELECT COUNT(*) FROM memory_commits').fetchone()[0] == 0
         migrations.apply_migrations(store._db)

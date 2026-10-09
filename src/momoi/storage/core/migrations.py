@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from .transactions import transaction
+from .memory_scope_migration import add_memory_scope
 
 from ..episode.episode_claims import render_verified_claims
 
@@ -732,6 +733,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_weekly_reflection_workflow,
     _add_memory_metadata,
     _add_memory_commits,
+    add_memory_scope,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

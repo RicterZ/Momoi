@@ -7,7 +7,7 @@ from ...memory.retrieval.models import MemoryRecallQuery
 from ...memory.storage.records import MEMORY_ACTIVATIONS, MEMORY_KINDS, memory_snapshot_fingerprint
 from ...memory.text import estimate_tokens, truncate_tokens, token_chunk
 from ...memory.metadata import TagCatalog
-from ...memory.writing.validation import ALWAYS_MEMORY_KINDS, valid_scoped_memory_key
+from ...memory.writing.validation import ALWAYS_MEMORY_KINDS
 
 MOMOI_MEMORY_TAGS = TagCatalog({
     "food_drink": "饮食、饮品、口味及相关限制",

@@ -175,6 +175,15 @@ class MemoryOperationStore:
                 (error[:500], now, turn_id),
             )
 
+    def validate_memory_scopes(self, requests, decisions):
+        allowed = {"", "heartbeat", "webhook"}
+        allowed.update("goal:" + row[0] for row in self._db.execute("SELECT id FROM goals"))
+        scopes = [request["scope"] for request in requests if "scope" in request]
+        scopes.extend(item.get("memory", {}).get("meta", {}).get("scope", "")
+                      for item in decisions if isinstance(item, dict) and item.get("action") == "write")
+        if any(not isinstance(scope, str) or scope not in allowed for scope in scopes):
+            raise ValueError("memory scope must identify a supplied Momoi workflow")
+
     def apply_memory_operation(
         self,
         batch: dict[str, object],
@@ -211,6 +220,7 @@ class MemoryOperationStore:
                         or (event_id in payload["evidence_times"]
                             and payload["evidence_times"][event_id] != row["received_at"])):
                     raise ValueError("memory_operation_evidence_changed")
+            self.validate_memory_scopes(payload["requests"], plan.decisions)
             self.memories.apply(plan, operation_id="owner-memory:" + str(batch["id"]))
             self._db.execute(
                 """UPDATE memory_operation_batches SET state='completed',result_json=?,error=NULL,updated_at=? WHERE id=?""",

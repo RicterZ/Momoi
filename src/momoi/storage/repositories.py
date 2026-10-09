@@ -67,20 +67,13 @@ class RepositoryFacade:
         return self._memory_context(self.memory.rows("always"))
 
     def scoped_memory_context(self, scope: str) -> str:
-        if not (scope == "heartbeat" or scope == "webhook" or
-                (scope.startswith("goal.") and len(scope) == 37 and
-                 all(char in "0123456789abcdef" for char in scope[5:]))):
-            raise ValueError("invalid memory scope")
-        return self._memory_context([
-            row for row in self.memory.rows("scoped")
-            if str(row["key"]).startswith(scope + ".")
-        ])
+        return self._memory_context(self.memory.rows("scoped", scope=scope))
 
-    def has_memory(self, kind: str, key: str) -> bool:
-        return self.memory.has(kind, key)
+    def has_memory(self, kind: str, key: str, *, scope: str = "") -> bool:
+        return self.memory.has(kind, key, scope=scope)
 
-    def active_memory(self, kind: str, key: str) -> ActiveMemory | None:
-        return self.memory.active(kind, key)
+    def active_memory(self, kind: str, key: str, *, scope: str = "") -> ActiveMemory | None:
+        return self.memory.active(kind, key, scope=scope)
 
     def memory_snapshots(self, ids: list[int]) -> dict[int, dict[str, object]]:
         return self.memory.snapshots(ids)

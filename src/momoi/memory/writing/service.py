@@ -6,7 +6,8 @@ import math
 from .candidates import CandidateBudgetExceeded, WriteCandidates, check_budget, normalized
 from .models import MemoryPlan, MemoryPlanner, PlanningContext, canonical_json
 from .validation import parse_decisions
-from ..storage.records import legacy_scope
+from ..storage.records import memory_scope
+from ..metadata import validate_scope
 from ..storage.commits import MemoryCommits
 from ..storage.repository import MemoryRepository
 from ..storage.transactions import transaction
@@ -63,8 +64,8 @@ class MemoryWritingService:
             seen.add(request['id'])
             if 'target_id' in request and (type(request['target_id']) is not int or request['target_id'] <= 0):
                 raise ValueError('invalid memory request target')
-            if 'scope' in request and not isinstance(request['scope'], str):
-                raise ValueError('invalid memory request scope')
+            if 'scope' in request:
+                validate_scope(request['scope'])
             for key in ('content', 'evidence'):
                 if not isinstance(request[key], str) or not request[key].strip() or len(request[key]) > 2000:
                     raise ValueError(f'invalid memory request {key}')
@@ -84,7 +85,7 @@ class MemoryWritingService:
         for item in decisions:
             for request in context.requests:
                 if request['id'] in item['operation_ids'] and 'scope' in request and any(
-                    legacy_scope(context.snapshots[target]) != request['scope']
+                    memory_scope(context.snapshots[target]) != request['scope']
                     for target in item.get('target_ids', [])
                 ):
                     raise ValueError('memory targets do not match request scope')
@@ -92,14 +93,14 @@ class MemoryWritingService:
                 if context.retrieval_fallback not in ('', 'disabled'):
                     raise ValueError('candidate recall failed; defer this request')
                 self._check_forgotten(context, item, scan=False)
-                scope = legacy_scope(item['memory'])
-                if any(legacy_scope(context.snapshots[target]) != scope for target in item['target_ids']):
+                scope = memory_scope(item['memory'])
+                if any(memory_scope(context.snapshots[target]) != scope for target in item['target_ids']):
                     raise ValueError('memory writes cannot move or merge across scopes')
                 if any('scope' in request and request['scope'] != scope for request in context.requests
                        if request['id'] in item['operation_ids']):
                     raise ValueError('memory write does not match request scope')
         return MemoryPlan(canonical_json({
-            'version': 2, 'requests': context.requests, 'evidence': context.evidence,
+            'version': 3, 'requests': context.requests, 'evidence': context.evidence,
             'snapshots': {str(key): value for key, value in context.snapshots.items()},
             'decisions': decisions,
             'forgotten': {str(key): value for key, value in context.forgotten.items()},
@@ -148,13 +149,13 @@ class MemoryWritingService:
         candidates = dict(context.forgotten)
         # Exact content and stable keys remain protected even when not retrieved.
         for row in self.repository.planning_rows() if scan else ():
-            if row['forgotten_at'] is not None and legacy_scope(row) == legacy_scope(memory) and (
+            if row['forgotten_at'] is not None and memory_scope(row) == memory_scope(memory) and (
                 (row['kind'], row['key']) == (memory['kind'], memory['key'])
                 or normalized(row['content']) == normalized(memory['content'])
             ):
                 candidates[row['id']] = row
-        relevant = [row for row in candidates.values() if legacy_scope(row) == legacy_scope(memory)]
-        tombstone = self.repository.tombstone(memory['kind'], memory['key']) if scan else None
+        relevant = [row for row in candidates.values() if memory_scope(row) == memory_scope(memory)]
+        tombstone = self.repository.tombstone(memory['kind'], memory['key'], scope=memory_scope(memory)) if scan else None
         if tombstone is not None:
             relevant.append({'forgotten_at': tombstone['created_at'],
                              'forgotten_event_id': tombstone['source_event_id']})
@@ -176,7 +177,7 @@ class MemoryWritingService:
         if not isinstance(payload, dict) or set(payload) != {
             'version', 'requests', 'evidence', 'snapshots', 'decisions',
             'forgotten', 'evidence_times', 'retrieval_fallback'
-        } or type(payload['version']) is not int or payload['version'] != 2:
+        } or type(payload['version']) is not int or payload['version'] != 3:
             raise ValueError('invalid memory plan version or fields')
         input_hash = self.commits.input_hash(payload)
         with transaction(self.database):

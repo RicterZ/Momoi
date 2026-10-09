@@ -56,7 +56,7 @@ def test_plan_calls_injected_adapter_without_writing_and_seals_copies(database, 
     assert planned.decisions[0]['memory']['content'] == '用户喜欢无糖咖啡'
     result = memory.apply(planned, operation_id='batch:1')
     assert result['decisions'][0]['memory_ids'] == [1]
-    assert memory.snapshots([1])[1]['meta'] == {'tags': ['food_drink']}
+    assert memory.snapshots([1])[1]['meta'] == {'tags': ['food_drink'], 'scope': ''}
     assert adapter.await_count == 1
 
 
@@ -100,7 +100,7 @@ def test_retry_survives_new_connection_and_later_target_changes(database, memory
         # Receipts survive restart and return without applying the stale plan again.
         restarted = Memory(other)
         assert restarted.apply(MemoryPlan(reviewed.payload_json), operation_id='once') == result
-        assert restarted.snapshots([identifier])[identifier]['meta'] == {'tags': []}
+        assert restarted.snapshots([identifier])[identifier]['meta'] == {'tags': [], 'scope': ''}
         assert other.execute('SELECT COUNT(*) FROM memory_commits').fetchone()[0] == 1
         assert other.execute('SELECT COUNT(*) FROM memories').fetchone()[0] == 2
     finally:

@@ -21,7 +21,7 @@ def test_host_classifies_with_validated_catalog_and_preserves_batch_atomicity(st
     command['memory']['meta'] = {'tags': ['food_drink']}
     apply(store, batch, [command])
     result = asyncio.run(store.memories.search('喝茶', filters={'tags_any': ['food_drink']}))
-    assert len(result) == 1 and result[0]['meta'] == {'tags': ['food_drink']}
+    assert len(result) == 1 and result[0]['meta'] == {'tags': ['food_drink'], 'scope': ''}
     schema = MEMORY_OPERATION_FINISH_SPEC['input_schema']['properties']['decisions']['items']['properties']['memory']
     assert set(schema['properties']['meta']['properties']['tags']['items']['enum']) == set(store.memory.tags.tags)
 
@@ -87,7 +87,7 @@ def test_legacy_migration_rehearsal_is_read_only_and_reopen_keeps_evidence_and_v
     assert report['tables']['semantic_documents']['count'] == 1
     reopened = Store(path)
     try:
-        assert reopened.memory.active('preference', 'drink')['meta'] == {'tags': []}
+        assert reopened.memory.active('preference', 'drink')['meta'] == {'tags': [], 'scope': ''}
         assert reopened.memories.snapshots([forgotten]) == {}
         assert asyncio.run(reopened.memories.search('无糖咖啡'))
         assert asyncio.run(reopened.memories.search('无糖咖啡', filters={'tags_any': ['food_drink']})) == []

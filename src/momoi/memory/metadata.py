@@ -6,11 +6,19 @@ from typing import TypedDict
 
 class MemoryMeta(TypedDict):
     tags: list[str]
+    scope: str
 
 
 class MemoryFilters(TypedDict, total=False):
     tags_any: list[str]
     kinds: list[str]
+    scope: str
+
+
+def validate_scope(scope):
+    if not isinstance(scope, str) or len(scope) > 200 or scope != scope.strip() or any(ord(c) < 32 for c in scope):
+        raise ValueError("invalid memory scope")
+    return scope
 
 
 class TagCatalog:
@@ -31,21 +39,22 @@ class TagCatalog:
         return sorted(values)
 
     def validate(self, meta: object) -> MemoryMeta:
-        if not isinstance(meta, dict) or set(meta) - {"tags"}:
-            raise ValueError("memory meta only accepts tags")
+        if not isinstance(meta, dict) or set(meta) - {"tags", "scope"}:
+            raise ValueError("memory meta only accepts tags and scope")
         tags = self._values(meta.get("tags", []), self.tags, "tags")
         if len(tags) > 3:
             raise ValueError("memory accepts at most three tags")
-        return {"tags": tags}
+        return {"tags": tags, "scope": validate_scope(meta.get("scope", ""))}
 
     def filters(self, filters: object) -> MemoryFilters:
         from .storage.records import MEMORY_KINDS
 
         if filters is None:
-            return {"tags_any": [], "kinds": []}
-        if not isinstance(filters, dict) or set(filters) - {"tags_any", "kinds"}:
-            raise ValueError("memory filters only accept tags_any and kinds")
+            return {"tags_any": [], "kinds": [], "scope": ""}
+        if not isinstance(filters, dict) or set(filters) - {"tags_any", "kinds", "scope"}:
+            raise ValueError("memory filters only accept tags_any, kinds and scope")
         return {
             "tags_any": self._values(filters.get("tags_any", []), self.tags, "tags_any"),
             "kinds": self._values(filters.get("kinds", []), MEMORY_KINDS, "kinds"),
+            "scope": validate_scope(filters.get("scope", "")),
         }

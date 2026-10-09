@@ -188,7 +188,7 @@ class MemoryMaintenanceEvidenceStore:
                  AND m.superseded_by IS NULL
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key
+                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
                  )""",
             (after, through),
         ).fetchall()

@@ -35,7 +35,7 @@ def test_private_candidates_retain_always_scoped_and_forgotten_but_search_does_n
     ids = [write(memory.repository, key=f'coffee{i}', text=f'coffee {i}') for i in range(4)]
     with transaction(database):
         database.execute("UPDATE memories SET activation='always' WHERE id=?", (ids[0],))
-        database.execute("UPDATE memories SET activation='scoped',key='heartbeat.coffee' WHERE id=?", (ids[1],))
+        database.execute("UPDATE memories SET activation='scoped',scope_key='heartbeat',key='coffee' WHERE id=?", (ids[1],))
     memory.repository.forget(memory.snapshots([ids[2]])[ids[2]], {'event_id': 'forget', 'quote': '忘记'}, now=10)
     ctx = PlanningContext([request(content='coffee')], {'owner:new': '喜欢无糖咖啡'}, {})
     asyncio.run(memory.writing.candidates.collect(ctx))
@@ -135,9 +135,9 @@ def test_apply_checks_tombstone_created_after_plan_even_without_candidate(databa
 def test_scope_is_host_selected_and_filters_before_dense_search(database):
     memory = Memory(database, tags=TagCatalog({"food_drink": "饮食"}))
     general = write(memory.repository, text='用户喜欢无糖咖啡')
-    scoped = write(memory.repository, key='heartbeat.drink', text='用户喜欢无糖咖啡')
+    scoped = write(memory.repository, key='scoped.drink', text='用户喜欢无糖咖啡')
     with transaction(database):
-        database.execute("UPDATE memories SET activation='scoped' WHERE id=?", (scoped,))
+        database.execute("UPDATE memories SET activation='scoped',scope_key='heartbeat' WHERE id=?", (scoped,))
     dense = AsyncMock(return_value=VectorMemoryEvidence({}, {}))
     memory.recall.dense_recall = dense
     async def planner(ctx):
@@ -179,9 +179,9 @@ def test_forgotten_candidate_change_rejects_plan_and_preserves_tombstone(databas
 
 def test_noop_cannot_satisfy_global_request_with_scoped_memory(database):
     memory = Memory(database)
-    scoped = write(memory.repository, key='heartbeat.drink')
+    scoped = write(memory.repository, key='scoped.drink')
     with transaction(database):
-        database.execute("UPDATE memories SET activation='scoped' WHERE id=?", (scoped,))
+        database.execute("UPDATE memories SET activation='scoped',scope_key='heartbeat' WHERE id=?", (scoped,))
     ctx = PlanningContext([request(scope='')], {'owner:new': '喜欢无糖咖啡'}, memory.snapshots([scoped]))
     with pytest.raises(ValueError, match='request scope'):
         memory.writing.review(ctx, {'decisions': [{

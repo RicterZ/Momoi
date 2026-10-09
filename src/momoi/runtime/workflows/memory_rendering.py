@@ -12,6 +12,7 @@ def memory_record(memory):
 def memory_element(memory, *, visible=False, compact=False):
     record = memory_record(memory)
     attrs = {key: str(record[key]) for key in ("id", "kind", "key", "activation")}
+    attrs["scope"] = record.get("meta", {}).get("scope", "")
     if visible:
         attrs["visible"] = "true"
     if not compact:

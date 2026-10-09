@@ -334,12 +334,8 @@ def parse_memory_maintenance_result(
                    (mutable_memories[memory_id].get("activation") == "scoped")
                    for memory_id in target_ids):
                 return None, f"{path}.activation: scoped memories cannot merge with global memories"
-            if item["activation"] == "scoped" and len({
-                (".".join(str(mutable_memories[memory_id]["key"]).split(".")[:2])
-                 if str(mutable_memories[memory_id]["key"]).startswith("goal.")
-                 else str(mutable_memories[memory_id]["key"]).split(".")[0])
-                for memory_id in target_ids
-            }) > 1:
+            if len({mutable_memories[memory_id].get("meta", {}).get("scope", "")
+                    for memory_id in target_ids}) > 1:
                 return None, f"{path}: scoped memories from different scopes cannot merge"
             if item.get("activation") == "always":
                 for memory_id in sorted(target_ids):

@@ -1,6 +1,7 @@
 from collections.abc import Iterable, Mapping, Sequence
 
 from ....storage import estimate_tokens
+from ....memory.storage.records import memory_scope
 from .selection import _key_family, _key_terms, _normalized_content
 
 
@@ -33,6 +34,8 @@ def build_atomic_memory_groups(
     def union(left: int, right: int) -> None:
         add(left)
         add(right)
+        if memory_scope(rows[left]) != memory_scope(rows[right]):
+            return
         left_root = find(left)
         right_root = find(right)
         if left_root != right_root:

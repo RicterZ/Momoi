@@ -6,13 +6,6 @@ from ..metadata import TagCatalog
 from ..storage.records import MEMORY_ACTIVATIONS, MEMORY_KINDS
 
 
-def valid_scoped_memory_key(key: str) -> bool:
-    """A scoped memory belongs to one stable workflow identity."""
-    return bool(re.fullmatch(
-        r"(?:goal\.[0-9a-f]{32}|heartbeat|webhook)\.[a-z0-9][a-z0-9_.-]*",
-        key,
-    ))
-
 ALWAYS_MEMORY_KINDS = {"profile", "preference", "relationship"}
 
 
@@ -33,7 +26,7 @@ def parse_decisions(
     requests = {item["id"]: item for item in operations}
     resolved: set[str] = set()
     modified: set[int] = set()
-    keys: set[tuple[str, str]] = set()
+    keys: set[tuple[str, str, str]] = set()
     for item in arguments["decisions"]:
         if not isinstance(item, dict):
             raise ValueError("each decision must be an object")
@@ -75,7 +68,7 @@ def parse_decisions(
             raise ValueError("combine decisions that modify the same memory")
         modified.update(targets)
         target_keys = {
-            (memories[target]["kind"], memories[target]["key"]) for target in targets
+            (memories[target].get("meta", {}).get("scope", ""), memories[target]["kind"], memories[target]["key"]) for target in targets
         }
         if keys.intersection(target_keys):
             raise ValueError("combine decisions that modify the same kind/key")
@@ -107,6 +100,10 @@ def parse_decisions(
             raise ValueError("cite the owner events supporting every resolved request")
         if action == "metadata":
             tags.validate(item["meta"])
+            if "scope" in item["meta"] and any(
+                item["meta"]["scope"] != memories[target].get("meta", {}).get("scope", "") for target in targets
+            ):
+                raise ValueError("metadata cannot change memory scope")
         if action != "write":
             continue
         memory = item["memory"]
@@ -136,13 +133,10 @@ def parse_decisions(
             r"[a-z0-9][a-z0-9_.-]{0,199}", memory["key"]
         ):
             raise ValueError("invalid memory key")
-        if memory["activation"] == "scoped" and not valid_scoped_memory_key(memory["key"]):
-            raise ValueError("scoped memory requires goal.<id>.*, heartbeat.*, or webhook.* key")
-        if memory["activation"] != "scoped" and (
-            memory["key"].startswith(("goal.", "heartbeat.", "webhook."))
-        ):
-            raise ValueError("workflow namespace requires scoped activation")
-        key = (memory["kind"], memory["key"])
+        scope = tags.validate(memory.get("meta", {}))["scope"]
+        if (memory["activation"] == "scoped") != bool(scope):
+            raise ValueError("scoped memory requires meta.scope; global memory requires empty scope")
+        key = (scope, memory["kind"], memory["key"])
         if key in keys - target_keys:
             raise ValueError("combine writes to the same kind/key")
         keys.add(key)
