@@ -52,7 +52,7 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                 "type": "array",
                 "maxItems": 12,
                 "description": (
-                    '值得跨天比较的当天观察，可为空。允许单次样本，但须限定为当天所见，不直接推断长期规律；完整事件经过留在 Episode。观察按天保存，暂不参与日常召回。'
+                    '关于主人的当天具体行为、选择、事实、偏好、生活状态及互动约定，可为空。不收集助手自省、工具经验或任务进度。允许单次样本，但须限定为当天所见，不直接推断长期规律；完整事件经过留在 Episode。观察按天保存，暂不参与日常召回。'
                 ),
                 "items": {
                     "type": "object",
@@ -61,7 +61,7 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                             "type": "string",
                             "enum": sorted(MEMORY_KINDS),
                             "description": (
-                                'profile：用户身份、背景、节奏与习惯；preference：用户的需求，包括约束条件及既定措辞；relationship：关系纽带及其边界、称呼方式与约定；third_party：关于他人的观察；practice：方法或决策过程及其结果（含工具使用）；world_knowledge：对外部事物的认识；self_insight：对自身感受或倾向的主观理解；cross_event_state：超越产生它的事件而持续存在的状态。类型仅用于分类，不要求逐类填写，也不代表观察已成为稳定规律。'
+                                '本轮围绕主人分类：profile 为主人事实与具体行为；preference 为主人明确偏好及需求；relationship 为主人关系、称呼与互动约定；third_party 为与主人有关的他人信息；cross_event_state 为主人持续状态。其他类型为存储兼容保留，本轮不收集助手实践、自省或一般知识。类型仅用于分类，不要求逐类填写，也不代表观察已成为稳定规律。'
                             ),
                         },
                         "key": {
@@ -73,7 +73,7 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                             "minLength": 1,
                             "maxLength": 1000,
                             "description": (
-                                '简述当天观察、情境及不确定性，区分直接事实与推测。单次样本不写成通常规律，反复提及不算独立样本。practice 包含适用条件和可观察结果；未受批评不是成功证据。'
+                                '简述当天观察、情境及不确定性，区分直接事实与推测。单次样本不写成通常规律，反复提及不算独立样本。标明新发生、回顾旧事或状态延续，实际事件时间已知时写明；不把助手建议当作主人已采纳。'
                             ),
                         },
                         "evidence": {
