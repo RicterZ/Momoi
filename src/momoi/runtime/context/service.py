@@ -409,7 +409,7 @@ class ContextService:
                 plan = copy.deepcopy(record["plan"])
                 plan.setdefault("supplemental_queries", []).append(query_plan)
             for field, identity in (
-                ("recall_memories", "id"), ("reflection_memories", "id"),
+                ("recall_memories", "id"),
                 ("episodes", "episode_id"),
             ):
                 combined = {item[identity]: item for item in record["retrieval"].get(field, [])}

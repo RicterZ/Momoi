@@ -68,6 +68,7 @@ class StorageMemoryTest(unittest.TestCase):
                 [MemoryRecallQuery("打开客厅空调", ("home",), 0)],
                 1,
                 now=now,
+                include_reflections=True,
             )
 
             self.assertEqual(ranked[0]["source"], "confirmed")
@@ -113,6 +114,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ],
                 1,
                 now=now,
+                include_reflections=True,
             )
 
             confirmed = next(row for row in ranked if row["source"] == "confirmed")
@@ -171,6 +173,7 @@ class StorageMemoryTest(unittest.TestCase):
                 [MemoryRecallQuery("空调", ("home",), 0)],
                 6,
                 now=now,
+                include_reflections=True,
             )
 
             self.assertEqual(
@@ -206,6 +209,7 @@ class StorageMemoryTest(unittest.TestCase):
                 [MemoryRecallQuery("空调", ("home",), 2)],
                 6,
                 now=now,
+                include_reflections=True,
             )
 
             self.assertEqual(len(ranked), 1)
@@ -240,11 +244,13 @@ class StorageMemoryTest(unittest.TestCase):
                 [MemoryRecallQuery("小爱音箱", ("home",), 0)],
                 6,
                 now=now,
+                include_reflections=True,
             )
             tertiary = store.rank_recalled_memories(
                 [MemoryRecallQuery("小爱音箱", ("home",), 2)],
                 6,
                 now=now,
+                include_reflections=True,
             )
 
             self.assertEqual(len(primary), 1)

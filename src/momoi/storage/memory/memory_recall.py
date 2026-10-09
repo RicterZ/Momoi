@@ -55,9 +55,10 @@ class MemoryRecallStore:
         max_results: int,
         *,
         now: float | None = None,
+        include_reflections: bool = False,
         dense_evidence: DenseRecallEvidence | None = None,
     ) -> list[dict[str, object]]:
-        """Rank confirmed and reflection memory in independent bounded pools."""
+        """Recall confirmed facts; daily observations are opt-in for reflection only."""
 
         if max_results <= 0 or not queries:
             return []
@@ -86,7 +87,7 @@ class MemoryRecallStore:
                    WHERE t.kind=rm.kind AND t.key=rm.key
                )
                ORDER BY rm.updated_at DESC"""
-        ).fetchall()
+        ).fetchall() if include_reflections else []
 
         confirmed_candidates: list[dict[str, object]] = []
         for row in confirmed_rows:
@@ -365,6 +366,8 @@ class MemoryRecallStore:
         self,
         query: str,
         max_results: int,
+        *,
+        include_reflections: bool = False,
     ) -> tuple[str, str]:
         """Render independently ranked confirmed and reflection result sets."""
 
@@ -373,6 +376,7 @@ class MemoryRecallStore:
         ranked = self.rank_recalled_memories(
             [MemoryRecallQuery(query.strip())],
             max_results,
+            include_reflections=include_reflections,
         )
         confirmed: list[str] = []
         reflected: list[str] = []

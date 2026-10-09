@@ -159,6 +159,7 @@ class ReflectionWorkflow:
         confirmed_memory, learned = self.store.ranked_memory_context(
             query,
             self.config.memory_results,
+            include_reflections=True,
         )
         open_conversations = self.store.open_conversation_inventory()
         open_episode_ids = {str(item["id"]) for item in open_conversations}

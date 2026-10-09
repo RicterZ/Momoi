@@ -8,10 +8,8 @@ from ...models import speaker_label
 
 from ...observability.events import log_event
 from ...storage import (
-    REFLECTION_MEMORY_CAUTION,
     Store,
     estimate_tokens,
-    format_reflection_memory,
     truncate_tokens,
 )
 from ...storage.episode.episode_ranking import rank_recall_items
@@ -28,19 +26,6 @@ def _memory_lines(items: object) -> str:
         return ""
     return "\n".join(
         format_memory(item)
-        for item in items
-        if isinstance(item, dict)
-        and item.get("kind") not in (None, "")
-        and item.get("key") not in (None, "")
-        and item.get("content") not in (None, "")
-    )
-
-
-def _reflection_memory_lines(items: object) -> str:
-    if not isinstance(items, list):
-        return ""
-    return "\n".join(
-        format_reflection_memory(item)
         for item in items
         if isinstance(item, dict)
         and item.get("kind") not in (None, "")
@@ -308,10 +293,7 @@ def assemble_main_context(
             {key: item[key] for key in ("id", "kind", "key", "content") if key in item}
             for item in retrieval.get("recall_memories") or []
         ],
-        "reflection_records": [
-            {key: item[key] for key in ("id", "kind", "key", "content", "local_date", "confidence", "evidence") if key in item}
-            for item in retrieval.get("reflection_memories") or []
-        ],
+        "reflection_records": [],
         "recall_status": retrieval.get("recall_status") or {"queries": [], "skipped_units": [], "reused_from_turn_ids": []},
         "episode_records": episode_recall_records(store, retrieval.get("episodes"), summary_token_budget),
         "episodes": _episode_context(
@@ -322,13 +304,7 @@ def assemble_main_context(
         "long_term_memories": str(retrieval.get("long_term_memories") or ""),
         "recall_memories": _memory_lines(retrieval.get("recall_memories")),
         "query_recall": str(retrieval.get("query_recall") or ""),
-        "reflection_memories": (
-            REFLECTION_MEMORY_CAUTION
-            + "\n"
-            + _reflection_memory_lines(retrieval.get("reflection_memories"))
-            if retrieval.get("reflection_memories")
-            else ""
-        ),
+        "reflection_memories": "",
         "goal_directory": _goal_directory_lines(retrieval.get("goals")),
     }
 

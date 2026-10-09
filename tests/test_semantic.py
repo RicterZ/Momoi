@@ -89,6 +89,7 @@ class SemanticRecallTest(unittest.TestCase):
                 width: int,
                 **_scope: object,
             ) -> dict[int, list[object]]:
+                self.assertEqual(_types, {"confirmed_memory"})
                 widths.append(width)
                 return {}
 
@@ -103,7 +104,7 @@ class SemanticRecallTest(unittest.TestCase):
                 await service.client.close()
 
         asyncio.run(run())
-        self.assertEqual(widths, [6, 6])
+        self.assertEqual(widths, [6])
 
     def test_worker_cadence_uses_declared_policy(self) -> None:
         policy = SemanticPolicy(active_poll_seconds=0.25, idle_poll_seconds=0.75)
@@ -505,13 +506,18 @@ class SemanticRecallTest(unittest.TestCase):
         }
         self.assertEqual(states, {"ready"})
 
-    def test_confirmed_and_reflection_keep_separate_limits(self) -> None:
+    def test_daily_observations_require_explicit_internal_retrieval(self) -> None:
         confirmed = [self.add_memory("exact", f"memory {index}") for index in range(8)]
         reflected = [
             self.add_reflection(f"exact {index}", f"reflection {index}")
             for index in range(8)
         ]
         rows = self.store.rank_recalled_memories([MemoryRecallQuery("exact")], 6)
+        self.assertEqual(len(rows), 6)
+        self.assertTrue(all(row["source"] == "confirmed" for row in rows))
+        rows = self.store.rank_recalled_memories(
+            [MemoryRecallQuery("exact")], 6, include_reflections=True,
+        )
         self.assertEqual(sum(row["source"] == "confirmed" for row in rows), 6)
         self.assertEqual(sum(row["source"] == "reflection" for row in rows), 6)
         self.assertTrue(

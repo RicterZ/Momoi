@@ -163,12 +163,9 @@ class SemanticRecallService:
         search_started = time.monotonic()
         memory_hits: dict[int, list[tuple[VectorMetadata, float]]] = {}
         if include_memory:
-            for document_type in ("confirmed_memory", "reflection_memory"):
-                per_pool = self.snapshot.search(
-                    matrix, {document_type}, candidate_width
-                )
-                for index, hits in per_pool.items():
-                    memory_hits.setdefault(index, []).extend(hits)
+            memory_hits = self.snapshot.search(
+                matrix, {"confirmed_memory"}, candidate_width
+            )
         episode_types = (
             {"episode_turn"}
             if episode_after is not None or episode_before is not None

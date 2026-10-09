@@ -402,7 +402,10 @@ class ContextAssemblerTest(unittest.TestCase):
                             "unit_ids": ["prior"],
                         }
                     ],
-                    "reflection_memories": [],
+                    "reflection_memories": [{
+                        "id": 99, "kind": "profile", "key": "legacy.observation",
+                        "content": "旧版本曾召回的未验证观察", "unit_ids": ["prior"],
+                    }],
                     "query_recall": (
                         "queries=亲密互动|暧昧打闹|晚间玩闹\n"
                         "hits=亲密互动|暧昧打闹|晚间玩闹"
@@ -442,6 +445,7 @@ class ContextAssemblerTest(unittest.TestCase):
                     }
                 ],
             )
+            self.assertEqual(retrieval["reflection_memories"], [])
             inherited_episode = next(
                 item
                 for item in retrieval["episodes"]
@@ -567,27 +571,9 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertIn("召回蓝色杯子的旧位置", recalled)
             self.assertIn("召回正文结尾", recalled)
             self.assertNotIn("长期记得蓝色杯子", recalled)
-            reflections = "\n".join(
-                str(item["content"]) for item in retrieval["reflection_memories"]
-            )
-            self.assertIn("复盘认为蓝色杯子很重要", reflections)
-            self.assertIn("那天一起找过蓝色杯子", reflections)
-            self.assertNotIn("复盘认为主人喜欢猫", reflections)
-            self.assertTrue(
-                all(
-                    item["local_date"] == "2030-01-01"
-                    for item in retrieval["reflection_memories"]
-                )
-            )
+            self.assertEqual(retrieval["reflection_memories"], [])
             assembled = assemble_main_context(store, retrieval, 2000)
-            self.assertIn(
-                "may be outdated or no longer applicable",
-                assembled["reflection_memories"],
-            )
-            self.assertIn(
-                '<reflection date="2030-01-01" confidence="0.8">',
-                assembled["reflection_memories"],
-            )
+            self.assertEqual(assembled["reflection_memories"], "")
 
             heartbeat_retrieval = build_plan_retrieval(
                 store,
@@ -603,7 +589,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 config(directory),
             )
             self.assertTrue(heartbeat_retrieval["recall_memories"])
-            self.assertTrue(heartbeat_retrieval["reflection_memories"])
+            self.assertEqual(heartbeat_retrieval["reflection_memories"], [])
             self.assertIn("queries=蓝色杯子", heartbeat_retrieval["query_recall"])
 
             shared_intent = "整理蓝色杯子的共同回忆"
@@ -695,10 +681,10 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertEqual(
                 len(retrieval["recall_memories"])
                 + len(retrieval["reflection_memories"]),
-                4,
+                2,
             )
             self.assertEqual(len(retrieval["recall_memories"]), 2)
-            self.assertEqual(len(retrieval["reflection_memories"]), 2)
+            self.assertEqual(retrieval["reflection_memories"], [])
             store.close()
 
     def test_memory_recall_caps_each_kind_at_six(self) -> None:
@@ -742,7 +728,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
 
             self.assertEqual(len(retrieval["recall_memories"]), 6)
-            self.assertEqual(len(retrieval["reflection_memories"]), 6)
+            self.assertEqual(retrieval["reflection_memories"], [])
             store.close()
 
     def test_zero_memory_results_disables_both_recall_kinds(self) -> None:
@@ -1527,7 +1513,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             rendered = "\n".join(value for value in assembled.values() if isinstance(value, str))
             self.assertNotIn("较早的项目邮件仍在等待", rendered)
-            self.assertIn("项目邮件关系到当前合作", rendered)
+            self.assertNotIn("项目邮件关系到当前合作", rendered)
             self.assertIn("goal-mail", rendered)
             self.assertIn("goal-social", rendered)
             autonomous = recall_episode_context(store, "项目邮件", 3, 2000)
@@ -1610,7 +1596,7 @@ def test_keyword_excerpt_keeps_sentence_boundaries_and_caps_long_sentence():
     assert "早餐九点，9楼" in long_text[start:end]
 
 
-def test_recall_tool_context_keeps_memory_and_reflection_as_records(tmp_path):
+def test_recall_tool_context_excludes_legacy_reflection_records(tmp_path):
     store = Store(tmp_path / 'db')
     retrieval = {
         'episodes': [], 'recall_memories': [{
@@ -1629,7 +1615,8 @@ def test_recall_tool_context_keeps_memory_and_reflection_as_records(tmp_path):
     context = assemble_main_context(store, retrieval, 1000)
     assert context['memory_records'] == [{
         'id': 3, 'kind': 'profile', 'key': 'package.tracking', 'content': '查询快递状态'}]
-    assert context['reflection_records'][0]['evidence'] == '之前的消息'
+    assert context['reflection_records'] == []
+    assert context['reflection_memories'] == ''
     assert context['recall_status']['queries'][0]['hits'] == ['memory', 'reflection']
     assert '<memory' in context['recall_memories']
     store.close()

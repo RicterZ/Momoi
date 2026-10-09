@@ -908,7 +908,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         recalled = self.store.rank_recalled_memories(
             [MemoryRecallQuery("复盘日记", ("复盘日记",))], 6
         )
-        self.assertIn(updated["content"], [item["content"] for item in recalled])
+        self.assertEqual(recalled, [])
 
         self.store._db.execute("DELETE FROM semantic_dirty_sources")
         self.store._db.commit()

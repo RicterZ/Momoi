@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from ...config.models import AppConfig
 from ...observability.events import log_event
 from ...observability.values import safe_preview
-from ...storage import MemoryRecallQuery, Store, truncate_tokens
+from ...storage import MemoryRecallQuery, Store
 from ...storage.context.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
 from ...storage.episode.episode_ranking import EpisodeRecallQuery, rank_recall_items
 
@@ -204,7 +204,6 @@ def build_plan_retrieval(
     ) = select_plan_recall_queries(plan)
 
     inherited_memories: list[dict[str, object]] = []
-    inherited_reflections: list[dict[str, object]] = []
     inherited_episodes: list[dict[str, object]] = []
     inherited_queries: list[str] = []
     visited_reuse_sources: set[str] = set()
@@ -247,17 +246,6 @@ def build_plan_retrieval(
                         **{key: current[key] for key in ("id", "kind", "key", "content")},
                         "unit_ids": unit_ids,
                     })
-        for item in source_retrieval.get("reflection_memories") or []:
-            if isinstance(item, dict):
-                if all(
-                    unit_kinds.get(unit_id)
-                    and str(item.get("kind") or "") not in unit_kinds[unit_id]
-                    for unit_id in unit_ids
-                ):
-                    continue
-                inherited_reflections.append(
-                    {**copy.deepcopy(item), "unit_ids": unit_ids}
-                )
         for item in source_retrieval.get("episodes") or []:
             if not isinstance(item, dict) or not item.get("matched_queries"):
                 continue
@@ -328,23 +316,9 @@ def build_plan_retrieval(
         for row in ranked_memories
         if row.get("source") == "confirmed"
     ]
-    reflection_memories = [
-        {
-            "id": int(row["id"]),
-            "kind": truncate_tokens(str(row.get("kind") or ""), 24),
-            "key": truncate_tokens(str(row.get("key") or ""), 64),
-            "content": str(row.get("content") or ""),
-            "local_date": str(row.get("local_date") or "unknown"),
-            "confidence": row["confidence"],
-            "evidence": row["evidence"],
-            "unit_ids": list(row.get("unit_ids") or []),
-        }
-        for row in ranked_memories
-        if row.get("source") == "reflection"
-    ]
+    reflection_memories: list[dict[str, object]] = []
     for target, inherited in (
         (recall_memories, inherited_memories),
-        (reflection_memories, inherited_reflections),
     ):
         seen = {
             (
