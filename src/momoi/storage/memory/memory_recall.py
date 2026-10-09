@@ -5,7 +5,7 @@ import sqlite3
 import time
 from typing import TYPE_CHECKING
 
-from ..core.search import (
+from ...memory.search import (
     alternative_weights,
     document_frequency,
     search_alternatives,

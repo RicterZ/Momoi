@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 
+from ..memory.models import DenseThresholds, DenseMemoryHit, DenseEpisodeHit
+
 
 CALIBRATION_PROFILES: dict[str, dict[str, tuple[float, float, float]]] = {
     # Calibrated against the private historical benchmark for this model. The
@@ -13,42 +15,6 @@ CALIBRATION_PROFILES: dict[str, dict[str, tuple[float, float, float]]] = {
         "episode_cue": (0.52, 0.72, 0.84),
     }
 }
-
-
-@dataclass(frozen=True)
-class DenseThresholds:
-    support: float
-    only: float
-    strong: float
-
-    def calibrated(self, cosine: float) -> float:
-        if self.strong <= self.support:
-            return 0.0
-        return min(
-            1.0, max(0.0, (cosine - self.support) / (self.strong - self.support))
-        )
-
-
-@dataclass(frozen=True)
-class DenseMemoryHit:
-    source_id: str
-    cosine: float
-
-
-@dataclass(frozen=True)
-class DenseEpisodeHit:
-    episode_id: str
-    summary_cosine: float | None = None
-    turn_cosine: float | None = None
-    cue_cosine: float | None = None
-
-    @property
-    def cosine(self) -> float:
-        return max(
-            value
-            for value in (self.summary_cosine, self.turn_cosine, self.cue_cosine)
-            if value is not None
-        )
 
 
 @dataclass(frozen=True)
