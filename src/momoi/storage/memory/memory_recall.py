@@ -2,7 +2,7 @@
 from .memory_values import (
     REFLECTION_MEMORY_CAUTION, MemoryRecallQuery, format_reflection_memory, format_memory,
 )
-from ...memory.recall import MAX_MEMORY_RECALL_RESULTS
+from ...memory.retrieval.service import MAX_MEMORY_RECALL_RESULTS
 
 
 class MemoryRecallStore:

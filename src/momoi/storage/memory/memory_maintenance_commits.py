@@ -1,6 +1,6 @@
 import time
 
-from ...memory.transactions import transaction
+from ...memory.storage.transactions import transaction
 
 
 class MemoryMaintenanceCommitStore:

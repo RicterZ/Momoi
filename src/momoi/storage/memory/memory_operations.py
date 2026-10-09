@@ -4,7 +4,7 @@ import json
 import time
 
 from ...models import IncomingMessage, TurnDraft
-from ...memory.transactions import transaction
+from ...memory.storage.transactions import transaction
 
 MEMORY_OPERATION_MAX_ATTEMPTS = 5
 

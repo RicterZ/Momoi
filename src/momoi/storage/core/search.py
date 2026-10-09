@@ -1,5 +1,5 @@
 """Compatibility imports; implementation lives in momoi.memory."""
-from ...memory.search import (
+from ...memory.retrieval.sparse import (
     NON_DISCRIMINATING_RATIO,
     MIN_WEIGHTED_CORPUS,
     SearchMatch,

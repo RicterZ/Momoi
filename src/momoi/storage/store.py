@@ -21,8 +21,8 @@ from .episode.episode_search import (
 from .episode.episode_annealing import EpisodeAnnealingStore
 from .episode.episode_consolidation import EpisodeConsolidationStore
 from .memory.memory_operations import MemoryOperationStore
-from ..memory.repository import MemoryRepository
-from ..memory.recall import MemoryRecallService
+from ..memory.storage.repository import MemoryRepository
+from ..memory.retrieval.service import MemoryRecallService
 from .memory.memory_recall import MemoryRecallStore
 from .memory.memory_maintenance_commits import MemoryMaintenanceCommitStore
 from .memory.memory_maintenance_evidence import MemoryMaintenanceEvidenceStore

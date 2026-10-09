@@ -8,9 +8,9 @@ from copy import deepcopy
 
 from .models import MemoryRecallQuery, MemoryDenseEvidence, MemoryDenseRecall
 from .ranking import rank_recall_items
-from .records import MEMORY_ACTIVATIONS
-from .repository import MemoryRepository
-from .search import (
+from ..storage.records import MEMORY_ACTIVATIONS
+from ..storage.repository import MemoryRepository
+from .sparse import (
     SearchBackend, StringSearchBackend, alternative_weights, document_frequency,
     search_alternatives, search_expression,
 )

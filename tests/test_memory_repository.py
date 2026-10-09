@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from momoi.memory.repository import MemoryRepository
-from momoi.memory.transactions import transaction
+from momoi.memory.storage.repository import MemoryRepository
+from momoi.memory.storage.transactions import transaction
 
 
 @pytest.fixture

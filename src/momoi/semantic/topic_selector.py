@@ -9,7 +9,7 @@ from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from .structured_selection import SelectionProtocolError, select_structured
-from ..memory.rerank import MemoryRerankCandidates, select_indices
+from ..memory.retrieval.rerank import MemoryRerankCandidates, select_indices
 from ..storage.episode.episode_cues import cue_texts
 from ..observability.events import log_event
 

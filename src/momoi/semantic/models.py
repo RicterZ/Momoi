@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from ..memory.models import DenseThresholds, DenseMemoryHit, DenseEpisodeHit
+from ..memory.retrieval.models import DenseThresholds, DenseMemoryHit, DenseEpisodeHit
 
 
 CALIBRATION_PROFILES: dict[str, dict[str, tuple[float, float, float]]] = {

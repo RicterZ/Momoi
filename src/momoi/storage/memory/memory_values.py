@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from xml.sax.saxutils import escape, quoteattr
 
-from ...memory.models import MemoryRecallQuery
-from ...memory.records import MEMORY_ACTIVATIONS, memory_snapshot_fingerprint
+from ...memory.retrieval.models import MemoryRecallQuery
+from ...memory.storage.records import MEMORY_ACTIVATIONS, memory_snapshot_fingerprint
 from ...memory.text import estimate_tokens, truncate_tokens, token_chunk
 
 

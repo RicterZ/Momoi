@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from momoi.memory.models import DenseMemoryHit, DenseThresholds, MemoryRecallQuery
-from momoi.memory.recall import MemoryRecallService
-from momoi.memory.repository import MemoryRepository
-from momoi.memory.rerank import SelectionProtocolError
+from momoi.memory.retrieval.models import DenseMemoryHit, DenseThresholds, MemoryRecallQuery
+from momoi.memory.retrieval.service import MemoryRecallService
+from momoi.memory.storage.repository import MemoryRepository
+from momoi.memory.retrieval.rerank import SelectionProtocolError
 from tests.test_memory_repository import database, write
 
 

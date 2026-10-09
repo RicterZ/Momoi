@@ -5,7 +5,7 @@ from ..integrations.request_context import model_request
 from ..observability.context import log_context, new_trace_id
 
 
-from ..memory.rerank import SelectionProtocolError
+from ..memory.retrieval.rerank import SelectionProtocolError
 
 
 async def select_structured(provider, system, messages, spec, parse, *, timeout, thinking_effort="low", stage=None):

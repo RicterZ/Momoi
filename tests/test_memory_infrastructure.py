@@ -30,13 +30,13 @@ class RejectApplicationImports:
             raise AssertionError("memory depends on application: " + fullname)
 sys.meta_path.insert(0, RejectApplicationImports())
 
-from standalone_memory.models import MemoryRecallQuery, DenseThresholds
-from standalone_memory.search import StringSearchBackend, search_expression
+from standalone_memory.retrieval.models import MemoryRecallQuery, DenseThresholds
+from standalone_memory.retrieval.sparse import StringSearchBackend, search_expression
 from standalone_memory.text import estimate_tokens, token_chunk
-from standalone_memory.vectors import encode_vector, decode_vector
-from standalone_memory.repository import MemoryRepository
-from standalone_memory.recall import MemoryRecallService
-from standalone_memory.rerank import MemoryRerankCandidates
+from standalone_memory.retrieval.vectors import encode_vector, decode_vector
+from standalone_memory.storage.repository import MemoryRepository
+from standalone_memory.retrieval.service import MemoryRecallService
+from standalone_memory.retrieval.rerank import MemoryRerankCandidates
 import sqlite3
 
 with sqlite3.connect(":memory:") as db:
@@ -61,7 +61,8 @@ assert decode_vector(encode_vector([3.0, 4.0], 2), 2).tolist() == [
 
 
 def test_legacy_imports_share_the_extracted_objects():
-    from momoi.memory import models, search, text, vectors
+    from momoi.memory import text
+    from momoi.memory.retrieval import models, sparse as search, vectors
     from momoi.runtime.agent import budget
     from momoi.semantic import models as semantic_models
     from momoi.storage.core import search as storage_search

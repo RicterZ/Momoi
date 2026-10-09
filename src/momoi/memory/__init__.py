@@ -1,4 +1,8 @@
-"""Memory storage, retrieval, and reranking independent of Momoi runtime.
+"""Memory components independent of Momoi runtime.
 
-The caller owns the SQLite connection, schema, and injected model capabilities.
+storage: caller-owned SQLite persistence and transaction boundaries.
+retrieval: candidate search, scoring, and injected model capabilities.
+text: shared text sizing and bounded excerpts.
+
+The caller owns the database connection, schema migrations, and model transport.
 """

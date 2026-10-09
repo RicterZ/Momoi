@@ -7,7 +7,7 @@ import json
 import sqlite3
 from dataclasses import dataclass
 
-from ...memory.vectors import encode_vector, decode_vector
+from ...memory.retrieval.vectors import encode_vector, decode_vector
 
 from ...models import speaker_label
 from ..core.integrity import decode_stored_json

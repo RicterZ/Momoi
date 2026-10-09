@@ -5,7 +5,7 @@ validation remains responsible for rejecting malformed commands.
 """
 from typing import Any, Literal, NotRequired, TypedDict
 
-from ..memory.records import ActiveMemory, InventoryMemory
+from ..memory.storage.records import ActiveMemory, InventoryMemory
 
 
 class PlanStepInput(TypedDict):
