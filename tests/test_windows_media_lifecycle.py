@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from momoi.qq_call.broker import MediaBroker
-from momoi.qq_call.windows_audio import DeferredWindowsAudio
+from momoi.channel.napcat.voice_call.broker import MediaBroker
+from momoi.channel.napcat.voice_call.windows_audio import DeferredWindowsAudio
 
 
 def test_virtual_audio_failure_restores_before_retry():
@@ -80,7 +80,7 @@ def test_media_starts_before_audio_ready_and_retries():
 
 
 def test_endpoint_loss_detected_and_returning_devices_rechecked(monkeypatch):
-    from momoi.qq_call import windows_audio
+    from momoi.channel.napcat.voice_call import windows_audio
     available = {"0": ['speaker'], "1": ['mic']}
     async def probe(*args):
         return available
@@ -102,7 +102,7 @@ def test_endpoint_loss_detected_and_returning_devices_rechecked(monkeypatch):
 
 
 def test_device_enumeration_timeout_kills_probe(monkeypatch):
-    from momoi.qq_call import windows_audio
+    from momoi.channel.napcat.voice_call import windows_audio
     def run(args, **kwargs):
         assert kwargs['timeout'] == 3
         assert kwargs['stdin'] == windows_audio.subprocess.DEVNULL
@@ -156,7 +156,7 @@ def test_av_host_restart_discards_previous_device_selection():
 
 
 def test_device_probe_reports_windows_failure(monkeypatch, caplog):
-    from momoi.qq_call import windows_audio
+    from momoi.channel.napcat.voice_call import windows_audio
     def run(*args, **kwargs):
         return SimpleNamespace(returncode=1, stdout=b'',
             stderr=b'Traceback:\nOSError: Audio policy HRESULT 0x80070490\n')
@@ -169,7 +169,7 @@ def test_device_probe_reports_windows_failure(monkeypatch, caplog):
 
 
 def test_probe_timeout_does_not_terminate_ready_audio(monkeypatch, caplog):
-    from momoi.qq_call import windows_audio
+    from momoi.channel.napcat.voice_call import windows_audio
     async def probe(*args):
         raise RuntimeError("probe timeout")
     monkeypatch.setattr(windows_audio, '_read_audio_probe', probe)

@@ -20,4 +20,4 @@ fi
 gosu napcat "$runtime/scripts/audio-control.sh" start
 # The AV host shares the existing DISPLAY started by the upstream entrypoint.
 gosu napcat "$runtime/scripts/run-av-host.sh" >"$runtime/logs/av-host.log" 2>&1 &
-gosu napcat python3 -m momoi.qq_call.broker >"$runtime/logs/broker.log" 2>&1 &
+gosu napcat python3 -m momoi.channel.napcat.voice_call.broker >"$runtime/logs/broker.log" 2>&1 &

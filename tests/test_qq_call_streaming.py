@@ -5,7 +5,7 @@ from aiohttp import ClientSession, web
 from aiohttp.test_utils import TestServer
 
 from momoi.integrations.adapters.fish import FishAudioTTSProvider
-from momoi.qq_call.broker import MediaBroker
+from momoi.channel.napcat.voice_call.broker import MediaBroker
 
 
 def test_fish_yields_audio_before_response_finishes():
@@ -97,7 +97,7 @@ def test_broker_plays_before_upload_finishes_and_deduplicates(monkeypatch):
 
 def test_hangup_cancels_upstream_stream_while_waiting_for_audio():
     async def scenario():
-        from momoi.qq_call.channel import QQCallChannel
+        from momoi.channel.napcat.voice_call.channel import QQCallChannel
         from momoi.channel import SendInterrupted
         entered, closed = asyncio.Event(), asyncio.Event()
         class Provider:
@@ -133,7 +133,7 @@ def test_hangup_cancels_upstream_stream_while_waiting_for_audio():
 
 def test_channel_sends_bubbles_as_one_ordered_playback_stream():
     async def scenario():
-        from momoi.qq_call.channel import QQCallChannel
+        from momoi.channel.napcat.voice_call.channel import QQCallChannel
         calls = []
         uploads = []
 
@@ -167,7 +167,7 @@ def test_channel_sends_bubbles_as_one_ordered_playback_stream():
 
 def test_channel_preserves_synthesis_error_in_streaming_failure():
     async def scenario():
-        from momoi.qq_call.channel import QQCallChannel
+        from momoi.channel.napcat.voice_call.channel import QQCallChannel
         from momoi.channel import SendRejected
         from momoi.integrations.contracts.tts import TTSError
 
@@ -203,10 +203,10 @@ def test_channel_preserves_synthesis_error_in_streaming_failure():
 
 def test_bubble_tts_retries_three_times_and_continues_other_bubbles(monkeypatch):
     from unittest.mock import AsyncMock
-    from momoi.qq_call.speech import bubble_pcm
+    from momoi.channel.napcat.voice_call.speech import bubble_pcm
     from momoi.integrations.contracts.tts import TTSError
     delay = AsyncMock()
-    monkeypatch.setattr('momoi.qq_call.speech.asyncio.sleep', delay)
+    monkeypatch.setattr('momoi.channel.napcat.voice_call.speech.asyncio.sleep', delay)
     attempts = {}
     class Provider:
         async def stream_pcm(self, text):
@@ -226,7 +226,7 @@ def test_bubble_tts_retries_three_times_and_continues_other_bubbles(monkeypatch)
 
 
 def test_bubble_partial_failure_never_replays_audio_and_continues():
-    from momoi.qq_call.speech import bubble_pcm
+    from momoi.channel.napcat.voice_call.speech import bubble_pcm
     from momoi.integrations.contracts.tts import TTSError
     calls = []
     class Provider:

@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from momoi.qq_call.audio import Segmenter, wav_bytes
-from momoi.qq_call.broker import MediaBroker
-from momoi.qq_call.channel import QQCallChannel
+from momoi.channel.napcat.voice_call.audio import Segmenter, wav_bytes
+from momoi.channel.napcat.voice_call.broker import MediaBroker
+from momoi.channel.napcat.voice_call.channel import QQCallChannel
 from momoi.channel import SendRejected
 
 SILENCE = bytes(640)

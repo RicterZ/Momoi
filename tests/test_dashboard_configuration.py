@@ -390,7 +390,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
                    "outputs": [{"id": "speaker", "name": "EDIFIER Speakers"}], "errors": []}
         endpoint = "/api/settings/channels/napcat/voice-call/devices"
         revision = self.manager.revision()
-        with patch.dict(os.environ, {"MOMOI_QQ_CALL_MANAGED": str(managed)}), patch("momoi.qq_call.windows_audio.device_catalog", return_value=catalog):
+        with patch.dict(os.environ, {"MOMOI_QQ_CALL_MANAGED": str(managed)}), patch("momoi.channel.napcat.voice_call.windows_audio.device_catalog", return_value=catalog):
             response = await self.client.put(endpoint, json={"revision": revision, "input_device": "mic", "output_device": "speaker"})
             self.assertEqual(response.status, 200, await response.text())
             voice = self.manager.read_app()["channels"]["enabled"]["napcat"]["voice_call"]

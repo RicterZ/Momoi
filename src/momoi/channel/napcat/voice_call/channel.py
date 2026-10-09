@@ -8,11 +8,11 @@ from collections import OrderedDict
 
 import aiohttp
 
-from ..channel import SendInterrupted, SendRejected
-from ..integrations.contracts.asr import ASRError, AudioInput
-from ..integrations.contracts.tts import TTSError
-from ..models import IncomingMessage
-from ..observability.events import log_event
+from ... import SendInterrupted, SendRejected
+from ....integrations.contracts.asr import ASRError, AudioInput
+from ....integrations.contracts.tts import TTSError
+from ....models import IncomingMessage
+from ....observability.events import log_event
 from .audio import Segmenter, wav_bytes
 from .speech import bubble_pcm
 

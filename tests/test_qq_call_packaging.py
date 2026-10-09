@@ -92,8 +92,8 @@ def test_code_zip_ships_windows_bridge_and_portable_media_worker(tmp_path, monke
     module = load_script('build_release')
     paths = {
         'src/momoi/dashboard/static/index.html': '<html></html>',
-        'src/momoi/qq_call/audio.py': '# Shared PCM processing',
-        'src/momoi/qq_call/broker.py': '# Portable media worker',
+        'src/momoi/channel/napcat/voice_call/audio.py': '# Shared PCM processing',
+        'src/momoi/channel/napcat/voice_call/broker.py': '# Portable media worker',
         'packaging/windows/backend_entry.py': '# Backend entry',
         'packaging/windows/components.json': '{}',
     }
@@ -109,6 +109,22 @@ def test_code_zip_ships_windows_bridge_and_portable_media_worker(tmp_path, monke
     archive, manifest = module.build_release(tmp_path / 'output', '1.2.3')
     with zipfile.ZipFile(archive) as bundle:
         assert 'app/qq_call_bridge/windows/start-av-host.ps1' in bundle.namelist()
-        assert 'app/momoi/qq_call/audio.py' in bundle.namelist()
-        assert 'app/momoi/qq_call/broker.py' in bundle.namelist()
+        assert 'app/momoi/channel/napcat/voice_call/audio.py' in bundle.namelist()
+        assert 'app/momoi/channel/napcat/voice_call/broker.py' in bundle.namelist()
         assert set(manifest['files']) == set(bundle.namelist()) - {'release.json'}
+
+
+def test_linux_broker_imports_with_only_voice_call_package(tmp_path):
+    """The NapCat image copies no Momoi parent package initializers."""
+    import shutil
+    import subprocess
+
+    root = Path(__file__).resolve().parents[1]
+    destination = tmp_path / 'momoi/channel/napcat/voice_call'
+    shutil.copytree(root / 'src/momoi/channel/napcat/voice_call', destination)
+    subprocess.run([sys.executable, '-I', '-c', '''
+import sys
+sys.path.insert(0, sys.argv[1])
+from momoi.channel.napcat.voice_call.broker import MediaBroker
+assert MediaBroker('x' * 32).status['phase'] == 'unavailable'
+''', str(tmp_path)], check=True, capture_output=True, text=True)

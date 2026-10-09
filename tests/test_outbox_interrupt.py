@@ -15,7 +15,7 @@ from momoi.integrations.contracts.tts import AudioOutput
 
 class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
     async def test_call_interrupt_preserves_reason_in_owner_turn_and_log(self):
-        from momoi.qq_call.channel import QQCallChannel
+        from momoi.channel.napcat.voice_call.channel import QQCallChannel
         from types import SimpleNamespace
 
         channel = QQCallChannel(SimpleNamespace(), '123', object(), tts_enabled=True)

@@ -283,7 +283,7 @@ def register_configuration_routes(app, configuration, runtime):
         if not os.environ.get("MOMOI_QQ_CALL_MANAGED"):
             raise web.HTTPNotFound()
         from pathlib import Path
-        from ..qq_call.windows_audio import read_device_catalog
+        from ..channel.napcat.voice_call.windows_audio import read_device_catalog
         try:
             return web.json_response(await read_device_catalog(Path(__file__).resolve().parents[2] / "qq_call_bridge"))
         except (OSError, ImportError, RuntimeError) as error:
@@ -297,7 +297,7 @@ def register_configuration_routes(app, configuration, runtime):
         if any(not isinstance(item, str) for item in selected.values()):
             raise web.HTTPBadRequest(text="设备标识无效")
         from pathlib import Path
-        from ..qq_call.windows_audio import read_device_catalog
+        from ..channel.napcat.voice_call.windows_audio import read_device_catalog
         catalog = await read_device_catalog(Path(__file__).resolve().parents[2] / "qq_call_bridge")
         for key, group in (("input_device", "inputs"), ("output_device", "outputs")):
             if selected[key] and selected[key] not in {item["id"] for item in catalog[group]}:
@@ -319,7 +319,7 @@ def register_configuration_routes(app, configuration, runtime):
     async def test_qq_call(request):
         from ..channel.napcat.config import QQCallConfig
         from ..config.manager import restore_secrets
-        from ..qq_call.client import probe
+        from ..channel.napcat.voice_call.client import probe
         value = await body(request)
         channel = configuration.read_app().get("channels", {}).get("enabled", {}).get("napcat", {})
         previous = channel.get("voice_call", {})

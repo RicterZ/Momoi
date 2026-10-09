@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from ..observability.events import log_event
+from ....observability.events import log_event
 from time import perf_counter as monotonic
 from contextlib import aclosing
 

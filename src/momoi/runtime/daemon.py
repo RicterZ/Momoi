@@ -135,7 +135,7 @@ class MomoiDaemon(
         for item in config.channel_configs:
             phone = getattr(item, "voice_call", None)
             if phone is not None and phone.enabled:
-                from ..qq_call.channel import QQCallChannel
+                from ..channel.napcat.voice_call.channel import QQCallChannel
                 self.channels["qq_call"] = QQCallChannel(phone, item.owner_qq, self.services.asr,
                     tts_enabled=self.services.tts is not None, interrupt=self._interrupt_qq_call)
         emotion_channels = [item for item in self.channels.values()

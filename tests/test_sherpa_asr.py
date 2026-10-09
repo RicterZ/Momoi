@@ -7,7 +7,7 @@ from aiohttp.test_utils import TestServer
 
 from momoi.integrations.adapters.sherpa import SherpaASRProvider
 from momoi.integrations.contracts.asr import ASRError, AudioInput
-from momoi.qq_call.channel import QQCallChannel
+from momoi.channel.napcat.voice_call.channel import QQCallChannel
 
 
 def test_remote_asr_batch_and_stream_share_provider():

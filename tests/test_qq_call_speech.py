@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import aclosing
 
-from momoi.qq_call.speech import bubble_pcm
+from momoi.channel.napcat.voice_call.speech import bubble_pcm
 
 
 def test_prefetch_overlaps_first_bubble_and_preserves_order():
@@ -58,7 +58,7 @@ def test_close_cancels_current_and_prefetched_synthesis():
 
 def test_prefetch_failure_does_not_abort_preceding_audio(monkeypatch):
     from unittest.mock import AsyncMock
-    monkeypatch.setattr("momoi.qq_call.speech.asyncio.sleep", AsyncMock())
+    monkeypatch.setattr("momoi.channel.napcat.voice_call.speech.asyncio.sleep", AsyncMock())
     async def scenario():
         class Provider:
             async def stream_pcm(self, text):
@@ -81,7 +81,7 @@ def test_prefetch_failure_does_not_abort_preceding_audio(monkeypatch):
 def test_ready_bubble_pause_and_slow_bubble_no_extra_pause(monkeypatch):
     async def scenario(wait_seconds):
         clock = [0.0]
-        monkeypatch.setattr('momoi.qq_call.speech.monotonic', lambda: clock[0])
+        monkeypatch.setattr('momoi.channel.napcat.voice_call.speech.monotonic', lambda: clock[0])
         release = asyncio.Event()
 
         class Provider:
