@@ -33,14 +33,10 @@ WEEKLY_REFLECTION_FINISH_SPEC = {
                                        'description': 'explicit：用户明确表达的事实、状态或要求，单日即可；recurring：跨日独立经历支持的模式；change：有依据的变化；unresolved：尚待确认的认识。不要求每类都有。'},
                         'content': {'type': 'string', 'minLength': 1, 'maxLength': 1000,
                                     'description': '通常一句话，直接陈述值得记住的认识及必要适用范围；不写日期标签、事件经过或论证。'},
-                        'evidence_ids': {'type': 'array', 'minItems': 1, 'uniqueItems': True,
-                                         'items': {'type': 'string'}, 'description': '输入中支持本条的观察 ID。'},
-                        'counterevidence_ids': {'type': 'array', 'uniqueItems': True,
-                                                'items': {'type': 'string'}, 'description': '相关反例或修正的观察 ID，无则为空。'},
                         'uncertainty': {'type': 'string', 'maxLength': 1000,
                                         'description': '证据缺口与适用边界；无需时为空。'},
                     },
-                    'required': ['key', 'assessment', 'content', 'evidence_ids', 'counterevidence_ids', 'uncertainty'],
+                    'required': ['key', 'assessment', 'content', 'uncertainty'],
                 },
             },
         },
@@ -65,24 +61,17 @@ def weekly_reflection_input(source):
     return '\n'.join(lines)
 
 
-def parse_weekly_reflection(arguments, source):
+def parse_weekly_reflection(arguments):
     from ...tools.validation import validate_tool_arguments
     value, error = validate_tool_arguments(
         'weekly_reflection_finish', arguments, WEEKLY_REFLECTION_FINISH_SPEC['input_schema'],
     )
     if error:
         return None, error
-    dates = {item['id']: day['date'] for day in source['days'] for item in day['observations']}
     keys = set()
     for item in value['findings']:
-        support = set(item['evidence_ids'])
-        counter = set(item['counterevidence_ids'])
         if not item['content'].strip() or not item['key'].strip() or item['key'] in keys:
             return None, {'ok': False, 'error': 'invalid_or_duplicate_finding'}
-        if not (support | counter) <= dates.keys() or support & counter:
-            return None, {'ok': False, 'error': 'invalid_observation_reference'}
-        if item['assessment'] == 'recurring' and len({dates[i] for i in support}) < 2:
-            return None, {'ok': False, 'error': 'recurring_requires_multiple_days'}
         keys.add(item['key'])
     if not value['summary'].strip():
         return None, {'ok': False, 'error': 'empty_summary'}
@@ -104,7 +93,7 @@ class WeeklyReflectionWorkflow:
 
         async def execute(call):
             nonlocal completed
-            result, error = parse_weekly_reflection(call.arguments, source)
+            result, error = parse_weekly_reflection(call.arguments)
             if error:
                 return error
             self.store.commit_weekly_reflection(period_end, turn_id, result)

@@ -11,26 +11,19 @@ from tests.test_episode_annealing import config
 from tests.test_weekly_reflection_storage import seed, stamp
 
 
-def test_weekly_reference_validation_and_daily_rendering(tmp_path):
+def test_weekly_validation_and_daily_rendering(tmp_path):
     store = Store(tmp_path / 'db', timezone='Asia/Shanghai')
     seed(store, '2026-10-06', '<日一>')
-    seed(store, '2026-10-07', '<日二>')
     source = store.weekly_reflection_source('2026-10-11')
-    ids = [o['id'] for d in source['days'] for o in d['observations']]
     content = weekly_reflection_input(source)
     assert '&lt;日一&gt;' in content and 'date="2026-10-06"' in content
-    finding = dict(key='topic', assessment='recurring', content='重复现象', evidence_ids=ids,
-                   counterevidence_ids=[], uncertainty='样本有限')
-    args = {'summary': '仅有两天材料', 'findings': [finding]}
-    assert parse_weekly_reflection(args, source)[1] is None
-    for bad in [dict(evidence_ids=[ids[0]]), dict(evidence_ids=['invented']), dict(counterevidence_ids=[ids[0]])]:
-        assert parse_weekly_reflection({'summary': '回顾', 'findings': [{**finding, **bad}]}, source)[1]
-    explicit = {**finding, 'assessment': 'explicit', 'evidence_ids': [ids[0]],
-                'content': '用户明确要求简短回复。', 'uncertainty': ''}
-    assert parse_weekly_reflection({'summary': '两天材料', 'findings': [explicit]}, source)[1] is None
-    assert parse_weekly_reflection({'summary': '两天材料', 'findings': [
-        {**explicit, 'evidence_ids': ['invented']},
-    ]}, source)[1]
+    finding = dict(key='topic', assessment='explicit', content='用户明确要求简短回复。', uncertainty='')
+    args = {'summary': '仅有一天材料', 'findings': [finding]}
+    assert parse_weekly_reflection(args)[1] is None
+    for bad in [dict(content=' '), dict(key=' '), dict(assessment='invented'), dict(evidence_ids=['invented'])]:
+        assert parse_weekly_reflection({'summary': '回顾', 'findings': [{**finding, **bad}]})[1]
+    assert parse_weekly_reflection({'summary': '回顾', 'findings': [finding, finding]})[1]
+    assert parse_weekly_reflection({'summary': ' ', 'findings': []})[1]
     store.close()
 
 
