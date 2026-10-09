@@ -10,22 +10,8 @@ def recall_response(units: int = 1) -> ProviderResponse:
     call = ToolCall(
         "submit-context",
         RECALL_TOOL_SPEC["name"],
-        {
-            "units": [
-                {
-                    "intent": "test owner intent",
-                    "recall_mode": "search",
-                    "recall_queries": [
-                        {
-                            "semantic": "Retrieve history for the test owner intent",
-                            "keywords": ["test owner intent"],
-                        }
-                    ],
-                    "recall_from_turn_id": "",
-                }
-                for _index in range(max(1, units))
-            ]
-        },
+        {"semantic": [f"test owner intent {_index}" for _index in range(max(1, units))],
+         "keyword": ["test owner intent"]},
     )
     return ProviderResponse(
         [

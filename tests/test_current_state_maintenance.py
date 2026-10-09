@@ -166,16 +166,7 @@ def test_allowed_end_turn_captures_tool_surface_and_waits_for_commit(daemon, kin
                 ToolCall(
                     "recall",
                     "recall",
-                    {
-                        "units": [
-                            {
-                                "intent": "current input",
-                                "recall_mode": "skip",
-                                "recall_queries": [],
-                                "recall_from_turn_id": "",
-                            }
-                        ]
-                    },
+                    {"semantic": ["用户的日常习惯"]},
                 )
             )
         )
@@ -389,11 +380,7 @@ def test_current_state_can_recall_source_owner_habit(daemon):
         "episode_records": [],
     })
     calls = [
-        response(ToolCall("lookup", "recall", {"units": [{
-            "intent": "查午睡习惯", "recall_mode": "search",
-            "recall_queries": [{"semantic": "午睡时长", "keywords": []}],
-                "recall_from_turn_id": "",
-        }]})),
+        response(ToolCall("lookup", "recall", {"semantic": ["午睡时长"]})),
         finish(),
     ]
 

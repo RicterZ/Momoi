@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import copy
 import logging
+import json
 from typing import TYPE_CHECKING
 
+from .memory_search import rank_candidates
 from ...config.models import AppConfig
 from ...observability.events import log_event
 from ...observability.values import safe_preview
 from ...storage import Store
-from ...memory import MemoryRecallQuery
 from ...memory.retrieval.service import MAX_MEMORY_RECALL_RESULTS
 from ...storage.context.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
 from ...storage.episode.episode_ranking import EpisodeRecallQuery, rank_recall_items
@@ -39,11 +40,13 @@ def select_plan_recall_queries(
                 "id": "heartbeat_activity",
                 "intent": activity.get("intent"),
                 "recall_queries": activity["recall_queries"],
+                "kind": activity.get("kind", []),
+                "memory_filters": activity.get("memory_filters", {}),
             }
         )
     reused_units_by_turn: dict[str, list[str]] = {}
     unit_kinds: dict[str, tuple[str, ...]] = {}
-    unit_queries: list[tuple[str, tuple[str, ...], list[dict[str, object]]]] = []
+    unit_queries = []
     for unit in recall_units:
         if not isinstance(unit, dict):
             continue
@@ -74,26 +77,26 @@ def select_plan_recall_queries(
                 "semantic": semantic,
                 "keywords": list(dict.fromkeys(keywords)),
             }
-            if semantic and query not in queries:
+            if (semantic or keywords or any(unit.get("memory_filters", {}).values())) and query not in queries:
                 queries.append(query)
         if queries:
-            unit_queries.append((unit_id, kinds, queries))
+            unit_queries.append((unit_id, kinds, queries, unit.get("memory_filters", {})))
     emitted_queries = {
         str(query["semantic"])
-        for _unit_id, _kinds, queries in unit_queries
+        for _unit_id, _kinds, queries, _filters in unit_queries
         for query in queries
     }
-    selected_by_query: dict[tuple[str, tuple[str, ...]], dict[str, object]] = {}
+    selected_by_query = {}
     selected: list[dict[str, object]] = []
     skipped_unit_ids: set[str] = set()
-    for query_rank in range(max((len(queries) for _, _kinds, queries in unit_queries), default=0)):
-        for unit_id, kinds, queries in unit_queries:
+    for query_rank in range(max((len(queries) for _, _kinds, queries, _filters in unit_queries), default=0)):
+        for unit_id, kinds, queries, filters in unit_queries:
             if query_rank >= len(queries):
                 continue
             query = queries[query_rank]
             semantic = str(query["semantic"])
             keywords = list(query["keywords"])
-            query_key = (semantic, kinds)
+            query_key = (semantic, kinds, json.dumps(filters, sort_keys=True))
             existing = selected_by_query.get(query_key)
             if existing is not None:
                 unit_ids = existing["unit_ids"]
@@ -119,6 +122,8 @@ def select_plan_recall_queries(
                 "unit_ids": [unit_id] if unit_id else [],
                 "priority": query_rank,
             }
+            if filters:
+                item["memory_filters"] = filters
             if kinds:
                 item["kinds"] = list(kinds)
             selected_by_query[query_key] = item
@@ -215,6 +220,9 @@ def build_plan_retrieval(
         if isinstance(unit, dict) and unit.get("id")
     }
 
+    unit_filters = {str(unit.get("id")): unit.get("memory_filters", {})
+                    for unit in plan.get("intent_units", [])}
+
     def inherit_recall(source_turn_id: str, unit_ids: list[str]) -> None:
         if not source_turn_id or source_turn_id in visited_reuse_sources:
             return
@@ -236,17 +244,23 @@ def build_plan_retrieval(
         )
         for item in source_retrieval.get("recall_memories") or []:
             if isinstance(item, dict):
-                if all(
-                    unit_kinds.get(unit_id)
-                    and str(item.get("kind") or "") not in unit_kinds[unit_id]
-                    for unit_id in unit_ids
-                ):
+                scope = item.get("meta", {}).get("scope", "")
+                current = store.memories.repository.active(str(item["kind"]), str(item["key"]), scope=scope)
+                if current is None:
                     continue
-                current = store.memories.repository.active(str(item["kind"]), str(item["key"]))
-                if current is not None:
+                matched_units = []
+                for unit_id in unit_ids:
+                    filters = unit_filters.get(unit_id, {})
+                    if (scope != filters.get("scope", "")
+                            or (unit_kinds.get(unit_id) and current["kind"] not in unit_kinds[unit_id])
+                            or (filters.get("kinds") and current["kind"] not in filters["kinds"])
+                            or (filters.get("tags_any") and not set(filters["tags_any"]).intersection(current["meta"]["tags"]))):
+                        continue
+                    matched_units.append(unit_id)
+                if matched_units:
                     inherited_memories.append({
-                        **{key: current[key] for key in ("id", "kind", "key", "content")},
-                        "unit_ids": unit_ids,
+                        **{key: current[key] for key in ("id", "kind", "key", "content", "meta")},
+                        "unit_ids": matched_units,
                     })
         for item in source_retrieval.get("episodes") or []:
             if not isinstance(item, dict) or not item.get("matched_queries"):
@@ -292,20 +306,8 @@ def build_plan_retrieval(
     ranked_memories = (
         selected_memory_rows
         if selected_memory_rows is not None
-        else store.memories.rank(
-            [
-                MemoryRecallQuery(
-                    expression=str(item["expression"]),
-                    unit_ids=tuple(str(value) for value in item["unit_ids"]),
-                    priority=int(item["priority"]),
-                    semantic_expression=str(item["semantic_expression"]),
-                    kinds=tuple(str(kind) for kind in item.get("kinds") or []),
-                )
-                for item in recall_queries
-            ],
-            min(MAX_MEMORY_RECALL_RESULTS, max(0, config.memory_results)),
-            dense_evidence=dense_evidence,
-        )
+        else rank_candidates(store.memories, recall_queries,
+                             min(MAX_MEMORY_RECALL_RESULTS, max(0, config.memory_results)), dense_evidence)
     )
     recall_memories = [
         {
@@ -313,6 +315,7 @@ def build_plan_retrieval(
             "kind": str(row.get("kind") or ""),
             "key": str(row.get("key") or ""),
             "content": str(row.get("content") or ""),
+            "meta": row.get("meta", {"tags": [], "scope": ""}),
             "unit_ids": list(row.get("unit_ids") or []),
         }
         for row in ranked_memories
@@ -324,6 +327,7 @@ def build_plan_retrieval(
     ):
         seen = {
             (
+                str(item.get("meta", {}).get("scope", "")),
                 str(item.get("kind") or ""),
                 str(item.get("key") or ""),
                 str(item.get("content") or ""),
@@ -334,6 +338,7 @@ def build_plan_retrieval(
             if len(target) >= config.memory_results:
                 break
             identity = (
+                str(item.get("meta", {}).get("scope", "")),
                 str(item.get("kind") or ""),
                 str(item.get("key") or ""),
                 str(item.get("content") or ""),

@@ -84,6 +84,10 @@ def render_topic_selection_request(payload: Mapping[str, object]) -> str:
             _text(candidate, "kind", value.get("kind"))
             _text(candidate, "key", value.get("key"))
             _text(candidate, "content", value.get("content"))
+            if source == "memories":
+                meta = value.get("meta") or {}
+                _text(candidate, "scope", meta.get("scope") or "global")
+                _text_list(candidate, "tags", "tag", meta.get("tags", []))
             if source == "reflections":
                 _text(candidate, "local_date", value.get("local_date"))
                 _text(candidate, "confidence", value.get("confidence"))

@@ -62,11 +62,10 @@ class EpisodeConfidenceTest(unittest.TestCase):
                         "id": "u1",
                         "text": "那次模拟面试",
                         "intent": "conversation",
-                        "recall_mode": "search",
                         "recall_queries": [
                             {"semantic": "模拟面试", "keywords": ["模拟面试"]}
                         ],
-                        "recall_from_turn_id": "",
+
                     }
                 ]
             }

@@ -291,20 +291,15 @@ class ToolBatchExecutor:
                 ):
                     if execution.heartbeat:
                         try:
-                            units = call.arguments.get("units")
-                            if not isinstance(units, list) or len(units) != 1 or not isinstance(units[0], dict):
-                                raise ValueError("heartbeat recall requires one search unit")
-                            unit = units[0]
-                            if (
-                                unit.get("recall_mode") != "search"
-                                or not 1 <= len(unit.get("recall_queries", [])) <= 2
-                            ):
-                                raise ValueError("heartbeat recall requires one search unit and 1-2 queries")
+                            from ..tool_contracts.context import recall_search_arguments
+                            search = recall_search_arguments(call.arguments)
                             prepared = await request.prepare_heartbeat_context({
-                                "activity": str(unit["intent"]),
+                                "activity": " / ".join(search["semantic"] or search["keyword"]) or "记忆筛选",
                                 "mode": "work",
                                 "recall_mode": "search",
-                                "recall_queries": unit["recall_queries"],
+                                "recall_queries": [{"semantic": value, "keywords": search["keyword"]}
+                                                   for value in (search["semantic"] or [""])],
+                                "memory_filters": search["filters"],
                                 "strategy": ["Check the candidate message against prior discussion."],
                             })
                             request.draft.memory_context.update(prepared["memory_snapshots"])

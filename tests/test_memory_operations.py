@@ -839,9 +839,7 @@ def test_owner_recall_snapshot_reaches_private_queue(daemon):
         count += 1
         if count == 1:
             initial = recall_response()
-            initial.tool_calls[0].arguments["units"][0]["recall_queries"] = [
-                {"semantic": "饮品偏好", "keywords": ["咖啡"]}
-            ]
+            initial.tool_calls[0].arguments.update(semantic=["饮品偏好"], keyword=["咖啡"])
             return initial
         if count == 2:
             return response(
@@ -1101,10 +1099,7 @@ def test_owner_tool_loop_routes_temporary_state_immediately(daemon):
     source = event(daemon.store, text="按示例回应，保持24个小时")
     seed_temporary_state(daemon.store)
     daemon.store.begin_turn("state-turn", "owner", [source.event_id])
-    calls = [response(ToolCall("recall", "recall", {"units": [{
-        "intent": source.text, "recall_mode": "skip", "recall_queries": [],
-        "recall_from_turn_id": "",
-    }]})), response(state_call()), response(ToolCall("end", "end_turn", {
+    calls = [response(ToolCall("recall", "recall", {"semantic": ["用户的日常习惯"]})), response(state_call()), response(ToolCall("end", "end_turn", {
         "mood": {"decision": "unchanged"}, "reply_wait": {"wait": False},
     }))]
 

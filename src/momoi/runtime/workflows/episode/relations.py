@@ -75,9 +75,7 @@ class EpisodeRelationWorkflow:
                     submit_context=submit_relation_context,
                 )
                 if result.get("ok"):
-                    if any(unit.get("recall_mode") == "search"
-                           for unit in call.arguments.get("units", [])):
-                        search_count += 1
+                    search_count += 1
                     for record in result.get("episodes", []):
                         recalled[str(record["id"])] = record
                 return result

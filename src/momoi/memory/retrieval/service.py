@@ -110,7 +110,7 @@ class MemoryRecallService:
         """Recall confirmed facts; daily observations are opt-in for reflection only."""
 
         filters = self.repository.tags.filters(filters)
-        if max_results <= 0 or not queries:
+        if max_results <= 0 or (not queries and not any(filters.values())):
             return []
         limit = min(MAX_MEMORY_RECALL_CANDIDATES, max_results)
         stamp = time.time() if now is None else now
@@ -138,6 +138,15 @@ class MemoryRecallService:
                     "updated_at": float(row["updated_at"]),
                 }
             )
+        if not queries:
+            # Metadata browsing has no relevance score: order by importance,
+            # then recency and ID for stable bounded results.
+            rows = sorted(confirmed_candidates, key=lambda row: (
+                row["reliability_bonus"], row["updated_at"], row["id"],
+            ), reverse=True)[:limit]
+            return [dict(row, search_score=row["reliability_bonus"],
+                         last_activity_at=row["updated_at"], matched_queries=[],
+                         unit_ids=[], channels=["metadata"]) for row in rows]
         reflection_candidates: list[dict[str, object]] = []
         for row in reflection_rows:
             confidence = min(1.0, max(0.0, float(row["confidence"])))

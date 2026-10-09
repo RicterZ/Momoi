@@ -287,7 +287,7 @@ def assemble_main_context(
 ) -> dict[str, object]:
     return {
         "memory_records": [
-            {key: item[key] for key in ("id", "kind", "key", "content") if key in item}
+            {key: item[key] for key in ("id", "kind", "key", "content", "meta") if key in item}
             for item in retrieval.get("recall_memories") or []
         ],
         "reflection_records": [],

@@ -29,12 +29,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             ))
             install_scripted_replyer(daemon)
             self.addCleanup(daemon.store.close)
-            recall_arguments = {"units": [{
-                "intent": "Share a specific show update",
-                "recall_mode": "search",
-                "recall_queries": [{"semantic": "Prior discussion of this show", "keywords": []}],
-                "recall_from_turn_id": "",
-            }]}
+            recall_arguments = {"semantic": ["Prior discussion of this show"]}
             calls = [
                 ToolCall("begin", "heartbeat_begin", {
                     "activity": "read news", "mode": "work",

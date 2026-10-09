@@ -256,16 +256,11 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     daemon.prepare_heartbeat_context = AsyncMock(return_value={"context": recalled, "memory_snapshots": {}})
                     calls = []
                     if stage == "owner":
-                        calls.append(ToolCall("recall", "recall", {"units": [{"intent": "Respond to owner", "recall_mode": "skip", "recall_queries": [], "recall_from_turn_id": ""}]}))
+                        calls.append(ToolCall("recall", "recall", {"semantic": ["用户的日常习惯"]}))
                     elif stage == "heartbeat":
                         calls.append(ToolCall("begin", "heartbeat_begin", {"activity": "resting", "mode": "rest", "strategy": []}))
                         calls.append(ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "rest"}))
-                        calls.append(ToolCall("recall", "recall", {"units": [{
-                            "intent": "Send a voice message",
-                            "recall_mode": "search",
-                            "recall_queries": [{"semantic": "Prior discussion of this message", "keywords": []}],
-                            "recall_from_turn_id": "",
-                        }]}))
+                        calls.append(ToolCall("recall", "recall", {"semantic": ["Prior discussion of this message"]}))
                     calls.append(reply_call("voice", text=self.text, mode="voice"))
                     end = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
                     if stage == "goal":

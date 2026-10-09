@@ -1,162 +1,80 @@
 import copy
-import json
 from typing import Any
 
 CUE_QUERY_TOOL_DESCRIPTION = (
-    '用对话语言描述当前需要的历史场景、意图、人物、任务和关键词，保留可区分的姓名与标识符。仅依据已知上下文解析指代、缩小范围，不猜答案或关联无关事件。无需知道原始措辞；同时语义检索话题摘要及单独嵌入的 CUES。'
+    '用对话语言描述当前需要的历史场景、意图、人物、任务和关键词，保留可区分的姓名与标识符。仅依据已知上下文解析指代、缩小范围，不猜答案或关联无关事件。semantic 直接描述要找的内容，不加“此前”“之前讨论过”等检索动作或时间前缀；只有时间本身是检索条件时才写具体时间。无需知道原始措辞；同时语义检索话题摘要及单独嵌入的 CUES。'
 )
+from ...tools.contracts.memory import MEMORY_TOOL_SPECS
 from ...memory.storage.records import MEMORY_KINDS
 
+_MEMORY_FILTERS = copy.deepcopy(next(s for s in MEMORY_TOOL_SPECS if s["name"] == "memory_search")["input_schema"]["properties"]["filters"])
+_MEMORY_FILTERS["properties"].pop("kinds")
 
-RECALL_SKIP_EXAMPLE = {"units": [{
-    "intent": "主人道晚安", "recall_mode": "skip", "recall_queries": [],
-    "recall_from_turn_id": "",
-}]}
-RECALL_EXAMPLES = [
-    RECALL_SKIP_EXAMPLE,
-    {"units": [{"intent": "查询此前约定的见面时间", "recall_mode": "search",
-                "recall_queries": [{"semantic": "此前约定的见面时间", "keywords": []}],
-                "recall_from_turn_id": ""}]},
-    {"units": [{"intent": "继续讨论已检索的约定", "recall_mode": "reuse",
-                "recall_queries": [], "recall_from_turn_id": "<displayed-recalled-turn-id>",
-                }]},
-]
 
 RECALL_SCOPE_CONTRACT = (
-    '检索范围：评估所供上下文是否遗留可能改变理解或行动的历史问题。若无此类问题则使用 skip。对于搜索，使用范围最小的 kind 列表（空/省略表示所有标准记忆类型）。根据历史信息可能采用的不同表述，从当前提法、相关称谓、事件或其他已知线索构造互补查询；即使查询指向同一需求，也可以从不同角度搜索。无需凑满查询数；避免只换词重复、依赖单个新细节或把未知答案写成事实。关键词仅用可靠、可区分的锚点，不用独立动词或通用词。仅在已显示的 recent_recall_context 查询集覆盖全部需求时使用 reuse；邻近性与情绪不构成覆盖。将独立结果拆分为不同单元；更正操作替换被撤销的意图。保留已知主体、字面标识符及不确定性；切勿臆造未解决的实体身份。若身份未解决，先进行搜索，若证据无法识别则询问。从上下文中解析代词，切勿臆造答案或新增检索需求；当上下文无法解析指代时寻求澄清。reuse 无需新的历史依赖。recall 的话题默认只提供摘要与关联话题入口；需要原始对话、引用目标或工具链时，用 episode_read 按话题 id 读取，工具结果全文用 read_tool_result 读取。若 recall 标记 history_truncated 或 details_omitted，省略细节不能仅凭 reuse 确认；先用 read_tool_result、episode_read 或 search 补齐所需原文。在评估证据后决定如何响应。已检索话题的置信度是受限的查询相关性信号，而非校准后的概率或事实真相。缺失值表示无可用的查询特定分数。从源证据中确立发生的事件，并考虑说话者、时间、模态及不确定性。'
+    'semantic 和 keyword 可省略或为空；仅指定 kind、tags 或 scope 时按条件获取记忆，不检索 Episode。'
+    '至少提供一个查询或筛选条件。semantic 可提供互补查询，无需凑满数量，不把未知答案写成事实。'
+    'keyword 是所有查询共用的字面 OR 锚点。tags 和 scope 只过滤已确认记忆，不限制 Episode 话题；'
+    '普通搜索省略 tags，避免漏掉未标标签的相关记忆。需要原文时用 episode_read。'
 )
 
 
 def recall_correction(message: str) -> dict[str, Any]:
     return {
         "message": message + " 请重新以原生 recall 工具调用；本次检索尚未成功。",
-        "hint": (
-            "intent 等字段必须放在 units 内（1 到 4 个对象），不能放在顶层。"
-            "使用 JSON 数组和对象，不能把 JSON 编码成字符串。search 需要 1 到 3 个查询，"
-            "且 recall_from_turn_id 为空；reuse 需要空查询数组，并填写已显示的 recalled Turn ID；"
-            "skip 需要空查询数组和空 ID。只根据实际证据填写；示例仅表示上下文充分时可以 skip。"
-            "每个单元可以将 kind 设为空数组（所有规范记忆类型），或填写例如"
-            "[\"profile\", \"preference\"] 的类型列表。话题摘要单独检索。"
-        ),
-        "example_arguments": copy.deepcopy(RECALL_SKIP_EXAMPLE),
+        "hint": "semantic、keyword、tags、kind、scope 均可省略，至少提供一个有效查询或筛选条件。"
+                "不传 units、intent、mode 或来源轮次，不把数组编码为字符串。",
     }
 
 
 RECALL_TOOL_SPEC: dict[str, Any] = {
     "name": "recall",
     "description": (
-        ('检索已确认的记忆、带日期的反思和话题摘要。在用户回合中，在首批工具调用中调用一次；独立工具可伴随其运行。在心跳周期中，于发现特定内容后且每次向用户可见发送前进行搜索；使用一个搜索单元，并等待结果后再发送。心跳周期的检索不会归档话题。重试直至成功；在依赖调用前等待其结果。同一回合中的后续调用可检索额外证据。每次调用均增加证据。后续单元可描述新的搜索角度；跳过操作不清除早期结果。新的用户消息可修订意图。skip/reuse 返回状态时不会重复返回 transcript 中已有的证据；搜索返回本次调用的证据而非累积的早期结果。每次调用及结果均保留在回合转录中。参数必须包含 units（意图对象数组）；切勿扁平化其字段或将嵌套 JSON 字符串化。' + RECALL_SCOPE_CONTRACT + '最小示例（上下文充足时）：' + json.dumps(RECALL_SKIP_EXAMPLE, ensure_ascii=False))
+        "检索已确认记忆和话题摘要。需要缺失的历史证据时调用，当前上下文充分时无需调用。"
+        "依赖结果的操作须等待检索成功；同一回合可追加搜索，每次返回本次证据，已有证据保留在上下文。"
+        + RECALL_SCOPE_CONTRACT
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "units": {
-                "type": "array",
-                "description": '必填数组：每个独立的用户意图对应一个对象，而非 JSON 字符串。',
-                "minItems": 1,
-                "maxItems": 4,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "intent": {
-                            "type": "string",
-                            "minLength": 1,
-                            "pattern": r"\S",
-                            "maxLength": 160,
-                            "description": (
-                                '客观描述用户的当前请求或共享信息，并纳入修正内容。保留不确定性；不要添加未陈述的需求或您计划的响应策略。'
-                            ),
-                        },
-                        "kind": {
-                            "type": "array",
-                            "minItems": 0,
-                            "maxItems": len(MEMORY_KINDS),
-                            "uniqueItems": True,
-                            "items": {"type": "string", "enum": sorted(MEMORY_KINDS)},
-                            "description": (
-                                '可选的记忆种类白名单。为空或省略表示所有规范种类；使用此字段以避免导入不相关的记忆。话题摘要单独搜索，不属于种类。'
-                            ),
-                        },
-                        "recall_mode": {
-                            "type": "string",
-                            "enum": ["search", "reuse", "skip"],
-                            "description": (
-                                '搜索缺失的历史证据；复用之前的查询范围；当提供的上下文已足够时跳过。'
-                            ),
-                        },
-                        "recall_queries": {
-                            "type": "array",
-                            "minItems": 0,
-                            "maxItems": 3,
-                            "description": (
-                                '同一需求可从不同已知线索或表述角度搜索；查询应互补，避免仅换词重复。'
-                            ),
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "semantic": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "maxLength": 240,
-                                        "description": CUE_QUERY_TOOL_DESCRIPTION,
-                                    },
-                                    "keywords": {
-                                        "type": "array",
-                                        "minItems": 0,
-                                        "maxItems": 6,
-                                        "items": {"type": "string", "maxLength": 60},
-                                        "description": (
-                                            '关键词 OR 锚点：字面准确名称、ID、标题或独特的支持事件短语。不得包含独立动词、代词、通用词汇或推断出的答案；若无可靠锚点则为空。'
-                                        ),
-                                    },
-                                },
-                                "required": ["semantic"],
-                                "additionalProperties": False,
-                            },
-                        },
-                        "recall_from_turn_id": {
-                            "type": "string",
-                            "description": ('recent_recall_context 中的来源轮次。'),
-                        },
-                    },
-                    "required": [
-                        "intent",
-                        "recall_mode",
-                        "recall_queries",
-                        "recall_from_turn_id",
-                    ],
-                    "oneOf": [
-                        {
-                            "properties": {
-                                "recall_mode": {"enum": ["search"]},
-                                "recall_queries": {"minItems": 1},
-                                "recall_from_turn_id": {"const": ""},
-                            }
-                        },
-                        {
-                            "properties": {
-                                "recall_mode": {"enum": ["reuse"]},
-                                "recall_queries": {"maxItems": 0},
-                                "recall_from_turn_id": {"minLength": 1},
-                            }
-                        },
-                        {
-                            "properties": {
-                                "recall_mode": {"enum": ["skip"]},
-                                "recall_queries": {"maxItems": 0},
-                                "recall_from_turn_id": {"const": ""},
-                            }
-                        },
-                    ],
-                    "additionalProperties": False,
-                },
+            "semantic": {
+                "type": "array", "minItems": 0, "maxItems": 6, "uniqueItems": True,
+                "items": {"type": "string", "minLength": 1, "maxLength": 240, "pattern": r"\S"},
+                "description": CUE_QUERY_TOOL_DESCRIPTION,
             },
+            "keyword": {
+                "type": "array", "maxItems": 6, "uniqueItems": True,
+                "items": {"type": "string", "minLength": 1, "maxLength": 60, "pattern": r"\S"},
+                "description": "可选，共用的字面关键词 OR 锚点；只用已知名称或具体短语，无可靠词时省略。",
+            },
+            "kind": {
+                "type": "array", "uniqueItems": True, "maxItems": len(MEMORY_KINDS),
+                "items": {"type": "string", "enum": sorted(MEMORY_KINDS)},
+                "description": "可选记忆性质白名单（OR）：profile 档案习惯，preference 偏好，relationship 关系约定，third_party 他人，practice 方法，world_knowledge 知识，self_insight 自我洞见，cross_event_state 跨事件状态。默认不限制；不影响 Episode。",
+            },
+            "tags": copy.deepcopy(_MEMORY_FILTERS["properties"]["tags_any"]),
+            "scope": copy.deepcopy(_MEMORY_FILTERS["properties"]["scope"]),
         },
-        "examples": copy.deepcopy(RECALL_EXAMPLES),
-        "required": ["units"],
         "additionalProperties": False,
+        "anyOf": [
+            {"required": [name], "properties": {name: {"minItems": 1}}}
+            for name in ("semantic", "keyword", "kind", "tags")
+        ] + [{"required": ["scope"], "properties": {"scope": {"minLength": 1}}}],
     },
 }
+
+
+def recall_search_arguments(arguments):
+    """One validation boundary for owner, heartbeat and relation lookup."""
+    from ...tools.validation import validate_tool_arguments
+    parsed, error = validate_tool_arguments("recall", arguments, RECALL_TOOL_SPEC["input_schema"])
+    if error:
+        raise ValueError("recall requires a query or filter; invalid fields or values")
+    return {
+        "semantic": list(dict.fromkeys(" ".join(value.split()) for value in parsed.get("semantic", []))),
+        "keyword": list(dict.fromkeys(" ".join(value.split()) for value in parsed.get("keyword", []))),
+        "filters": {"tags_any": parsed.get("tags", []), "kinds": parsed.get("kind", []), "scope": parsed.get("scope", "")},
+    }
 
 
 def heartbeat_begin_spec() -> dict[str, Any]:

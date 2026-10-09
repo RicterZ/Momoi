@@ -52,7 +52,7 @@ class MemoryRerankCandidates:
     def payload(self):
         return {
             "memories": [{"index": i, "kind": row.get("kind"), "key": row.get("key"),
-                          "content": row.get("content")}
+                          "content": row.get("content"), "meta": row.get("meta", {})}
                          for i, row in enumerate(self.confirmed)],
             "reflections": [{"index": i, "kind": row.get("kind"), "key": row.get("key"),
                              "content": row.get("content"), "local_date": row.get("local_date"),

@@ -443,6 +443,7 @@ class ContextAssemblerTest(unittest.TestCase):
                             "kind": "shared",
                         "key": "relationship.play",
                         "content": "老师和小桃常会亲密玩闹",
+                        "meta": {"tags": [], "scope": ""},
                         "unit_ids": ["mail"],
                     }
                 ],

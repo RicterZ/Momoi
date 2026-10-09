@@ -68,15 +68,9 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
                 )])
 
             daemon.provider = SimpleNamespace(complete=select_all)
-            unit = {
-                "intent": "茶的信息",
-                "kind": ["preference"],
-                "recall_mode": "search",
-                "recall_queries": [{"semantic": "茶", "keywords": ["茶"]}],
-                "recall_from_turn_id": "",
-            }
+            unit = {"semantic": ["茶"], "keyword": ["茶"], "kind": ["preference"]}
             result = await recall_owner_context(
-                ToolCall("recall", "recall", {"units": [unit]}),
+                ToolCall("recall", "recall", unit),
                 current_events=[event], turn_id=turn_id,
                 submit_context=daemon.submit_owner_context,
             )
@@ -84,40 +78,23 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(any("主人偏好绿茶" in row["content"] for row in result["memory"]))
             self.assertFalse(any("泡茶用八十度水" in row["content"] for row in result["memory"]))
             self.assertEqual(
-                daemon.store.context_plan(turn_id)["plan"]["intent_units"][0]["kind"],
+                daemon.store.context_plan(turn_id)["plan"]["intent_units"][0]["memory_filters"]["kinds"],
                 ["preference"],
             )
 
-            # A different search angle adds evidence; later skip preserves both.
+            # A different search angle adds evidence; the stored recall preserves both.
             unit["kind"] = ["practice"]
-            unit["intent"] = "补查泡茶方法"
-            await daemon.submit_owner_context([event], turn_id, {"units": [unit]})
-            unit.update(recall_mode="skip", recall_queries=[])
-            result = await daemon.submit_owner_context([event], turn_id, {"units": [unit]})
-            self.assertEqual(result["recall_memories"], "")
-            self.assertEqual(result["reflection_memories"], "")
-            self.assertEqual(result["episodes"], "")
+            await daemon.submit_owner_context([event], turn_id, unit)
             record = daemon.store.context_plan(turn_id)
             stored = str(record["retrieval"])
             self.assertIn("主人偏好绿茶", stored)
             self.assertIn("泡茶用八十度水", stored)
-            self.assertEqual(record["plan"]["intent_units"][0]["intent"], "茶的信息")
+            self.assertEqual(record["plan"]["intent_units"][0]["intent"], "茶")
             self.assertEqual(record["retrieval"]["effective_recall_queries"], ["茶"])
-            self.assertEqual(len(record["plan"]["supplemental_queries"]), 2)
-            reuse_event = IncomingMessage("reuse:tea", "1", "继续说茶", 2, 2)
-            daemon.store.add_event(reuse_event)
-            daemon.store.begin_turn("reuse-tea", "owner", [reuse_event.event_id])
-            reuse_unit = {**unit, "recall_mode": "reuse", "recall_from_turn_id": turn_id}
-            reused = await daemon.submit_owner_context(
-                [reuse_event], "reuse-tea", {"units": [reuse_unit]}
-            )
-            self.assertEqual(reused["recall_memories"], "")
-            self.assertEqual(reused["reflection_memories"], "")
-            self.assertEqual(reused["episodes"], "")
-            self.assertIn("泡茶用八十度水", str(daemon.store.context_plan("reuse-tea")["retrieval"]))
+            self.assertEqual(len(record["plan"]["supplemental_queries"]), 1)
             with patch.object(daemon, "_select_recall_topics", side_effect=RuntimeError("lookup failed")):
                 with self.assertRaises(RuntimeError):
-                    await daemon.submit_owner_context([event], turn_id, {"units": [unit]})
+                    await daemon.submit_owner_context([event], turn_id, unit)
             self.assertEqual(daemon.store.context_plan(turn_id), record)
 
 
@@ -163,7 +140,7 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_malformed_recall_returns_actionable_example_without_persistence(self):
         from jsonschema import Draft202012Validator
-        from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC, RECALL_SKIP_EXAMPLE
+        from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC
         import copy
 
         with tempfile.TemporaryDirectory() as directory:
@@ -173,10 +150,10 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
-            unit = copy.deepcopy(RECALL_SKIP_EXAMPLE["units"][0])
+            unit = {"semantic": ["约定的见面时间"]}
             for arguments, path in (
-                (unit, "units:"),
-                ({"units": [{**unit, "recall_queries": "[]"}]}, "units[0].recall_queries"),
+                ({"semantic": "约定的时间"}, "recall requires a query or filter"),
+                ({"units": [unit]}, "recall requires a query or filter"),
             ):
                 with self.subTest(path=path):
                     result = await recall_owner_context(
@@ -187,57 +164,33 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(result["error"], "invalid_recall")
                     self.assertIn(path, result["message"])
                     self.assertIn("本次检索尚未成功", result["message"])
-                    Draft202012Validator(RECALL_TOOL_SPEC["input_schema"]).validate(result["example_arguments"])
+                    self.assertNotIn("example_arguments", result)
                     self.assertIsNone(daemon.store.context_plan(turn_id))
 
-    async def test_skip_preserves_episode_routing_without_retrieval(self) -> None:
+    async def test_removed_modes_rejected_without_retrieval_or_persistence(self):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(config(directory))
             self.addCleanup(daemon.store.close)
-            event = IncomingMessage("skip:new", "1", "开始整理书房", 1, 1)
+            event = IncomingMessage("old-mode", "1", "整理书房", 1, 1)
             daemon.store.add_event(event)
-            turn_id = daemon._turn_id(event.event_id)
-            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
-            unit = {"intent": "主人开始整理书房", "recall_mode": "skip",
-                    "recall_queries": [], "recall_from_turn_id": ""}
+            daemon.store.begin_turn("old-mode", "owner", [event.event_id])
             with patch.object(daemon.semantic_recall, "prepare", new_callable=AsyncMock) as dense:
-                result = await recall_owner_context(
-                    ToolCall("recall", "recall", {"units": [unit]}),
-                    current_events=[event], turn_id=turn_id,
-                    submit_context=daemon.submit_owner_context,
-                )
-            dense.assert_not_awaited()
-            self.assertTrue(result["ok"])
-            # A second successful recall revises the same Turn without losing routing.
-            unit["intent"] = "补查另一个角度"
-            result = await recall_owner_context(
-                ToolCall("recall-again", "recall", {"units": [unit]}),
-                current_events=[event], turn_id=turn_id,
-                submit_context=daemon.submit_owner_context,
-            )
-            self.assertTrue(result["ok"])
-            self.assertEqual(daemon.store.context_plan(turn_id)["revision"], 2)
-            record = daemon.store.context_plan(turn_id)
-            self.assertEqual(record["state"], "recalled")
-            self.assertEqual(record["plan"]["intent_units"][0]["intent"], "主人开始整理书房")
-            self.assertEqual(record["plan"]["supplemental_queries"][0]["intent_units"][0]["intent"], "补查另一个角度")
-            self.assertEqual(record["plan"]["intent_units"][0]["recall"]["mode"], "skip")
-            self.assertNotIn("episode_actions", record["plan"])
-            for field in ("recall_memories", "reflection_memories", "episodes", "effective_recall_queries"):
-                self.assertEqual(record["retrieval"][field], [])
-            self.assertEqual(daemon.store.recall_reuse_candidates([turn_id]), [])
-            daemon.store.commit_turn([event], event.text, AgentReply([]), turn_id=turn_id)
-            linked = daemon.store._db.execute(
-                "SELECT 1 FROM episode_turns WHERE turn_id=?", (turn_id,),
-            ).fetchone()
-            self.assertIsNone(linked)
+                for mode in ("search", "skip", "reuse"):
+                    result = await recall_owner_context(
+                        ToolCall("r", "recall", {"units": [{"intent": "整理书房", "recall_mode": mode,
+                                 "recall_queries": [{"semantic": "书房整理方法"}]}]}),
+                        current_events=[event], turn_id="old-mode", submit_context=daemon.submit_owner_context,
+                    )
+                    self.assertFalse(result["ok"])
+                    self.assertIsNone(daemon.store.context_plan("old-mode"))
+                dense.assert_not_awaited()
 
     async def test_episode_binding_requires_reason_before_persistence(self) -> None:
         from jsonschema import Draft202012Validator
         from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC
         self.assertFalse(Draft202012Validator(RECALL_TOOL_SPEC["input_schema"]).is_valid(
             {"units": [{"intent": "x", "recall_mode": "skip", "recall_queries": [],
-                         "recall_from_turn_id": "", "episode": {"action": "new"}}]}
+                          "episode": {"action": "new"}}]}
         ))
         return
         from jsonschema import Draft202012Validator
@@ -252,7 +205,7 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
             base = {
                 "intent": "开始整理书房", "recall_mode": "skip",
-                "recall_queries": [], "recall_from_turn_id": "",
+                "recall_queries": [],
             }
             validator = Draft202012Validator(RECALL_TOOL_SPEC["input_schema"])
             for episode in (
@@ -273,11 +226,11 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
             event = IncomingMessage("skip:invalid", "1", "收到", 1, 1)
             daemon.store.add_event(event)
             unit = {"intent": "确认收到", "recall_mode": "skip", "recall_queries": [],
-                    "recall_from_turn_id": ""}
+                    }
             for extra in ({"recall_queries": [{"semantic": "往事"}]},
                           {"recall_queries": [{"semantic": ""}]},
                           {"recall_from_turn_id": "previous"}):
-                with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, "skip requires empty"):
+                with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, "recall requires a query or filter"):
                     daemon._plan_from_submission([event], {"units": [{**unit, **extra}]},
                                                  turn_id="invalid", revision=1)
 
@@ -338,18 +291,7 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
                     call = ToolCall(
                         f"recall-{index}",
                         "recall",
-                        {
-                            "units": [
-                                {
-                                    "intent": "test keyword-only recall",
-                                    "recall_mode": "search",
-                                    "recall_queries": [
-                                        {"semantic": semantic, "keywords": keywords}
-                                    ],
-                                    "recall_from_turn_id": "",
-                                }
-                            ]
-                        },
+                        {"semantic": [semantic], "keyword": keywords},
                     )
                     with self.assertNoLogs("momoi.runtime.retrieval.service", level="WARNING"):
                         result = await recall_owner_context(
@@ -492,7 +434,7 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
         from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC
         self.assertFalse(Draft202012Validator(RECALL_TOOL_SPEC["input_schema"]).is_valid(
             {"units": [{"intent": "x", "recall_mode": "skip", "recall_queries": [],
-                         "recall_from_turn_id": "", "episode": {"action": "new"}}]}
+                          "episode": {"action": "new"}}]}
         ))
         return
         with tempfile.TemporaryDirectory() as directory:
@@ -509,14 +451,13 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
                     "units": [
                         {
                             "intent": "整理书房",
-                            "recall_mode": "search",
                             "recall_queries": [
                                 {
                                     "semantic": "此前整理书房的计划与进展",
                                     "keywords": ["书房", "整理"],
                                 }
                             ],
-                            "recall_from_turn_id": "",
+
                             "episode": {
                                 "action": "new",
                                 "ref": "new:study-cleanup",
@@ -551,7 +492,7 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
         from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC
         self.assertFalse(Draft202012Validator(RECALL_TOOL_SPEC["input_schema"]).is_valid(
             {"units": [{"intent": "x", "recall_mode": "skip", "recall_queries": [],
-                         "recall_from_turn_id": "", "episode": {"action": "continue"}}]}
+                          "episode": {"action": "continue"}}]}
         ))
         return
         with tempfile.TemporaryDirectory() as directory:
@@ -569,14 +510,13 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
                         "units": [
                             {
                                 "intent": "继续当前经历",
-                                "recall_mode": "search",
                                 "recall_queries": [
                                     {
                                         "semantic": "当前经历此前的状态",
                                         "keywords": [],
                                     }
                                 ],
-                                "recall_from_turn_id": "",
+
                                 "episode": {
                                     "action": "continue",
                                     "ref": "not-a-candidate",

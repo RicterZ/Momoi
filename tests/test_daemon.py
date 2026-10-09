@@ -1584,12 +1584,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             },
                         )
                     elif self.calls == 7:
-                        call = ToolCall("heartbeat-recall", "recall", {"units": [{
-                            "intent": "分享刚想到的关卡点子",
-                            "recall_mode": "search",
-                            "recall_queries": [{"semantic": "此前聊过的这个关卡点子", "keywords": ["关卡"]}],
-                            "recall_from_turn_id": "",
-                        }]})
+                        call = ToolCall("heartbeat-recall", "recall", {"semantic": ["此前聊过的这个关卡点子"], "keyword": ["关卡"]})
                     elif self.calls == 8:
                         call = reply_call("heartbeat-live", bubbles=["刚想到一个关卡点子！"])
                     elif self.calls == 9:

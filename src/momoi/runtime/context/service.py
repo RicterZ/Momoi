@@ -2,8 +2,9 @@ import copy
 
 from ...models import IncomingMessage
 from ...memory import Memory, MemoryRecallQuery
-from ...memory.storage.records import MEMORY_KINDS
 from ...storage.episode.episode_ranking import EpisodeRecallQuery
+from .memory_search import filtered_candidates
+from ...storage.memory.catalog import MOMOI_MEMORY_TAGS
 from .selection import RecallSelection, TOPIC_CANDIDATE_LIMIT, select_topics
 from ..agent.context_window import context_compaction_tokens
 from ..turn_support import context_data_message
@@ -25,6 +26,17 @@ class ContextService:
             )
         if not selected:
             return RecallSelection([], [], [])
+        if all(not item["semantic_expression"] and not item["expression"] for item in selected):
+            memories = self.memory.rank(
+                [], min(6, max(0, self.config.memory_results)),
+                filters=selected[0].get("memory_filters"),
+            )
+            for row in memories:
+                row["unit_ids"] = selected[0]["unit_ids"]
+            if diagnostics is not None:
+                diagnostics.update(status="skipped", skip_reason="metadata_only",
+                                   memory_candidates=memories, selected_memory_ids=[row["id"] for row in memories])
+            return RecallSelection([], memories, [])
         queries = [EpisodeRecallQuery(
             expression=str(item["expression"]),
             unit_ids=tuple(str(value) for value in item["unit_ids"]),
@@ -67,10 +79,15 @@ class ContextService:
             )
             return [*selection.memories, *selection.reflections]
 
-        memories = await self.memory.search(
-            memory_queries, max(0, self.config.memory_results), request=request,
-            dense_evidence=dense_evidence, reranker=joint_reranker,
-        )
+        if any(item.get("memory_filters") for item in selected):
+            candidates_memory = (await filtered_candidates(self.memory, selected, dense_evidence)
+                                 if self.config.memory_results > 0 else [])
+            memories = (await joint_reranker(request, candidates_memory))[:min(6, max(0, self.config.memory_results))]
+        else:
+            memories = await self.memory.search(
+                memory_queries, max(0, self.config.memory_results), request=request,
+                dense_evidence=dense_evidence, reranker=joint_reranker,
+            )
         return RecallSelection(
             selection.episodes,
             [row for row in memories if row["source"] == "confirmed"],
@@ -175,87 +192,15 @@ class ContextService:
         turn_id: str,
         revision: int,
     ) -> dict[str, object]:
-        """Shape an Owner context submission like a stored plan.
-
-        The retrieval path already knows how to turn recall dispositions and
-        Episode actions into evidence; only its source moves, from a separate
-        planning model to the Owner's own first action.
-        """
-
+        """Store query provenance internally without exposing routing fields to the model."""
+        from ..tool_contracts.context import recall_search_arguments
+        search = recall_search_arguments(arguments)
         event_ids = [event.event_id for event in events]
-        units: list[dict[str, object]] = []
-        raw_units = arguments.get("units")
-        if not isinstance(raw_units, list) or not raw_units:
-            raise ValueError("units: required nonempty JSON array of intent objects; wrap fields as {\"units\":[{...}]}")
-        for index, raw in enumerate(raw_units if isinstance(raw_units, list) else [], 1):
-            if not isinstance(raw, dict):
-                raise ValueError("each recall unit must be an object")
-            path = f"units[{index - 1}]"
-            if not isinstance(raw.get("recall_queries"), list):
-                raise ValueError(f"{path}.recall_queries: expected a JSON array, not a string; use [] for skip/reuse")
-            unit_id = f"u{index}"
-            raw_kinds = raw.get("kind", [])
-            if raw_kinds is None:
-                raw_kinds = []
-            if (
-                not isinstance(raw_kinds, list)
-                or len(raw_kinds) > len(MEMORY_KINDS)
-                or len(set(raw_kinds)) != len(raw_kinds)
-                or any(not isinstance(kind, str) or kind not in MEMORY_KINDS for kind in raw_kinds)
-            ):
-                raise ValueError(
-                    f"{path}.kind: expected an optional unique array of canonical memory kinds; empty means all"
-                )
-            kinds = list(raw_kinds)
-            mode = str(raw.get("recall_mode") or "search")
-            queries = [
-                {
-                    "semantic": " ".join(str(query.get("semantic") or "").split())[:240],
-                    "keywords": [
-                        " ".join(str(keyword).split())[:60]
-                        for keyword in (query.get("keywords") or [])
-                        if " ".join(str(keyword).split())
-                    ],
-                }
-                for query in (raw.get("recall_queries") or [])
-                if isinstance(query, dict) and str(query.get("semantic") or "").strip()
-            ][:3]
-            from_turn_id = str(raw.get("recall_from_turn_id") or "")
-            if mode not in {"search", "reuse", "skip"}:
-                raise ValueError(f"{path}.recall_mode: must be search, reuse, or skip")
-            if mode == "search":
-                if not queries:
-                    raise ValueError(f'{path}.recall_queries: search requires at least one object with nonempty semantic, e.g. [{{"semantic":"此前约定的时间","keywords":[]}}]')
-                from_turn_id = ""
-            elif mode == "skip":
-                if (
-                    raw.get("recall_queries") != []
-                    or raw.get("recall_from_turn_id") != ""
-                ):
-                    raise ValueError(
-                        f'{path}: skip requires empty recall_queries=[] and recall_from_turn_id=""'
-                    )
-            elif not from_turn_id or not self.store.recall_reuse_candidates(
-                [from_turn_id]
-            ):
-                raise ValueError(f"{path}.recall_from_turn_id: reuse requires an actual displayed recalled Turn id from recent_recall_context")
-            units.append(
-                {
-                    "id": unit_id,
-                    "event_ids": event_ids,
-                    "intent": " ".join(str(raw.get("intent") or "").split())[:160],
-                    "recall_mode": mode,
-                    "recall_queries": queries if mode == "search" else [],
-                    "recall_from_turn_id": from_turn_id if mode == "reuse" else "",
-                    "kind": kinds,
-                    "recall": {
-                        "mode": mode,
-                        "from_turn_id": from_turn_id if mode == "reuse" else "",
-                        "queries": queries if mode == "search" else [],
-                        "kind": kinds,
-                    },
-                }
-            )
+        units = [{
+            "id": f"u{index}", "event_ids": event_ids, "intent": semantic,
+            "recall_queries": [{"semantic": semantic, "keywords": search["keyword"]}],
+            "memory_filters": search["filters"],
+        } for index, semantic in enumerate(search["semantic"] or [""], 1)]
         return {
             "version": 7,
             "intent_units": units,
@@ -371,7 +316,7 @@ class ContextService:
         )
         selected, _reused, _emitted, _skipped = select_plan_recall_queries(plan)
         dense_evidence = None
-        if selected:
+        if any(item["semantic_expression"] or item["expression"] for item in selected):
             dense_evidence = await self.semantic_recall.prepare(
                 [
                     MemoryRecallQuery(
@@ -402,8 +347,7 @@ class ContextService:
             topic_selection=topic_selection,
         )
         # Persistence keeps inherited evidence for provenance and future reuse.
-        # The tool observation returns only this call's searched evidence;
-        # skip/reuse already have their evidence in the transcript.
+        # The tool observation returns only this call's searched evidence.
         observation = copy.deepcopy(retrieval)
         search_units = {
             str(unit_id) for query in selected for unit_id in query.get("unit_ids", [])
@@ -469,8 +413,8 @@ class ContextService:
                 ][:6],
             }
             for query in (raw_queries if isinstance(raw_queries, list) else [])
-            if isinstance(query, dict) and str(query.get("semantic") or "").strip()
-        ][:2]
+            if isinstance(query, dict)
+        ][:6]
         if not activity or mode not in {"work", "rest"}:
             raise ValueError("heartbeat_begin requires an activity and work/rest mode")
         if recall_mode not in {"search", "skip"}:
@@ -487,25 +431,29 @@ class ContextService:
             "version": 4,
             "activity": {
                 "intent": activity,
+                "kind": arguments.get("kind", []),
+                "memory_filters": MOMOI_MEMORY_TAGS.filters(arguments.get("memory_filters")),
                 "recall_mode": recall_mode,
                 "recall_queries": queries if recall_mode == "search" else [],
             },
             "strategy": strategy,
         }
         selected, _reused, _emitted, _skipped = select_plan_recall_queries(plan)
-        dense_evidence = await self.semantic_recall.prepare(
-            [
-                MemoryRecallQuery(
-                    expression=str(item["expression"]),
-                    unit_ids=tuple(str(value) for value in item["unit_ids"]),
-                    priority=int(item["priority"]),
-                    semantic_expression=str(item["semantic_expression"]),
-                    kinds=tuple(str(kind) for kind in item.get("kinds") or []),
-                )
-                for item in selected
-            ],
-            output_limit=max(self.config.memory_results, TOPIC_CANDIDATE_LIMIT),
-        )
+        dense_evidence = None
+        if any(item["semantic_expression"] or item["expression"] for item in selected):
+            dense_evidence = await self.semantic_recall.prepare(
+                [
+                    MemoryRecallQuery(
+                        expression=str(item["expression"]),
+                        unit_ids=tuple(str(value) for value in item["unit_ids"]),
+                        priority=int(item["priority"]),
+                        semantic_expression=str(item["semantic_expression"]),
+                        kinds=tuple(str(kind) for kind in item.get("kinds") or []),
+                    )
+                    for item in selected
+                ],
+                output_limit=max(self.config.memory_results, TOPIC_CANDIDATE_LIMIT),
+            )
         topic_selection = {}
         selection = await self._select_recall_topics(activity, selected, dense_evidence, topic_selection)
         retrieval = build_plan_retrieval(
