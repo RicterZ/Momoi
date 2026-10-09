@@ -1243,10 +1243,8 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
       <section className="section-tools memory-toolbar">
         <p>{visible.length} / {items.length} 条记忆{candidateMode && " · 2 次起观察，5 次起待准入，最多累计一个月"}</p>
         <div className="memory-filters">
-          <label>搜索记忆
-            <input className="dash-input" type="search" value={query} placeholder="内容、触发词或标签"
-              onChange={(event) => setQuery(event.target.value)} />
-          </label>
+          <input className="dash-input" type="search" aria-label="搜索记忆" value={query} placeholder="内容、触发词或标签"
+            onChange={(event) => setQuery(event.target.value)} />
         </div>
         <div className="dash-tabs" role="tablist" aria-label="记忆筛选">
           {[["all", "全部"], ...Object.entries(labels)].map(
