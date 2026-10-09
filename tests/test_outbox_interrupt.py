@@ -102,7 +102,7 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.daemon.incoming.empty())
         rows = self.store.recent_conversation_messages(10, 10000)
         self.assertEqual([row["content"] for row in rows if row["role"] == "event"],
-                         ["【QQ 戳一戳】\n用户戳了机器人一下。", "【QQ 戳一戳】\n机器人戳了用户一下。"])
+                         ["【QQ 戳一戳】\n用户戳了我一下。", "【QQ 戳一戳】\n我戳了用户一下。"])
 
     async def test_idle_recall_is_offered_to_planner_as_runtime_event(self):
         message = IncomingMessage("recall-source", "1", "synthetic request", 1, 1, channel="napcat")

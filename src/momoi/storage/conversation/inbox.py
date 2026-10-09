@@ -35,7 +35,7 @@ class InboxStore:
         self.complete_background_turn(event_id)
 
     def record_message_poke(self, notice: MessagePoked) -> IncomingMessage | None:
-        names = {"owner": "用户", "assistant": "机器人"}
+        names = {"owner": "用户", "assistant": "我"}
         if notice.author not in names or notice.target not in names:
             raise ValueError("invalid poke participant")
         subject = names[notice.author]
@@ -100,7 +100,7 @@ class InboxStore:
             "SELECT occurred_at FROM events WHERE kind=? AND message_id=? ORDER BY received_at LIMIT 1",
             (f"{notice.channel}.message", notice.message_id),
         ).fetchone()
-        speaker = "用户" if notice.author == "owner" else "机器人"
+        speaker = "用户" if notice.author == "owner" else "我"
         text = f"【QQ 消息撤回】\n{speaker}撤回了消息 message_id={notice.message_id}。"
         if original is not None:
             text += f"原消息发送时间：{self.context_timestamp(original['occurred_at'])}。"

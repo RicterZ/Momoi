@@ -249,7 +249,7 @@ def test_poke_is_archived_and_rendered_as_event_without_forcing_a_reply(tmp_path
     try:
         notice = MessagePoked('poke-1', 3, 'napcat', 'owner', 'assistant')
         update = store.record_message_poke(notice)
-        assert update.text == '【QQ 戳一戳】\n用户戳了机器人一下。'
+        assert update.text == '【QQ 戳一戳】\n用户戳了我一下。'
         assert store.record_message_poke(notice) is None
         blocks = owner_content_blocks([update], lambda _: [], ZoneInfo('UTC'))
         text = ''.join(b['text'] for b in blocks)

@@ -38,7 +38,7 @@ def test_poke_without_exchange_preserves_earlier_native_dialogue(tmp_path):
     ))
     try:
         add_turn(daemon.store, 'earlier', '上午没有进食', 1)
-        add_turn(daemon.store, 'poke', '【QQ 戳一戳】用户戳了机器人一下', 2, native=False, event=True)
+        add_turn(daemon.store, 'poke', '【QQ 戳一戳】用户戳了我一下', 2, native=False, event=True)
         add_turn(daemon.store, 'later', '现在准备午餐', 3)
         daemon.store.begin_turn('active', 'owner', ['active'])
         shared = daemon.shared_turn_context('active')
