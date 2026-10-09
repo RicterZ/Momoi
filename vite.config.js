@@ -619,8 +619,9 @@ function previewRecords() {
   const memories = [
     {
       id: 1,
-      kind: "owner_preference",
+      kind: "preference",
       activation: "always",
+      meta: { scope: "", tags: ["food_drink"], triggers: ["香菜"] },
       content: "主人不吃香菜。",
       evidence: "上次点外卖时明确说过。",
       updated_at: now - 86400,
@@ -628,15 +629,19 @@ function previewRecords() {
     {
       id: 2,
       kind: "practice",
-      activation: "recent",
+      activation: "scoped",
+      scope_label: "Webhook",
+      meta: { scope: "webhook", tags: ["daily_life"], triggers: [] },
       content: "衣服洗好后，老师现在希望被提醒，不再沿用旧的静默判断。",
       evidence: "今晚追问「为什么衣服洗好了没提醒」。",
       updated_at: now - 1800,
     },
     ...Array.from({ length: 12 }, (_, index) => ({
       id: index + 3,
-      kind: index % 2 ? "shared_experience" : "self_insight",
-      activation: index % 3 === 0 ? "always" : index % 3 === 1 ? "recent" : "recall",
+      kind: index % 2 ? "relationship" : "self_insight",
+      activation: index % 3 === 0 ? "always" : index % 3 === 1 ? "scoped" : "recall",
+      meta: { scope: index % 3 === 1 ? "goal:preview" : "", tags: ["communication"], triggers: index % 3 === 2 ? ["喵"] : [] },
+      scope_label: index % 3 === 1 ? "Goal · 预览任务" : "",
       content: `预览记忆 ${index + 1}：用来把记忆页撑出滚动条。`,
       evidence: "本地预览数据",
       updated_at: now - (index + 2) * 86000,

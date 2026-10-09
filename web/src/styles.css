@@ -2298,3 +2298,19 @@ a.tag:hover {
   vertical-align: middle;
   margin-block: 6px;
 }
+
+.memory-filters { display: flex; flex-wrap: wrap; gap: 12px; width: 100%; }
+.memory-filters label { display: grid; gap: 6px; flex: 1 1 180px; min-width: 0; color: var(--muted); font-size: 12px; }
+.memory-filters input, .memory-filters select { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--ink); border-radius: 4px; background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; }
+.memory-metadata { display: grid; gap: 8px; margin: 12px 0; }
+.memory-metadata .memory-scope { margin: 0; }
+.memory-scope code { margin-left: 8px; font-size: 11px; }
+.memory-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; list-style: none; }
+.memory-tag, .memory-trigger { max-width: 100%; padding: 3px 8px; border: 1px solid currentColor; border-radius: 4px; font-size: 12px; overflow-wrap: anywhere; }
+.memory-tag { color: var(--muted); }
+.memory-trigger { color: var(--ink); border-color: var(--blue); background: var(--blue-soft); }
+.memory-triggers { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.memory-trigger-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+.memory-toolbar { flex-wrap: wrap; gap: 12px; }
+.memory-toolbar .memory-filters { order: 1; }

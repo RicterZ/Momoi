@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import time
 from dataclasses import asdict
@@ -105,7 +106,7 @@ class DashboardStore:
         rows = self._db.execute(
             """SELECT id, kind, key, scope_key, content, activation, authority,
                       evidence_quote, importance, created_at, updated_at,
-                      expires_at
+                      expires_at, meta_json
                FROM memories AS m
                WHERE m.superseded_by IS NULL
                  AND (m.expires_at IS NULL OR m.expires_at > ?)
@@ -151,6 +152,12 @@ class DashboardStore:
         item = dict(row)
         item["evidence"] = item.pop("evidence_quote")
         item["scope"] = item.pop("scope_key")
+        meta = json.loads(item.pop("meta_json"))
+        item["meta"] = {
+            "tags": meta.get("tags", []),
+            "triggers": meta.get("triggers", []),
+            "scope": item["scope"],
+        }
         add_context_timestamps(
             item, ("created_at", "updated_at", "expires_at"), self._timezone
         )
@@ -160,7 +167,7 @@ class DashboardStore:
         return self._db.execute(
             """SELECT id, kind, key, scope_key, content, activation, authority,
                       evidence_quote, importance, created_at, updated_at,
-                      expires_at
+                      expires_at, meta_json
                FROM memories AS m
                WHERE m.id=?
                  AND m.superseded_by IS NULL

@@ -4,6 +4,8 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import RequestMetrics from "./RequestMetrics.jsx";
 import Loading from "./Loading.jsx";
+import MemoryMetadata from "./MemoryMetadata.jsx";
+import { filterMemories, memoryScope, memoryScopeLabel } from "./memoryInventory.js";
 import Tools from "./Tools.jsx";
 import EmotionContent from "./EmotionContent.jsx";
 import ConfigurationSettings, { ApplyDialog, SaveBar } from "./ConfigurationSettings.jsx";
@@ -1283,6 +1285,8 @@ function Reflections({ refreshKey, token, routeParam }) {
 
 function Memories({ refreshKey, token, onMutated }) {
   const [activation, setActivation] = useState("all");
+  const [scope, setScope] = useState(null);
+  const [query, setQuery] = useState("");
   return (
     <DataView path="/api/memories?limit=400" refreshKey={refreshKey} token={token}>
       {(confirmed) => (
@@ -1291,6 +1295,10 @@ function Memories({ refreshKey, token, onMutated }) {
             <MemoryInventory
               activation={activation}
               setActivation={setActivation}
+              scope={scope}
+              setScope={setScope}
+              query={query}
+              setQuery={setQuery}
               items={[
                 ...confirmed.items.map((item) => ({ ...item, resource: "memories", identity: `memory:${item.id}` })),
                 ...reflections.items.map((item) => ({ ...item, resource: "reflection-memories", identity: `reflection:${item.id}`, activation: "reflection" })),
@@ -1305,7 +1313,7 @@ function Memories({ refreshKey, token, onMutated }) {
   );
 }
 
-function MemoryInventory({ items, token, onMutated, activation, setActivation }) {
+function MemoryInventory({ items, token, onMutated, activation, setActivation, scope, setScope, query, setQuery }) {
   const confirm = useConfirm();
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
@@ -1354,10 +1362,8 @@ function MemoryInventory({ items, token, onMutated, activation, setActivation })
 
   const labels = { ...activationLabels, reflection: "复盘" };
 
-  const visible =
-    activation === "all"
-      ? items
-      : items.filter((item) => item.activation === activation);
+  const scopes = new Map(items.map((item) => [memoryScope(item), memoryScopeLabel(item)]));
+  const visible = filterMemories(items, { activation, scope, query });
   const groups = [...activationOrder, "reflection"]
     .map((name) => [
       name,
@@ -1366,8 +1372,23 @@ function MemoryInventory({ items, token, onMutated, activation, setActivation })
     .filter(([, group]) => group.length);
   return (
     <>
-      <section className="section-tools">
-        <p>{visible.length} 条记忆</p>
+      <section className="section-tools memory-toolbar">
+        <p>{visible.length} / {items.length} 条记忆</p>
+        <div className="memory-filters">
+          <label>搜索记忆
+            <input type="search" value={query} placeholder="内容、触发词或标签"
+              onChange={(event) => setQuery(event.target.value)} />
+          </label>
+          <label>作用域
+            <select value={scope === null ? "" : `scope:${scope}`}
+              onChange={(event) => setScope(event.target.value === "" ? null : event.target.value.slice(6))}>
+              <option value="">全部作用域</option>
+              {[...scopes].map(([value, label]) => (
+                <option key={value} value={`scope:${value}`}>{label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
         <div className="dash-tabs" role="tablist" aria-label="记忆筛选">
           {[["all", "全部"], ...Object.entries(labels)].map(
             ([value, label]) => (
@@ -1405,9 +1426,7 @@ function MemoryInventory({ items, token, onMutated, activation, setActivation })
                         : labels[item.activation] || item.activation}
                     </span>
                   </div>
-                  {item.activation === "scoped" && (
-                    <p className="memory-scope">{item.scope_label || item.scope || "领域记忆"}</p>
-                  )}
+                  <MemoryMetadata item={item} />
                   {editingId === item.identity ? (
                     <textarea
                       aria-label="记忆内容"

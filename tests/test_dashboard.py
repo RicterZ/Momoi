@@ -866,6 +866,32 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(scoped["scope"], "goal:goal-one")
         self.assertEqual(scoped["scope_label"], "Goal · 整理桌面")
 
+    async def test_memory_metadata_is_visible_and_survives_content_edit(self) -> None:
+        response = await self.client.get("/api/memories", headers=self._auth())
+        original = (await response.json())["items"][0]
+        self.assertEqual(original["meta"], {"tags": [], "triggers": [], "scope": ""})
+        memory_id = original["id"]
+        with self.store._db:
+            self.store._db.execute(
+                "UPDATE memories SET meta_json=?, scope_key=?, activation='scoped' WHERE id=?",
+                (json.dumps({"tags": ["communication"], "triggers": ["喵"]}), "webhook", memory_id),
+            )
+        response = await self.client.get("/api/memories", headers=self._auth())
+        item = next(row for row in (await response.json())["items"] if row["id"] == memory_id)
+        expected = {"tags": ["communication"], "triggers": ["喵"], "scope": "webhook"}
+        self.assertEqual(item["meta"], expected)
+        self.assertEqual(item["scope"], "webhook")
+        self.assertEqual(item["scope_label"], "Webhook")
+        self.assertNotIn("meta_json", item)
+        response = await self.client.patch(
+            f"/api/memories/{memory_id}", headers=self._auth(), json={"content": "更新内容"},
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())["meta"], expected)
+        self.assertEqual(json.loads(self.store._db.execute(
+            "SELECT meta_json FROM memories WHERE id=?", (memory_id,),
+        ).fetchone()[0]), {"tags": ["communication"], "triggers": ["喵"]})
+
     async def test_reflection_memory_management_and_diary_link(self) -> None:
         now = time.time()
         with self.store._db:
