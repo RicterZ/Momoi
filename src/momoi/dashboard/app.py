@@ -423,6 +423,32 @@ def create_dashboard_app(
             raise web.HTTPNotFound(text="conversation not found")
         return web.json_response(item)
 
+    async def reflection_candidates(request: web.Request) -> web.Response:
+        return web.json_response({'items': store.reflection_candidates()})
+
+    async def change_reflection_candidate(request: web.Request) -> web.Response:
+        payload = await _json_body(request)
+        editing = request.method == 'PATCH'
+        expected = {'revision', 'content'} if editing else {'revision'}
+        if set(payload) != expected or type(payload.get('revision')) is not int:
+            raise web.HTTPBadRequest(text='revision is required')
+        try:
+            identifier = int(request.match_info['candidate_id'])
+        except ValueError:
+            raise web.HTTPBadRequest(text='invalid candidate id') from None
+        if editing and (not isinstance(payload['content'], str) or not 1 <= len(payload['content'].strip()) <= 1000):
+            raise web.HTTPBadRequest(text='content must contain between 1 and 1000 characters')
+        try:
+            result = store.change_reflection_candidate(
+                identifier, payload['revision'], content=payload.get('content'),
+                delete=request.method == 'DELETE', admit=request.method == 'POST',
+            )
+        except LookupError:
+            raise web.HTTPNotFound(text='candidate not found') from None
+        except ValueError as error:
+            raise web.HTTPConflict(text=str(error)) from None
+        return web.json_response(result)
+
     async def reflections(request: web.Request) -> web.Response:
         return web.json_response(
             store.list_reflections(
@@ -697,6 +723,10 @@ def create_dashboard_app(
     app.router.add_get("/api/conversations", conversations)
     app.router.add_get("/api/conversations/episode/{record_id}", episode_conversation)
     app.router.add_get("/api/conversations/turn/{record_id}", turn_conversation)
+    app.router.add_get('/api/reflection-candidates', reflection_candidates)
+    app.router.add_patch('/api/reflection-candidates/{candidate_id}', change_reflection_candidate)
+    app.router.add_delete('/api/reflection-candidates/{candidate_id}', change_reflection_candidate)
+    app.router.add_post('/api/reflection-candidates/{candidate_id}/admit', change_reflection_candidate)
     app.router.add_get("/api/reflections", reflections)
     app.router.add_get("/api/reflection-memories", reflection_memories)
     app.router.add_patch("/api/reflection-memories/{memory_id}", update_reflection_memory)

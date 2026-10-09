@@ -10,7 +10,7 @@ from momoi.memory.retrieval.dense import VectorMemoryEvidence
 from momoi.memory.storage.transactions import transaction
 from momoi.storage import Store
 from momoi.storage.core.schema import execute_schema
-from momoi.storage.core.migrations import MIGRATIONS, apply_migrations, migration_transaction
+from momoi.storage.core.migrations import MIGRATIONS, SCHEMA_VERSION, apply_migrations, migration_transaction
 from momoi.storage.core.memory_scope_migration import add_memory_scope, scope_preflight
 from momoi.storage.core.memory_scope_audit import audit, digest
 from tests.test_memory_repository import database
@@ -153,7 +153,7 @@ def test_scope_migration_rehearsal_preserves_ids_evidence_history_and_source(leg
     assert result['preflight']['ready'] and result['restore'] == result['repeat'] == 'ok'
     assert digest(db) == before and db.execute('PRAGMA user_version').fetchone()[0] == 35
     apply_migrations(db)
-    assert db.execute('PRAGMA user_version').fetchone()[0] == 36
+    assert db.execute('PRAGMA user_version').fetchone()[0] == SCHEMA_VERSION
     assert db.execute('SELECT id,scope_key,key FROM memories ORDER BY id').fetchall() == [
         (identifiers[0], '', 'drink'), (identifiers[1], 'heartbeat', 'drink'),
         (identifiers[2], 'goal:' + 'a' * 32, 'drink'), (old, 'webhook', 'drink')]

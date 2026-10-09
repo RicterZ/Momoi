@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 
+from ...memory import MemoryRecallQuery
 from ...observability.events import log_event
 from xml.sax.saxutils import escape, quoteattr
 
@@ -29,14 +30,19 @@ WEEKLY_REFLECTION_FINISH_SPEC = {
                     'properties': {
                         'key': {'type': 'string', 'minLength': 1, 'maxLength': 200,
                                 'description': '不含日期的稳定主题键。'},
-                        'assessment': {'type': 'string', 'enum': ['explicit', 'recurring', 'change', 'unresolved'],
-                                       'description': 'explicit：用户明确表达的事实、状态或要求，单日即可；recurring：跨日独立经历支持的模式；change：有依据的变化；unresolved：尚待确认的认识。不要求每类都有。'},
+                        'kind': {'type': 'string', 'enum': ['profile', 'preference', 'relationship', 'third_party', 'cross_event_state']},
+                        'events': {'type': 'array', 'minItems': 1, 'maxItems': 100, 'items': {
+                            'type': 'object', 'additionalProperties': False,
+                            'properties': {'refs': {'type': 'array', 'minItems': 1, 'maxItems': 100, 'uniqueItems': True,
+                                                   'items': {'type': 'string', 'minLength': 1}},
+                                           'summary': {'type': 'string', 'minLength': 1, 'maxLength': 160}},
+                            'required': ['refs', 'summary']}},
+                        'conflicts': {'type': 'array', 'maxItems': 100, 'uniqueItems': True,
+                                      'items': {'type': 'string', 'minLength': 1}},
                         'content': {'type': 'string', 'minLength': 1, 'maxLength': 1000,
                                     'description': '通常一句话，直接陈述值得记住的认识及必要适用范围；不写日期标签、事件经过或论证。'},
-                        'uncertainty': {'type': 'string', 'maxLength': 1000,
-                                        'description': '证据缺口与适用边界；无需时为空。'},
                     },
-                    'required': ['key', 'assessment', 'content', 'uncertainty'],
+                    'required': ['key', 'kind', 'content', 'events', 'conflicts'],
                 },
             },
         },
@@ -58,6 +64,10 @@ def weekly_reflection_input(source):
             lines.append('</observation>')
         lines.append('</day>')
     lines.append('</weekly_observations>')
+    carried = [{key: item[key] for key in ('key', 'kind', 'content', 'events', 'conflicts', 'edited')}
+               for item in source.get('previous_candidates', [])]
+    lines.append('<previous_candidates>' + escape(json.dumps(carried, ensure_ascii=False)) + '</previous_candidates>')
+    lines.append('<related_memories>' + escape(json.dumps(source.get('related_memories', []), ensure_ascii=False)) + '</related_memories>')
     return '\n'.join(lines)
 
 
@@ -73,6 +83,8 @@ def parse_weekly_reflection(arguments):
         if not item['content'].strip() or not item['key'].strip() or item['key'] in keys:
             return None, {'ok': False, 'error': 'invalid_or_duplicate_finding'}
         keys.add(item['key'])
+        if any(not event['summary'].strip() for event in item['events']):
+            return None, {'ok': False, 'error': 'empty_event_summary'}
     if not value['summary'].strip():
         return None, {'ok': False, 'error': 'empty_summary'}
     return value, None
@@ -96,7 +108,10 @@ class WeeklyReflectionWorkflow:
             result, error = parse_weekly_reflection(call.arguments)
             if error:
                 return error
-            self.store.commit_weekly_reflection(period_end, turn_id, result)
+            try:
+                self.store.commit_weekly_reflection(period_end, turn_id, result)
+            except ValueError as error:
+                return {'ok': False, 'error': str(error)}
             completed = True
             return {'ok': True, 'state': 'completed', 'findings': len(result['findings'])}
 
@@ -106,6 +121,14 @@ class WeeklyReflectionWorkflow:
                     'summary': '本期没有可供盘点的每日观察，不作归纳。', 'findings': [],
                 })
                 return
+            # Current confirmed memories are comparison context, never additional support.
+            topics = dict.fromkeys(row['content'] for day in source['days'] for row in day['observations'])
+            queries = [MemoryRecallQuery(content[:240]) for content in list(topics)[:16]]
+            related = await self.store.memories.search(queries, limit=32)
+            source['related_memories'] = [
+                {key: row[key] for key in ('id', 'kind', 'key', 'content')}
+                for row in related
+            ]
             workflow = AgentWorkflow(
                 stage='weekly_reflection', preserve_transcript=True,
                 tool_names=frozenset({'weekly_reflection_finish'}), execute_tool=execute,

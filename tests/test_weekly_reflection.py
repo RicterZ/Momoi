@@ -17,7 +17,7 @@ def test_weekly_validation_and_daily_rendering(tmp_path):
     source = store.weekly_reflection_source('2026-10-11')
     content = weekly_reflection_input(source)
     assert '&lt;日一&gt;' in content and 'date="2026-10-06"' in content
-    finding = dict(key='topic', assessment='explicit', content='用户明确要求简短回复。', uncertainty='')
+    finding = dict(key='topic', kind='preference', content='用户明确要求简短回复。', events=[{'refs': ['observation:1'], 'summary': '要求简短'}], conflicts=[])
     args = {'summary': '仅有一天材料', 'findings': [finding]}
     assert parse_weekly_reflection(args)[1] is None
     for bad in [dict(content=' '), dict(key=' '), dict(assessment='invented'), dict(evidence_ids=['invented'])]:

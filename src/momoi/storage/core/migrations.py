@@ -697,6 +697,22 @@ def _add_memory_commits(database):
 );""")
 
 
+def _add_reflection_candidates(database):
+    database.execute("""CREATE TABLE IF NOT EXISTS reflection_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL,
+    content TEXT NOT NULL,
+    events_json TEXT NOT NULL DEFAULT '[]',
+    conflicts_json TEXT NOT NULL DEFAULT '[]',
+    state TEXT NOT NULL DEFAULT 'active' CHECK(state IN ('active','deleted','admitted')),
+    edited INTEGER NOT NULL DEFAULT 0,
+    revision INTEGER NOT NULL DEFAULT 1,
+    memory_id INTEGER,
+    updated_at REAL NOT NULL
+);""")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -734,6 +750,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_memory_metadata,
     _add_memory_commits,
     add_memory_scope,
+    _add_reflection_candidates,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

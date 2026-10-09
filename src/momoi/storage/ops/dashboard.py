@@ -58,6 +58,7 @@ class DashboardStore:
                 ).fetchone()[0]
             ),
         }
+        counts["reflection_candidates"] = len(self.reflection_candidates())
         latest_message = self._db.execute(
             """SELECT MAX(created_at) FROM messages
                WHERE role IN ('user', 'event') OR delivery_state IN

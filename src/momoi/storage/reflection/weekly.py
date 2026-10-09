@@ -4,7 +4,10 @@ import time
 from datetime import date, datetime, timedelta
 
 
-class WeeklyReflectionStore:
+from .candidates import ReflectionCandidateStore
+
+
+class WeeklyReflectionStore(ReflectionCandidateStore):
     def _weekly_reflection_slot(self, now):
         local = datetime.fromtimestamp(now, self._timezone)
         scheduled = (local - timedelta(days=(local.weekday() - 6) % 7)).replace(
@@ -35,7 +38,8 @@ class WeeklyReflectionStore:
                     observations.append(item)
             days.append({'date': day, 'state': reflection['state'] if reflection else 'missing',
                          'observations': observations})
-        return {'period_start': days[0]['date'], 'period_end': period_end, 'days': days}
+        return {'period_start': days[0]['date'], 'period_end': period_end, 'days': days,
+                'previous_candidates': self.reflection_candidates(end=period_end, include_seeds=True)}
 
     def weekly_reflection(self, period_end):
         row = self._db.execute(
@@ -49,6 +53,8 @@ class WeeklyReflectionStore:
         now = time.time() if now is None else now
         scheduled = self._weekly_reflection_slot(now)
         with self._db:
+            if self._db.execute("SELECT 1 FROM weekly_reflections WHERE state='running' OR (state='pending' AND COALESCE(retry_at,0)>?)", (now,)).fetchone():
+                return None
             pending = self._db.execute(
                 "SELECT period_end FROM weekly_reflections WHERE state='pending' "
                 "AND scheduled_at<=? AND COALESCE(retry_at,0)<=? ORDER BY scheduled_at LIMIT 1",
@@ -107,7 +113,11 @@ class WeeklyReflectionStore:
 
     def commit_weekly_reflection(self, period_end, turn_id, result):
         now = time.time()
-        with self._db:
+        with self.transaction():
+            record = self.weekly_reflection(period_end)
+            if record is None or record['state'] != 'running':
+                raise ValueError('weekly_reflection_not_running')
+            self.apply_reflection_candidates(json.loads(record['input_json']), result['findings'])
             changed = self._db.execute(
                 "UPDATE weekly_reflections SET state='completed', claimed_at=NULL, "
                 "retry_at=NULL, error=NULL, result_json=?, completed_at=? "

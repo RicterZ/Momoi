@@ -841,3 +841,17 @@ CREATE TABLE IF NOT EXISTS transcript_enabled_tools (
     name TEXT PRIMARY KEY,
     position INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS reflection_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL,
+    content TEXT NOT NULL,
+    events_json TEXT NOT NULL DEFAULT '[]',
+    conflicts_json TEXT NOT NULL DEFAULT '[]',
+    state TEXT NOT NULL DEFAULT 'active' CHECK(state IN ('active','deleted','admitted')),
+    edited INTEGER NOT NULL DEFAULT 0,
+    revision INTEGER NOT NULL DEFAULT 1,
+    memory_id INTEGER,
+    updated_at REAL NOT NULL
+);
