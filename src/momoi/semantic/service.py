@@ -18,6 +18,8 @@ from .models import (
     DenseThresholds,
     DenseRecallEvidence,
 )
+from ..memory.indexing.worker import IndexWorker
+from .indexing import MomoiIndexAdapter
 from ..memory.retrieval.snapshot import SegmentedVectorSnapshot
 from ..memory.retrieval.dense import DenseQueryService, DenseSearchPool, MemoryVectorRecall
 
@@ -53,7 +55,13 @@ class SemanticRecallService:
             kind: DenseThresholds(*values)
             for kind, values in CALIBRATION_PROFILES.get(config.calibration_profile, {}).items()
         })
-        self.auto_activate = auto_activate
+        self.index_worker = IndexWorker(
+            store.memory_index_queue, client,
+            MomoiIndexAdapter(store, self.snapshot, self.queries, auto_activate=auto_activate),
+            document_batch_size=config.document_batch_size,
+            active_poll_seconds=policy.active_poll_seconds,
+            idle_poll_seconds=policy.idle_poll_seconds,
+        )
         self._needs_reconciliation = False
 
     def start(self) -> None:
@@ -165,97 +173,10 @@ class SemanticRecallService:
             fallback_reason=result.fallback_reason,
         )
 
-    def _refresh_source(self, source_type: str, source_id: str) -> None:
-        self.snapshot.replace_source(
-            "episode_summary" if source_type == "episode" else source_type,
-            source_id, include_children=source_type == "episode",
-        )
-
     async def maintain_once(self, *, allow_encoding: bool = True) -> bool:
         if not self.config.enabled:
             return False
-        worked = False
-        claims = self.store.claim_semantic_sources(16)
-        for claim in claims:
-            try:
-                changed = self.store.materialize_semantic_source(claim)
-                worked = worked or bool(changed)
-                if self.snapshot.space_id:
-                    self._refresh_source(
-                        str(claim["source_type"]), str(claim["source_id"])
-                    )
-            except Exception as error:
-                self.store.fail_semantic_source(claim, error)
-                log_event(
-                    logger,
-                    logging.ERROR,
-                    "semantic_materialize_failed",
-                    source_type=claim.get("source_type"),
-                    error_type=type(error).__name__,
-                )
-        if not allow_encoding:
-            return worked
-        spaces = [
-            space
-            for state in ("building", "active")
-            if (space := self.store.semantic_space(state=state)) is not None
-        ]
-        for space in spaces:
-            rows = self.store.claim_semantic_documents(
-                str(space["id"]), self.config.document_batch_size
-            )
-            if not rows:
-                continue
-            worked = True
-            try:
-                vectors = await self.client.encode(
-                    [str(row["content"]) for row in rows], query=False
-                )
-                self.store.finish_semantic_documents(
-                    rows, vectors, int(space["dimensions"])
-                )
-                if str(space["id"]) == self.snapshot.space_id:
-                    for source_type, source_id in dict.fromkeys(
-                        (
-                            "episode"
-                            if str(row["document_type"]).startswith("episode_")
-                            else str(row["document_type"]),
-                            str(row["parent_id"] or row["source_id"]),
-                        )
-                        for row in rows
-                    ):
-                        self._refresh_source(source_type, source_id)
-            except Exception as error:
-                self.store.fail_semantic_documents(rows, error)
-                log_event(
-                    logger,
-                    logging.ERROR,
-                    "semantic_encode_failed",
-                    space_id=space["id"],
-                    batch_size=len(rows),
-                    error_type=type(error).__name__,
-                )
-        building = self.store.semantic_space(state="building")
-        if building is not None and self.auto_activate:
-            status = self.store.semantic_status(str(building["id"]))
-            if (
-                status["eligible_source_coverage"] >= 1.0
-                and not status["pending"]
-                and not status["encoding"]
-                and not status["retry"]
-                and not status["dirty_sources"]
-            ):
-                self.store.activate_semantic_space(str(building["id"]))
-                self.snapshot.load(str(building["id"]))
-                self.degraded_reason = ""
-                log_event(
-                    logger,
-                    logging.INFO,
-                    "semantic_space_activated",
-                    space_id=building["id"],
-                    model=building["model"],
-                )
-        return worked
+        return await self.index_worker.maintain_once(allow_encoding=allow_encoding)
 
     async def run_worker(
         self,
@@ -272,28 +193,4 @@ class SemanticRecallService:
                 if space is not None:
                     self.store.reconcile_semantic_sources(str(space["id"]))
             self._needs_reconciliation = False
-        while not stop.is_set():
-            try:
-                worked = await self.maintain_once(allow_encoding=not busy())
-            except asyncio.CancelledError:
-                raise
-            except Exception as error:
-                worked = False
-                log_event(
-                    logger,
-                    logging.ERROR,
-                    "semantic_worker_failed",
-                    error_type=type(error).__name__,
-                    exc_info=True,
-                )
-            try:
-                await asyncio.wait_for(
-                    stop.wait(),
-                    timeout=(
-                        self.policy.active_poll_seconds
-                        if worked
-                        else self.policy.idle_poll_seconds
-                    ),
-                )
-            except TimeoutError:
-                pass
+        await self.index_worker.run(stop, busy=busy)

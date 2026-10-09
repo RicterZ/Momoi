@@ -1,133 +1,20 @@
-import sqlite3
-import time
-from typing import Iterable
-
-from .semantic_documents import encode_vector
+from .semantic_documents import semantic_source_key
 
 
 class SemanticQueueStore:
-    _db: sqlite3.Connection
-
     def recover_semantic_encoding(self) -> int:
-        with self._db:
-            cursor = self._db.execute(
-                """UPDATE semantic_documents
-                   SET state='pending', retry_at=NULL, last_error='worker_restarted'
-                   WHERE state='encoding'"""
-            )
-        return cursor.rowcount
+        return self.memory_index_queue.recover_encoding()
 
-    def claim_semantic_documents(
-        self, space_id: str, limit: int
-    ) -> list[dict[str, object]]:
-        now = time.time()
-        with self._db:
-            rows = self._db.execute(
-                """SELECT * FROM semantic_documents
-                   WHERE space_id=? AND state IN ('pending','retry')
-                     AND COALESCE(retry_at, 0)<=?
-                   ORDER BY updated_at LIMIT ?""",
-                (space_id, now, max(1, limit)),
-            ).fetchall()
-            claimed = []
-            for row in rows:
-                cursor = self._db.execute(
-                    """UPDATE semantic_documents
-                       SET state='encoding', attempts=attempts+1, updated_at=?
-                       WHERE space_id=? AND document_type=? AND source_id=?
-                         AND chunk_index=? AND content_sha256=?
-                         AND state IN ('pending','retry')""",
-                    (
-                        now,
-                        space_id,
-                        row["document_type"],
-                        row["source_id"],
-                        row["chunk_index"],
-                        row["content_sha256"],
-                    ),
-                )
-                if cursor.rowcount:
-                    claimed.append(dict(row))
-        return claimed
+    def claim_semantic_documents(self, space_id: str, limit: int):
+        return self.memory_index_queue.claim_documents(space_id, limit)
 
-    def finish_semantic_documents(
-        self,
-        rows: list[dict[str, object]],
-        vectors: list[Iterable[float]],
-        dimensions: int,
-    ) -> list[tuple[str, str, int]]:
-        if len(rows) != len(vectors):
-            raise ValueError("embedding response count mismatch")
-        now = time.time()
-        updated: list[tuple[str, str, int]] = []
-        with self._db:
-            for row, vector in zip(rows, vectors, strict=True):
-                blob = encode_vector(vector, dimensions)
-                source_type = (
-                    "episode"
-                    if str(row["document_type"]).startswith("episode_")
-                    else str(row["document_type"])
-                )
-                source_id = str(row["parent_id"] or row["source_id"])
-                dirty = self._db.execute(
-                    """SELECT 1 FROM semantic_dirty_sources
-                       WHERE source_type=? AND source_id=?""",
-                    (source_type, source_id),
-                ).fetchone()
-                if dirty is not None:
-                    continue
-                cursor = self._db.execute(
-                    """UPDATE semantic_documents
-                       SET state='ready', vector=?, dimensions=?, retry_at=NULL,
-                           last_error=NULL, embedded_at=?, updated_at=?
-                       WHERE space_id=? AND document_type=? AND source_id=?
-                         AND chunk_index=? AND content_sha256=? AND state='encoding'""",
-                    (
-                        blob,
-                        dimensions,
-                        now,
-                        now,
-                        row["space_id"],
-                        row["document_type"],
-                        row["source_id"],
-                        row["chunk_index"],
-                        row["content_sha256"],
-                    ),
-                )
-                if cursor.rowcount:
-                    updated.append(
-                        (
-                            str(row["document_type"]),
-                            str(row["source_id"]),
-                            int(row["chunk_index"]),
-                        )
-                    )
-        return updated
+    def finish_semantic_documents(self, rows, vectors, dimensions):
+        return self.memory_index_queue.finish_documents(
+            rows, vectors, dimensions, [semantic_source_key(row) for row in rows],
+        )
 
-    def fail_semantic_documents(
-        self, rows: list[dict[str, object]], error: Exception
-    ) -> None:
-        now = time.time()
-        with self._db:
-            for row in rows:
-                attempts = int(row.get("attempts") or 0) + 1
-                delay = min(300.0, 2.0 ** min(attempts, 8))
-                self._db.execute(
-                    """UPDATE semantic_documents
-                       SET state='retry', retry_at=?, last_error=?, updated_at=?
-                       WHERE space_id=? AND document_type=? AND source_id=?
-                         AND chunk_index=? AND content_sha256=? AND state='encoding'""",
-                    (
-                        now + delay,
-                        f"{type(error).__name__}: {str(error)[:240]}",
-                        now,
-                        row["space_id"],
-                        row["document_type"],
-                        row["source_id"],
-                        row["chunk_index"],
-                        row["content_sha256"],
-                    ),
-                )
+    def fail_semantic_documents(self, rows, error):
+        self.memory_index_queue.fail_documents(rows, error)
 
     def semantic_ready_documents(self, space_id: str, *, page_size: int = 512):
         return self.memory_vectors.ready_documents(space_id, page_size=page_size)

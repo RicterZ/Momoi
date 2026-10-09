@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..storage.vector_repository import VectorRepository
-from .vectors import decode_vector
+from ..storage.vectors import decode_vector
 
 
 @dataclass(frozen=True)

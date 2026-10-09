@@ -116,7 +116,7 @@ class SemanticRecallTest(unittest.TestCase):
         )
         stop = asyncio.Event()
         timeouts: list[float] = []
-        service.maintain_once = AsyncMock(side_effect=[True, False])  # type: ignore[method-assign]
+        service.index_worker.maintain_once = AsyncMock(side_effect=[True, False])  # type: ignore[method-assign]
 
         async def wait_for(awaitable: object, *, timeout: float) -> None:
             close = getattr(awaitable, "close", None)
@@ -128,7 +128,7 @@ class SemanticRecallTest(unittest.TestCase):
             raise TimeoutError
 
         async def run() -> None:
-            with patch("momoi.semantic.service.asyncio.wait_for", side_effect=wait_for):
+            with patch("momoi.memory.indexing.worker.asyncio.wait_for", side_effect=wait_for):
                 await service.run_worker(stop)
             await service.client.close()
 
@@ -590,6 +590,25 @@ class SemanticRecallTest(unittest.TestCase):
         hit = evidence.episodes["query"][episode_id]
         self.assertIsNone(hit.summary_cosine)
         self.assertAlmostEqual(hit.turn_cosine or 0, 0.0, places=5)
+
+    def test_manual_rebuild_waits_for_explicit_activation(self) -> None:
+        self.add_memory("drink", "喜欢无糖咖啡")
+        encoder = AsyncMock()
+        encoder.encode.side_effect = lambda texts, query: [vector() for _ in texts]
+        service = SemanticRecallService(
+            self.store, EmbeddingConfig(enabled=True), client=encoder, auto_activate=False,
+        )
+        service.start()
+        asyncio.run(service.maintain_once())
+        building = self.store.semantic_space(state="building")
+        self.assertIsNotNone(building)
+        self.assertIsNone(self.store.semantic_space(state="active"))
+        self.assertEqual(service.snapshot.space_id, "")
+        self.assertEqual(self.store.semantic_status(str(building["id"]))["ready"], 1)
+        self.store.activate_semantic_space(str(building["id"]))
+        service.start()
+        self.assertEqual(service.snapshot.space_id, building["id"])
+        self.assertEqual(service.degraded_reason, "")
 
     def test_memory_tool_uses_search_and_observes_index_activation(self) -> None:
         from momoi.models import ToolCall, TurnDraft

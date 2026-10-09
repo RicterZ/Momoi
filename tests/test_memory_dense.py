@@ -10,7 +10,7 @@ from momoi.memory.retrieval.dense import DenseQueryService, DenseSearchPool, Mem
 from momoi.memory.retrieval.models import DenseThresholds
 from momoi.memory.retrieval.service import MemoryRecallService
 from momoi.memory.retrieval.snapshot import SegmentedVectorSnapshot
-from momoi.memory.retrieval.vectors import encode_vector
+from momoi.memory.storage.vectors import encode_vector
 from momoi.memory.storage.repository import MemoryRepository
 from momoi.memory.storage.transactions import transaction
 from momoi.memory.storage.vector_repository import VectorRepository

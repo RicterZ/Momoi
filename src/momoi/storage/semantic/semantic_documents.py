@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from ..episode.episode_cues import stored_cue_texts
 
-import hashlib
 import json
 import sqlite3
-from dataclasses import dataclass
 
-from ...memory.retrieval.vectors import encode_vector, decode_vector
+from ...memory.storage.vectors import encode_vector, decode_vector
+from ...memory.storage.index_records import IndexDocument as SemanticDocument
 
 from ...models import speaker_label
 from ..core.integrity import decode_stored_json
@@ -23,21 +22,6 @@ SEMANTIC_PROVIDER = "fastembed"
 EPISODE_CHUNK_TOKENS = 420
 
 EPISODE_CHUNK_OVERLAP_TOKENS = 40
-
-@dataclass(frozen=True)
-class SemanticDocument:
-    document_type: str
-    source_id: str
-    parent_id: str
-    chunk_index: int
-    content: str
-    source_ids: tuple[object, ...] = ()
-    starts_at: float | None = None
-    ends_at: float | None = None
-
-    @property
-    def content_sha256(self) -> str:
-        return hashlib.sha256(self.content.encode("utf-8")).hexdigest()
 
 def _json_strings(value: object) -> list[str]:
     parsed = decode_stored_json(
@@ -151,3 +135,11 @@ def _episode_turn_documents(
                 )
             )
     return documents
+
+
+def semantic_source_key(row) -> tuple[str, str]:
+    document_type = str(row["document_type"])
+    return (
+        "episode" if document_type.startswith("episode_") else document_type,
+        str(row["parent_id"] or row["source_id"]),
+    )

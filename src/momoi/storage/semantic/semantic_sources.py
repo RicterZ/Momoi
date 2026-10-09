@@ -1,6 +1,7 @@
-import json
 import sqlite3
 import time
+
+from ...memory.storage.transactions import transaction
 
 from .semantic_documents import (
     SemanticDocument,
@@ -196,28 +197,8 @@ class SemanticSourceStore:
                 queued += 1
         return queued
 
-    def claim_semantic_sources(self, limit: int = 16) -> list[dict[str, object]]:
-        now = time.time()
-        with self._db:
-            rows = self._db.execute(
-                """SELECT source_type, source_id, changed_at
-                   FROM semantic_dirty_sources
-                   WHERE claimed_at IS NULL AND COALESCE(retry_at, 0)<=?
-                   ORDER BY changed_at LIMIT ?""",
-                (now, max(1, limit)),
-            ).fetchall()
-            claimed: list[dict[str, object]] = []
-            for row in rows:
-                cursor = self._db.execute(
-                    """UPDATE semantic_dirty_sources
-                       SET claimed_at=?, attempts=attempts+1
-                       WHERE source_type=? AND source_id=? AND claimed_at IS NULL
-                         AND changed_at=?""",
-                    (now, row["source_type"], row["source_id"], row["changed_at"]),
-                )
-                if cursor.rowcount:
-                    claimed.append(dict(row))
-        return claimed
+    def claim_semantic_sources(self, limit: int = 16):
+        return self.memory_index_queue.claim_sources(limit)
 
     def _source_documents(
         self, source_type: str, source_id: str
@@ -295,160 +276,15 @@ class SemanticSourceStore:
         ), True
 
     def materialize_semantic_source(self, claim: dict[str, object]) -> int:
-        source_type = str(claim["source_type"])
-        source_id = str(claim["source_id"])
-        changed_at = float(claim["changed_at"])
-        documents, source_exists = self._source_documents(source_type, source_id)
-        expected = {
-            (doc.document_type, doc.source_id, doc.chunk_index): doc
-            for doc in documents
-        }
-        spaces = self._db.execute(
-            "SELECT id, dimensions FROM semantic_spaces WHERE state IN ('building','active')"
-        ).fetchall()
-        now = time.time()
-        changed = 0
-        with self._db:
-            for space in spaces:
-                space_id = str(space["id"])
-                if source_type == "episode":
-                    existing = self._db.execute(
-                        """SELECT * FROM semantic_documents
-                           WHERE space_id=? AND (parent_id=? OR
-                               document_type='episode_summary' AND source_id=?)""",
-                        (space_id, source_id, source_id),
-                    ).fetchall()
-                else:
-                    existing = self._db.execute(
-                        """SELECT * FROM semantic_documents
-                           WHERE space_id=? AND document_type=? AND source_id=?""",
-                        (space_id, source_type, source_id),
-                    ).fetchall()
-                by_key = {
-                    (
-                        str(row["document_type"]),
-                        str(row["source_id"]),
-                        int(row["chunk_index"]),
-                    ): row
-                    for row in existing
-                }
-                for key, row in by_key.items():
-                    if key in expected:
-                        continue
-                    if source_type == "episode" and source_exists:
-                        if row["state"] != "inactive":
-                            self._db.execute(
-                                """UPDATE semantic_documents SET state='inactive',
-                                   updated_at=? WHERE space_id=? AND document_type=?
-                                   AND source_id=? AND chunk_index=?""",
-                                (now, space_id, *key),
-                            )
-                            changed += 1
-                    else:
-                        self._db.execute(
-                            """DELETE FROM semantic_documents WHERE space_id=?
-                               AND document_type=? AND source_id=? AND chunk_index=?""",
-                            (space_id, *key),
-                        )
-                        changed += 1
-                for key, document in expected.items():
-                    existing_row = by_key.get(key)
-                    content_hash = document.content_sha256
-                    source_ids_json = json.dumps(
-                        list(document.source_ids), separators=(",", ":")
-                    )
-                    if existing_row is None:
-                        self._db.execute(
-                            """INSERT INTO semantic_documents
-                               (space_id, document_type, source_id, parent_id,
-                                chunk_index, content, content_sha256,
-                                source_ids_json, starts_at, ends_at, state,
-                                created_at, updated_at)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
-                            (
-                                space_id,
-                                document.document_type,
-                                document.source_id,
-                                document.parent_id,
-                                document.chunk_index,
-                                document.content,
-                                content_hash,
-                                source_ids_json,
-                                document.starts_at,
-                                document.ends_at,
-                                now,
-                                now,
-                            ),
-                        )
-                        changed += 1
-                        continue
-                    same_hash = str(existing_row["content_sha256"]) == content_hash
-                    reusable = (
-                        same_hash
-                        and existing_row["vector"] is not None
-                        and int(existing_row["dimensions"] or 0)
-                        == int(space["dimensions"])
-                    )
-                    next_state = "ready" if reusable else "pending"
-                    if (
-                        existing_row["state"] != next_state
-                        or not same_hash
-                        or str(existing_row["parent_id"]) != document.parent_id
-                        or str(existing_row["source_ids_json"]) != source_ids_json
-                    ):
-                        self._db.execute(
-                            """UPDATE semantic_documents
-                               SET parent_id=?, content=?, content_sha256=?,
-                                   source_ids_json=?, starts_at=?, ends_at=?, state=?,
-                                   vector=CASE WHEN ? THEN vector ELSE NULL END,
-                                   dimensions=CASE WHEN ? THEN dimensions ELSE NULL END,
-                                   attempts=CASE WHEN ? THEN attempts ELSE 0 END,
-                                   retry_at=NULL, last_error=NULL, updated_at=?
-                               WHERE space_id=? AND document_type=? AND source_id=?
-                                 AND chunk_index=?""",
-                            (
-                                document.parent_id,
-                                document.content,
-                                content_hash,
-                                source_ids_json,
-                                document.starts_at,
-                                document.ends_at,
-                                next_state,
-                                reusable,
-                                reusable,
-                                reusable,
-                                now,
-                                space_id,
-                                *key,
-                            ),
-                        )
-                        changed += 1
-            self._db.execute(
-                """DELETE FROM semantic_dirty_sources
-                   WHERE source_type=? AND source_id=? AND changed_at=?""",
-                (source_type, source_id, changed_at),
+        source_type, source_id = str(claim["source_type"]), str(claim["source_id"])
+        with transaction(self._db):
+            documents, exists = self._source_documents(source_type, source_id)
+            return self.memory_index_documents.materialize(
+                claim, documents,
+                document_type="episode_summary" if source_type == "episode" else source_type,
+                include_children=source_type == "episode",
+                keep_removed=source_type == "episode" and exists,
             )
-        return changed
 
     def fail_semantic_source(self, claim: dict[str, object], error: Exception) -> None:
-        attempts = int(
-            self._db.execute(
-                """SELECT attempts FROM semantic_dirty_sources
-                   WHERE source_type=? AND source_id=?""",
-                (claim["source_type"], claim["source_id"]),
-            ).fetchone()["attempts"]
-        )
-        delay = min(300.0, 2.0 ** min(attempts, 8))
-        with self._db:
-            self._db.execute(
-                """UPDATE semantic_dirty_sources
-                   SET claimed_at=NULL, retry_at=?, last_error=?
-                   WHERE source_type=? AND source_id=? AND changed_at=?""",
-                (
-                    time.time() + delay,
-                    f"{type(error).__name__}: {str(error)[:240]}",
-                    claim["source_type"],
-                    claim["source_id"],
-                    claim["changed_at"],
-                ),
-            )
+        self.memory_index_queue.fail_source(claim, error)

@@ -33,8 +33,12 @@ sys.meta_path.insert(0, RejectApplicationImports())
 from standalone_memory.retrieval.models import MemoryRecallQuery, DenseThresholds
 from standalone_memory.retrieval.sparse import StringSearchBackend, search_expression
 from standalone_memory.text import estimate_tokens, token_chunk
-from standalone_memory.retrieval.vectors import encode_vector, decode_vector
+from standalone_memory.storage.vectors import encode_vector, decode_vector
 from standalone_memory.storage.repository import MemoryRepository
+from standalone_memory.storage.index_documents import IndexDocuments
+from standalone_memory.storage.index_queue import IndexQueue
+from standalone_memory.storage.index_records import IndexDocument
+from standalone_memory.indexing.worker import IndexWorker
 from standalone_memory.storage.vector_repository import VectorRepository
 from standalone_memory.retrieval.snapshot import SegmentedVectorSnapshot
 from standalone_memory.retrieval.dense import DenseQueryService, DenseSearchPool, MemoryVectorRecall
@@ -50,6 +54,13 @@ with sqlite3.connect(":memory:") as db:
     import asyncio
     assert asyncio.run(engine.search(["饮品"], [DenseSearchPool({"confirmed_memory"})])).fallback_reason == "no_active_space"
     assert MemoryVectorRecall(engine, {}) is not None
+    assert IndexDocument("confirmed_memory", "1", "", 0, "text").content_sha256
+    worker = IndexWorker(IndexQueue(db), None, None, document_batch_size=4)
+    async def stopped_worker():
+        stop = asyncio.Event()
+        stop.set()
+        await worker.run(stop)
+    asyncio.run(stopped_worker())
 assert MemoryRerankCandidates([]).select({"memory_indices": [], "reflection_indices": []}) == ([], [])
 
 assert MemoryRecallQuery("咖啡").dense_expression == "咖啡"
@@ -70,7 +81,8 @@ assert decode_vector(encode_vector([3.0, 4.0], 2), 2).tolist() == [
 
 def test_legacy_imports_share_the_extracted_objects():
     from momoi.memory import text
-    from momoi.memory.retrieval import models, sparse as search, vectors
+    from momoi.memory.retrieval import models, sparse as search
+    from momoi.memory.storage import vectors
     from momoi.runtime.agent import budget
     from momoi.semantic import models as semantic_models
     from momoi.storage.core import search as storage_search
