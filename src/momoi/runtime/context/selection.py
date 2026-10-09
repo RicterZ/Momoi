@@ -15,7 +15,10 @@ from ...storage.episode.episode_cues import cue_texts
 from ...observability.events import log_event
 
 logger = logging.getLogger(__name__)
-TOPIC_CANDIDATE_LIMIT = 8
+# Keep enough coarse matches for the selector to see direct evidence beyond
+# generic cue matches; the final context retains its existing eight-topic cap.
+TOPIC_CANDIDATE_LIMIT = 24
+TOPIC_RESULT_LIMIT = 8
 SYSTEM = (Path(__file__).resolve().parents[2] / "prompts/topic_selection.md").read_text(encoding="utf-8").strip()
 
 
@@ -149,7 +152,7 @@ async def select_topics(provider, store, request, queries, candidates, *, memory
         "name": "select_topics",
         "description": "选择相关话题的索引，最相关的排在前面；没有相关话题时返回空列表。",
         "input_schema": {"type": "object", "properties": {
-            "indices": {"type": "array", "maxItems": len(candidates), "uniqueItems": True,
+            "indices": {"type": "array", "maxItems": min(TOPIC_RESULT_LIMIT, len(candidates)), "uniqueItems": True,
                         "items": {"type": "integer", "minimum": 0, "maximum": max(0, len(candidates)-1)}},
             **memory_pool.schema(),
         }, "required": ["indices", "memory_indices", "reflection_indices"],
@@ -160,6 +163,8 @@ async def select_topics(provider, store, request, queries, candidates, *, memory
         if not isinstance(args, dict):
             raise SelectionProtocolError("selection arguments must be an object")
         episodes = select_indices(candidates, args.get("indices"), name="indices")
+        if len(episodes) > TOPIC_RESULT_LIMIT:
+            raise SelectionProtocolError("select at most eight topics; keep direct evidence first")
         memories, reflections = memory_pool.select(args)
         return RecallSelection(episodes, memories, reflections)
 

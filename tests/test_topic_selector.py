@@ -81,11 +81,12 @@ def test_runtime_prefilter_bypasses_gate_and_keeps_selection_order(tmp_path):
             payload = ElementTree.fromstring(messages[0]['content'])
             assert requested_thinking_effort() == "medium"
             captured.append(payload)
-            return response(list(reversed(range(len(payload.findall('candidates/candidate'))))))
+            return response(list(reversed(range(len(payload.findall('candidates/candidate')))))[:8])
 
         service.provider = SimpleNamespace(complete=complete)
         selected = asyncio.run(service._select_recall_topics('shared topic', queries, None))
-        assert len(captured[0].findall('candidates/candidate')) == len(selected.episodes) == 8
+        assert len(captured[0].findall('candidates/candidate')) == 9
+        assert len(selected.episodes) == 8
         retrieval = build_plan_retrieval(store, plan, service.config, selected_episode_rows=selected.episodes)
         assert [r['episode_id'] for r in retrieval['episodes']] == [r['id'] for r in selected.episodes]
         rendered = assemble_main_context(store, retrieval, 8000)['episodes']
@@ -97,7 +98,7 @@ def test_runtime_prefilter_bypasses_gate_and_keeps_selection_order(tmp_path):
         direct = asyncio.run(service._select_recall_topics(
             'shared topic', queries, None, diagnostics, model_selection=False,
         ))
-        assert len(direct.episodes) == 8
+        assert len(direct.episodes) == 9
         assert captured == []
         assert direct.memories == direct.reflections == []
         assert diagnostics['skip_reason'] == 'workflow_selects_candidates'
@@ -204,3 +205,29 @@ def test_runtime_memory_service_uses_one_joint_rerank_and_keeps_model_order(tmp_
         assert [row["content"] for row in result.memories] == returned_order
     finally:
         store.close()
+
+
+def test_selector_can_choose_direct_evidence_beyond_old_top_eight():
+    rows = [dict(id=str(i), title='上下班闲聊', narrative_summary='提到了上班和下班') for i in range(24)]
+    rows[18] = dict(id='direct', title='工作时长', narrative_summary='工作时长八小时，到岗时间加八小时下班')
+    store = SimpleNamespace(topic_conversation_time=lambda _: None)
+
+    async def complete(system, messages, tools, **kwargs):
+        candidates = ElementTree.fromstring(messages[0]['content']).findall('candidates/candidate')
+        assert len(candidates) == 24
+        assert candidates[18].findtext('summary') == rows[18]['narrative_summary']
+        assert tools[0]['input_schema']['properties']['indices']['maxItems'] == 8
+        return response([18])
+
+    selected = asyncio.run(select_topics(SimpleNamespace(complete=complete), store,
+                                        '几点下班', [EpisodeRecallQuery('下班')], rows))
+    assert selected.episodes == [rows[18]]
+
+
+def test_selector_repairs_excessive_results_from_expanded_pool():
+    rows = [dict(id=str(i), title='topic') for i in range(24)]
+    store = SimpleNamespace(topic_conversation_time=lambda _: None)
+    provider = SimpleNamespace(complete=AsyncMock(side_effect=[response(list(range(9))), response([18])]))
+    selected = asyncio.run(select_topics(provider, store, 'request', [], rows))
+    assert selected.episodes == [rows[18]]
+    assert provider.complete.await_count == 2

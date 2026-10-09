@@ -66,7 +66,7 @@ CURRENT_STATE_CHANGE_SCHEMA = {
                         "minLength": 1,
                         "maxLength": VALUE_MAX_LENGTH,
                         "pattern": r"\S",
-                        "description": '由所提供证据支持的简洁当前事实或已决定的近期安排。未来行动可能已有生效决定；保留归因与不确定性。',
+                        "description": '由证据支持的简洁当前事实或已决定的近期安排，保留归因与不确定性。不惯例性添加日期、星期前缀；仅保留影响安排、计算或区分事实的必要时间。',
                     },
                     "status": {
                         "type": "string", "enum": ["observed", "inferred"],
