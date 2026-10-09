@@ -7,6 +7,7 @@ from ...memory.retrieval.models import MemoryRecallQuery
 from ...memory.storage.records import MEMORY_ACTIVATIONS, MEMORY_KINDS, memory_snapshot_fingerprint
 from ...memory.text import estimate_tokens, truncate_tokens, token_chunk
 from ...memory.metadata import TagCatalog
+from ...memory.writing.validation import ALWAYS_MEMORY_KINDS, valid_scoped_memory_key
 
 MOMOI_MEMORY_TAGS = TagCatalog({
     "food_drink": "饮食、饮品、口味及相关限制",
@@ -19,17 +20,6 @@ MOMOI_MEMORY_TAGS = TagCatalog({
     "social": "家人、朋友、其他人和人际关系",
     "communication": "称呼、表达方式、互动边界",
 })
-
-
-def valid_scoped_memory_key(key: str) -> bool:
-    """A scoped memory belongs to one stable workflow identity."""
-    import re
-    return bool(re.fullmatch(
-        r"(?:goal\.[0-9a-f]{32}|heartbeat|webhook)\.[a-z0-9][a-z0-9_.-]*",
-        key,
-    ))
-
-ALWAYS_MEMORY_KINDS = {"profile", "preference", "relationship"}
 
 
 REFLECTION_MEMORY_CAUTION = (

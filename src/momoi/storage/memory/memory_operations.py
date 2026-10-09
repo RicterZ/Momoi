@@ -4,6 +4,7 @@ import json
 import time
 
 from ...models import IncomingMessage, TurnDraft
+from ...memory import MemoryPlan, PlanningContext
 from ...memory.storage.transactions import transaction
 
 MEMORY_OPERATION_MAX_ATTEMPTS = 5
@@ -178,6 +179,7 @@ class MemoryOperationStore:
         batch: dict[str, object],
         decisions: list[dict[str, object]],
         snapshots: dict[int, dict[str, object]],
+        *, plan: MemoryPlan | None = None,
     ) -> None:
         now = time.time()
         with transaction(self._db):
@@ -186,34 +188,24 @@ class MemoryOperationStore:
             ).fetchone()
             if state is None or state["state"] != "running":
                 raise ValueError("memory_operation_not_running")
-            current = self.memory.validate_snapshots(snapshots)
-            for decision in decisions:
-                action = decision["action"]
-                if action in {"noop", "defer"}:
-                    continue
-                evidence = decision["evidence"]
-                for citation in evidence:
-                    row = self._db.execute(
-                        "SELECT content FROM events WHERE id=?", (citation["event_id"],)
-                    ).fetchone()
-                    if row is None or citation["quote"] not in row["content"]:
-                        raise ValueError("memory_operation_evidence_changed")
-                last_request = next(
-                    item
-                    for item in reversed(batch["operations"])
-                    if item["id"] in decision["operation_ids"]
+            if plan is None:
+                # Temporary adapter for reviewed callers; runtime supplies its plan.
+                evidence = {event["event_id"]: event["text"] for event in batch["events"]}
+                for item in self.memory_maintenance_evidence_for_memories(list(snapshots)):
+                    evidence[item["event_id"]] = item["content"]
+                plan = self.memories.writing.review(
+                    PlanningContext(batch["operations"], evidence, snapshots), {"decisions": decisions},
                 )
-                source = next(
-                    item
-                    for item in evidence
-                    if item["event_id"] == last_request["event_id"]
-                )
-                target_ids = decision["target_ids"]
-                if action == "forget":
-                    for memory_id in target_ids:
-                        self.memory.forget(current[memory_id], source, now=now)
-                    continue
-                self.memory.write(decision["memory"], target_ids, source, evidence, now=now)
+            payload = plan.payload()
+            if (payload["requests"] != batch["operations"] or plan.decisions != decisions
+                    or plan.snapshots != snapshots):
+                raise ValueError("memory_operation_plan_mismatch")
+            # events are authenticated owner input, unlike channel_events or model text.
+            for event_id, text in payload["evidence"].items():
+                row = self._db.execute("SELECT content FROM events WHERE id=?", (event_id,)).fetchone()
+                if row is None or text != row["content"]:
+                    raise ValueError("memory_operation_evidence_changed")
+            self.memories.apply(plan, operation_id="owner-memory:" + str(batch["id"]))
             self._db.execute(
                 """UPDATE memory_operation_batches SET state='completed',result_json=?,error=NULL,updated_at=? WHERE id=?""",
                 (json.dumps(decisions, ensure_ascii=False), now, batch["id"]),

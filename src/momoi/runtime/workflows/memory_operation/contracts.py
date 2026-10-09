@@ -80,7 +80,7 @@ _MEMORY = {
 }
 MEMORY_OPERATION_FINISH_SPEC: dict[str, Any] = {
     "name": "memory_operation_finish",
-    "description": '原子性地应用完整的决策批次并结束本次私有回合。单独调用。省略的当前记忆保持不变。',
+    "description": '提交完整的决策计划并结束模型审阅，运行时随后复核并原子提交。单独调用。省略的当前记忆保持不变。',
     "input_schema": {
         "type": "object",
         "properties": {

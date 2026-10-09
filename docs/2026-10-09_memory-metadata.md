@@ -72,4 +72,4 @@ uv run --locked python scripts/check_memory_metadata_migration.py /absolute/path
 
 验证结果：28 项新增专项测试通过；以 `3cf571d8` 加本阶段文件构建隔离副本，运行 `make test`，1297 项测试与 289 个子测试通过。1 项既有 Dashboard 静态资源测试因副本未构建前端而跳过，另有 4 条现有 Starlette/httpx 弃用警告。当前共享工作区的全量运行还遇到其他未提交 embedding 配置改动导致的 endpoint 校验失败，该改动未纳入本阶段。
 
-本阶段结束后停下审阅。下一阶段为 Milestone 9：有界写入候选、库级 plan/apply、幂等提交回执与两条合并路径统一。scope/key 分离和旧兼容代码清理继续留在 Milestone 10、11。
+本阶段结束后停下审阅。后续进度见 [Milestone 9A](2026-10-09_memory-writing.md)：基础 plan/apply 与幂等提交已实现，有界写入候选和两条合并路径统一待 9B。scope/key 分离和旧兼容代码清理继续留在 Milestone 10、11。

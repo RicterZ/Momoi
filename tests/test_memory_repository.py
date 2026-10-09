@@ -12,11 +12,11 @@ from momoi.memory.storage.transactions import transaction
 def database(tmp_path):
     db = sqlite3.connect(tmp_path / "memory.sqlite3")
     db.row_factory = sqlite3.Row
-    # Use the actual schema, but only the three tables owned by this repository.
+    # Use the actual schema, but only memory data and commit receipts.
     # No events, turns, goals, journal, or application bootstrap are available.
     schema = Path(__file__).parents[1] / "src/momoi/storage/core/schema.sql"
     text = schema.read_text()
-    for table in ("memories", "memory_evidence", "memory_tombstones"):
+    for table in ("memories", "memory_evidence", "memory_tombstones", "memory_commits"):
         start = text.index(f"CREATE TABLE IF NOT EXISTS {table} (")
         end = text.index(";", start) + 1
         db.execute(text[start:end])

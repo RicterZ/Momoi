@@ -687,6 +687,15 @@ def _add_memory_metadata(database):
         database.execute("ALTER TABLE memories ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
 
 
+def _add_memory_commits(database):
+    database.execute("""CREATE TABLE IF NOT EXISTS memory_commits (
+    operation_id TEXT PRIMARY KEY,
+    input_hash TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    committed_at REAL NOT NULL
+);""")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -722,6 +731,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_channel_event_workflow,
     _add_weekly_reflection_workflow,
     _add_memory_metadata,
+    _add_memory_commits,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

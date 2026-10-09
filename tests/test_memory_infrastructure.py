@@ -30,7 +30,7 @@ class RejectApplicationImports:
 sys.meta_path.insert(0, RejectApplicationImports())
 spec.loader.exec_module(module)
 
-from standalone_memory import Memory
+from standalone_memory import Memory, MemoryPlan, PlanningContext
 
 from standalone_memory.retrieval.models import MemoryRecallQuery, DenseThresholds
 from standalone_memory.retrieval.sparse import StringSearchBackend, search_expression
@@ -47,14 +47,23 @@ from standalone_memory.retrieval.dense import DenseQueryService, DenseSearchPool
 from standalone_memory.retrieval.service import MemoryRecallService
 from standalone_memory.retrieval.rerank import MemoryRerankCandidates
 import sqlite3
+import asyncio
 
 with sqlite3.connect(":memory:") as db:
-    assert Memory(db).snapshots([]) == {}
+    memory = Memory(db)
+    async def planner(context):
+        return {"decisions": [{"operation_ids": ["one"], "action": "defer", "reason": "Need clarification"}]}
+    planned = asyncio.run(memory.plan(
+        [{"id": "one", "type": "add", "event_id": "event", "content": "coffee", "evidence": "coffee"}],
+        evidence={"event": "coffee"}, planner=planner,
+    ))
+    assert isinstance(planned, MemoryPlan)
+    assert planned.decisions[0]["action"] == "defer"
+    assert memory.snapshots([]) == {}
     assert MemoryRepository(db).snapshots([]) == {}
     assert MemoryRecallService(MemoryRepository(db)).rank([], 6) == []
     snapshot = SegmentedVectorSnapshot(VectorRepository(db), 2)
     engine = DenseQueryService(snapshot, None)
-    import asyncio
     assert asyncio.run(engine.search(["饮品"], [DenseSearchPool({"confirmed_memory"})])).fallback_reason == "no_active_space"
     assert MemoryVectorRecall(engine, {}) is not None
     assert IndexDocument("confirmed_memory", "1", "", 0, "text").content_sha256

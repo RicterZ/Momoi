@@ -3,6 +3,8 @@ import sqlite3
 from collections.abc import Callable, Mapping, Sequence
 
 from .metadata import MemoryFilters, TagCatalog
+from .writing.models import MemoryPlan, MemoryPlanner
+from .writing.service import MemoryWritingService
 from .indexing.source import MemoryIndexSource
 from .retrieval.models import MemoryDenseEvidence, MemoryDenseRecall, MemoryRecallQuery
 from .retrieval.rerank import MemoryReranker
@@ -16,7 +18,7 @@ class Memory:
 
     def __init__(
         self, database: sqlite3.Connection, *, search_backend: SearchBackend | None = None,
-        tags: TagCatalog | None = None,
+        tags: TagCatalog | None = None, planner: MemoryPlanner | None = None,
         dense_recall: MemoryDenseRecall | None = None, reranker: MemoryReranker | None = None,
         reflection_rows: Callable[[], Sequence[Mapping[str, object]]] | None = None,
     ) -> None:
@@ -26,6 +28,13 @@ class Memory:
             reranker=reranker, reflection_rows=reflection_rows,
         )
         self.index_source = MemoryIndexSource(self.repository)
+        self.writing = MemoryWritingService(database, self.repository, planner)
+
+    async def plan(self, requests, *, evidence, snapshots=None, planner=None) -> MemoryPlan:
+        return await self.writing.plan(requests, evidence=evidence, snapshots=snapshots, planner=planner)
+
+    def apply(self, plan: MemoryPlan, *, operation_id: str) -> dict[str, object]:
+        return self.writing.apply(plan, operation_id=operation_id)
 
     async def search(
         self, query: str | list[MemoryRecallQuery], limit: int = 6, *,

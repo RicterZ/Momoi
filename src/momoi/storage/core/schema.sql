@@ -123,6 +123,13 @@ CREATE TABLE IF NOT EXISTS reflection_memory_tombstones (
     PRIMARY KEY (kind, key)
 );
 
+CREATE TABLE IF NOT EXISTS memory_commits (
+    operation_id TEXT PRIMARY KEY,
+    input_hash TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    committed_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS memory_tombstones (
     kind TEXT NOT NULL,
     key TEXT NOT NULL,

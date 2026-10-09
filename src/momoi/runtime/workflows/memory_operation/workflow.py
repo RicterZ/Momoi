@@ -9,7 +9,6 @@ from ....observability.events import log_event
 from ...agent import AgentWorkflow
 from ..memory_rendering import memory_record
 from .contracts import MEMORY_OPERATION_FINISH_SPEC, MEMORY_OPERATION_SEARCH_SPEC
-from .parsing import parse_decisions
 from .rendering import render_memory_operation_request
 from .conversation import conversation_message
 
@@ -58,105 +57,110 @@ class MemoryOperationWorkflow:
                 current_ids.add(int(current["id"]))
         snapshots = self.memory.snapshots(sorted(current_ids))
         evidence = {event["event_id"]: event["text"] for event in batch["events"]}
-        for item in self.store.memory_maintenance_evidence_for_memories(
-            list(snapshots)
-        ):
-            evidence[item["event_id"]] = item["content"]
-        evidence_records = self.store.memory_operation_evidence_records(evidence)
-        # Whole records with stable IDs, no global memory directory and no second foreground recall.
-        now = time.time()
-        request = render_memory_operation_request(
-            now=now, timestamp=self.store.context_timestamp(now),
-            operations=batch["operations"], visible=visible, snapshots=snapshots,
-            evidence=evidence_records,
-            goals=self.store.list_goals(),
-        )
-        complete = False
-        completion: dict[str, Any] | None = None
 
-        async def execute_tool(call: ToolCall) -> dict[str, Any]:
-            nonlocal complete, completion
-            if call.name == "memory_operation_search":
-                query = call.arguments.get("query")
-                if (
-                    set(call.arguments) != {"query"}
-                    or not isinstance(query, str)
-                    or not query.strip()
-                    or len(query) > 240
-                ):
-                    return {"ok": False, "error": "invalid_memory_operation_query"}
-                matches = self.memory.search_literal(query, 12, include_scoped=True)
-                matches += [
-                    item for item in await self.memory.search(query, 12)
-                    if item["source"] == "confirmed"
-                ]
-                related = self.memory.snapshots(
-                    sorted({int(item["id"]) for item in matches})
-                )
-                snapshots.update(related)
-                related_evidence = self.store.memory_maintenance_evidence_for_memories(
-                    list(related)
-                )
-                for item in related_evidence:
-                    evidence[item["event_id"]] = item["content"]
-                return {
-                    "ok": True,
-                    "memories": [memory_record(row) for row in related.values()],
-                    "owner_evidence": self.store.memory_operation_evidence_records(
-                        {item["event_id"]: item["content"] for item in related_evidence}
-                    ),
-                }
-            try:
-                decisions = parse_decisions(
-                    call.arguments,
-                    batch["operations"],
-                    snapshots,
-                    evidence,
-                )
-                self.store.apply_memory_operation(batch, decisions, snapshots)
-            except (TypeError, ValueError, KeyError) as error:
-                return {
-                    "ok": False,
-                    "error": "invalid_memory_operation_result",
-                    "message": f"Correct the complete decision batch: {error}",
-                }
-            complete = True
-            completion = {"ok": True, "decisions": len(decisions)}
-            return completion
+        async def planner(context):
+            snapshots, evidence = context.snapshots, context.evidence
+            for item in self.store.memory_maintenance_evidence_for_memories(
+                list(snapshots)
+            ):
+                evidence[item["event_id"]] = item["content"]
+            evidence_records = self.store.memory_operation_evidence_records(evidence)
+            # Whole records with stable IDs, no global memory directory and no second foreground recall.
+            now = time.time()
+            request = render_memory_operation_request(
+                now=now, timestamp=self.store.context_timestamp(now),
+                operations=batch["operations"], visible=visible, snapshots=snapshots,
+                evidence=evidence_records,
+                goals=self.store.list_goals(),
+            )
+            complete = False
+            completion: dict[str, Any] | None = None
+            planned_arguments = None
 
-        workflow = AgentWorkflow(
-            stage="memory_operation",
-            preserve_transcript=True,
-            tool_names=frozenset(
-                {"memory_operation_finish", "memory_operation_search"}
-            ),
-            execute_tool=execute_tool,
-            is_complete=lambda: complete,
-            completion_result=lambda: completion,
-            no_tool_correction="Use native tools. Submit every request outcome with memory_operation_finish alone; assistant text is not stored.",
+            async def execute_tool(call: ToolCall) -> dict[str, Any]:
+                nonlocal complete, completion, planned_arguments
+                if call.name == "memory_operation_search":
+                    query = call.arguments.get("query")
+                    if (
+                        set(call.arguments) != {"query"}
+                        or not isinstance(query, str)
+                        or not query.strip()
+                        or len(query) > 240
+                    ):
+                        return {"ok": False, "error": "invalid_memory_operation_query"}
+                    matches = self.memory.search_literal(query, 12, include_scoped=True)
+                    matches += [
+                        item for item in await self.memory.search(query, 12)
+                        if item["source"] == "confirmed"
+                    ]
+                    related = self.memory.snapshots(
+                        sorted({int(item["id"]) for item in matches})
+                    )
+                    snapshots.update(related)
+                    related_evidence = self.store.memory_maintenance_evidence_for_memories(
+                        list(related)
+                    )
+                    for item in related_evidence:
+                        evidence[item["event_id"]] = item["content"]
+                    return {
+                        "ok": True,
+                        "memories": [memory_record(row) for row in related.values()],
+                        "owner_evidence": self.store.memory_operation_evidence_records(
+                            {item["event_id"]: item["content"] for item in related_evidence}
+                        ),
+                    }
+                try:
+                    plan = self.memory.writing.review(context, call.arguments)
+                    planned_arguments = {"decisions": plan.decisions}
+                except (TypeError, ValueError, KeyError) as error:
+                    return {
+                        "ok": False,
+                        "error": "invalid_memory_operation_result",
+                        "message": f"Correct the complete decision batch: {error}",
+                    }
+                complete = True
+                completion = {"ok": True, "state": "planned", "decisions": len(plan.decisions)}
+                return completion
+
+            workflow = AgentWorkflow(
+                stage="memory_operation",
+                preserve_transcript=True,
+                tool_names=frozenset(
+                    {"memory_operation_finish", "memory_operation_search"}
+                ),
+                execute_tool=execute_tool,
+                is_complete=lambda: complete,
+                completion_result=lambda: completion,
+                no_tool_correction="Use native tools. Submit every request outcome with memory_operation_finish alone; assistant text is not stored.",
+            )
+            # Private processing uses its own contract, not the role-play system or Soul.
+            await self._run_agent_workflow(
+                PROMPT_PATH.read_text(encoding="utf-8"),
+                [
+                    conversation_message(batch["conversation"]),
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": request,
+                                "cache_control": {"type": "ephemeral"},
+                            }
+                        ],
+                    }
+                ],
+                [MEMORY_OPERATION_SEARCH_SPEC, MEMORY_OPERATION_FINISH_SPEC],
+                turn_id=turn_id,
+                workflow=workflow,
+            )
+            if not complete:
+                raise RuntimeError("memory operation ended without a decision")
+            return planned_arguments
+
+        plan = await self.memory.plan(
+            batch["operations"], evidence=evidence, snapshots=snapshots, planner=planner,
         )
-        # Private processing uses its own contract, not the role-play system or Soul.
-        await self._run_agent_workflow(
-            PROMPT_PATH.read_text(encoding="utf-8"),
-            [
-                conversation_message(batch["conversation"]),
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": request,
-                            "cache_control": {"type": "ephemeral"},
-                        }
-                    ],
-                }
-            ],
-            [MEMORY_OPERATION_SEARCH_SPEC, MEMORY_OPERATION_FINISH_SPEC],
-            turn_id=turn_id,
-            workflow=workflow,
-        )
-        if not complete:
-            raise RuntimeError("memory operation ended without a decision")
+        self.store.apply_memory_operation(batch, plan.decisions, plan.snapshots, plan=plan)
         log_event(
             logger,
             logging.INFO,

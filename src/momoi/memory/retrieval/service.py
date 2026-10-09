@@ -114,7 +114,6 @@ class MemoryRecallService:
             return []
         limit = min(MAX_MEMORY_RECALL_CANDIDATES, max_results)
         stamp = time.time() if now is None else now
-        self.repository.purge_expired()
         confirmed_rows = self.repository.recall_rows(now=stamp, filters=filters)
         reflection_rows = (
             self._reflection_rows() if include_reflections and self._reflection_rows else []
@@ -411,7 +410,6 @@ class MemoryRecallService:
             return []
         if activation is not None and activation not in MEMORY_ACTIVATIONS:
             raise ValueError("invalid memory activation")
-        self.repository.purge_expired()
         rows = self.repository.search_rows(
             activation=activation, include_scoped=include_scoped, filters=filters,
         )
