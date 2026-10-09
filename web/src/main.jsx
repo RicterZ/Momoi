@@ -5,7 +5,7 @@ import "./styles.css";
 import RequestMetrics from "./RequestMetrics.jsx";
 import Loading from "./Loading.jsx";
 import MemoryMetadata from "./MemoryMetadata.jsx";
-import { filterMemories, memoryScope, memoryScopeLabel } from "./memoryInventory.js";
+import { filterMemories } from "./memoryInventory.js";
 import Tools from "./Tools.jsx";
 import EmotionContent from "./EmotionContent.jsx";
 import ConfigurationSettings, { ApplyDialog, SaveBar } from "./ConfigurationSettings.jsx";
@@ -1143,32 +1143,30 @@ function ConversationDetail({ item }) {
 
 function Reflections({ refreshKey, token, onMutated }) {
   const [activation, setActivation] = useState("all");
-  const [scope, setScope] = useState(null);
   const [query, setQuery] = useState("");
   return (
     <DataView path="/api/reflection-candidates" refreshKey={refreshKey} token={token}>
       {(data) => <MemoryInventory candidateMode
         items={data.items.map(item => ({ ...item, resource: "reflection-candidates",
           identity: `candidate:${item.id}`, activation: item.status === "pending" ? "pending" : "observation" }))}
-        {...{ token, onMutated, activation, setActivation, scope, setScope, query, setQuery }} />}
+        {...{ token, onMutated, activation, setActivation, query, setQuery }} />}
     </DataView>
   );
 }
 
 function Memories({ refreshKey, token, onMutated }) {
   const [activation, setActivation] = useState("all");
-  const [scope, setScope] = useState(null);
   const [query, setQuery] = useState("");
   return (
     <DataView path="/api/memories?limit=400" refreshKey={refreshKey} token={token}>
       {(data) => <MemoryInventory
         items={data.items.map(item => ({ ...item, resource: "memories", identity: `memory:${item.id}` }))}
-        {...{ token, onMutated, activation, setActivation, scope, setScope, query, setQuery }} />}
+        {...{ token, onMutated, activation, setActivation, query, setQuery }} />}
     </DataView>
   );
 }
 
-function MemoryInventory({ candidateMode = false, items, token, onMutated, activation, setActivation, scope, setScope, query, setQuery }) {
+function MemoryInventory({ candidateMode = false, items, token, onMutated, activation, setActivation, query, setQuery }) {
   const confirm = useConfirm();
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
@@ -1233,8 +1231,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
 
   const labels = candidateMode ? { observation: "观察记忆", pending: "待准入记忆" } : activationLabels;
 
-  const scopes = new Map(items.map((item) => [memoryScope(item), memoryScopeLabel(item)]));
-  const visible = filterMemories(items, { activation, scope, query });
+  const visible = filterMemories(items, { activation, query });
   const groups = (candidateMode ? ["pending", "observation"] : activationOrder)
     .map((name) => [
       name,
@@ -1250,15 +1247,6 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
             <input className="dash-input" type="search" value={query} placeholder="内容、触发词或标签"
               onChange={(event) => setQuery(event.target.value)} />
           </label>
-          {!candidateMode && <label>作用域
-            <select className="dash-input" value={scope === null ? "" : `scope:${scope}`}
-              onChange={(event) => setScope(event.target.value === "" ? null : event.target.value.slice(6))}>
-              <option value="">全部作用域</option>
-              {[...scopes].map(([value, label]) => (
-                <option key={value} value={`scope:${value}`}>{label}</option>
-              ))}
-            </select>
-          </label>}
         </div>
         <div className="dash-tabs" role="tablist" aria-label="记忆筛选">
           {[["all", "全部"], ...Object.entries(labels)].map(
