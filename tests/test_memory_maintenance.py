@@ -431,17 +431,20 @@ class MemoryMaintenanceStorageTest(unittest.TestCase):
                 snapshots,
                 owner_marker=store.latest_owner_event_marker(),
             )
+            merged_id = store.active_memory("preference", "home.light")["id"]
+            self.assertNotIn(merged_id, [first_id, second_id])
+            self.assertFalse(store.memories.snapshots([first_id, second_id]))
             self.assertEqual(
                 store._db.execute(
                     "SELECT superseded_by FROM memories WHERE id=?",
                     (second_id,),
                 ).fetchone()["superseded_by"],
-                first_id,
+                merged_id,
             )
             migrated = store._db.execute(
                 """SELECT source_event_id FROM memory_evidence
                    WHERE memory_id=? ORDER BY source_event_id""",
-                (first_id,),
+                (merged_id,),
             ).fetchall()
             self.assertEqual(
                 [row["source_event_id"] for row in migrated],
@@ -454,7 +457,7 @@ class MemoryMaintenanceStorageTest(unittest.TestCase):
             ).fetchone()
             self.assertEqual(
                 json.loads(checkpoint["payload_json"])["completed_ids"],
-                [first_id, second_id],
+                [first_id, second_id, merged_id],
             )
             store.close()
 
@@ -752,7 +755,7 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 daemon.store._db.execute(
-                    "SELECT content FROM memories WHERE id=?", (memory_id,)
+                    "SELECT content FROM memories WHERE superseded_by IS NULL AND key='food.spicy'"
                 ).fetchone()["content"],
                 "主人可以吃辣。",
             )
@@ -853,9 +856,9 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(should_requeue)
             updated = daemon.store._db.execute(
                 """SELECT content,source_event_id,evidence_quote,updated_at
-                   FROM memories WHERE id=?""",
-                (memory_id,),
+                   FROM memories WHERE superseded_by IS NULL AND key='food.spicy'""",
             ).fetchone()
+            self.assertFalse(daemon.store.memories.snapshots([memory_id]))
             self.assertEqual(updated["content"], "主人可以吃辣。")
             self.assertEqual(updated["source_event_id"], "owner-2")
             self.assertEqual(updated["evidence_quote"], "我可以吃辣")

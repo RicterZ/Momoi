@@ -6,7 +6,7 @@ import time
 from typing import cast
 
 from ..metadata import MemoryFilters, TagCatalog
-from .records import ActiveMemory, InventoryMemory, MEMORY_ACTIVATIONS, memory_snapshot_fingerprint
+from .records import ActiveMemory, InventoryMemory, MEMORY_ACTIVATIONS, memory_snapshot_fingerprint, legacy_scope
 from .transactions import transaction
 
 
@@ -87,43 +87,35 @@ class MemoryRepository:
                 (memory["kind"], memory["key"], source["event_id"], source["quote"], now),
             )
 
-    def replace(self, memory_id, content, activation, expires_at, source, *, updated_at) -> None:
-        """Update a reviewed record in place; source evidence is checked by the caller."""
+    def replace(self, memory_id, content, activation, expires_at, source, *, updated_at) -> int:
+        """Create a replacement version with the same identity and inherited evidence."""
         with transaction(self._db):
-            self._db.execute(
-                """UPDATE memories SET content=?, activation=?, expires_at=?,
-                   source_event_id=?, evidence_quote=?, updated_at=?
-                   WHERE id=? AND superseded_by IS NULL""",
-                (content, activation, expires_at, source["event_id"], source["quote"],
-                 updated_at, memory_id),
+            row = self.snapshots([memory_id]).get(memory_id)
+            if row is None:
+                raise ValueError("memory_snapshot_changed")
+            return self.write(
+                {"kind": row["kind"], "key": row["key"], "content": content,
+                 "activation": activation, "expires_at": expires_at},
+                [memory_id], source, [source], now=updated_at,
             )
 
-    def merge(self, survivor_id, source_ids, content, activation, expires_at, events) -> None:
-        """Keep the survivor ID and transfer evidence from merged records."""
+    def merge(self, survivor_id, source_ids, content, activation, expires_at, events) -> int:
+        """Use the selected identity for a new version, preserving all source evidence."""
         newest = max(events, key=lambda item: float(item["occurred_at"]))
         with transaction(self._db):
-            current = self.snapshots([survivor_id, *source_ids])
-            meta = {"tags": sorted({tag for row in current.values() for tag in row["meta"]["tags"]})}
-            self.update_meta(current[survivor_id], meta)
-            for source_id in source_ids:
-                self._db.execute(
-                    """INSERT OR IGNORE INTO memory_evidence
-                       (memory_id, source_event_id, quote, created_at)
-                       SELECT ?, source_event_id, quote, created_at
-                       FROM memory_evidence WHERE memory_id=?""",
-                    (survivor_id, source_id),
-                )
-                self._db.execute(
-                    "UPDATE memories SET superseded_by=? WHERE id=? AND superseded_by IS NULL",
-                    (survivor_id, source_id),
-                )
-            for event in events:
-                self.add_evidence(survivor_id, str(event["id"]), str(event["content"]),
-                                  float(event["occurred_at"]))
-            self.replace(
-                survivor_id, content, activation, expires_at,
+            targets = [survivor_id, *source_ids]
+            current = self.snapshots(targets)
+            if len(set(targets)) != len(targets) or set(current) != set(targets):
+                raise ValueError("memory_snapshot_changed")
+            if len({legacy_scope(row) for row in current.values()}) != 1:
+                raise ValueError("memory merge cannot cross scopes")
+            survivor = current[survivor_id]
+            return self.write(
+                {"kind": survivor["kind"], "key": survivor["key"], "content": content,
+                 "activation": activation, "expires_at": expires_at}, targets,
                 {"event_id": newest["id"], "quote": newest["content"]},
-                updated_at=newest["occurred_at"],
+                [{"event_id": event["id"], "quote": event["content"]} for event in events],
+                now=float(newest["occurred_at"]),
             )
 
     def inventory(self) -> list[InventoryMemory]:
@@ -306,11 +298,47 @@ class MemoryRepository:
                        SELECT ?,source_event_id,quote,created_at FROM memory_evidence WHERE memory_id=?""",
                     (memory_id, old_id),
                 )
+                self._db.execute(
+                    """INSERT OR IGNORE INTO memory_evidence(memory_id,source_event_id,quote,created_at)
+                       SELECT ?,source_event_id,evidence_quote,created_at FROM memories WHERE id=?""",
+                    (memory_id, old_id),
+                )
             for citation in evidence:
                 self.add_evidence(
                     memory_id, citation["event_id"], citation["quote"], now
                 )
             return memory_id
+
+    def planning_rows(self, ids=None):
+        """Current versions, including forgotten records, for private write review."""
+        params = [time.time()]
+        clause = ""
+        if ids is not None:
+            if not ids:
+                return []
+            clause = " AND m.id IN (" + ",".join("?" for _ in ids) + ")"
+            params.extend(ids)
+        rows = self._db.execute(
+            """SELECT m.*, t.source_event_id AS forgotten_event_id,
+                      t.evidence_quote AS forgotten_quote, t.created_at AS forgotten_at
+               FROM memories m LEFT JOIN memory_tombstones t ON t.kind=m.kind AND t.key=m.key
+               WHERE m.superseded_by IS NULL
+                 AND (m.expires_at IS NULL OR m.expires_at>? OR t.kind IS NOT NULL)"""
+            + clause + " ORDER BY m.id", params,
+        ).fetchall()
+        return [self._record(row) for row in rows]
+
+    def tombstone(self, kind, key):
+        row = self._db.execute(
+            "SELECT * FROM memory_tombstones WHERE kind=? AND key=?", (kind, key),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def validate_forgotten(self, snapshots):
+        current = {row["id"]: row for row in self.planning_rows(list(snapshots))
+                   if row["forgotten_at"] is not None}
+        if current != snapshots:
+            raise ValueError("memory_forgotten_snapshot_changed")
 
     def recall_rows(self, *, now: float, filters: MemoryFilters | None = None):
         clause, params = self._filter_sql(filters)

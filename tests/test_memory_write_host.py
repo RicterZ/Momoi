@@ -71,3 +71,15 @@ def test_runtime_model_completion_only_plans_then_host_applies(daemon, monkeypat
     assert daemon.store.active_memory('preference', 'drink')
     assert daemon.store._db.execute('SELECT operation_id FROM memory_commits').fetchone()[0] == 'owner-memory:source'
     assert daemon.store._db.execute("SELECT state FROM memory_operation_batches WHERE id='source'").fetchone()[0] == 'completed'
+
+
+def test_host_rejects_forged_evidence_timestamp(store):
+    source = event(store)
+    submit(store, source)
+    batch = store.claim_memory_operation('source')
+    context = PlanningContext(batch['operations'], {source.event_id: source.text}, {},
+                              evidence_times={source.event_id: 1e30})
+    plan = store.memories.writing.review(context, {'decisions': [write_event(batch)]})
+    with pytest.raises(ValueError, match='memory_operation_evidence_changed'):
+        store.apply_memory_operation(batch, plan.decisions, plan.snapshots, plan=plan)
+    assert store.memory.inventory() == []

@@ -276,3 +276,53 @@ def test_receipt_hash_is_independent_of_json_format(database, memory):
     serialized = json.dumps(reviewed.payload(), ensure_ascii=True, indent=4)
     assert memory.apply(MemoryPlan(serialized), operation_id='canonical') == result
     assert database.execute('SELECT COUNT(*) FROM memories').fetchone()[0] == 1
+
+
+@pytest.mark.parametrize('action', ['noop', 'metadata'])
+def test_evidence_only_and_metadata_plans_preserve_content_version(database, memory, action):
+    target = write(memory.repository)
+    ctx = context(memory, [target])
+    command = {'operation_ids': ['op'], 'action': action, 'reason': '重复事实或修订标签',
+               'target_ids': [target], 'evidence': [{'event_id': 'owner:new', 'quote': '喜欢无糖咖啡'}]}
+    if action == 'metadata':
+        command['meta'] = {'tags': ['food_drink']}
+    before = memory.snapshots([target])[target]
+    documents = memory.index_source.documents(str(target))
+    reviewed = memory.writing.review(ctx, {'decisions': [command]})
+    result = memory.apply(reviewed, operation_id=action)
+    assert result['decisions'][0]['memory_ids'] == [target]
+    after = memory.snapshots([target])[target]
+    assert after['content'] == before['content']
+    assert after['source_event_id'] == before['source_event_id']
+    assert after['created_at'] == before['created_at']
+    assert after['meta']['tags'] == (['food_drink'] if action == 'metadata' else [])
+    assert database.execute('SELECT count(*) FROM memories').fetchone()[0] == 1
+    assert memory.index_source.documents(str(target)) == documents
+    assert {row[0] for row in database.execute('SELECT source_event_id FROM memory_evidence WHERE memory_id=?', (target,))} == {'owner:new', 'event:1'}
+    assert memory.apply(reviewed, operation_id=action) == result
+    assert database.execute('SELECT count(*) FROM memory_evidence').fetchone()[0] == 2
+
+
+@pytest.mark.parametrize('bad', ['unknown_tag', 'stale', 'evidence', 'no_target'])
+def test_metadata_plans_reject_invalid_changes_atomically(database, memory, bad):
+    target = write(memory.repository)
+    ctx = context(memory, [target])
+    command = {'operation_ids': ['op'], 'action': 'metadata', 'reason': '标签',
+               'target_ids': [target], 'meta': {'tags': ['food_drink']},
+               'evidence': [{'event_id': 'owner:new', 'quote': '喜欢无糖咖啡'}]}
+    if bad == 'unknown_tag':
+        command['meta']['tags'] = ['invented']
+    elif bad == 'evidence':
+        command['evidence'][0]['quote'] = '不存在的引用'
+    elif bad == 'no_target':
+        command['target_ids'] = []
+    if bad == 'stale':
+        planned = memory.writing.review(ctx, {'decisions': [command]})
+        memory.repository.update_meta(ctx.snapshots[target], {'tags': ['food_drink']})
+        with pytest.raises(ValueError, match='snapshot_changed'):
+            memory.apply(planned, operation_id='bad')
+    else:
+        with pytest.raises(ValueError):
+            memory.writing.review(ctx, {'decisions': [command]})
+    assert database.execute('SELECT count(*) FROM memory_commits').fetchone()[0] == 0
+    assert database.execute('SELECT count(*) FROM memory_evidence').fetchone()[0] == 1

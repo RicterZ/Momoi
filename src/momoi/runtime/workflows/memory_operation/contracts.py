@@ -99,9 +99,9 @@ MEMORY_OPERATION_FINISH_SPEC: dict[str, Any] = {
                         },
                         "action": {
                             "type": "string",
-                            "enum": ["write", "forget", "noop", "defer"],
+                            "enum": ["write", "metadata", "forget", "noop", "defer"],
                             "description": (
-                                '当持久含义已表示时执行 noop；写入以细化或整合现有规则，或添加独立事实。不同的措辞或另一个示例本身并不要求写入。'
+                                '当持久含义已表示时执行 noop 并提供 target_ids/evidence 追加证据；仅调整标签用 metadata；写入以细化或整合现有规则，或添加独立事实。不同的措辞或另一个示例本身并不要求写入。'
                             ),
                         },
                         "reason": {"type": "string", "minLength": 1, "maxLength": 500},
@@ -114,17 +114,19 @@ MEMORY_OPERATION_FINISH_SPEC: dict[str, Any] = {
                             "items": {"type": "integer", "minimum": 1},
                         },
                         "memory": _MEMORY,
+                        "meta": _MEMORY["properties"]["meta"],
                         "evidence": _EVIDENCE,
                     },
                     "required": ["operation_ids", "action", "reason"],
                     "oneOf": [
                         {
-                            "properties": {"action": {"enum": ["write"]}},
+                            "properties": {"action": {"enum": ["write"]}, "meta": False},
                             "required": ["target_ids", "memory", "evidence"],
                         },
                         {
                             "properties": {
                                 "action": {"enum": ["forget"]},
+                                "meta": False,
                                 "target_ids": {"minItems": 1},
                                 "memory": False,
                             },
@@ -133,10 +135,28 @@ MEMORY_OPERATION_FINISH_SPEC: dict[str, Any] = {
                         {
                             "properties": {
                                 "action": {"enum": ["noop", "defer"]},
+                                "meta": False,
                                 "target_ids": False,
                                 "memory": False,
                                 "evidence": False,
                             }
+                        },
+                        {
+                            "properties": {
+                                "action": {"enum": ["noop"]},
+                                "target_ids": {"minItems": 1},
+                                "memory": False,
+                                "meta": False,
+                            },
+                            "required": ["target_ids", "evidence"],
+                        },
+                        {
+                            "properties": {
+                                "action": {"enum": ["metadata"]},
+                                "target_ids": {"minItems": 1},
+                                "memory": False,
+                            },
+                            "required": ["target_ids", "meta", "evidence"],
                         },
                     ],
                     "additionalProperties": False,
@@ -149,7 +169,7 @@ MEMORY_OPERATION_FINISH_SPEC: dict[str, Any] = {
 }
 MEMORY_OPERATION_SEARCH_SPEC = {
     "name": "memory_operation_search",
-    "description": '当提供的记忆无法识别目标或相关重复项时，可选的只读查找。在激活中搜索活跃的已确认记忆。结果成为合格的目标。不要仅为了重复提供的证据而搜索。',
+    "description": '当提供的记忆无法识别目标或相关重复项时，可选的只读查找。有界检索各种 activation 的当前记录和遗忘警戒候选；仅 memories 中的记录可作为修改目标。不要仅为了重复提供的证据而搜索。',
     "input_schema": {
         "type": "object",
         "properties": {

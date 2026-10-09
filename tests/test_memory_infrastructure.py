@@ -9,6 +9,12 @@ def test_memory_infrastructure_runs_outside_momoi(tmp_path):
     source = Path(__file__).parents[1] / "src" / "momoi" / "memory"
     package = tmp_path / "standalone_memory"
     shutil.copytree(source, package)
+    schema = (source.parent / "storage/core/schema.sql").read_text()
+    statements = []
+    for table in ("memories", "memory_tombstones", "memory_evidence", "memory_commits"):
+        start = schema.index(f"CREATE TABLE IF NOT EXISTS {table} (")
+        statements.append(schema[start:schema.index(";", start) + 1])
+    (tmp_path / "memory.sql").write_text("\n".join(statements))
     script = '''
 import importlib.util
 import sys
@@ -50,6 +56,8 @@ import sqlite3
 import asyncio
 
 with sqlite3.connect(":memory:") as db:
+    db.row_factory = sqlite3.Row
+    db.executescript((package.parent / "memory.sql").read_text())
     memory = Memory(db)
     async def planner(context):
         return {"decisions": [{"operation_ids": ["one"], "action": "defer", "reason": "Need clarification"}]}

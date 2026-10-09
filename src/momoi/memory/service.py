@@ -28,10 +28,10 @@ class Memory:
             reranker=reranker, reflection_rows=reflection_rows,
         )
         self.index_source = MemoryIndexSource(self.repository)
-        self.writing = MemoryWritingService(database, self.repository, planner)
+        self.writing = MemoryWritingService(database, self.repository, planner, recall=self.recall)
 
-    async def plan(self, requests, *, evidence, snapshots=None, planner=None) -> MemoryPlan:
-        return await self.writing.plan(requests, evidence=evidence, snapshots=snapshots, planner=planner)
+    async def plan(self, requests, *, evidence, snapshots=None, evidence_times=None, planner=None) -> MemoryPlan:
+        return await self.writing.plan(requests, evidence=evidence, snapshots=snapshots, evidence_times=evidence_times, planner=planner)
 
     def apply(self, plan: MemoryPlan, *, operation_id: str) -> dict[str, object]:
         return self.writing.apply(plan, operation_id=operation_id)

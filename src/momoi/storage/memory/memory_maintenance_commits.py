@@ -18,6 +18,7 @@ class MemoryMaintenanceCommitStore:
                 raise ValueError("owner_evidence_changed")
             current = self.memory.validate_snapshots(mutable_memories)
 
+            created_ids = []
             for change in decision.get("changes", []):
                 if not isinstance(change, dict):
                     raise ValueError("invalid_memory_maintenance_change")
@@ -48,15 +49,12 @@ class MemoryMaintenanceCommitStore:
                         source_event_id = str(row["source_event_id"])
                         evidence_quote = str(row["evidence_quote"])
                         updated_at = float(row["updated_at"])
-                    self.memory.replace(
+                    replacement_id = self.memory.replace(
                         memory_id, str(change["content"]), activation, expires_at,
                         {"event_id": source_event_id, "quote": evidence_quote},
                         updated_at=updated_at,
                     )
-                    if isinstance(evidence, dict):
-                        self.memory.add_evidence(
-                            memory_id, source_event_id, evidence_quote, updated_at
-                        )
+                    created_ids.append(replacement_id)
                 elif action == "merge":
                     survivor_id = int(change["survivor_id"])
                     source_ids = [int(item) for item in change["source_ids"]]
@@ -78,10 +76,11 @@ class MemoryMaintenanceCommitStore:
                     ).fetchall()
                     if len(cited_events) != len(evidence_event_ids):
                         raise ValueError("invalid_memory_maintenance_evidence")
-                    self.memory.merge(
+                    replacement_id = self.memory.merge(
                         survivor_id, source_ids, str(change["content"]),
                         activation, expires_at, cited_events,
                     )
+                    created_ids.append(replacement_id)
                 elif action == "retire":
                     memory_id = int(change["memory_id"])
                     row = current[memory_id]
@@ -106,7 +105,8 @@ class MemoryMaintenanceCommitStore:
                 "memory_maintenance_batch",
                 {
                     "reviewed_ids": list(decision.get("reviewed_ids", [])),
-                    "completed_ids": list(decision.get("completed_ids", [])),
+                    "completed_ids": list(dict.fromkeys([*decision.get("completed_ids", []), *created_ids])),
+                    "created_ids": created_ids,
                     "change_count": len(decision.get("changes", [])),
                     "regroup_requests": list(decision.get("regroup_requests", [])),
                     "summary": str(decision.get("summary") or ""),

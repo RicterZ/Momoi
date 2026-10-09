@@ -39,7 +39,7 @@ def test_public_memory_api_shares_search_snapshot_and_index_source(database):
 
 
 @pytest.mark.parametrize('state', ['always', 'scoped', 'expired', 'superseded', 'forgotten'])
-def test_index_source_matches_search_eligibility(database, state):
+def test_index_source_retains_private_write_candidates(database, state):
     memory = Memory(database)
     identifier = write(memory.repository)
     with transaction(database):
@@ -53,8 +53,9 @@ def test_index_source_matches_search_eligibility(database, state):
         else:
             memory.repository.forget(memory.snapshots([identifier])[identifier],
                                      {'event_id': 'forget', 'quote': '忘记'}, now=time.time())
-    assert str(identifier) not in memory.index_source.eligible_ids()
-    assert memory.index_source.documents(str(identifier)) == []
+    retained = state in {"always", "scoped", "forgotten"}
+    assert (str(identifier) in memory.index_source.eligible_ids()) == retained
+    assert bool(memory.index_source.documents(str(identifier))) == retained
     assert memory.index_source.documents('missing') == []
     assert asyncio.run(memory.search('无糖咖啡')) == []
 

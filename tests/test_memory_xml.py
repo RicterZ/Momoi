@@ -62,7 +62,8 @@ def test_memory_xml_distinguishes_stale_and_deleted_snapshots_without_internal_f
     assert root.find("current_memories/memory").get("visible") == "true"
     assert root.findtext("current_memories/memory/content") == "新的要求"
     assert [node.get("id") for node in root.findall("outdated_visible_snapshots/memory")] == ["1", "2"]
-    assert root.findtext("outdated_visible_snapshots/memory/content") == old["content"]
+    assert root.find("outdated_visible_snapshots/memory/content") is None
+    assert all(node.get("status") == "stale" for node in root.findall("outdated_visible_snapshots/memory"))
     assert root.findtext("owner_evidence/event") == evidence[0]["content"]
     assert root.find("owner_evidence/event").get("id") == 'owner-"1'
     projected = memory_record(old)
@@ -81,3 +82,18 @@ def test_maintenance_directory_does_not_duplicate_supplied_memories():
     assert [node.get("id") for node in root.findall(".//memory")] == ["1", "2", "3"]
     assert root.findtext("mutable_memories/memory/content") == rows[0]["content"]
     assert root.find("topic_context") is None
+
+
+def test_forgotten_candidates_are_separate_from_current_targets_and_escape_quotes():
+    memory = {**example_memory(3), 'forgotten_at': 120,
+              'forgotten_event_id': 'forget"3', 'forgotten_quote': '忘记 <all> & 内容'}
+    rendered = render_memory_operation_request(
+        now=125, timestamp='now', operations=[], visible={}, snapshots={}, evidence=[],
+        forgotten={3: memory}, retrieval_fallback='disabled',
+    )
+    root = fromstring('<request>' + rendered + '</request>')
+    assert root.find('current_memories/memory') is None
+    assert root.find('forgotten_memories/memory').get('id') == '3'
+    assert root.findtext('forgotten_memories/memory/forgotten') == memory['forgotten_quote']
+    assert root.find('forgotten_memories/memory/forgotten').get('event_id') == 'forget"3'
+    assert root.find('candidate_retrieval').get('fallback') == 'disabled'

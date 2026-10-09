@@ -1,6 +1,6 @@
 """Transport-free planning values; evidence references are authenticated by the host."""
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from typing import NotRequired, TypedDict
 
@@ -16,6 +16,7 @@ class MemoryRequest(TypedDict):
     content: str
     evidence: str
     target_id: NotRequired[int]
+    scope: NotRequired[str]
 
 
 @dataclass
@@ -24,6 +25,9 @@ class PlanningContext:
     requests: list[dict[str, object]]
     evidence: dict[str, str]
     snapshots: dict[int, dict[str, object]]
+    forgotten: dict[int, dict[str, object]] = field(default_factory=dict)
+    evidence_times: dict[str, float] = field(default_factory=dict)
+    retrieval_fallback: str = ""
 
 
 MemoryPlanner = Callable[[PlanningContext], Awaitable[dict[str, object]]]
@@ -43,7 +47,14 @@ class MemoryPlan:
 
     @property
     def snapshots(self) -> dict[int, dict[str, object]]:
-        snapshots = self.payload()['snapshots']
+        return self._records('snapshots')
+
+    @property
+    def forgotten(self) -> dict[int, dict[str, object]]:
+        return self._records('forgotten')
+
+    def _records(self, name):
+        snapshots = self.payload()[name]
         if not isinstance(snapshots, dict) or any(
             not key.isdecimal() or str(int(key)) != key or int(key) <= 0 for key in snapshots
         ):

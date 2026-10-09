@@ -46,7 +46,7 @@ class MemoryOperationStore:
         records = []
         for event_id, content in evidence.items():
             row = self._db.execute(
-                "SELECT occurred_at FROM events WHERE id=?", (event_id,)
+                "SELECT occurred_at, received_at FROM events WHERE id=?", (event_id,)
             ).fetchone()
             if row:
                 records.append(
@@ -55,6 +55,7 @@ class MemoryOperationStore:
                         "content": content,
                         "occurred_at": self.context_timestamp(row["occurred_at"]),
                         "occurred_at_unix": row["occurred_at"],
+                        "received_at": row["received_at"],
                     }
                 )
         return records
@@ -194,7 +195,10 @@ class MemoryOperationStore:
                 for item in self.memory_maintenance_evidence_for_memories(list(snapshots)):
                     evidence[item["event_id"]] = item["content"]
                 plan = self.memories.writing.review(
-                    PlanningContext(batch["operations"], evidence, snapshots), {"decisions": decisions},
+                    PlanningContext(batch["operations"], evidence, snapshots, evidence_times={
+                        row["event_id"]: row["received_at"]
+                        for row in self.memory_operation_evidence_records(evidence)
+                    }), {"decisions": decisions},
                 )
             payload = plan.payload()
             if (payload["requests"] != batch["operations"] or plan.decisions != decisions
@@ -202,8 +206,10 @@ class MemoryOperationStore:
                 raise ValueError("memory_operation_plan_mismatch")
             # events are authenticated owner input, unlike channel_events or model text.
             for event_id, text in payload["evidence"].items():
-                row = self._db.execute("SELECT content FROM events WHERE id=?", (event_id,)).fetchone()
-                if row is None or text != row["content"]:
+                row = self._db.execute("SELECT content, received_at FROM events WHERE id=?", (event_id,)).fetchone()
+                if (row is None or text != row["content"]
+                        or (event_id in payload["evidence_times"]
+                            and payload["evidence_times"][event_id] != row["received_at"])):
                     raise ValueError("memory_operation_evidence_changed")
             self.memories.apply(plan, operation_id="owner-memory:" + str(batch["id"]))
             self._db.execute(

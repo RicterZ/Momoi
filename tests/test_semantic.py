@@ -215,7 +215,10 @@ class SemanticRecallTest(unittest.TestCase):
             "SELECT COUNT(*) AS count FROM semantic_documents WHERE space_id=?",
             (space["id"],),
         ).fetchone()["count"]
-        self.assertEqual(count, 0)
+        self.assertEqual(count, 1)
+        self.assertEqual(self.store.memories.recall.eligible_source_ids(
+            [MemoryRecallQuery("device")]
+        ), {"device": frozenset()})
 
     def test_source_change_during_encoding_rejects_old_vector(self) -> None:
         memory_id = self.add_memory("device", "old procedure")

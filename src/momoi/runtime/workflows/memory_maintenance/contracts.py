@@ -69,7 +69,7 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                     "minLength": 1,
                                     "maxLength": 2000,
                                     "description": (
-                                        '幸存行的完整最终结论及必要条件；不附证据、记录日期或审阅经过，保留事实本身必要的日期。不要扩大支持的事实。'
+                                        '新版本的完整最终结论及必要条件；不附证据、记录日期或审阅经过，保留事实本身必要的日期。不要扩大支持的事实。'
                                     ),
                                 },
                                 "activation": {
@@ -117,7 +117,7 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                         {
                             "type": "object",
                             "description": (
-                                '保留一个可变幸存者并吸收源行。'
+                                '选择一条可变记录的 kind/key，创建新版本并吸收所有源行。'
                             ),
                             "properties": {
                                 "action": {
@@ -128,7 +128,7 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                     "type": "integer",
                                     "minimum": 1,
                                     "description": (
-                                        '要保留的可变 ID；排除在 source_ids 之外。'
+                                        '提供 kind/key 的可变 ID；排除在 source_ids 之外，也会被新版本取代。'
                                     ),
                                 },
                                 "source_ids": {
@@ -137,7 +137,7 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                     "uniqueItems": True,
                                     "items": {"type": "integer", "minimum": 1},
                                     "description": (
-                                        '被 survivor_id 吸收的其他可变 ID。每个源通过 superseded_by 退役。'
+                                        '其他可变 ID。所有旧 ID 通过 superseded_by 指向新版本。'
                                     ),
                                 },
                                 "content": {
@@ -145,7 +145,7 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                     "minLength": 1,
                                     "maxLength": 2000,
                                     "description": (
-                                        '幸存行的完整最终结论及必要条件；不附证据、记录日期或审阅经过，保留事实本身必要的日期。'
+                                        '新版本的完整最终结论及必要条件；不附证据、记录日期或审阅经过，保留事实本身必要的日期。'
                                     ),
                                 },
                                 "activation": {

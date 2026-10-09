@@ -41,10 +41,12 @@ def parse_decisions(
         expected = {"operation_ids", "action", "reason"}
         if action == "write":
             expected |= {"target_ids", "memory", "evidence"}
-        elif action == "forget":
+        elif action == "metadata":
+            expected |= {"target_ids", "meta", "evidence"}
+        elif action == "forget" or (action == "noop" and ({"target_ids", "evidence"} & set(item))):
             expected |= {"target_ids", "evidence"}
         elif action not in {"noop", "defer"}:
-            raise ValueError("action must be write, forget, noop, or defer")
+            raise ValueError("action must be write, metadata, forget, noop, or defer")
         if set(item) != expected:
             raise ValueError(f"{action} requires exactly {sorted(expected)}")
         ids = item["operation_ids"]
@@ -62,7 +64,7 @@ def parse_decisions(
             raise ValueError(
                 "reason must be a nonempty string of at most 500 characters"
             )
-        if action in {"noop", "defer"}:
+        if action == "defer" or (action == "noop" and "target_ids" not in item):
             continue
         targets = item["target_ids"]
         if not isinstance(targets, list) or any(
@@ -78,8 +80,8 @@ def parse_decisions(
         if keys.intersection(target_keys):
             raise ValueError("combine decisions that modify the same kind/key")
         keys.update(target_keys)
-        if action == "forget" and not targets:
-            raise ValueError("forget requires at least one target")
+        if action in {"forget", "metadata", "noop"} and not targets:
+            raise ValueError(f"{action} requires at least one target")
         if action == "write" and all(requests[x]["type"] == "forget" for x in ids):
             raise ValueError("a forget request cannot create a memory")
         citations = item["evidence"]
@@ -103,6 +105,8 @@ def parse_decisions(
             cited.add(event_id)
         if not {requests[x]["event_id"] for x in ids} <= cited:
             raise ValueError("cite the owner events supporting every resolved request")
+        if action == "metadata":
+            tags.validate(item["meta"])
         if action != "write":
             continue
         memory = item["memory"]

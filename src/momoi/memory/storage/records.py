@@ -74,3 +74,10 @@ def memory_snapshot_fingerprint(memory: Mapping[str, object]) -> str:
         default=str,
     ).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def legacy_scope(memory):
+    if memory['activation'] != 'scoped':
+        return ''
+    parts = memory['key'].split('.')
+    return '.'.join(parts[:2]) if parts[0] == 'goal' else parts[0]

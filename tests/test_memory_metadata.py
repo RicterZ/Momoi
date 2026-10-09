@@ -164,6 +164,6 @@ def test_maintenance_merge_preserves_tags_and_rejects_overflow_atomically(databa
         memory.repository.merge(survivor, [other], '咖啡', 'recall', None, events)
     assert memory.repository.validate_snapshots(snapshots) == snapshots
     tag(memory, other, ['social'])
-    memory.repository.merge(survivor, [other], '咖啡', 'recall', None, events)
-    assert memory.snapshots([survivor])[survivor]['meta'] == {'tags': ['food_drink', 'health', 'social']}
+    merged = memory.repository.merge(survivor, [other], '咖啡', 'recall', None, events)
+    assert memory.snapshots([merged])[merged]['meta'] == {'tags': ['food_drink', 'health', 'social']}
     assert memory.snapshots([other]) == {}

@@ -126,6 +126,7 @@ class DenseQueryService:
 class VectorMemoryEvidence:
     memory: dict[str, dict[tuple[str, str], DenseMemoryHit]]
     calibration: Mapping[str, DenseThresholds]
+    fallback_reason: str = ""
 
     def thresholds(self, document_type: str) -> DenseThresholds | None:
         return self.calibration.get(document_type)
@@ -154,4 +155,4 @@ class MemoryVectorRecall:
             (query.dense_expression for query in queries),
             self.pools(eligible_ids), limit=limit,
         )
-        return VectorMemoryEvidence(result.memory, self.calibration)
+        return VectorMemoryEvidence(result.memory, self.calibration, result.fallback_reason)

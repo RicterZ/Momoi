@@ -98,9 +98,25 @@ def test_merge_keeps_evidence_and_rolls_back_with_outer_transaction(database):
             assert not repo.snapshots([other])
             raise RuntimeError("abort")
     assert repo.validate_snapshots(snapshots) == snapshots
-    repo.merge(survivor, [other], "无糖咖啡", "recall", None, events)
+    merged = repo.merge(survivor, [other], "无糖咖啡", "recall", None, events)
     assert not database.in_transaction
-    assert set(repo.snapshots([survivor, other])) == {survivor}
+    assert not repo.snapshots([survivor, other])
+    assert merged not in (survivor, other)
     assert {row[0] for row in database.execute(
-        "SELECT quote FROM memory_evidence WHERE memory_id=?", (survivor,),
+        "SELECT quote FROM memory_evidence WHERE memory_id=?", (merged,),
     )} == {"喜欢无糖咖啡", "咖啡不加糖", "无糖咖啡"}
+
+
+def test_replace_keeps_original_body_and_primary_evidence_without_join_row(database):
+    repo = MemoryRepository(database)
+    old = write(repo, text='以前喝茶')
+    with transaction(database):
+        database.execute('DELETE FROM memory_evidence WHERE memory_id=?', (old,))
+    new = repo.replace(old, '现在喝咖啡', 'recall', None,
+                       {'event_id': 'new', 'quote': '喝咖啡'}, updated_at=time.time())
+    assert new != old
+    previous = database.execute('SELECT content,superseded_by FROM memories WHERE id=?', (old,)).fetchone()
+    assert tuple(previous) == ('以前喝茶', new)
+    assert {row[0] for row in database.execute('SELECT quote FROM memory_evidence WHERE memory_id=?', (new,))} == {
+        '以前喝茶', '喝咖啡',
+    }

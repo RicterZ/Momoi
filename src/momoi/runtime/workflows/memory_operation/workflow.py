@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ....models import ToolCall
+from ....memory.writing.candidates import CandidateBudgetExceeded
 from ....observability.events import log_event
 from ...agent import AgentWorkflow
 from ..memory_rendering import memory_record
@@ -71,7 +72,8 @@ class MemoryOperationWorkflow:
                 now=now, timestamp=self.store.context_timestamp(now),
                 operations=batch["operations"], visible=visible, snapshots=snapshots,
                 evidence=evidence_records,
-                goals=self.store.list_goals(),
+                goals=self.store.list_goals(), forgotten=context.forgotten,
+                retrieval_fallback=context.retrieval_fallback,
             )
             complete = False
             completion: dict[str, Any] | None = None
@@ -88,15 +90,13 @@ class MemoryOperationWorkflow:
                         or len(query) > 240
                     ):
                         return {"ok": False, "error": "invalid_memory_operation_query"}
-                    matches = self.memory.search_literal(query, 12, include_scoped=True)
-                    matches += [
-                        item for item in await self.memory.search(query, 12)
-                        if item["source"] == "confirmed"
-                    ]
-                    related = self.memory.snapshots(
-                        sorted({int(item["id"]) for item in matches})
-                    )
-                    snapshots.update(related)
+                    previous_ids = set(context.snapshots)
+                    previous_forgotten = set(context.forgotten)
+                    try:
+                        await self.memory.writing.candidates.collect(context, [query])
+                    except CandidateBudgetExceeded as error:
+                        return {"ok": False, "error": str(error)}
+                    related = {key: row for key, row in context.snapshots.items() if key not in previous_ids}
                     related_evidence = self.store.memory_maintenance_evidence_for_memories(
                         list(related)
                     )
@@ -104,6 +104,10 @@ class MemoryOperationWorkflow:
                         evidence[item["event_id"]] = item["content"]
                     return {
                         "ok": True,
+                        "candidate_ids": sorted(context.snapshots),
+                        "forgotten_memories": [row for key, row in context.forgotten.items()
+                                               if key not in previous_forgotten],
+                        "retrieval_fallback": context.retrieval_fallback,
                         "memories": [memory_record(row) for row in related.values()],
                         "owner_evidence": self.store.memory_operation_evidence_records(
                             {item["event_id"]: item["content"] for item in related_evidence}
@@ -159,6 +163,8 @@ class MemoryOperationWorkflow:
 
         plan = await self.memory.plan(
             batch["operations"], evidence=evidence, snapshots=snapshots, planner=planner,
+            evidence_times={row["event_id"]: row["received_at"]
+                            for row in self.store.memory_operation_evidence_records(evidence)},
         )
         self.store.apply_memory_operation(batch, plan.decisions, plan.snapshots, plan=plan)
         log_event(
