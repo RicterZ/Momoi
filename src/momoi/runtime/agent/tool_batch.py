@@ -1,4 +1,5 @@
 import time
+import asyncio
 import copy
 from dataclasses import replace
 import logging
@@ -89,7 +90,7 @@ class ToolBatchResult:
 
 
 class ToolBatchExecutor:
-    """Execute one validated model tool-call batch in response order."""
+    """Overlap independent reads and one reply; keep state-changing tools ordered."""
 
     def __init__(
         self,
@@ -140,7 +141,10 @@ class ToolBatchExecutor:
         owner_updates: list[IncomingMessage] = []
         allowed_tool_names = {str(spec["name"]) for spec in request.request_tools}
 
-        for index, call in enumerate(request.response.tool_calls):
+        async def execute_call(call: ToolCall) -> str:
+            nonlocal previous_tool_name, last_sent_bubbles, last_sent_channel
+            nonlocal last_tool_error, external_effect, ended, reply, protocol_error
+            nonlocal updates_in_result, owner_updates
             source = (
                 "workflow"
                 if request.workflow is not None
@@ -650,11 +654,54 @@ class ToolBatchExecutor:
             )
             results.append(tool_result_block(call.id, result))
             previous_tool_name = call.name
+            return last_tool_error
 
+        def parallel_safe(call: ToolCall) -> bool:
+            if execution.stage != "owner" or request.workflow is not None:
+                return False
+            if call.argument_error or call.name not in allowed_tool_names:
+                return False
+            if call.name == "reply":
+                return True
+            if not self.tool_executor.is_external(call.name):
+                return False
+            source = self.tool_executor.source(call.name)
+            capability = (self.tool_executor.mcp.capability(call.name) if source == "mcp"
+                          else self.tool_executor.builtin_tools.capability(call))
+            return capability == "read"
+
+        calls = request.response.tool_calls
+        index = 0
+        while index < len(calls):
+            group = [calls[index]]
+            if parallel_safe(group[0]):
+                while index + len(group) < len(calls) and len(group) < 4:
+                    candidate = calls[index + len(group)]
+                    if not parallel_safe(candidate) or (
+                        candidate.name == "reply" and any(item.name == "reply" for item in group)
+                    ):
+                        break
+                    group.append(candidate)
+            result_start = len(results)
+            if len(group) == 1:
+                await execute_call(group[0])
+            else:
+                # Structured cancellation: /stop must not leave background tool tasks.
+                async with asyncio.TaskGroup() as tasks:
+                    running = [tasks.create_task(execute_call(item)) for item in group]
+                order = {item.id: position for position, item in enumerate(group)}
+                results[result_start:] = sorted(
+                    results[result_start:], key=lambda block: order[block["tool_use_id"]]
+                )
+                previous_tool_name = group[-1].name
+                last_tool_error = running[-1].result()
+            index += len(group)
+            call = group[-1]
+            result = {"ok": not results[-1]["is_error"]}
             if request.workflow is not None and request.workflow.is_complete():
                 results.extend(
                     tool_error_block(pending.id, "workflow_already_completed")
-                    for pending in request.response.tool_calls[index + 1 :]
+                    for pending in calls[index:]
                 )
                 break
             if ended:
@@ -662,7 +709,7 @@ class ToolBatchExecutor:
             if call.name == "wait" and result.get("ok"):
                 # Always return to the model before any action planned before waiting.
                 results.extend(tool_error_block(pending.id, "reconsider_after_wait")
-                               for pending in request.response.tool_calls[index + 1:])
+                               for pending in calls[index:])
                 break
             if execution.accept_owner_updates:
                 owner_updates = await request.settle_owner_updates(
@@ -671,7 +718,7 @@ class ToolBatchExecutor:
                 if owner_updates:
                     results.extend(
                         tool_error_block(pending.id, "superseded_by_owner_update")
-                        for pending in request.response.tool_calls[index + 1 :]
+                        for pending in calls[index:]
                     )
                     break
 
