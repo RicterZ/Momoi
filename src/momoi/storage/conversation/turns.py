@@ -164,6 +164,29 @@ class TurnStore:
                 ),
             )
 
+    def background_receipts(self, turn_id: str) -> list[dict[str, object]]:
+        receipts = []
+        for row in self._db.execute(
+            "SELECT payload_json FROM turn_journal WHERE turn_id=? AND item_type='assistant_exchange' ORDER BY sequence",
+            (turn_id,),
+        ):
+            exchange = json.loads(row["payload_json"])
+            calls = {block["id"]: block for block in exchange.get("content", [])
+                     if isinstance(block, dict) and block.get("type") == "tool_use"}
+            for result in exchange.get("results", []):
+                call = calls.get(result.get("tool_use_id"))
+                if call:
+                    receipts.append({"tool": call["name"], "arguments": {} if call["name"] == "reply" else call.get("input", {}),
+                                     "result": result.get("content", ""), "is_error": result.get("is_error", False)})
+        return receipts
+
+    def mark_background_pause(self, turn_id: str, *, paused: bool) -> None:
+        with self._db:
+            self._db.execute("UPDATE turns SET stage=?,updated_at=? WHERE id=? AND state='running'",
+                             ("paused_for_owner" if paused else "resume_evaluation", time.time(), turn_id))
+        self.append_turn_journal(turn_id, "background_paused" if paused else "background_resumed",
+                                 {"reason": "owner_input" if paused else "fresh_transcript"})
+
     def append_turn_journal(
         self,
         turn_id: str,

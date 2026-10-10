@@ -10,13 +10,15 @@ logger = logging.getLogger("momoi.runtime.daemon")
 
 
 class AgentWorker:
-    async def _agent_worker(self, stop: asyncio.Event) -> None:
+    async def _agent_worker(self, stop: asyncio.Event, *, owner_only: bool = False) -> None:
         batch: list[IncomingMessage] = []
         quiet_deadline = 0.0
         hard_deadline = 0.0
         loop = asyncio.get_running_loop()
         while not stop.is_set():
             if not batch:
+                if owner_only and not self._deferred_incoming and self.incoming.empty():
+                    return
                 kind, item = await self._next_work()
                 if kind == "webhook":
                     prompt, turn_id, future = item
@@ -29,7 +31,7 @@ class AgentWorker:
                         stage="webhook", channel=self.channel.name,
                     )
                     try:
-                        reply = await self._active_turn
+                        reply = await self.await_background_turn(stop)
                     except asyncio.CancelledError:
                         if not self._stop_requested:
                             if not future.done():
@@ -82,7 +84,10 @@ class AgentWorker:
                         channel=plan["channel"] if plan else self.channel.name,
                     )
                     try:
-                        await self._active_turn
+                        if job.kind in {"goal", "heartbeat"}:
+                            await self.await_background_turn(stop)
+                        else:
+                            await self._active_turn
                     except asyncio.CancelledError:
                         if not self._stop_requested:
                             raise

@@ -74,6 +74,7 @@ class ToolBatchRequest:
     wait_owner_messages: Any = None
     system: Any = None
     context_messages: Any = None
+    pause_requested: Any = None
 
 
 @dataclass(frozen=True)
@@ -191,6 +192,9 @@ class ToolBatchExecutor:
                 result = {"ok": False, "error": "tool_not_allowed"}
             elif validation_error:
                 result = validation_error
+            elif request.pause_requested and request.pause_requested():
+                result = {"ok": False, "error": "paused_for_owner",
+                          "message": "用户开始聊天，本次调用尚未执行。任务已暂停；处理用户消息后会用最新上下文重新判断，勿自动补发或重放。"}
             elif owner_updates and call.name in {"reply", "wait", "end_turn"}:
                 result = {
                     "ok": False, "error": "superseded_by_owner_update",
@@ -486,7 +490,8 @@ class ToolBatchExecutor:
                         if mode == "voice":
                             delivery = await delivery
                         if delivery.result.get("ok"):
-                            if self.store.owner_channel_revision(target.name) != owner_revision:
+                            if (self.store.owner_channel_revision(target.name) != owner_revision
+                                    or (request.pause_requested and request.pause_requested())):
                                 self.store.cancel_pending_outbox(target.name, "owner_message_superseded_outbox")
                                 self.outbox_changed.set()
                             result = {**await self.bubble_delivery.wait_reply(request.turn_id, call.id), "mode": mode}

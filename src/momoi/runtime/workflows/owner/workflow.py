@@ -257,6 +257,9 @@ class OwnerWorkflow:
         self.owner_context_baseline()
         reconciliation_control = self._apply_reconciliation_commands(batch)
         directives: list[str] = []
+        background = getattr(self, "_background_pause", None)
+        if background is not None and background.context:
+            directives.append(background.context)
         directives.extend(self._interruption_notices.pop(channel.name, []))
         if channel.name == "qq_call":
             directives.append("当前是主人通过 QQ 电话的发言，使用 reply(mode=voice) 回应；保持自然口语，结束本轮不等于挂断电话。")

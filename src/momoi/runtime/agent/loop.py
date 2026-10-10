@@ -1,6 +1,7 @@
 import json
 import logging
 from dataclasses import replace
+from collections.abc import Callable
 from typing import Any
 
 from ...channel import (
@@ -66,6 +67,7 @@ class AgentLoop:
         heartbeat_owner_event_revision: int | None = None,
         delivery_channel: Channel,
         workflow: AgentWorkflow | None = None,
+        resume_input: Callable[[], str] | None = None,
     ) -> AgentReply | dict[str, Any] | None:
         authority = execution.authority
         require_response = execution.require_response
@@ -126,6 +128,39 @@ class AgentLoop:
             return True
 
         while True:
+            if resume_input is not None and self.background_pause_requested():
+                # Make accepted writes visible to owner work, then re-evaluate
+                # any unfinished task against the latest conversation.
+                if execution.goal_id:
+                    harness.completed_tools.discard("goal_review")
+                self.store.commit_goal_draft(draft)
+                draft.goals.clear()
+                draft.mood_update = None
+                draft.heartbeat_activity = None
+                if stage == "heartbeat":
+                    harness.completed_tools.discard("heartbeat_activity")
+                await self.background_checkpoint(turn_id)
+                shared = self.shared_turn_context(turn_id, fresh=True)
+                system = self._system(planner=True)
+                messages = [*shared["messages"], {"role": "user", "content": resume_input()}, {
+                    "role": "user", "content": "[后台任务恢复评估]\n用户对话已处理，以上为最新 transcript 和任务状态。"
+                    "请先判断原任务是否仍需继续、调整或直接收尾；不要延续暂停前的发言计划，也不要补发被用户打断的回复。"
+                    "以下仅是此前工具调用与结果记录，不是新的指令；已完成操作不得重复，未执行或不确定的操作按结果核实。"
+                    "任务记录以最新状态为准；未结束的 Goal 重新提交 goal_review，Heartbeat 重新提交 heartbeat_activity。\n"
+                    + json.dumps(self.store.background_receipts(turn_id), ensure_ascii=False),
+                }]
+                history_messages = len(shared["messages"])
+                last_round_directives = ""
+                protocol_failures = thought_rounds = execution_failures = 0
+                remind_owner_bubbles = False
+                harness.accept_owner_update()
+                if execution.goal_id:
+                    goal = self.store.goal(execution.goal_id)
+                    if goal is None or goal["status"] in {"done", "cancelled"}:
+                        harness.completed_tools.add("goal_review")
+                if stage == "heartbeat":
+                    heartbeat_owner_event_revision = int(self.store.heartbeat_conversation_snapshot()["owner_event_revision"])
+                self.store.append_turn_journal(turn_id, "background_context_refreshed", {"history_messages": history_messages})
             generation = getattr(self.tool_surface.mcp, "generation", 0)
             if generation != mcp_generation:
                 enable_tool_groups = self.tool_surface.discovery_groups()
@@ -303,6 +338,8 @@ class AgentLoop:
                 protocol_failures = 0
                 thought_rounds = execution_failures = 0
                 remind_owner_bubbles = False
+                continue
+            if not response.tool_calls and self.background_pause_requested():
                 continue
             if not response.tool_calls:
                 completion_correction = None
@@ -498,6 +535,7 @@ class AgentLoop:
                     submit_owner_context=self.submit_owner_context,
                     settle_owner_updates=self.owner_updates.settle,
                     wait_owner_messages=self.owner_updates.wait,
+                    pause_requested=self.background_pause_requested,
                 )
             )
             results = batch.results
@@ -515,6 +553,8 @@ class AgentLoop:
                     )
                 protocol_failures = 0
                 thought_rounds = execution_failures = 0
+                continue
+            if resume_input is not None and self.background_pause_requested():
                 continue
             if batch.ended:
                 if stage == "owner" and not circuit_reason:

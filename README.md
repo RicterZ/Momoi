@@ -127,6 +127,13 @@ After a conversation finishes, a configurable continuation window defaults to
 for an unfinished message, for up to 60 seconds per call. A reply that does not
 depend on pending results can run alongside independent read-only tools.
 
+
+Goals, Webhooks, and Heartbeats yield at tool boundaries when owner messages arrive.
+After owner conversation finishes, they rebuild the latest transcript and task
+context, carrying forward tool receipts and actual delivery results so the model
+can continue, adjust, or finish. Old reply plans are not replayed; `/stop` still
+stops execution.
+
 ## Memory
 
 Momoi stores confirmed memories, topic history, and unconfirmed observations

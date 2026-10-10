@@ -144,9 +144,7 @@ class GoalWorkflow:
         if goal is None or goal["status"] not in {"active", "waiting"}:
             self.store.release_goal_claim(goal_id)
             return
-        now = datetime.now(self.store.timezone).isoformat(timespec="seconds")
         review_at = context_timestamp(goal["next_review_at"], self.store.timezone)
-        self_state = heartbeat_self_state_lines(self.store.self_state_context(), current_time=now)
         shared = self.shared_turn_context(turn_id)
         conversation_rows = shared["rows"]
         transcript = shared["transcript"]
@@ -161,21 +159,20 @@ class GoalWorkflow:
             if group.role == "goal"
             for message_id in group.message_ids
         ))
-        goal_event = due_goal_lines(
-            goal,
-            scheduled_review_at=review_at,
-        )
-        current_input = pack_current_turn_context(
-            self.store, "goal",
-            ("scoped_memories", self.store.scoped_memory_context(f"goal:{goal_id}")),
-            (
-                "workflow_contract",
-                _live_prompt(GOAL_PROMPT_PATH, GOAL_SYSTEM_PROMPT),
-            ),
-            ("due_goal", goal_event),
-            ("self_state", self_state),
-            ("recent_goals", recent_goals),
-        )
+        def build_input():
+            return pack_current_turn_context(
+                self.store, "goal",
+                ("scoped_memories", self.store.scoped_memory_context(f"goal:{goal_id}")),
+                (
+                    "workflow_contract",
+                    _live_prompt(GOAL_PROMPT_PATH, GOAL_SYSTEM_PROMPT),
+                ),
+                ("due_goal", due_goal_lines(self.store.goal(goal_id) or {"id": goal_id, "status": "deleted"}, scheduled_review_at=review_at)),
+                ("self_state", heartbeat_self_state_lines(self.store.self_state_context(), current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"))),
+                ("recent_goals", recent_goals),
+            )
+
+        current_input = build_input()
         messages: list[dict[str, Any]] = [
             *shared["messages"],
             {
@@ -197,6 +194,7 @@ class GoalWorkflow:
             tools,
             [],
             draft,
+            resume_input=build_input,
             execution=TurnExecutionSpec(
                 "goal",
                 goal_id=goal_id,

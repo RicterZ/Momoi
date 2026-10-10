@@ -1,4 +1,5 @@
 import copy
+import time
 
 from ...models import IncomingMessage
 from ...memory import Memory, MemoryRecallQuery
@@ -114,13 +115,14 @@ class ContextService:
             include_images=True,
         )
 
-    def shared_turn_context(self, turn_id: str) -> dict[str, object]:
+    def shared_turn_context(self, turn_id: str, *, fresh: bool = False) -> dict[str, object]:
         """One canonical prefix and transcript for every conversation executor."""
         from ..transcript.building import build_transcript
         from ..transcript.rendering import render_messages
 
-        cutoff = float(self.store.turn_usage(turn_id)["started_at"])
+        cutoff = time.time() if fresh else float(self.store.turn_usage(turn_id)["started_at"])
         rows = self.store.retained_transcript_rows(self._recent_conversation_rows(cutoff))
+        rows = [row for row in rows if str(row["turn_id"]) != turn_id]
         ids = list(dict.fromkeys(str(row["turn_id"]) for row in rows))
         exchanges = self.store.turn_exchanges(ids, include_reply_messages=True)
         # Runtime failure notices, events and silent turns need no LLM exchange.

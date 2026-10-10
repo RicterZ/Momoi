@@ -125,7 +125,6 @@ class HeartbeatWorkflow:
         owner_event_revision: int,
     ) -> None:
         delivery_channel = self._channel_for(target_channel or self.channel.name)
-        self_context = self.store.self_state_context()
         contact_window = self.store.heartbeat_contact_window(
             self.config.notifications
         )
@@ -144,19 +143,24 @@ class HeartbeatWorkflow:
             f"{max(1, math.ceil(self.config.heartbeat.min_interval_seconds / 60))}-"
             f"{min(1440, math.floor(self.config.heartbeat.max_interval_seconds / 60))} minutes."
         )
-        current_input = pack_current_turn_context(
-            self.store, "heartbeat",
-            ("scoped_memories", self.store.scoped_memory_context("heartbeat")),
-            ("workflow_contract", self._heartbeat_system_prompt()),
-            ("autonomous_heartbeat", heartbeat_event),
-            (
-                "self_state",
-                heartbeat_self_state_lines(
-                    self_context,
-                    current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
+        def build_input():
+            nonlocal owner_event_revision
+            owner_event_revision = int(self.store.heartbeat_conversation_snapshot()["owner_event_revision"])
+            return pack_current_turn_context(
+                self.store, "heartbeat",
+                ("scoped_memories", self.store.scoped_memory_context("heartbeat")),
+                ("workflow_contract", self._heartbeat_system_prompt()),
+                ("autonomous_heartbeat", heartbeat_event),
+                (
+                    "self_state",
+                    heartbeat_self_state_lines(
+                        self.store.self_state_context(),
+                        current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
+                    ),
                 ),
-            ),
-        )
+            )
+
+        current_input = build_input()
         system = self._system(planner=True)
         injected_memories = shared["memories"]
         messages: list[dict[str, Any]] = [
@@ -183,6 +187,7 @@ class HeartbeatWorkflow:
             tools,
             memory_events,
             draft,
+            resume_input=build_input,
             execution=TurnExecutionSpec(
                 "heartbeat",
                 allowed_capabilities=frozenset({"read", "write", "external_effect"}),
