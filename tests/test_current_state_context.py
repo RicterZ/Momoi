@@ -134,18 +134,14 @@ def test_real_workflows_inject_only_current_input_and_preserve_history(daemon, s
     assert daemon.store.current_state.history() == history
 
 
-def test_owner_update_refreshes_state_and_explicitly_clears_expired_snapshot(daemon):
-    clock, _ = seed(daemon)
+def test_owner_update_is_lightweight_and_omits_current_state(daemon):
+    seed(daemon)
     event = IncomingMessage("new", "new", "NEW_INPUT", 1002, 1002)
-    baseline = daemon.owner_context_baseline()
-    before = daemon._owner_update_message([event], daemon.channel, baseline)
-    assert "STATE_ONLY" in json.dumps(before)
-    clock[0] = 1060
-    after = daemon._owner_update_message([event], daemon.channel, baseline)
-    text = after["content"][0]["text"]
-    assert text.startswith("<current_state />")
-    assert "STATE_ONLY" not in text
-    assert "NEW_INPUT" in json.dumps(after)
+    message = daemon._owner_update_message([event], daemon.channel, daemon.owner_context_baseline())
+    text = "".join(block.get("text", "") for block in message["content"])
+    assert "[用户中途插话]" in text and "NEW_INPUT" in text
+    for section in ("STATE_ONLY", "current_state", "workflow_contract", "self_state", "episode_directory", "recall_status"):
+        assert section not in text
 
 
 def test_empty_current_state_omits_section_and_reading_never_renews_ttl(daemon):

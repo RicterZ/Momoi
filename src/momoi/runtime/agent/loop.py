@@ -47,7 +47,7 @@ class AgentLoop:
 
         messages.append(
             self._owner_update_message(
-                updates, delivery_channel, self.owner_context_baseline(), draft=draft
+                updates, delivery_channel, {}, draft=draft
             )
         )
         harness.accept_owner_update()
@@ -158,7 +158,6 @@ class AgentLoop:
                 else []
             )
             if updates:
-                batch_state = ToolBatchState()
                 source_event_id = self._absorb_owner_updates(
                     updates, messages, delivery_channel, harness, draft
                 )
@@ -261,7 +260,6 @@ class AgentLoop:
                         current_events, delivery_channel.name
                     )
                 )
-                batch_state = ToolBatchState()
                 source_event_id = self._absorb_owner_updates(
                     updates, messages, delivery_channel, harness, draft
                 )
@@ -290,7 +288,6 @@ class AgentLoop:
                 else []
             )
             if updates:
-                batch_state = ToolBatchState()
                 messages.append(assistant_history_message(response.content, response.continuation))
                 if response.tool_calls:
                     messages.append(
@@ -513,7 +510,6 @@ class AgentLoop:
             batch_state = batch.state
             last_tool_error = batch.last_tool_error
             if updates:
-                batch_state = ToolBatchState()
                 if batch.updates_in_result:
                     source_event_id = updates[-1].event_id
                     harness.accept_owner_update()

@@ -118,56 +118,9 @@ class OwnerUpdateController:
             )
             raise OwnerMessagesChanged(initial)
 
-        provider_task = asyncio.create_task(
-            provider.complete(
-                system,
-                messages,
-                tools,
-                require_tool=require_tool,
-                required_tool=required_tool,
-            )
+        # Let the in-flight request finish. The loop merges queued input before
+        # executing its proposed actions, without cancelling this turn.
+        return await provider.complete(
+            system, messages, tools,
+            require_tool=require_tool, required_tool=required_tool,
         )
-        try:
-            while True:
-                self.message_changed.clear()
-                updates = self.drain(current_events, channel_name)
-                if updates:
-                    provider_task.cancel()
-                    await asyncio.gather(provider_task, return_exceptions=True)
-                    log_event(
-                        logger,
-                        logging.INFO,
-                        "llm_cancelled",
-                        reason="owner_update",
-                        updates=len(updates),
-                    )
-                    raise OwnerMessagesChanged(updates)
-                if provider_task.done():
-                    return provider_task.result()
-
-                changed = asyncio.create_task(self.message_changed.wait())
-                done, _ = await asyncio.wait(
-                    {provider_task, changed},
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                if changed not in done:
-                    changed.cancel()
-                    await asyncio.gather(changed, return_exceptions=True)
-                updates = self.drain(current_events, channel_name)
-                if updates:
-                    provider_task.cancel()
-                    await asyncio.gather(provider_task, return_exceptions=True)
-                    log_event(
-                        logger,
-                        logging.INFO,
-                        "llm_cancelled",
-                        reason="owner_update",
-                        updates=len(updates),
-                    )
-                    raise OwnerMessagesChanged(updates)
-                if provider_task in done:
-                    return provider_task.result()
-        except asyncio.CancelledError:
-            provider_task.cancel()
-            await asyncio.gather(provider_task, return_exceptions=True)
-            raise

@@ -388,7 +388,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 "napcat:second", "second", "第二条", 2, 2, channel="napcat"
             )
             await daemon._receive(second)
-            await asyncio.wait_for(stale_reply_cancelled.wait(), timeout=1)
+            await asyncio.sleep(0.01)
+            self.assertFalse(stale_reply_cancelled.is_set())
+            self.assertFalse(turn.done())
+            finish_stale_reply.set()
             await asyncio.wait_for(turn, timeout=1)
 
             self.assertEqual(provider.calls, 3)
@@ -502,8 +505,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             finish_tool.set()
             await stale_end_turn_started.wait()
             await daemon._receive(second_update)
-            await asyncio.wait_for(stale_end_turn_cancelled.wait(), timeout=1)
-            await turn
+            await asyncio.sleep(0.01)
+            self.assertFalse(stale_end_turn_cancelled.is_set())
+            finish_stale_end_turn.set()
+            await asyncio.wait_for(turn, timeout=1)
 
             self.assertEqual(provider.calls, 4)
             self.assertTrue(daemon.incoming.empty())

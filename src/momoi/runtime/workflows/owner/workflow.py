@@ -34,42 +34,14 @@ class OwnerWorkflow:
         recalled: dict[str, str],
         *, draft: TurnDraft | None = None,
     ) -> dict[str, Any]:
-        """Carry only what the interruption actually changed.
-
-        The conversation so far is already present as native messages and as
-        this Turn's own tool exchanges, and durable memory has not moved, so
-        repeating either would duplicate context mid-Turn. What is new is the
-        evidence recalled for the revised input, the state that advanced while
-        the Turn ran, and the owner's latest words.
-        """
-
-        runtime_text = pack_current_turn_context(
-            self.store, "owner",
-            ("workflow_contract", self._owner_system_prompt()),
-            (
-                "runtime_directives",
-                "[Trusted runtime update received while the previous operation was "
-                "running. Re-evaluate the next action and any planned reply using "
-                "the owner's latest intent. Prior tool results and any successful "
-                "opening recall remain valid in this Turn. Recall again if the latest "
-                "intent needs additional evidence. If opening recall has not "
-                "succeeded yet, complete it first.]",
-            ),
-            (
-                "self_state",
-                heartbeat_self_state_lines(
-                    current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
-                ),
-            ),
-            ("triggered_memories", triggered_memory_context(
-                self.memory, updates, draft.memory_context if draft is not None else {},
-            )),
-            ("recall_memories", recalled["recall_memories"]),
-            ("recall_status", recalled["query_recall"]),
-            ("reflection_memories", recalled["reflection_memories"]),
-            ("episode_directory", recalled["episodes"]),
-            include_empty=True,
+        """Steer the same turn with matched memories followed by new owner input."""
+        triggered = triggered_memory_context(
+            self.memory, updates, draft.memory_context if draft is not None else {}, only_new=True,
         )
+        runtime_text = (
+            f"<triggered_memories>\n{triggered}\n</triggered_memories>\n\n"
+            if triggered else ""
+        ) + "[用户中途插话]"
         content = _owner_content_blocks(
             updates, channel.content_blocks, self.store.timezone, runtime_text
         )
