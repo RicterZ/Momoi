@@ -8,11 +8,12 @@ from .candidates import ReflectionCandidateStore
 
 
 class WeeklyReflectionStore(ReflectionCandidateStore):
-    def _weekly_reflection_slot(self, now):
+    def _weekly_reflection_slot(self, now, config):
         local = datetime.fromtimestamp(now, self._timezone)
+        hour, minute = map(int, config.at.split(":"))
         scheduled = (local - timedelta(days=(local.weekday() - 6) % 7)).replace(
-            hour=5, minute=0, second=0, microsecond=0,
-        )
+            hour=hour, minute=minute, second=0, microsecond=0,
+        ) + timedelta(hours=1)
         if scheduled.timestamp() > now:
             scheduled -= timedelta(days=7)
         return scheduled
@@ -52,7 +53,7 @@ class WeeklyReflectionStore(ReflectionCandidateStore):
         if not config.enabled:
             return None
         now = time.time() if now is None else now
-        scheduled = self._weekly_reflection_slot(now)
+        scheduled = self._weekly_reflection_slot(now, config)
         with self._db:
             if self._db.execute("SELECT 1 FROM weekly_reflections WHERE state='running' OR (state='pending' AND COALESCE(retry_at,0)>?)", (now,)).fetchone():
                 return None
@@ -61,7 +62,7 @@ class WeeklyReflectionStore(ReflectionCandidateStore):
                 "AND scheduled_at<=? AND COALESCE(retry_at,0)<=? ORDER BY scheduled_at LIMIT 1",
                 (now, now),
             ).fetchone()
-            end = pending['period_end'] if pending else scheduled.date().isoformat()
+            end = pending['period_end'] if pending else (scheduled - timedelta(hours=1)).date().isoformat()
             start = (date.fromisoformat(end) - timedelta(days=7)).isoformat()
             existing = self.weekly_reflection(end)
             if existing and (existing['state'] != 'pending' or (existing['retry_at'] or 0) > now):
@@ -93,8 +94,8 @@ class WeeklyReflectionStore(ReflectionCandidateStore):
         pending = self._db.execute(
             "SELECT MIN(MAX(scheduled_at, COALESCE(retry_at,0))) FROM weekly_reflections WHERE state='pending'",
         ).fetchone()[0]
-        scheduled = self._weekly_reflection_slot(now)
-        row = self.weekly_reflection(scheduled.date().isoformat())
+        scheduled = self._weekly_reflection_slot(now, config)
+        row = self.weekly_reflection((scheduled - timedelta(hours=1)).date().isoformat())
         if row is None:
             return min(scheduled.timestamp(), pending) if pending is not None else scheduled.timestamp()
         if row['state'] == 'pending':

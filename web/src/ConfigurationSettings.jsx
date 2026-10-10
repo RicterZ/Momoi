@@ -1089,13 +1089,9 @@ function RuntimePropertyFields({ spec, value, onChange }) {
   );
 }
 
-const runtimeOrder = { turn: -1, heartbeat: 0, episode_annealing: 1, episode_relation: 2, logging: 3, reflection: 4, thinking: 5 };
+const runtimeOrder = { turn: -1, heartbeat: 0, reflection: 1, episode_annealing: 2, episode_relation: 3, logging: 4, thinking: 5 };
 const runtimeDescriptions = {
-  heartbeat: "心跳是 Momoi 的自主时间。她可以探索、创作、延续自己的活动，也可以休息或主动与你分享。",
   logging: "控制运行日志的详细程度，用于查看服务状态与排查问题。",
-  reflection: "每天在设定时间回顾对话与活动，记录感受、关系变化和可复用的经验。",
-  episode_annealing: "整理对话并生成话题摘要。",
-  episode_relation: "在话题摘要完成后，查找并建立有依据的话题关联。",
   thinking: "为不同运行阶段设置思考强度；默认跟随模型，单独设置后不随模型切换而改变。",
 };
 
@@ -1148,7 +1144,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
       <SectionHeader module={module} />
       <div className="settings-form-body settings-runtime-controls">
         {groups.sort((a, b) => (runtimeOrder[a.name] ?? 99) - (runtimeOrder[b.name] ?? 99)).map(({ name, configName, schema }) => (
-          <section className={`settings-runtime-group${Object.values(schema.fields).some(spec => spec.properties) ? " settings-runtime-nested" : ""}${name === "thinking" ? " settings-runtime-thinking" : ""}`} key={name} aria-labelledby={`runtime-${name}`}>
+          <section className={`settings-runtime-group${["heartbeat", "reflection", "episode_annealing", "episode_relation"].includes(name) ? " settings-runtime-half" : ""}${Object.values(schema.fields).some(spec => spec.properties) ? " settings-runtime-nested" : ""}${name === "thinking" ? " settings-runtime-thinking" : ""}`} key={name} aria-labelledby={`runtime-${name}`}>
             <div className="settings-runtime-copy">
               <div className="settings-voice-title">
                 <h3 id={`runtime-${name}`}>{name === "episode_annealing" ? "话题归档" : name === "episode_relation" ? "话题关联" : schema.label}</h3>

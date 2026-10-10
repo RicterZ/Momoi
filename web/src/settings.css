@@ -1322,3 +1322,20 @@
   --control-accent: var(--pink);
   --control-focus: var(--blue);
 }
+
+
+.settings-form-body.settings-runtime-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 28px;
+}
+.settings-runtime-group { grid-column: 1 / -1; }
+.settings-runtime-group.settings-runtime-half {
+  grid-column: auto;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 16px;
+}
+@media (max-width: 700px) {
+  .settings-form-body.settings-runtime-controls { grid-template-columns: minmax(0, 1fr); }
+}

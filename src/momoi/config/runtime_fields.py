@@ -78,7 +78,7 @@ _FIELDS = {
         },
     },
     "reflection": {
-        "label": "每日复盘",
+        "label": "复盘",
         "fields": {
             "enabled": {"type": "boolean", "label": "启用复盘", "default": False},
             "at": {
