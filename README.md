@@ -145,6 +145,40 @@ memory changes pass through a separate writing workflow that checks source evide
 and existing memories. Reflection candidates require manual Dashboard admission
 before entering recall memory.
 
+### Memory architecture
+
+```mermaid
+flowchart TB
+  subgraph history["Conversation and experiences"]
+    dialogue["Owner dialogue and execution records"] --> topics["Topic archiving and relationships<br/>Summaries · original dialogue"]
+    dialogue --> writing["Memory operations<br/>Evidence checks · deduplication and updates"]
+  end
+
+  subgraph reflection["Reflection candidates · excluded from everyday recall"]
+    daily["Daily review"] --> observations["Diary and daily observations<br/>Quoted evidence · triggers"]
+    observations --> weekly["Weekly review<br/>Previous candidates · rolling month"]
+    weekly --> candidates["Observations: ≥ 2 events<br/>Ready: ≥ 5 events, no conflicts"]
+    candidates -.-> weekly
+    candidates --> admission["Manual Dashboard admission"]
+  end
+
+  subgraph memory["Confirmed memories"]
+    core["Long-term"]
+    recall["Recall"]
+    scoped["Scoped"]
+  end
+
+  topics --> daily
+  writing --> core
+  writing --> recall
+  writing --> scoped
+  admission --> recall
+  topics -->|"Read topics and original dialogue"| context["Current context"]
+  core -->|"Direct injection"| context
+  recall -->|"Keyword / semantic retrieval<br/>or triggers in owner messages"| context
+  scoped -->|"Matching workflow scope"| context
+```
+
 ### Daily observations and manual admission
 
 1. **Daily review:** organizes conversations by topic, writes a diary, and extracts

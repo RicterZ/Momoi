@@ -122,6 +122,40 @@ Momoi 将正式记忆、话题记录和待验证的复盘观察分开保存。Da
 习惯的记忆分工不同。模型提出的记忆变动通过独立写入流程，依据原文证据检查已有记忆后处理；
 复盘候选则必须在 Dashboard 手动准入，才写入召回记忆。
 
+### 记忆架构
+
+```mermaid
+flowchart TB
+  subgraph history["对话与经历"]
+    dialogue["主人对话与执行记录"] --> topics["话题归档与关联<br/>摘要 · 原始对话"]
+    dialogue --> writing["记忆操作<br/>证据审查 · 查重与更新"]
+  end
+
+  subgraph reflection["复盘候选 · 不直接召回"]
+    daily["每日复盘"] --> observations["日记与每日观察<br/>原文证据 · 触发词"]
+    observations --> weekly["每周盘点<br/>带入上次候选 · 最长一个月"]
+    weekly --> candidates["观察 ≥ 2 次<br/>待准入 ≥ 5 次且无冲突"]
+    candidates -.-> weekly
+    candidates --> admission["Dashboard 人工准入"]
+  end
+
+  subgraph memory["正式记忆"]
+    core["长期记忆"]
+    recall["召回记忆"]
+    scoped["领域记忆"]
+  end
+
+  topics --> daily
+  writing --> core
+  writing --> recall
+  writing --> scoped
+  admission --> recall
+  topics -->|"查阅话题与原文"| context["本轮上下文"]
+  core -->|"直接注入"| context
+  recall -->|"关键词 / 语义检索<br/>或主人消息命中触发词"| context
+  scoped -->|"匹配工作流作用域"| context
+```
+
 ### 从每日观察到人工准入
 
 1. **每日复盘**：按话题整理对话，生成日记，并提取围绕用户的简短事实、状态、偏好和
