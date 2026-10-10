@@ -2947,7 +2947,8 @@ function App() {
             </button>
           </header>
           <div id="content">
-            {setupMode === null ? <div role="status">{setupError || "正在检查首次配置…"}</div> : <View
+            {setupError && <div role="status">{setupError}</div>}
+            <View
               refreshKey={refreshKey}
               token={token}
               setupMode={setupMode}
@@ -2955,7 +2956,7 @@ function App() {
               routeParam={param}
               onMutated={() => setRefreshKey((value) => value + 1)}
 
-            />}
+            />
           </div>
         </main>
       </div>
