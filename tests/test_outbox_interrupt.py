@@ -22,36 +22,35 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         channel.session_id = 'call'
         channel.status = {'phase': 'connected'}
         self.daemon.channels['qq_call'] = channel
-        for reason in ('call_ended', 'owner_speech'):
-            with self.subTest(reason=reason):
-                entered = asyncio.Event()
-                stop = asyncio.Event()
-                message = IncomingMessage(reason, reason, '我要继续工作', 1, 1,
-                    channel='qq_call', delivery_context=channel.routing_context())
-                turn_id = self.daemon._turn_id(message.event_id)
+        reason = 'call_ended'
+        entered = asyncio.Event()
+        stop = asyncio.Event()
+        message = IncomingMessage(reason, reason, '我要继续工作', 1, 1,
+            channel='qq_call', delivery_context=channel.routing_context())
+        turn_id = self.daemon._turn_id(message.event_id)
 
-                async def complete(batch, _, sealed_turn_id, target):
-                    self.store.begin_turn(sealed_turn_id, 'owner', [message.event_id])
-                    entered.set()
-                    await asyncio.Event().wait()
+        async def complete(batch, _, sealed_turn_id, target):
+            self.store.begin_turn(sealed_turn_id, 'owner', [message.event_id])
+            entered.set()
+            await asyncio.Event().wait()
 
-                self.daemon._complete_batch_turn = complete
-                self.daemon.incoming.put_nowait(message)
-                worker = asyncio.create_task(self.daemon._agent_worker(stop))
-                try:
-                    await asyncio.wait_for(entered.wait(), 1)
-                    with self.assertLogs('momoi.runtime.daemon', level='INFO') as logs:
-                        self.daemon._interrupt_qq_call(reason)
-                        stop.set()
-                        await asyncio.wait_for(worker, 1)
-                    self.assertEqual(logs.records[-1].momoi_fields['reason'], reason)
-                    row = self.store._db.execute(
-                        'SELECT state, failure_reason FROM turns WHERE id=?', (turn_id,)
-                    ).fetchone()
-                    self.assertEqual(tuple(row), ('cancelled', reason))
-                finally:
-                    worker.cancel()
-                    await asyncio.gather(worker, return_exceptions=True)
+        self.daemon._complete_batch_turn = complete
+        self.daemon.incoming.put_nowait(message)
+        worker = asyncio.create_task(self.daemon._agent_worker(stop))
+        try:
+            await asyncio.wait_for(entered.wait(), 1)
+            with self.assertLogs('momoi.runtime.daemon', level='INFO') as logs:
+                self.daemon._interrupt_qq_call(reason)
+                stop.set()
+                await asyncio.wait_for(worker, 1)
+            self.assertEqual(logs.records[-1].momoi_fields['reason'], reason)
+            row = self.store._db.execute(
+                'SELECT state, failure_reason FROM turns WHERE id=?', (turn_id,)
+            ).fetchone()
+            self.assertEqual(tuple(row), ('cancelled', reason))
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
 
     def setUp(self):
         directory = tempfile.TemporaryDirectory()

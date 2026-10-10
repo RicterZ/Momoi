@@ -116,3 +116,49 @@ def test_maintenance_preempts_window_before_starting(tmp_path):
         assert daemon._episode_annealing_dirty
     finally:
         daemon.store.close()
+
+
+def test_call_speech_during_execution_keeps_turn(tmp_path):
+    from momoi.channel.napcat.voice_call.channel import QQCallChannel
+    daemon = MomoiDaemon(replace(config(str(tmp_path)), owner_continuation_seconds=0))
+    channel = QQCallChannel(SimpleNamespace(), '123', object(), tts_enabled=True)
+    channel.session_id = 'call'
+    channel.status = {'phase': 'connected'}
+    daemon.channels['qq_call'] = channel
+    rounds = []
+
+    async def complete(system, messages, tools, **kwargs):
+        rounds.append(json.dumps(messages, ensure_ascii=False))
+        if len(rounds) == 1:
+            channel.generation += 1
+            daemon._interrupt_qq_call('owner_speech')
+            assert not daemon._active_turn.cancelling()
+            await daemon._receive(IncomingMessage('interjection', 'interjection', '等等，我改主意了',
+                2, 2, channel='qq_call', delivery_context=channel.routing_context()))
+        call = ToolCall(f'end-{len(rounds)}', 'end_turn', {'mood': {'decision': 'unchanged'}})
+        return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
+
+    async def run():
+        daemon.provider = with_owner_recall(SimpleNamespace(complete=complete))
+        first = IncomingMessage('first', 'first', '说点什么', 1, 1, channel='qq_call',
+                                delivery_context=channel.routing_context())
+        daemon.store.add_event(first)
+        task = daemon.start_active_turn(
+            daemon._complete_batch_turn([first], asyncio.Event(), 'speaking', channel),
+            stage='owner', channel='qq_call')
+        try:
+            await asyncio.wait_for(task, 2)
+            assert len(rounds) == 2
+            assert '[用户中途插话]' in rounds[1]
+            assert '等等，我改主意了' in rounds[1]
+            row = daemon.store._db.execute("SELECT state,source_ids_json FROM turns WHERE id='speaking'").fetchone()
+            assert row['state'] == 'completed'
+            assert json.loads(row['source_ids_json']) == ['first', 'interjection']
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            daemon.finish_active_turn()
+    try:
+        asyncio.run(run())
+    finally:
+        daemon.store.close()

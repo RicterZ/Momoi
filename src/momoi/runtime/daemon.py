@@ -296,7 +296,7 @@ class MomoiDaemon(
     def _interrupt_qq_call(self, reason):
         self.store.cancel_pending_outbox("qq_call", reason)
         self.outbox_changed.set()
-        if reason == "owner_speech" and self._owner_continuation_waiting:
+        if reason == "owner_speech":
             return
         if getattr(self, "_active_turn_channel", "") == "qq_call":
             active = getattr(self, "_active_turn", None)
