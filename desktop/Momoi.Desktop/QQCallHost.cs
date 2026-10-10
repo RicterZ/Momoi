@@ -31,7 +31,7 @@ internal sealed class QQCallHost : IAsyncDisposable
     public QQCallHost(string workspace, string napcatEntry)
     {
         this.workspace = workspace;
-        app = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(napcatEntry)!, "..", ".."));
+        app = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(napcatEntry)!, ".."));
         bridge = Path.Combine(app, "qq_call_bridge");
         data = Path.Combine(workspace, "qq-call");
         using var settings = JsonDocument.Parse(File.ReadAllText(QQCallSettings.Prepare(workspace)));
@@ -194,7 +194,7 @@ internal sealed class QQCallHost : IAsyncDisposable
         string hostScript = Path.Combine(bridge, "windows", "start-av-host.ps1");
         string mediaEntry = Path.Combine(app, "momoi_desktop", "call_entry.py");
         foreach (string file in new[] { Path.Combine(native, "qq", "Files", "QQ.exe"), hostScript, python, mediaEntry })
-            if (!File.Exists(file)) throw new FileNotFoundException("语音运行组件缺失，请安装新版完整安装包。", file);
+            if (!File.Exists(file)) throw new FileNotFoundException($"语音运行组件缺失：{file}。请修复或更新客户端安装。", file);
         if (Process.GetCurrentProcess().SessionId == 0) throw new IOException("语音电话需要在 Windows 桌面会话中启动。");
         Status("starting", "正在启动语音宿主");
         job = new ProcessJob();
