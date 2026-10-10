@@ -1047,7 +1047,7 @@ function compareMessages(left, right, newestFirst) {
   const delta = messageTime(left.created_at) - messageTime(right.created_at);
   if (delta !== 0) return newestFirst ? -delta : delta;
   const idDelta = Number(left.id || 0) - Number(right.id || 0);
-  if (idDelta !== 0) return newestFirst ? -idDelta : idDelta;
+  if (Number.isFinite(idDelta) && idDelta !== 0) return newestFirst ? -idDelta : idDelta;
   const ordinalDelta = Number(left.ordinal || 0) - Number(right.ordinal || 0);
   return newestFirst ? -ordinalDelta : ordinalDelta;
 }
