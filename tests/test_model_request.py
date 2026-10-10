@@ -24,36 +24,17 @@ class ModelRequestTest(unittest.IsolatedAsyncioTestCase):
             thinking_stages=stages,
         )
 
-    async def run_round(self, runner, stage, complete, *, channel="test"):
+    async def run_round(self, runner, stage, complete):
         return await runner.run(
             [], [{"role": "user", "content": "Hello"}], [], complete=complete,
             system_policy=None, authority="agent", remind_owner_bubbles=False,
             harness_started=True, require_tool=False, required_tool=None,
             history_messages=0, stage=stage, turn_id="turn", round_number=1,
-            channel=channel, goal_id=None,
+            channel="test", goal_id=None,
         )
 
     def test_all_runtime_stages_have_metadata(self):
-        self.assertEqual(set(THINKING_STAGES), set(TURN_HARNESS_SPECS) | {"topic_selection", "replyer", "owner_voice"})
-
-    async def test_phone_owner_override_and_fallback(self):
-        observed = []
-        async def complete(*_):
-            observed.append(requested_thinking_effort("model-default"))
-            return ProviderResponse([], [])
-        for stages, expected in [
-            ({"owner": "high", "owner_voice": "off"}, "off"),
-            ({"owner": "high", "owner_voice": "low"}, "low"),
-            ({"owner": "high", "owner_voice": ""}, "high"),
-            ({"owner": "high"}, "high"),
-            ({}, "model-default"),
-        ]:
-            runner = self.runner(stages)
-            await self.run_round(runner, "owner", complete, channel="qq_call")
-            self.assertEqual(observed[-1], expected)
-            for stage, channel in [("owner", "napcat"), ("goal", "qq_call")]:
-                await self.run_round(runner, stage, complete, channel=channel)
-                self.assertEqual(observed[-1], stages.get(stage, "model-default"))
+        self.assertEqual(set(THINKING_STAGES), set(TURN_HARNESS_SPECS) | {"topic_selection", "replyer"})
 
     async def test_runtime_stage_overrides_reach_both_provider_wire_formats(self):
         payloads = []

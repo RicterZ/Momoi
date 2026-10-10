@@ -75,9 +75,6 @@ class ModelRoundRunner:
             if system_policy is not None
             else system
         )
-        effort = self.thinking_stages.get(stage, "low" if stage == "weekly_reflection" else None)
-        if stage == "owner" and channel == "qq_call":
-            effort = self.thinking_stages.get("owner_voice") or effort
         call_id = new_trace_id()
         with log_context(
             stage=stage,
@@ -86,7 +83,7 @@ class ModelRoundRunner:
             round=round_number,
             channel=channel,
             goal_id=goal_id,
-        ), model_request(thinking_effort=effort):
+        ), model_request(thinking_effort=self.thinking_stages.get(stage, "low" if stage == "weekly_reflection" else None)):
             if not preserve_transcript:
                 history_messages = self.context_window.fit(
                     request_system,

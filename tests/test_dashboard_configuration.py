@@ -773,10 +773,9 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.validate().thinking_stages, {"webhook": "low", "topic_selection": "low", "replyer": "low"})
         self.assertEqual(self.manager.provider_path.read_bytes(), providers_before)
         for effort in ("off", "low", "medium", "high", "xhigh", "max", ""):
-            response = await save({"owner": effort, "owner_voice": effort})
+            response = await save({"owner": effort})
             self.assertEqual(response.status, 200)
             self.assertEqual(self.manager.validate().thinking_stages.get("owner", ""), effort)
-            self.assertEqual(self.manager.validate().thinking_stages.get("owner_voice", ""), effort)
         for invalid in (None, [], {"unknown": "low"}, {"owner": "invalid"}, {"owner": False}, {"owner": None}):
             before = self.path.read_bytes()
             response = await save(invalid)
