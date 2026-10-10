@@ -3,7 +3,7 @@ import { memoryScope, memoryScopeLabel } from "./memoryInventory.js";
 export function MemoryTriggerTags({ triggers = [] }) {
   if (!triggers.length) return null;
   return (
-    <ul className="memory-chips" aria-label="记忆触发词">
+    <ul className="memory-chips memory-trigger-list" aria-label="记忆触发词">
       {triggers.map((word) => <li className="memory-trigger" key={word}>{word}</li>)}
     </ul>
   );
