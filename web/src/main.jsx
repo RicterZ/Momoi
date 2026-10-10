@@ -2637,7 +2637,7 @@ function ThinkingDetail({ item, calls, recall, flowData = {} }) {
                 <span className={`flow-delivery-state is-${delivery.state}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"发送失败",superseded:"已取消",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span>
               </div>
               <EmotionContent className="message-content flow-delivery-text" text={delivery.text} />
-              {delivery.last_error && <details className="flow-action-data"><summary>投递详情</summary><pre className="flow-json">{delivery.last_error}</pre></details>}
+              {delivery.last_error && ["failed", "ambiguous"].includes(delivery.state) && <details className="flow-action-data"><summary>投递详情</summary><pre className="flow-json">{delivery.last_error}</pre></details>}
             </div>
           </article>)}</div>
         </section>}
