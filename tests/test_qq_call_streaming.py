@@ -39,6 +39,11 @@ def test_fish_yields_audio_before_response_finishes():
 
 
 def test_broker_plays_before_upload_finishes_and_deduplicates(monkeypatch):
+    from momoi.channel.napcat.voice_call import broker as broker_module
+    async def observe(*args):
+        return 12
+    monkeypatch.setattr(broker_module, 'observe_playback_audio', observe)
+    monkeypatch.setattr(broker_module.sys, 'platform', 'linux')
     async def scenario():
         wrote = asyncio.Event()
         release = asyncio.Event()
@@ -86,12 +91,55 @@ def test_broker_plays_before_upload_finishes_and_deduplicates(monkeypatch):
                 result = await response.json()
                 assert result['ok'] and result['played_ms'] == 40
                 assert result['first_frame_ms'] is not None
+                assert result['virtual_mic_signal_ms'] == 12
+                assert result['remote_audible_at'] is None
                 async with client.post(server.make_url('/stream'), data=bytes(960), headers=headers) as response:
                     assert await response.json() == result
                 assert len(processes) == 1
             finally:
                 release.set()
                 await asyncio.gather(task, return_exceptions=True)
+    asyncio.run(scenario())
+
+
+def test_playback_observer_ignores_silence_and_cleans_up(monkeypatch, capsys):
+    import json
+    import time
+    from momoi.channel.napcat.voice_call.broker import observe_playback_audio
+
+    async def scenario():
+        class Process:
+            returncode = None
+            def __init__(self):
+                self.stdout = asyncio.StreamReader()
+            def terminate(self):
+                self.returncode = -15
+            async def wait(self):
+                return self.returncode
+        processes = []
+        async def spawn(*args, **kwargs):
+            process = Process()
+            processes.append(process)
+            return process
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn)
+        task = asyncio.create_task(observe_playback_audio('session', 'utterance', time.monotonic()))
+        await asyncio.sleep(0)
+        processes[0].stdout.feed_data(bytes(960))
+        await asyncio.sleep(0)
+        assert not task.done()
+        processes[0].stdout.feed_data(b'\x00\x01' * 480)
+        assert await task is not None
+        assert processes[0].returncode == -15
+        event = json.loads(capsys.readouterr().out)
+        assert event['event'] == 'qq_call_virtual_mic_signal'
+        assert event['utterance_id'] == 'utterance'
+        assert event['remote_audible_at'] is None
+        task = asyncio.create_task(observe_playback_audio('session', 'cancelled', time.monotonic()))
+        await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        assert processes[1].returncode == -15
+        assert not capsys.readouterr().out
     asyncio.run(scenario())
 
 

@@ -293,9 +293,12 @@ class QQCallChannel:
             request.cancel()
             await asyncio.gather(request, return_exceptions=True)
         log_event(logger, logging.INFO, 'qq_call_playback', channel=self.name,
-            session_id=context['call_session_id'], state=result.get('state'), streaming=True,
+            session_id=context['call_session_id'], utterance_id=utterance_id,
+            state=result.get('state'), streaming=True,
             elapsed_ms=round((time.monotonic() - started) * 1000), tts_first_audio_ms=first_ms,
             bridge_first_frame_ms=result.get('first_frame_ms'), played_ms=result.get('played_ms', 0),
+            virtual_mic_signal_ms=result.get('virtual_mic_signal_ms'),
+            measurement_endpoint='playback_stdin_written', remote_audible_at=None,
             recognition_to_first_frame_ms=(round((time.time() - context['recognized_at']) * 1000
                 - result.get('elapsed_ms', 0) + result.get('first_frame_ms', 0))
                 if context.get('recognized_at') and result.get('first_frame_ms') is not None else None))

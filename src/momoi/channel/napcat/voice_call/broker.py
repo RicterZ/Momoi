@@ -29,6 +29,37 @@ async def stop_process(process):
             await process.wait()
 
 
+async def observe_playback_audio(session_id, utterance, started):
+    """Observe the shared virtual microphone, not remote QQ playout; retain no audio."""
+    process = None
+    try:
+        process = await asyncio.create_subprocess_exec(
+            'parec', '--raw', '--device=maibot_qq_mic.monitor',
+            '--format=s16le', '--rate=24000', '--channels=1', '--latency-msec=50',
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        while True:
+            frame = await process.stdout.readexactly(960)
+            samples = array.array('h', frame)
+            if sys.byteorder != 'little':
+                samples.byteswap()
+            peak = max(abs(value) for value in samples)
+            # Ignore digital silence and near-zero quantization noise.
+            if peak > 32:
+                elapsed = round((time.monotonic() - started) * 1000)
+                print(json.dumps({'event': 'qq_call_virtual_mic_signal',
+                    'session_id': session_id, 'utterance_id': utterance,
+                    'observed_at': time.time(), 'elapsed_ms': elapsed,
+                    'peak': peak, 'measurement_endpoint': 'pulse_monitor_observed',
+                    'remote_audible_at': None}), flush=True)
+                return elapsed
+    except (OSError, asyncio.IncompleteReadError) as error:
+        print(json.dumps({'event': 'qq_call_playback_observer_unavailable',
+            'session_id': session_id, 'utterance_id': utterance,
+            'error_type': type(error).__name__}), flush=True)
+    finally:
+        await stop_process(process)
+
+
 class MediaBroker:
     def __init__(self, token, *, native_url='http://127.0.0.1:6110', host_url='http://127.0.0.1:6111', audio=None):
         if len(token.encode()) < 32:
@@ -281,6 +312,8 @@ class MediaBroker:
             pending = b''
             process = None
             complete = False
+            observer = (asyncio.create_task(observe_playback_audio(session_id, utterance, started))
+                if self.audio is None and sys.platform.startswith('linux') else None)
             try:
                 async def playback():
                     nonlocal played, pending, process, first_ms
@@ -316,7 +349,8 @@ class MediaBroker:
                     if first_ms is None:
                         first_ms = round((time.monotonic() - started) * 1000)
                         print(json.dumps({'event': 'qq_call_playback_first_frame', 'session_id': session_id,
-                            'utterance_id': utterance, 'elapsed_ms': first_ms}), flush=True)
+                            'utterance_id': utterance, 'elapsed_ms': first_ms,
+                            'observed_at': time.time(), 'measurement_endpoint': 'playback_stdin_written'}), flush=True)
                     played += len(frame)
                     await asyncio.sleep(len(frame) / 48000)
                 await asyncio.wait_for(playback(), 150)
@@ -324,6 +358,9 @@ class MediaBroker:
             except (OSError, ConnectionError, ValueError, asyncio.TimeoutError):
                 pass
             finally:
+                if observer is not None:
+                    observer.cancel()
+                    await asyncio.gather(observer, return_exceptions=True)
                 await stop_process(process)
                 if self.play_process is process:
                     self.play_process = None
@@ -331,6 +368,9 @@ class MediaBroker:
                 session_id, utterance, played, pcm_peak, getattr(process, 'returncode', None), complete)
             result = {'ok': complete, 'state': 'played' if complete else 'interrupted',
                 'played_ms': round(played / 48), 'first_frame_ms': first_ms,
+                'virtual_mic_signal_ms': (observer.result() if observer is not None
+                    and not observer.cancelled() and observer.exception() is None else None),
+                'remote_audible_at': None,
                 'elapsed_ms': round((time.monotonic() - started) * 1000),
                 'reason': None if complete else ('call_ended' if session_id != self.session_id
                     else 'owner_speech' if generation != self.generation else 'playback_failed')}
