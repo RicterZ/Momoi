@@ -1151,8 +1151,8 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
                 <span className="panel-label">RUNTIME // {name === "episode_annealing" ? "ARCHIVE" : name === "episode_relation" ? "RELATIONS" : name.toUpperCase()}</span>
               </div>
               {runtimeDescriptions[name] && <p className="settings-runtime-description" id={`runtime-${name}-description`}>{runtimeDescriptions[name]}</p>}
-            {name === "thinking" && <button type="button" className="button secondary" aria-expanded={thinkingExpanded} aria-controls="thinking-stage-fields" onClick={() => setThinkingExpanded(value => !value)}>{thinkingExpanded ? "收起阶段设置" : "展开阶段设置"}</button>}
             </div>
+            {name === "thinking" && <button type="button" className="settings-disabled-toggle settings-thinking-toggle" aria-label={thinkingExpanded ? "收起阶段设置" : "展开阶段设置"} aria-expanded={thinkingExpanded} aria-controls="thinking-stage-fields" onClick={() => setThinkingExpanded(value => !value)}><span className="recall-panel-toggle" aria-hidden="true" /></button>}
             <fieldset id={name === "thinking" ? "thinking-stage-fields" : undefined} hidden={name === "thinking" && !thinkingExpanded} className="settings-runtime-fields" disabled={saving} aria-describedby={runtimeDescriptions[name] ? `runtime-${name}-description` : undefined}>
               {Object.entries(schema.fields).sort(([, a], [, b]) => Number(a.type === "boolean") - Number(b.type === "boolean")).map(([key, spec]) => {
                 if (name === "reflection" && key === "enabled") return null;

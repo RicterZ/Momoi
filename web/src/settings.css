@@ -1327,7 +1327,7 @@
 .settings-form-body.settings-runtime-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 28px;
+  column-gap: 0;
 }
 .settings-runtime-group { grid-column: 1 / -1; }
 .settings-runtime-group.settings-runtime-half {
@@ -1338,4 +1338,24 @@
 }
 @media (max-width: 700px) {
   .settings-form-body.settings-runtime-controls { grid-template-columns: minmax(0, 1fr); }
+}
+
+.settings-runtime-half { position: relative; }
+.settings-runtime-half:has(+ .settings-runtime-half):nth-child(even) { padding-right: 24px; }
+.settings-runtime-half:nth-child(odd) { padding-left: 24px; }
+.settings-runtime-half:nth-child(odd)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 24px;
+  bottom: 24px;
+  border-left: 1px solid var(--line);
+}
+.settings-runtime-group.settings-runtime-thinking { grid-template-columns: minmax(0, 1fr) auto; }
+.settings-runtime-thinking > .settings-runtime-fields { grid-column: 1 / -1; }
+.settings-thinking-toggle { align-self: center; justify-self: end; }
+@media (max-width: 700px) {
+  .settings-runtime-half:has(+ .settings-runtime-half):nth-child(even),
+  .settings-runtime-half:nth-child(odd) { padding-left: 0; padding-right: 0; }
+  .settings-runtime-half:nth-child(odd)::before { display: none; }
 }
