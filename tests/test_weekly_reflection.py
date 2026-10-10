@@ -20,7 +20,7 @@ def test_weekly_validation_and_daily_rendering(tmp_path):
     finding = dict(triggers=['回复'], key='topic', kind='preference', content='用户明确要求简短回复。', events=[{'refs': ['observation:1'], 'summary': '要求简短'}], conflicts=[])
     args = {'summary': '仅有一天材料', 'findings': [finding]}
     assert parse_weekly_reflection(args)[1] is None
-    for bad in [dict(triggers=['回复', '回复']), dict(triggers=[' ']), dict(content=' '), dict(key=' '), dict(assessment='invented'), dict(evidence_ids=['invented'])]:
+    for bad in [dict(triggers=['回复', '聊天', '表达']), dict(triggers=['回复', '回复']), dict(triggers=[' ']), dict(content=' '), dict(key=' '), dict(assessment='invented'), dict(evidence_ids=['invented'])]:
         assert parse_weekly_reflection({'summary': '回顾', 'findings': [{**finding, **bad}]})[1]
     assert parse_weekly_reflection({'summary': '回顾', 'findings': [finding, finding]})[1]
     assert parse_weekly_reflection({'summary': ' ', 'findings': []})[1]
@@ -85,6 +85,8 @@ def test_weekly_runs_through_real_agent_loop_and_handles_cancellation(tmp_path):
 
     class Provider:
         async def complete(self, system, messages, tools, **kwargs):
+            from momoi.integrations.request_context import requested_thinking_effort
+            assert requested_thinking_effort() == 'low'
             call = ToolCall('weekly-done', 'weekly_reflection_finish', {'summary': '盘点完成', 'findings': []})
             return ProviderResponse(content=[{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], tool_calls=[call])
     daemon.provider = Provider()
