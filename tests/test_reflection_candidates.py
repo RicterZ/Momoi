@@ -195,7 +195,7 @@ def test_candidate_triggers_survive_restart_edit_and_admission(tmp_path):
 
 
 def test_existing_candidates_migrate_with_empty_triggers(tmp_path):
-    from momoi.storage.core.migrations import SCHEMA_VERSION
+    from momoi.storage.core.migrations import MIGRATIONS, _add_reflection_candidate_triggers
     import sqlite3
 
     path = tmp_path / 'old-db'
@@ -204,7 +204,7 @@ def test_existing_candidates_migrate_with_empty_triggers(tmp_path):
     store.close()
     with sqlite3.connect(path) as db:
         db.execute('ALTER TABLE reflection_candidates DROP COLUMN triggers_json')
-        db.execute(f'PRAGMA user_version={SCHEMA_VERSION - 1}')
+        db.execute(f'PRAGMA user_version={MIGRATIONS.index(_add_reflection_candidate_triggers)}')
     store = Store(path, timezone='Asia/Shanghai')
     try:
         candidate = store.reflection_candidates(end='2026-10-11')[0]

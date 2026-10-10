@@ -43,13 +43,14 @@ class ReflectionRecordStore:
                     continue
                 self._db.execute(
                     """INSERT INTO reflection_memories
-                       (kind, key, content, evidence, confidence,
+                       (kind, key, content, evidence, confidence, triggers_json,
                         source_reflection_id, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(kind, key) DO UPDATE SET
                          content=excluded.content,
                          evidence=excluded.evidence,
                          confidence=excluded.confidence,
+                         triggers_json=excluded.triggers_json,
                          source_reflection_id=excluded.source_reflection_id,
                          updated_at=excluded.updated_at""",
                     (
@@ -58,6 +59,7 @@ class ReflectionRecordStore:
                         memory["content"],
                         memory["evidence"],
                         memory["confidence"],
+                        json.dumps(memory.get("triggers", []), ensure_ascii=False),
                         reflection_id,
                         now,
                         now,

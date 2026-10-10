@@ -26,13 +26,14 @@ class WeeklyReflectionStore(ReflectionCandidateStore):
             observations = []
             if reflection and reflection['state'] == 'completed':
                 for row in self._db.execute(
-                    """SELECT m.id, m.kind, m.key, m.content, m.evidence, m.confidence
+                    """SELECT m.id, m.kind, m.key, m.content, m.evidence, m.confidence, m.triggers_json
                        FROM reflection_memories m WHERE m.source_reflection_id=?
                        AND NOT EXISTS (SELECT 1 FROM reflection_memory_tombstones t
                                        WHERE t.kind=m.kind AND t.key=m.key)
                        ORDER BY m.id""", (reflection['id'],),
                 ).fetchall():
                     item = dict(row)
+                    item["triggers"] = json.loads(item.pop("triggers_json"))
                     item['id'] = f"observation:{item['id']}"
                     item['key'] = item['key'].removeprefix(day + '.')
                     observations.append(item)

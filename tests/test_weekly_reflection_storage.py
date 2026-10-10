@@ -80,3 +80,39 @@ def test_overdue_week_is_retried_after_next_sunday(tmp_path):
     assert retried['period_end'] == first['period_end']
     assert retried['input_json'] == first['input_json']
     store.close()
+
+
+def test_daily_triggers_survive_restart_and_reach_weekly_input(tmp_path):
+    from momoi.runtime.parsing import parse_reflection_finish
+    from momoi.runtime.workflows.weekly_reflection import weekly_reflection_input
+    path = tmp_path / 'db'
+    store = Store(path, timezone='Asia/Shanghai')
+    seed(store, '2026-10-06')
+    item = dict(kind='preference', key='sleep', content='用户期待晚安仪式',
+                evidence='晚安', confidence=0.9, triggers=['晚安'])
+    args = dict(summary='复盘', memories=[item])
+    result, error = parse_reflection_finish(args, source='晚安', owner_source='晚安', knowledge_source='')
+    assert error is None
+    store.commit_reflection('2026-10-06', 'unused', result['summary'], result['memories'])
+    store.close()
+    store = Store(path, timezone='Asia/Shanghai')
+    source = store.weekly_reflection_source('2026-10-11')
+    assert source['days'][2]['observations'][0]['triggers'] == ['晚安']
+    assert '<triggers>["晚安"]</triggers>' in weekly_reflection_input(source)
+    store.close()
+    item['triggers'] = ['晚安', '亲亲', '睡觉']
+    assert parse_reflection_finish(args, source='晚安', owner_source='晚安', knowledge_source='')[1]
+
+
+def test_daily_trigger_migration_preserves_existing_observations(tmp_path):
+    from momoi.storage.core.migrations import _add_daily_reflection_triggers
+    store = Store(tmp_path / 'db', timezone='Asia/Shanghai')
+    seed(store, '2026-10-06')
+    with store._db:
+        store._db.execute('ALTER TABLE reflection_memories DROP COLUMN triggers_json')
+        _add_daily_reflection_triggers(store._db)
+        _add_daily_reflection_triggers(store._db)
+    observation = store.weekly_reflection_source('2026-10-11')['days'][2]['observations'][0]
+    assert observation['content'] == '当天观察'
+    assert observation['triggers'] == []
+    store.close()

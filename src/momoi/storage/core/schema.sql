@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS reflection_memories (
     content TEXT NOT NULL,
     evidence TEXT NOT NULL,
     confidence REAL NOT NULL,
+    triggers_json TEXT NOT NULL DEFAULT '[]',
     source_reflection_id TEXT NOT NULL,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,

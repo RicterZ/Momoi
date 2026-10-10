@@ -784,6 +784,11 @@ def _retire_memory_maintenance(database):
     )
 
 
+def _add_daily_reflection_triggers(database):
+    if "triggers_json" not in _columns(database, "reflection_memories"):
+        database.execute("ALTER TABLE reflection_memories ADD COLUMN triggers_json TEXT NOT NULL DEFAULT '[]'")
+
+
 def _add_reflection_candidate_triggers(database):
     if "triggers_json" not in _columns(database, "reflection_candidates"):
         database.execute("ALTER TABLE reflection_candidates ADD COLUMN triggers_json TEXT NOT NULL DEFAULT '[]'")
@@ -830,6 +835,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _remove_reply_followup,
     _retire_memory_maintenance,
     _add_reflection_candidate_triggers,
+    _add_daily_reflection_triggers,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

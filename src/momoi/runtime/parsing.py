@@ -241,19 +241,26 @@ def parse_reflection_finish(
                 errors.append({"path": f"memories[{index}].{field}",
                                "item_number": index + 1, "message": message})
             return None, code
-        if not isinstance(item, dict) or set(item) != {
+        if not isinstance(item, dict) or set(item) - {"triggers"} != {
             "kind",
             "key",
             "content",
             "evidence",
             "confidence",
         }:
-            return invalid("fields", "Required fields: kind, key, content, evidence, confidence; no extra fields.")
+            return invalid("fields", "Required fields: kind, key, content, evidence, confidence; optional triggers; no extra fields.")
         kind = item.get("kind")
         key = item.get("key")
         content = item.get("content")
         evidence = item.get("evidence")
         confidence = item.get("confidence")
+        from ..memory.metadata import validate_triggers
+        try:
+            triggers = validate_triggers(item.get("triggers", []))
+            if len(triggers) > 2:
+                raise ValueError("Use at most two triggers.")
+        except ValueError as error:
+            return invalid("triggers", str(error))
         if not isinstance(kind, str) or kind not in MEMORY_KINDS:
             return invalid("kind", "Allowed values: " + ", ".join(sorted(MEMORY_KINDS)))
         if not isinstance(key, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key):
@@ -291,6 +298,7 @@ def parse_reflection_finish(
                 "content": content.strip(),
                 "evidence": evidence.strip(),
                 "confidence": float(confidence),
+                "triggers": triggers,
             }
         )
     return {

@@ -63,6 +63,7 @@ def weekly_reflection_input(source):
                          f'key={quoteattr(item["key"])}>')
             for key in ('content', 'evidence', 'confidence'):
                 lines.append(f'<{key}>{escape(str(item[key]))}</{key}>')
+            lines.append('<triggers>' + escape(json.dumps(item.get('triggers', []), ensure_ascii=False)) + '</triggers>')
             lines.append('</observation>')
         lines.append('</day>')
     lines.append('</weekly_observations>')
