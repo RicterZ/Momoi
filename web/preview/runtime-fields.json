@@ -1,4 +1,18 @@
 {
+  "turn": {
+    "label": "聊天续接",
+    "fields": {
+      "continuation_seconds": {
+        "type": "number",
+        "label": "续接等待（秒）",
+        "default": 5,
+        "minimum": 0,
+        "maximum": 60,
+        "description": "自然结束后等待快速补充；其他任务需要运行时立即让出。0 表示关闭。",
+        "advanced": false
+      }
+    }
+  },
   "tools": {
     "label": "工具",
     "fields": {
@@ -21,7 +35,7 @@
         "properties": {
           "owner": {
             "type": "string",
-            "label": "用户对话",
+            "label": "用户对话（Planner）",
             "enum": [
               "",
               "off",
@@ -33,7 +47,23 @@
             ],
             "default": "",
             "advanced": false,
-            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "replyer": {
+            "type": "string",
+            "label": "发言生成（Replyer）",
+            "enum": [
+              "",
+              "off",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "low",
+            "advanced": false,
+            "description": "Replyer 留空时使用 low。off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
           },
           "topic_selection": {
             "type": "string",
@@ -49,7 +79,7 @@
             ],
             "default": "low",
             "advanced": false,
-            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
           },
           "heartbeat": {
             "type": "string",
@@ -65,7 +95,7 @@
             ],
             "default": "",
             "advanced": false,
-            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
           },
           "webhook": {
             "type": "string",
@@ -81,7 +111,7 @@
             ],
             "default": "",
             "advanced": false,
-            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
           },
           "goal": {
             "type": "string",
@@ -97,7 +127,23 @@
             ],
             "default": "",
             "advanced": false,
-            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "plan_step": {
+            "type": "string",
+            "label": "Plan 步骤执行",
+            "enum": [
+              "",
+              "off",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
           },
           "reflection": {
             "type": "string",
@@ -113,7 +159,23 @@
             ],
             "default": "",
             "advanced": false,
-            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "weekly_reflection": {
+            "type": "string",
+            "label": "每周观察盘点",
+            "enum": [
+              "",
+              "off",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
           },
           "memory_operation": {
             "type": "string",
@@ -129,7 +191,7 @@
             ],
             "default": "",
             "advanced": false,
-            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
           },
           "episode_consolidate": {
             "type": "string",
@@ -145,7 +207,7 @@
             ],
             "default": "",
             "advanced": false,
-            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
           },
           "episode_anneal": {
             "type": "string",
@@ -161,7 +223,39 @@
             ],
             "default": "",
             "advanced": false,
-            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "episode_relation": {
+            "type": "string",
+            "label": "话题关联",
+            "enum": [
+              "",
+              "off",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "current_state_maintenance": {
+            "type": "string",
+            "label": "当前状态维护",
+            "enum": [
+              "",
+              "off",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
           }
         },
         "advanced": false
@@ -199,7 +293,7 @@
     }
   },
   "reflection": {
-    "label": "每日复盘",
+    "label": "复盘",
     "fields": {
       "enabled": {
         "type": "boolean",
@@ -219,11 +313,17 @@
     }
   },
   "episode_annealing": {
-    "label": "Episode 退火",
+    "label": "话题维护",
     "fields": {
       "enabled": {
         "type": "boolean",
         "label": "启用 Episode 退火",
+        "default": true,
+        "advanced": false
+      },
+      "relations_enabled": {
+        "type": "boolean",
+        "label": "启用话题关联",
         "default": true,
         "advanced": false
       }
