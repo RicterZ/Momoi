@@ -1,5 +1,5 @@
 from momoi.storage import Store
-from momoi.storage.core.migrations import SCHEMA_VERSION
+from momoi.storage.core.migrations import MIGRATIONS, _retire_memory_maintenance
 from momoi.config.loading import remove_retired_thinking_stages
 
 
@@ -11,7 +11,7 @@ def test_upgrade_cancels_pending_maintenance_and_preserves_history(tmp_path):
     store._db.execute("UPDATE turns SET state='completed' WHERE id='completed'")
     store._db.execute("UPDATE turns SET state='needs_reconciliation' WHERE id='uncertain'")
     store.append_turn_journal('completed', 'memory_maintenance_complete', {'summary': 'old review'})
-    store._db.execute(f'PRAGMA user_version={SCHEMA_VERSION - 1}')
+    store._db.execute(f'PRAGMA user_version={MIGRATIONS.index(_retire_memory_maintenance)}')
     store._db.commit()
     store.close()
     store = Store(path)
