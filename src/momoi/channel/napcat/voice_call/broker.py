@@ -38,7 +38,7 @@ class MediaBroker:
         self.audio = audio
         self.capture_command = audio.capture_command if audio else (
             'parec', '--raw', '--device=maibot_qq_speaker.monitor',
-            '--format=s16le', '--rate=16000', '--channels=1')
+            '--format=s16le', '--rate=16000', '--channels=1', '--latency-msec=50')
         self.playback_command = audio.playback_command if audio else (
             'pacat', '--playback', '--raw', '--device=maibot_qq_mic',
             '--format=s16le', '--rate=24000', '--channels=1', '--latency-msec=50')
