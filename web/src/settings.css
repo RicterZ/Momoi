@@ -160,28 +160,6 @@
 .settings-form-body {
   border-radius: 0;
 }
-.settings-managed-memory {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 0;
-  padding: 20px 0;
-  border-bottom: 1px solid var(--line);
-}
-.settings-managed-memory > div { padding: 0 20px; }
-.settings-managed-memory > div + div { border-left: 1px solid var(--line); }
-.settings-managed-memory dt {
-  color: var(--settings-muted);
-  font-size: 11px;
-  line-height: 1.6;
-  margin-bottom: 8px;
-}
-.settings-managed-memory dd {
-  margin: 0;
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 650;
-  line-height: 1.6;
-}
 .settings-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

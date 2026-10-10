@@ -750,6 +750,7 @@ function normalizeProvider(name, value, adapters) {
 
 function ProviderSection({ module, data, save, saving, testProvider, testing, next, previous, qqCall, testCall }) {
   const configurationId = useId();
+  const managed = module.id === "memory" && data.desktop_embedding_managed;
   const napcat = data.app.channels?.enabled?.napcat;
   const [callDraft, setCallDraft] = useState(napcat?.voice_call || {});
   const [callSaved, setCallSaved] = useState(callDraft);
@@ -861,20 +862,9 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
       setBusy(false);
     }
   }
-  if (module.id === "memory" && data.desktop_embedding_managed) {
-    return <>
-      <SectionHeader module={module} control={<span className="tag">客户端托管</span>} />
-      <div className="settings-form-body">
-        <dl className="settings-managed-memory">
-          <div><dt>运行方式</dt><dd>本地模型</dd></div>
-          <div><dt>模型维护</dt><dd>自动管理</dd></div>
-        </dl>
-      </div>
-    </>;
-  }
   const testButton = testCapability && (
     <button ref={testButtonRef} type="button" className="settings-text-button settings-test-button"
-      disabled={testing || saving || busy} onClick={testConnection}>
+      disabled={managed || testing || saving || busy} onClick={testConnection}>
       <Icon name="refresh" className={testPending ? "is-spinning" : ""} />
       {testPending ? "测试中…" : "测试连接"}
     </button>
@@ -903,7 +893,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
             optional && (
               <Toggle
                 checked={draft.enabled}
-                disabled={saving}
+                disabled={managed || saving}
                 onChange={(enabled) => change({ ...draft, enabled })}
               >
                 启用功能
@@ -996,7 +986,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
                       onChange={enabled => update({ ...value, enabled })}>启用</Toggle>
                   </header>}
                   <Fields
-                    disabled={!draft.enabled || saving || (names.length > 1 && !value.enabled)}
+                    disabled={managed || !draft.enabled || saving || (names.length > 1 && !value.enabled)}
                   >
                     <div
                       className={
@@ -1049,7 +1039,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
           busy={saving || busy}
           dirty={dirty}
           status={status}
-          saveDisabled={testing}
+          saveDisabled={managed || testing}
           next={next}
           previous={previous}
         />
