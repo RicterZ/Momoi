@@ -12,8 +12,16 @@ from tests.support import with_owner_recall
 from tests.test_episode_annealing import config
 
 
-def test_multiple_natural_endings_continue_one_turn(tmp_path):
+@pytest.mark.parametrize("phone", [False, True])
+def test_multiple_natural_endings_continue_one_turn(tmp_path, phone):
     daemon = MomoiDaemon(replace(config(str(tmp_path)), owner_continuation_seconds=.2))
+    if phone:
+        from momoi.channel.napcat.voice_call.channel import QQCallChannel
+        channel = QQCallChannel(SimpleNamespace(), '123', object(), tts_enabled=True)
+        channel.session_id = 'call'
+        channel.status = {'phase': 'connected'}
+        daemon.channels['qq_call'] = channel
+        daemon.channel = channel
     rounds = []
     async def complete(system, messages, tools, **kwargs):
         rounds.append(json.dumps(messages, ensure_ascii=False))
@@ -21,15 +29,22 @@ def test_multiple_natural_endings_continue_one_turn(tmp_path):
         return ProviderResponse([{"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}], [call])
     async def run():
         daemon.provider = with_owner_recall(SimpleNamespace(complete=complete))
-        first = IncomingMessage("first", "first", "第一句", 1, 1, channel=daemon.channel.name)
+        first = IncomingMessage("first", "first", "第一句", 1, 1, channel=daemon.channel.name,
+                                delivery_context=daemon.channel.routing_context() if phone else {})
         daemon.store.add_event(first)
         task = asyncio.create_task(daemon._complete_batch_turn([first], asyncio.Event(), "continued"))
         daemon._active_turn = task
+        daemon._active_turn_channel = daemon.channel.name
         try:
             for index, text in enumerate(["等等", "不对啊"], 1):
                 while len(rounds) < index or not daemon._owner_continuation_waiting:
                     await asyncio.sleep(.001)
-                event = IncomingMessage(str(index), str(index), text, index+1, index+1, channel=daemon.channel.name)
+                if phone:
+                    channel.generation += 1
+                    daemon._interrupt_qq_call('owner_speech')
+                    assert not task.cancelling()
+                event = IncomingMessage(str(index), str(index), text, index+1, index+1, channel=daemon.channel.name,
+                                        delivery_context=channel.routing_context() if phone else {})
                 daemon.store.add_event(event)
                 daemon.incoming.put_nowait(event)
                 while len(rounds) == index:

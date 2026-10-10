@@ -29,7 +29,7 @@ logger = logging.getLogger("momoi.runtime.turns")
 class OwnerWorkflow:
     async def _wait_owner_continuation(self, current_events, channel):
         seconds = self.config.owner_continuation_seconds
-        if seconds <= 0 or channel.name == "qq_call" or self._active_turn is None:
+        if seconds <= 0 or self._active_turn is None:
             return []
         # A timed-out reply may still be queued; only wait after delivery has settled.
         if self.store._db.execute(

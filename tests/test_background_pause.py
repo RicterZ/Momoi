@@ -68,6 +68,18 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
         assert 'paused_for_owner' in text
         assert 'OLD_TRANSCRIPT_SENTINEL' not in text
         assert 'FRESH_TASK' in text
+        receipt_index = next(i for i, message in enumerate(messages)
+                             if '[后台任务执行记录]' in str(message.get('content'))
+                             and '已核实的事实' in str(message.get('content')))
+        owner_index = next(i for i, message in enumerate(messages)
+                           if '现在不用提醒了' in str(message.get('content')))
+        assert receipt_index < owner_index
+        receipt = messages[receipt_index]['content']
+        assert '记录时间：' in receipt
+        payload = json.loads(receipt[receipt.index('{'):])
+        assert payload['result']['ok'] is True
+        assert payload['result']['text'] == '已核实的事实'
+        assert '已核实的事实' not in messages[-1]['content']
         assert calls == ['done-read']
         resumed = True
         # These tests exercise scheduler/context behavior, not the stage's close schema.

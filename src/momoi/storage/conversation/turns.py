@@ -167,7 +167,7 @@ class TurnStore:
     def background_receipts(self, turn_id: str) -> list[dict[str, object]]:
         receipts = []
         for row in self._db.execute(
-            "SELECT payload_json FROM turn_journal WHERE turn_id=? AND item_type='assistant_exchange' ORDER BY sequence",
+            "SELECT payload_json,created_at FROM turn_journal WHERE turn_id=? AND item_type='assistant_exchange' ORDER BY sequence",
             (turn_id,),
         ):
             exchange = json.loads(row["payload_json"])
@@ -176,8 +176,15 @@ class TurnStore:
             for result in exchange.get("results", []):
                 call = calls.get(result.get("tool_use_id"))
                 if call:
-                    receipts.append({"tool": call["name"], "arguments": {} if call["name"] == "reply" else call.get("input", {}),
-                                     "result": result.get("content", ""), "is_error": result.get("is_error", False)})
+                    content = result.get("content", "")
+                    if isinstance(content, str):
+                        try:
+                            content = json.loads(content)
+                        except ValueError:
+                            pass
+                    receipts.append({"recorded_at": row["created_at"],
+                                     "tool": call["name"], "arguments": {} if call["name"] == "reply" else call.get("input", {}),
+                                     "result": content, "is_error": result.get("is_error", False)})
         return receipts
 
     def mark_background_pause(self, turn_id: str, *, paused: bool) -> None:

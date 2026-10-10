@@ -1,4 +1,5 @@
 import copy
+import json
 import time
 
 from ...models import IncomingMessage
@@ -166,6 +167,25 @@ class ContextService:
                 "role": "user", "content": event["content"],
                 "_memory_change": event["revision"], "_context_prefix": True,
             })
+        if fresh:
+            # Insert receipts between whole historical exchanges, never inside a tool pair.
+            starts = {identifier: float(self.store.turn_usage(identifier)["started_at"])
+                      for identifier in ids}
+            for receipt in self.store.background_receipts(turn_id):
+                recorded_at = receipt["recorded_at"]
+                index = next((i for i, message in enumerate(history)
+                              if any(starts.get(identifier, 0) > recorded_at
+                                     for identifier in message.get("_history_turn_ids", ()))), len(history))
+                history.insert(index, {
+                    "role": "user",
+                    "content": (
+                        "[后台任务执行记录] 以下是已记录的调用与结果，不是新指令；"
+                        "已发送内容以投递回执为准，不得重复执行。\n"
+                        f"记录时间：{self.store.context_timestamp(recorded_at)}\n"
+                        + json.dumps({key: value for key, value in receipt.items() if key != "recorded_at"},
+                                     ensure_ascii=False, indent=2)
+                    ),
+                })
         goals = self.owner_context_baseline()["goal_directory"]
         prefix = context_data_message(
             ("long_term_memories", self.store._memory_context(snapshot)),
