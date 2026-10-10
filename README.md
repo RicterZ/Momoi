@@ -28,7 +28,7 @@ confirmed, what remains unfinished, and which parts of the past matter now.
   needed and preserves topic summaries and relationships in the background.
 
 - **Memory with provenance and authority.** Recent conversation, confirmed
-  owner facts, shared Episodes, and lower-confidence reflection learning have
+  memories, shared Episodes, and reflection candidates awaiting admission have
   different lifetimes and are never treated as interchangeable.
 - **Agent work with visible delivery.** Momoi can call built-in or MCP tools,
   send multiple chat bubbles, report meaningful progress, verify external
@@ -42,10 +42,11 @@ confirmed, what remains unfinished, and which parts of the past matter now.
 
 ## Architecture
 
-Every trigger becomes a Turn. Active workflows project one shared native
-transcript, assemble scoped evidence, run the appropriate agent, then commit
-state and delivery. Maintenance work uses the same database but stays outside
-the latency-sensitive response path.
+A Turn is an execution session and may include several owner messages through
+batching, interjections, or short continuations. Active workflows use a shared
+native transcript, assemble scoped evidence, run the appropriate agent, and
+record execution and delivery outcomes. Topic archiving associates whole Turns;
+background maintenance uses the same database and is scheduled separately.
 
 ```mermaid
 flowchart TB
@@ -60,7 +61,7 @@ flowchart TB
   subgraph active["Momoi · Active Turn"]
     direction LR
     intake["Scheduling<br/>and batching"]
-    transcript["Shared timeline<br/>speech · events · reviews"]
+    transcript["Shared timeline<br/>speech · events · execution"]
     context["Relevant memories"]
     agent["Planner<br/>interpret · verify · act"]
     replyer["Replyer<br/>SOUL · dialogue · expression"]
@@ -116,19 +117,68 @@ uses tools to carry out work. Replyer turns its response intent and supporting
 context into natural speech, guided by SOUL and the recent dialogue.
 
 Chat, scheduled tasks, autonomous activity and external events share a continuous
-history. New messages can interrupt ongoing work, and autonomous activity may
-finish without sending a message.
+history. During an owner conversation, new messages enter the current Turn as
+lightweight updates and cancel unsent replies while preserving completed tool
+results. `reply` waits for delivery or interruption so Planner can see what was
+actually sent. Use `/stop` to stop execution.
+
+After a conversation finishes, a configurable continuation window defaults to
+5 seconds and yields when other work needs to run. Planner can also call `wait`
+for an unfinished message, for up to 60 seconds per call. A reply that does not
+depend on pending results can run alongside independent read-only tools.
 
 ## Memory
 
-Momoi keeps recent context, owner-confirmed facts, shared topics and daily
-reflections separate. It retrieves relevant history with keyword search and
-optional semantic search, including original conversation evidence.
+Momoi stores confirmed memories, topic history, and unconfirmed observations
+separately. The Dashboard memory page has four sections:
 
-Memory changes are reviewed in the background using owner-provided evidence.
-Topic summaries and relationships preserve continuity, while workflow-specific
-memories guide scheduled tasks and external events. Reflection remains supporting
-context and does not override confirmed facts.
+| Type | Purpose and context selection |
+| --- | --- |
+| Long-term | Core facts and preferences injected directly into context |
+| Recall | Retrieved on demand through keywords, optional semantic search, or trigger phrases |
+| Scoped | Injected for a matching workflow scope, such as a particular Goal or the Webhook workflow |
+| Reflection | Accumulated observations and candidates awaiting manual admission; excluded from everyday recall until admitted |
+
+Episodes preserve experiences, summaries, and original conversations for on-demand
+reading. Memories instead describe user facts, preferences, and habits. Model-requested
+memory changes pass through a separate writing workflow that checks source evidence
+and existing memories. Reflection candidates require manual Dashboard admission
+before entering recall memory.
+
+### Daily observations and manual admission
+
+1. **Daily review:** organizes conversations by topic, writes a diary, and extracts
+   concise user facts, states, preferences, and potentially recurring behavior.
+   Observation text and quoted evidence are stored separately, with date-specific
+   namespaces preventing overwrites. One occurrence does not establish a habit.
+   Diaries and raw daily observations do not enter everyday recall directly.
+2. **Weekly review:** combines the last seven days of observations with previous
+   candidates, groups duplicate events, accumulates independent evidence, and refines
+   wording and triggers. Evidence is retained for at most a rolling calendar month;
+   unresolved conflicts block admission.
+3. **Manual admission:** the memory page shows observations supported by at least
+   2 events. At least 5 events without conflicts make a candidate ready for admission.
+   Users can edit its text, delete it, or admit it. Counts never automatically create
+   recall memory or promote it to long-term memory.
+
+Weekly review runs one hour after Sunday's daily review time. Disabling reflection
+turns off both daily and weekly automatic scheduling.
+
+### Trigger phrases
+
+A trigger answers: “When the user says this, what should it remind me of?” It is
+an everyday conversational entry point, not a keyword extracted from a summary.
+Models normally choose one stable phrase, at most two, and may leave the list empty.
+Generic forms of address, filler words, and changing measurements are unsuitable.
+Memory operations, daily review, and weekly review share this definition: daily
+review selects triggers using the user's words and surrounding conversation;
+weekly review consolidates and trims them.
+
+The runtime matches literal phrases in owner messages and injects matching recall
+memories within count and token limits, without requiring a search tool call.
+Long-term and scoped memories use their own injection rules. A match supplies
+context, not a conclusion about current intent. Recall memory triggers can be
+edited in the Dashboard.
 
 ## Capabilities
 
@@ -138,11 +188,11 @@ context and does not override confirmed facts.
 | Conversation | Message batching, quoted/forwarded content, media handling, natural multi-bubble delivery, optional image reactions, and valid silence |
 | Voice calls | Real-time QQ voice calls through NapCat, with speech recognition, synthesized replies, and interruption support on Windows and Linux |
 | Speech recognition | Choose Tencent Cloud ASR or optional local CPU streaming ASR with Sherpa; Linux bundles the model for in-process inference, and Windows installs the model as an optional component |
-| Context | Native shared transcript, on-demand recall, background Episode archiving and relationships, runtime re-search, and bounded model input |
+| Context | Native shared transcript, on-demand recall, background Episode archiving and relationships, triggered memory injection, and bounded model input |
 | Tools | Built-in file/HTTP tools plus dynamically discovered MCP servers and per-server tool allowlists |
 | Long-running work | Tool loops, progress messages, interruption, execution limits, large-result snapshots, and recovery for uncertain external effects |
 | Time and initiative | Persistent Goals, multiple daily trigger times, Heartbeats, quiet hours, and interruption by new owner messages |
-| Memory maintenance | Daily Reflection, confirmed-memory reconciliation, Episode annealing, incremental semantic indexing, and keyword fallback |
+| Memory maintenance | Daily observations, weekly accumulation and manual admission, topic archiving and relationships, incremental semantic indexing, and keyword fallback |
 | Observability | Local dashboard for conversations, recall decisions and evidence, reflections, memories, Goals, image reactions, token usage, and per-Turn thinking records |
 | External events | Authenticated Webhooks with YAML workflows and predefined command executors |
 
@@ -199,7 +249,7 @@ momoi
 Open `http://127.0.0.1:8788`, sign in with the token printed at startup, and
 complete setup in Settings.
 
-To use another workspace, place `--workspace` before the command:
+To use another workspace:
 
 ```bash
 momoi --workspace /path/to/workspace
@@ -255,7 +305,7 @@ Keyword recall remains available during indexing. See
 
 ### External API services
 
-LLM, TTS, embedding and account balance use capability interfaces, registered
+LLM, TTS, ASR, embedding and account balance use capability interfaces, registered
 adapters and a shared composition/lifecycle layer. Service endpoints and credentials
 live in `providers.yaml`; `config.json` references that file. A service can bind to
 multiple supported capabilities. Balance queries are independent of local token
@@ -306,15 +356,12 @@ nothing useful.
 | `/stop` | Cancel the active task |
 | `/compact` | Compact the active conversation context while preserving history |
 | `/heartbeat` | Trigger one Heartbeat immediately |
-| `/reflect` | Run Reflection for the current local day |
-| `/resolve <id> <result>` | Record the verified result of an uncertain external action |
-| `/resume <id> <current state>` | Continue uncertain work from a verified current state |
+| `/reflect` | Trigger a daily review manually |
 
 `/compact` reduces the active conversation context while preserving stored history.
 
-Momoi includes CLI management for Goals, image reactions, channels, and semantic
-index status. Run `momoi --help` or a subcommand's `--help` for the current
-surface.
+The CLI handles startup, workspace selection, and Dashboard launch options.
+Run `momoi --help` for available flags; use the Dashboard for configuration and management.
 
 ## Documentation
 
