@@ -1089,7 +1089,7 @@ function RuntimePropertyFields({ spec, value, onChange }) {
   );
 }
 
-const runtimeOrder = { heartbeat: 0, episode_annealing: 1, episode_relation: 2, logging: 3, reflection: 4, thinking: 5 };
+const runtimeOrder = { turn: -1, heartbeat: 0, episode_annealing: 1, episode_relation: 2, logging: 3, reflection: 4, thinking: 5 };
 const runtimeDescriptions = {
   heartbeat: "心跳是 Momoi 的自主时间。她可以探索、创作、延续自己的活动，也可以休息或主动与你分享。",
   logging: "控制运行日志的详细程度，用于查看服务状态与排查问题。",
@@ -1114,6 +1114,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
   const [draft, setDraft] = useState(initial);
   const [saved, setSaved] = useState(initial);
   const [status, setStatus] = useState(null);
+  const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const dirty = !equal(draft, saved);
   async function submit(event) {
     event.preventDefault();
@@ -1154,8 +1155,9 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
                 <span className="panel-label">RUNTIME // {name === "episode_annealing" ? "ARCHIVE" : name === "episode_relation" ? "RELATIONS" : name.toUpperCase()}</span>
               </div>
               {runtimeDescriptions[name] && <p className="settings-runtime-description" id={`runtime-${name}-description`}>{runtimeDescriptions[name]}</p>}
+            {name === "thinking" && <button type="button" className="button secondary" aria-expanded={thinkingExpanded} aria-controls="thinking-stage-fields" onClick={() => setThinkingExpanded(value => !value)}>{thinkingExpanded ? "收起阶段设置" : "展开阶段设置"}</button>}
             </div>
-            <fieldset className="settings-runtime-fields" disabled={saving} aria-describedby={runtimeDescriptions[name] ? `runtime-${name}-description` : undefined}>
+            <fieldset id={name === "thinking" ? "thinking-stage-fields" : undefined} hidden={name === "thinking" && !thinkingExpanded} className="settings-runtime-fields" disabled={saving} aria-describedby={runtimeDescriptions[name] ? `runtime-${name}-description` : undefined}>
               {Object.entries(schema.fields).sort(([, a], [, b]) => Number(a.type === "boolean") - Number(b.type === "boolean")).map(([key, spec]) => {
                 if (name === "reflection" && key === "enabled") return null;
                 if (name === "reflection" && key === "at") return (

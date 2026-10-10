@@ -530,6 +530,14 @@ class AgentLoop:
                 thought_rounds = execution_failures = 0
                 continue
             if batch.ended:
+                if stage == "owner" and not circuit_reason:
+                    updates = await self._wait_owner_continuation(current_events, delivery_channel)
+                    if updates:
+                        source_event_id = self._absorb_owner_updates(
+                            updates, messages, delivery_channel, harness, draft
+                        )
+                        protocol_failures = thought_rounds = execution_failures = 0
+                        continue
                 if stage in CURRENT_STATE_TRIGGER_STAGES and not circuit_reason:
                     self.store.stage_current_state_task(
                         turn_id, stage, model_round.request_system,

@@ -21,7 +21,7 @@ AGENDA_POLL_SECONDS = 5
 class Scheduler:
     def _maintenance_is_idle(self, *, autonomous_queue_empty: bool = False) -> bool:
         active = self._active_turn
-        if active is not None and not active.done():
+        if active is not None and not active.done() and not self._owner_continuation_waiting:
             return False
         if self._webhook_turn_active:
             return False
@@ -33,7 +33,7 @@ class Scheduler:
             return False
         if autonomous_queue_empty and not self.autonomous.empty():
             return False
-        return not bool(self.store.heartbeat_conversation_snapshot()["owner_busy"])
+        return self._owner_continuation_waiting or not bool(self.store.heartbeat_conversation_snapshot()["owner_busy"])
 
     def _idle_quiet_seconds(self) -> float:
         return asyncio.get_running_loop().time() - self._last_owner_activity_at
@@ -107,6 +107,9 @@ class Scheduler:
 
     def _maybe_start_episode_annealing(self) -> None:
         if not self._episode_annealing_ready():
+            return
+        if self._owner_continuation_waiting:
+            self._owner_continuation_preempted = True
             return
         self._episode_annealing_dirty = False
         task = asyncio.create_task(

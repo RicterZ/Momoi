@@ -22,6 +22,16 @@ THINKING_STAGES = {
 }
 
 _FIELDS = {
+    "turn": {
+        "label": "聊天续接",
+        "fields": {
+            "continuation_seconds": {
+                "type": "number", "label": "续接等待（秒）", "default": 5,
+                "minimum": 0, "maximum": 60,
+                "description": "自然结束后等待快速补充；其他任务需要运行时立即让出。0 表示关闭。",
+            },
+        },
+    },
     "tools": {
         "label": "工具",
         "fields": {

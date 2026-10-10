@@ -72,6 +72,7 @@ class AppConfig:
     database: Path
     log_level: str
     thinking_stages: dict[str, str] = field(default_factory=dict)
+    owner_continuation_seconds: float = 5.0
     timezone: str = "UTC"
     max_input_tokens: int = 142222
     context_compaction_ratio: float = 0.9

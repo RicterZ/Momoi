@@ -27,6 +27,41 @@ logger = logging.getLogger("momoi.runtime.turns")
 
 
 class OwnerWorkflow:
+    async def _wait_owner_continuation(self, current_events, channel):
+        seconds = self.config.owner_continuation_seconds
+        if seconds <= 0 or channel.name == "qq_call" or self._active_turn is None:
+            return []
+        # A timed-out reply may still be queued; only wait after delivery has settled.
+        if self.store._db.execute(
+            "SELECT 1 FROM outbox WHERE target_channel=? AND state IN ('pending','sending','ambiguous') LIMIT 1",
+            (channel.name,),
+        ).fetchone():
+            return []
+        self._owner_continuation_waiting = True
+        self._owner_continuation_preempted = False
+        self.agenda_changed.set()
+        deadline = asyncio.get_running_loop().time() + seconds
+        try:
+            while asyncio.get_running_loop().time() < deadline:
+                if (self._owner_continuation_preempted or not self.autonomous.empty()
+                        or not self.webhook_requests.empty()
+                        or self._active_annealing is not None):
+                    return []
+                while not self.incoming.empty():
+                    self._deferred_incoming.append(self.incoming.get_nowait())
+                queued = list(self._deferred_incoming)
+                # Leave another channel or command queued for the ordinary scheduler.
+                if any(event.channel != current_events[0].channel
+                       or event.text.strip().startswith("/") for event in queued):
+                    return []
+                if queued:
+                    return self.owner_updates.drain(current_events, channel.name)
+                await asyncio.sleep(min(0.05, max(0, deadline - asyncio.get_running_loop().time())))
+            return []
+        finally:
+            self._owner_continuation_waiting = False
+            self.agenda_changed.set()
+
     def _owner_update_message(
         self,
         updates: list[IncomingMessage],

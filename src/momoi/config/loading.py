@@ -274,6 +274,8 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         database=database,
         log_level=log_level,
         # Keep explicit follow-model distinct from the selector's missing-key low default.
+        owner_continuation_seconds=normalize_fields(runtime_fields()["turn"]["fields"],
+            {"continuation_seconds": turn_raw.get("continuation_seconds", 5)}, path="turn")["continuation_seconds"],
         thinking_stages={
             stage: effort for stage, effort in thinking["stages"].items()
             if effort or stage == "topic_selection"

@@ -222,6 +222,8 @@ class MomoiDaemon(
             memory=self.memory,
         )
         self.agenda_changed = asyncio.Event()
+        self._owner_continuation_waiting = False
+        self._owner_continuation_preempted = False
         self._active_turn: asyncio.Task[Any] | None = None
         self._active_turn_stage = "owner"
         self._active_turn_channel = self.channel.name

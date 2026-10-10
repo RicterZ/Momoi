@@ -57,7 +57,8 @@
   "turn": {
     "max_seconds": 0,
     "max_total_tokens": 0,
-    "max_protocol_retries": 3
+    "max_protocol_retries": 3,
+    "continuation_seconds": 5
   },
   "notifications": {
     "quiet_start": null,

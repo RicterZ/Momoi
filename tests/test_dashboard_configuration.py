@@ -41,6 +41,17 @@ class ConfigurationManagerTest(unittest.TestCase):
         bootstrap(self.path)
         self.manager = ConfigurationManager(self.path)
 
+    def test_continuation_setting_defaults_saves_and_validates(self):
+        self.assertEqual(self.manager.validate().owner_continuation_seconds, 5)
+        for seconds in (0, 2.5, 5):
+            self.manager.save_runtime({"turn": {"continuation_seconds": seconds}},
+                                      self.manager.revision())
+            self.assertEqual(self.manager.validate().owner_continuation_seconds, seconds)
+        for value in (-1, 61, "five"):
+            with self.assertRaises(ConfigError):
+                self.manager.save_runtime({"turn": {"continuation_seconds": value}},
+                                          self.manager.revision())
+
     def test_settings_poll_does_not_log_mcp_runtime_loads(self):
         from momoi.mcp.manager import MCPManager
 
@@ -245,7 +256,7 @@ class ConfigurationManagerTest(unittest.TestCase):
     def test_app_fields_expose_enum_types_defaults_and_are_isolated(self):
         snapshot = self.manager.snapshot()
         fields = snapshot["app_fields"]
-        self.assertEqual(set(fields), {"heartbeat", "logging", "reflection", "episode_annealing", "thinking", "tools"})
+        self.assertEqual(set(fields), {"heartbeat", "logging", "reflection", "episode_annealing", "thinking", "tools", "turn"})
         self.assertEqual(fields["logging"]["fields"]["level"]["enum"], ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
         self.assertEqual(fields["reflection"]["fields"]["at"]["format"], "time")
         self.assertEqual(snapshot["app"]["reflection"]["at"], "03:00")
