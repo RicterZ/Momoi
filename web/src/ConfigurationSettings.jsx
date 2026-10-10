@@ -1091,6 +1091,7 @@ function RuntimePropertyFields({ spec, value, onChange }) {
 
 const runtimeOrder = { turn: -1, heartbeat: 0, reflection: 1, episode_annealing: 2, episode_relation: 3, logging: 4, thinking: 5 };
 const runtimeDescriptions = {
+  turn: "自然结束后等待快速补充；其他任务需要运行时立即让出。0 表示关闭。",
   logging: "控制运行日志的详细程度，用于查看服务状态与排查问题。",
   thinking: "为不同运行阶段设置思考强度；默认跟随模型，单独设置后不随模型切换而改变。",
 };
@@ -1181,7 +1182,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
                 );
                 return spec.format === "time"
                   ? <TimeField key={key} label={spec.label} value={draft[configName][key]} onChange={onChange} />
-                  : <OptionField key={key} name={key} spec={spec} value={draft[configName][key]} onChange={onChange} />;
+                  : <OptionField key={key} name={key} spec={name === "turn" ? { ...spec, description: undefined } : spec} value={draft[configName][key]} onChange={onChange} />;
               })}
             </fieldset>
           </section>
