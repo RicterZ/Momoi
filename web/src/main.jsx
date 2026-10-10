@@ -2545,10 +2545,13 @@ function ThinkingCall({ call, children = [], nested = false }) {
         <h4>模型推理 <span>接口返回的 reasoning</span></h4>
         <p className="message-content thinking-body">{call.reasoning || call.excerpt}</p>
       </section> : <p className="thinking-empty">接口未返回可见推理；可以从实际工具调用查看决策。</p>}
-      {call.assistant_text && <section className="thinking-part assistant-part">
-        <h4>{replyer ? "生成的发言" : "内部正文"}{replyer && <span>是否送达以投递记录为准</span>}</h4>
+      {call.assistant_text && (replyer ? <details className="thinking-part assistant-part flow-generated">
+        <summary>生成的发言</summary>
         <EmotionContent className="message-content thinking-body" text={call.assistant_text} />
-      </section>}
+      </details> : <section className="thinking-part assistant-part">
+        <h4>内部正文</h4>
+        <EmotionContent className="message-content thinking-body" text={call.assistant_text} />
+      </section>)}
     </div>
     {(call.actions || []).map((action, index) => <section className="flow-action" key={action.id || index}>
       <div className="flow-action-head"><strong>{action.name === "reply" ? "决定回应 → 派发 Replyer" : action.name === "end_turn" ? "结束本轮" : `调用 ${action.name}`}</strong>
@@ -2625,7 +2628,20 @@ function ThinkingDetail({ item, calls, recall, flowData = {} }) {
         </Fragment>)}
         {(flowData.interjections || []).filter(input => !input.before_call_id).map(input => <section className="flow-input" key={input.id}><h3>用户中途插话</h3><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></section>)}
         {recall && recallHasEvidence && lastCuesIndex < 0 ? <RecallDetail recall={recall} /> : null}
-        {!!flowData.deliveries?.length && <section className="flow-deliveries"><h3>实际投递</h3><p className="flow-note">生成内容、提交发送和已送达是不同状态；以下直接读取 outbox。</p>{flowData.deliveries.map(delivery => <div className="flow-delivery" key={delivery.id}><span className={`flow-result-state ${["failed", "cancelled"].includes(delivery.state) ? "is-error" : ""}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"失败",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span><span>{delivery.target_channel} · {delivery.kind}</span><EmotionContent text={delivery.text} />{delivery.last_error && <p className="flow-note">{delivery.last_error}</p>}</div>)}</section>}
+        {!!flowData.deliveries?.length && <section className="flow-deliveries">
+          <header className="flow-deliveries-head"><h3>实际投递</h3><span>{flowData.deliveries.length} 条</span></header>
+          <div className="flow-delivery-list">{flowData.deliveries.map((delivery, index) => <article className="flow-delivery" key={delivery.id}>
+            <span className="flow-delivery-index">{String(index + 1).padStart(2, "0")}</span>
+            <div className="flow-delivery-body">
+              <div className="flow-delivery-meta"><span>{({napcat: "QQ", weixin: "微信", qq_call: "QQ 通话"})[delivery.target_channel] || delivery.target_channel} · {({text: "文字", image: "图片", voice: "语音", audio: "音频", file: "文件"})[delivery.kind] || delivery.kind}</span>
+                <span className={`flow-delivery-state is-${delivery.state}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"发送失败",superseded:"已取消",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span>
+              </div>
+              <EmotionContent className="message-content flow-delivery-text" text={delivery.text} />
+              {delivery.last_error && <details className="flow-action-data"><summary>投递详情</summary><pre className="flow-json">{delivery.last_error}</pre></details>}
+            </div>
+          </article>)}</div>
+        </section>}
+
       </div>
     </>
   );
