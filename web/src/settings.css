@@ -1349,7 +1349,7 @@
   left: 0;
   top: 24px;
   bottom: 24px;
-  border-left: 1px solid var(--line);
+  border-left: 2px solid var(--ink);
 }
 .settings-runtime-group.settings-runtime-thinking { grid-template-columns: minmax(0, 1fr) auto; }
 .settings-runtime-thinking > .settings-runtime-fields { grid-column: 1 / -1; }
