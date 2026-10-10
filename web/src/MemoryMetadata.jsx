@@ -1,15 +1,15 @@
 import { memoryScope, memoryScopeLabel } from "./memoryInventory.js";
 
 export default function MemoryMetadata({ item }) {
-  if (item.activation === "reflection") return null;
-  const triggers = item.meta?.triggers || [];
+  const reflection = item.activation === "reflection" || item.resource === "reflection-candidates";
+  const triggers = item.meta?.triggers || item.triggers || [];
   const scope = memoryScope(item);
-  if (item.activation !== "recall" && !scope) return null;
+  if (!reflection && item.activation !== "recall" && !scope) return null;
   const triggerActive = item.activation === "recall" && !scope;
   return (
     <div className="memory-metadata">
       {scope && <p className="memory-scope">作用于 {memoryScopeLabel(item)}</p>}
-      {item.activation === "recall" && <>
+      {(reflection || item.activation === "recall") && <>
         <div className="memory-triggers">
           <span>触发词：</span>
           {triggers.length ? (
@@ -18,7 +18,9 @@ export default function MemoryMetadata({ item }) {
             </ul>
           ) : <span className="secondary">未设置</span>}
         </div>
-        {!!triggers.length && <p className="memory-trigger-hint">{triggerActive
+        {!!triggers.length && <p className="memory-trigger-hint">{reflection
+          ? "待人工准入后参与自动召回。"
+          : triggerActive
           ? "用户消息包含这些词时，可自动召回这条记忆。"
           : "触发词已保留，仅在全局召回记忆中参与自动触发。"}</p>}
       </>}

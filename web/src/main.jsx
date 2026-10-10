@@ -1253,6 +1253,7 @@ function Reflections({ refreshKey, token, routeParam }) {
                         )}
                       </div>
                       <p>{memory.content}</p>
+                      <MemoryMetadata item={{ ...memory, activation: "reflection" }} />
                       {memory.evidence && <small>依据：{memory.evidence}</small>}
                     </div>
                   ))}
@@ -1418,8 +1419,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                       </>}
                     </div>
                   </div>
-                  {!candidateMode && <MemoryMetadata item={item} />}
-                  {candidateMode && !!item.triggers?.length && <p className="secondary">触发词：{item.triggers.join("、")}</p>}
+                  <MemoryMetadata item={item} />
                   {editingId === item.identity ? (
                     <textarea
                       aria-label="记忆内容"

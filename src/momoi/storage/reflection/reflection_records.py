@@ -133,6 +133,7 @@ class ReflectionRecordStore:
 
     def _reflection_memory_public_dict(self, row: sqlite3.Row) -> dict[str, object]:
         item = dict(row)
+        item["triggers"] = json.loads(item.pop("triggers_json", "[]"))
         add_context_timestamps(item, ("created_at", "updated_at"), self._timezone)
         return item
 
