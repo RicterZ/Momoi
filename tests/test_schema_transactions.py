@@ -59,3 +59,25 @@ END;
         db.execute("INSERT INTO items VALUES (1)")
     assert db.execute("SELECT * FROM items").fetchall() == [(1,), (2,)]
     db.close()
+
+
+def test_outbox_turn_index_is_added_to_existing_database_without_changing_rows(tmp_path):
+    with sqlite3.connect(tmp_path / "existing.sqlite3") as db:
+        initialize_schema(db)
+        assert [row[2] for row in db.execute("PRAGMA index_info(outbox_turn_state)")] == ["turn_id", "state"]
+        db.execute("DROP INDEX outbox_turn_state")
+        db.executemany("INSERT INTO outbox(turn_id,dedupe_key,text,state) VALUES (?,?,?,?)", [
+            ("old", "old", "已发送", "sent"),
+            ("cancelled", "cancelled", "已取消", "superseded"),
+            ("pending", "pending", "待发送", "pending"),
+        ])
+        db.commit()
+        before = db.execute("SELECT * FROM outbox ORDER BY id").fetchall()
+        initialize_schema(db)
+        initialize_schema(db)
+        assert db.execute("SELECT * FROM outbox ORDER BY id").fetchall() == before
+        sql = "SELECT 1 FROM outbox WHERE turn_id=? AND state='superseded'"
+        plan = db.execute("EXPLAIN QUERY PLAN " + sql, ("cancelled",)).fetchall()
+        assert any("USING COVERING INDEX outbox_turn_state" in row[3] for row in plan)
+        assert db.execute(sql, ("cancelled",)).fetchall() == [(1,)]
+        assert db.execute(sql, ("old",)).fetchall() == []

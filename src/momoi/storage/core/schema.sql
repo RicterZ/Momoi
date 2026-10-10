@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS outbox (
     payload_json TEXT NOT NULL DEFAULT '',
     target_channel TEXT NOT NULL DEFAULT ''
 );
+CREATE INDEX IF NOT EXISTS outbox_turn_state ON outbox(turn_id, state);
 CREATE TABLE IF NOT EXISTS reflections (
     id TEXT PRIMARY KEY,
     local_date TEXT NOT NULL UNIQUE,
