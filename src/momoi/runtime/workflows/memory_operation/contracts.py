@@ -1,5 +1,7 @@
 from typing import Any
 
+from ....memory.metadata import TRIGGER_INPUT_SCHEMA
+
 from ....memory.writing.validation import ALWAYS_MEMORY_KINDS
 from ....memory.storage.records import MEMORY_ACTIVATIONS, MEMORY_KINDS
 from ....storage.memory.catalog import MOMOI_MEMORY_TAGS
@@ -44,11 +46,7 @@ _MEMORY = {
                     "type": "string", "maxLength": 200,
                     "description": "全局填空字符串；工作流范围为 heartbeat、webhook 或 goal:<提供的 Goal ID>。key 不包含范围前缀。",
                 },
-                "triggers": {
-                    "type": "array", "maxItems": 8, "uniqueItems": True,
-                    "items": {"type": "string", "minLength": 1, "maxLength": 40},
-                    "description": "少量具体的字面触发词，如喵；触发后将 recall 记忆附到当前用户消息。无需求填 []；更新时省略则继承，显式 [] 清空。不使用正则或泛词。",
-                },
+                "triggers": TRIGGER_INPUT_SCHEMA,
                 "tags": {
                     "type": "array", "maxItems": 3, "uniqueItems": True,
                     "items": {"type": "string", "enum": sorted(MOMOI_MEMORY_TAGS.tags)},
