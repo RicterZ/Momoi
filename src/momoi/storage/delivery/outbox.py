@@ -35,6 +35,30 @@ class OutboxStore:
                 "bubbles": [row["text"] for row in rows],
                 **({"error": "reply_delivery_failed"} if failed else {})}
 
+    def reply_delivery(self, turn_id: str, tool_call_id: str) -> dict[str, object] | None:
+        """Report only confirmed speech, with uncertainty kept separate."""
+        rows = self._db.execute(
+            """SELECT p.text, o.target_channel, o.state, o.possible_duplicate
+               FROM turn_progress p JOIN outbox o ON
+               o.dedupe_key = 'turn:' || p.turn_id || ':progress:' || p.tool_call_id || ':' || p.part_index
+               WHERE p.turn_id=? AND p.tool_call_id=? ORDER BY p.part_index""",
+            (turn_id, tool_call_id),
+        ).fetchall()
+        if not rows:
+            return None
+        pending = sum(row['state'] in {'pending', 'sending', 'ambiguous'} for row in rows)
+        uncertain = [row['text'] for row in rows if row['state'] != 'sent' and
+                     (row['possible_duplicate'] or row['state'] == 'sending')]
+        cancelled = sum(row['state'] == 'superseded' and not row['possible_duplicate'] for row in rows)
+        failed = sum(row['state'] == 'failed' and not row['possible_duplicate'] for row in rows)
+        state = ('pending' if pending else 'uncertain' if uncertain else 'interrupted' if cancelled
+                 else 'failed' if failed else 'sent')
+        return {'ok': state in {'sent', 'interrupted'}, 'state': state,
+                'channel': rows[0]['target_channel'],
+                'bubbles': [row['text'] for row in rows if row['state'] == 'sent'],
+                'pending': pending, 'cancelled': cancelled, 'failed': failed,
+                **({'uncertain_bubbles': uncertain} if uncertain else {})}
+
     @staticmethod
     def _message_delivery_state(
         outbox_state: str, possible_duplicate: bool = False

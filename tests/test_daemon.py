@@ -2068,7 +2068,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     }
                 )
                 if len(sent) == 3:
-                    stop.set()
+                    asyncio.get_running_loop().call_later(0.2, stop.set)
             return socket
 
         llm_server = TestServer(web.Application())

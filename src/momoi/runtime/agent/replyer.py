@@ -64,7 +64,7 @@ class Replyer:
             tail += "\n本次附件由发送层原样发送，发言无需重述附件路径或生成媒体指令。"
         previous = getattr(getattr(request, "state", None), "last_sent_bubbles", None)
         if previous:
-            tail += "\n本轮上一批发言已提交发送（不保证已送达），避免重复：" + str(previous)
+            tail += "\n本轮上一批已确认发言，避免重复：" + str(previous)
         blocks = [{"type": "text", "text": tail}]
         # Reuse the channel attachment adapter, with the same image association as Planner.
         for event in request.current_events:

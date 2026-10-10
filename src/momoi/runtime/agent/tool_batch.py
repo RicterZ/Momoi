@@ -436,7 +436,7 @@ class ToolBatchExecutor:
                     call.arguments.get("channel") or request.delivery_channel.name, request.delivery_channel)
                 cached_reply = self.store.committed_reply(request.turn_id, call.id)
                 if cached_reply is not None:
-                    result = cached_reply
+                    result = await self.bubble_delivery.wait_reply(request.turn_id, call.id)
                     if result.get("ok"):
                         last_sent_bubbles = copy.deepcopy(result["bubbles"])
                         last_sent_channel = str(result["channel"])
@@ -456,6 +456,7 @@ class ToolBatchExecutor:
                     try:
                         reply_request = replace(request, delivery_channel=target,
                                                 state=ToolBatchState(previous_tool_name, last_sent_bubbles, last_sent_channel))
+                        owner_revision = self.store.owner_channel_revision(target.name)
                         bubbles = await self.replyer.generate(call, reply_request)
                         mode = call.arguments.get("mode", "text")
                         if mode == "text":
@@ -475,9 +476,15 @@ class ToolBatchExecutor:
                             **({"delivery_context": call_context} if mode == "voice" and call_context else {}))
                         if mode == "voice":
                             delivery = await delivery
-                        result = {**delivery.result, "bubbles": bubbles, "mode": mode}
+                        if delivery.result.get("ok"):
+                            if self.store.owner_channel_revision(target.name) != owner_revision:
+                                self.store.cancel_pending_outbox(target.name, "owner_message_superseded_outbox")
+                                self.outbox_changed.set()
+                            result = {**await self.bubble_delivery.wait_reply(request.turn_id, call.id), "mode": mode}
+                        else:
+                            result = {**delivery.result, "bubbles": [], "mode": mode}
                         if delivery.bubbles is not None:
-                            last_sent_bubbles = copy.deepcopy(delivery.bubbles)
+                            last_sent_bubbles = copy.deepcopy(result["bubbles"])
                             last_sent_channel = delivery.channel
                     except Exception as error:
                         logger.exception("reply_generation_failed")

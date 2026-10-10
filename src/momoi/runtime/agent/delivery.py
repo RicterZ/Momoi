@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import time
@@ -208,6 +209,20 @@ class BubbleDelivery:
             {"ok": True, "state": "committed", "channel": delivery_channel.name, "bubbles": 1},
             bubbles=[text], channel=delivery_channel.name,
         )
+
+    async def wait_reply(self, turn_id: str, tool_call_id: str, *, timeout: float = 120):
+        deadline = asyncio.get_running_loop().time() + timeout
+        while True:
+            result = self.store.reply_delivery(turn_id, tool_call_id)
+            if result is None:
+                return {'ok': False, 'error': 'reply_delivery_missing', 'bubbles': []}
+            if not result['pending']:
+                return result
+            if asyncio.get_running_loop().time() >= deadline:
+                return {**result, 'ok': False, 'error': 'reply_delivery_timeout',
+                        'message': 'Delivery is still pending or uncertain. Do not resend queued content.'}
+            # Observe delivery without consuming the outbox worker's wake-up event.
+            await asyncio.sleep(0.1)
 
     async def dispatch_voice(self, call: ToolCall, **context: Any) -> BubbleDeliveryResult:
         if set(call.arguments) != {"text"}:

@@ -120,6 +120,8 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_contex
 
     daemon.provider = SimpleNamespace(complete=complete)
     daemon.tool_batch.replyer.provider = daemon.provider
+    from tests.support import stub_reply_delivery_wait
+    stub_reply_delivery_wait(daemon)
     try:
         asyncio.run(daemon._run_tool_loop(
             daemon._system(planner=True), messages, daemon.tool_surface.conversation_specs(),
@@ -246,6 +248,8 @@ def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
 
     daemon.provider = SimpleNamespace(complete=complete)
     daemon.tool_batch.replyer.provider = daemon.provider
+    from tests.support import stub_reply_delivery_wait
+    stub_reply_delivery_wait(daemon)
     try:
         asyncio.run(daemon._run_tool_loop(
             daemon._system(planner=True), messages, daemon.tool_surface.conversation_specs(),

@@ -132,7 +132,7 @@ def reply_call(identifier, *, bubbles=None, text=None, mode="text", channel=None
 
 
 def install_scripted_replyer(daemon):
-    """Stub expression only; Planner, validation, delivery, and writeback stay real."""
+    """Stub expression and delivery acknowledgement; keep queue/writeback real."""
     import json
     from unittest.mock import AsyncMock
 
@@ -140,3 +140,10 @@ def install_scripted_replyer(daemon):
         return json.loads(call.arguments["reference"])
 
     daemon.tool_batch.replyer.generate = AsyncMock(side_effect=generate)
+    stub_reply_delivery_wait(daemon)
+
+
+def stub_reply_delivery_wait(daemon):
+    """Queue-focused tests have no network worker; synchronous delivery has separate integration coverage."""
+    from unittest.mock import AsyncMock
+    daemon.bubble_delivery.wait_reply = AsyncMock(side_effect=daemon.store.committed_reply)
