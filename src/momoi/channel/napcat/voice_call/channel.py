@@ -20,6 +20,7 @@ logger = logging.getLogger('momoi.qq_call')
 
 
 class QQCallChannel:
+    # Persistent channel ID; independent of the voice_call package directory.
     name = 'qq_call'
     dialogue_channel = 'napcat'
     quiet_seconds = .05
