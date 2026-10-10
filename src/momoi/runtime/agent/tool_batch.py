@@ -163,6 +163,12 @@ class ToolBatchExecutor:
                 round_number=request.round_number,
                 channel=request.delivery_channel.name,
             )
+            first_call_reply = (
+                execution.stage == "owner" and request.delivery_channel.name == "qq_call"
+                and call.name == "reply" and call.arguments.get("mode") == "voice"
+                and call.arguments.get("channel", "qq_call") == "qq_call"
+                and not last_sent_bubbles and "reply" not in request.harness.completed_tools
+            )
             validation_error = None
             if (
                 not call.argument_error
@@ -195,7 +201,7 @@ class ToolBatchExecutor:
             elif request.pause_requested and request.pause_requested():
                 result = {"ok": False, "error": "paused_for_owner",
                           "message": "用户开始聊天，本次调用尚未执行。任务已暂停；处理用户消息后会用最新上下文重新判断，勿自动补发或重放。"}
-            elif owner_updates and call.name in {"reply", "wait", "end_turn"}:
+            elif owner_updates and call.name in {"reply", "wait", "end_turn"} and not first_call_reply:
                 result = {
                     "ok": False, "error": "superseded_by_owner_update",
                     "message": f"用户在执行前补充了新消息，本次 {call.name} 未执行。请阅读后续用户插话再决定下一步；其他工具以各自结果为准，运行时没有接管未完成任务。",
@@ -472,6 +478,12 @@ class ToolBatchExecutor:
                         owner_revision = self.store.owner_channel_revision(target.name)
                         bubbles = await self.replyer.generate(call, reply_request)
                         mode = call.arguments.get("mode", "text")
+                        first_call_updated = first_call_reply and (
+                            bool(owner_updates) or self.store.owner_channel_revision(target.name) != owner_revision
+                        )
+                        if first_call_updated:
+                            # Give the first response a chance; reconsider the rest after the interjection.
+                            bubbles = bubbles[:1]
                         if mode == "text":
                             bubbles = [*bubbles, *copy.deepcopy(call.arguments.get("attachments", []))]
                         delivery_call = ToolCall(call.id, "send_voice" if mode == "voice" else "send_bubbles",
@@ -480,6 +492,8 @@ class ToolBatchExecutor:
                         call_context = next((event.delivery_context for event in reversed(request.current_events)
                             if event.channel == target.name and event.delivery_context
                             and not event.delivery_context.get("channel_notice")), {})
+                        if first_call_updated and target.session_valid(call_context):
+                            call_context = {**call_context, **target.routing_context()}
                         delivery = dispatch(delivery_call, turn_id=request.turn_id, stage=execution.stage,
                             round_number=request.round_number, delivery_channel=target,
                             heartbeat_turn=execution.heartbeat,
@@ -490,7 +504,7 @@ class ToolBatchExecutor:
                         if mode == "voice":
                             delivery = await delivery
                         if delivery.result.get("ok"):
-                            if (self.store.owner_channel_revision(target.name) != owner_revision
+                            if ((not first_call_reply and self.store.owner_channel_revision(target.name) != owner_revision)
                                     or (request.pause_requested and request.pause_requested())):
                                 self.store.cancel_pending_outbox(target.name, "owner_message_superseded_outbox")
                                 self.outbox_changed.set()

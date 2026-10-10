@@ -162,3 +162,77 @@ def test_call_speech_during_execution_keeps_turn(tmp_path):
         asyncio.run(run())
     finally:
         daemon.store.close()
+
+
+@pytest.mark.parametrize('arrival', ['planner', 'replyer', 'hangup'])
+def test_phone_first_reply_survives_supplement_before_playback(tmp_path, arrival):
+    from unittest.mock import AsyncMock
+    from momoi.channel.napcat.voice_call.channel import QQCallChannel
+    from tests.support import reply_call
+
+    daemon = MomoiDaemon(replace(config(str(tmp_path)), owner_continuation_seconds=0),
+                         tts_provider=SimpleNamespace(stream_pcm=AsyncMock()))
+    channel = QQCallChannel(SimpleNamespace(), '123', object(), tts_enabled=True)
+    channel.session_id = 'call'
+    channel.status = {'phase': 'connected'}
+    daemon.channels['qq_call'] = channel
+    rounds, sent = [], []
+
+    async def supplement():
+        channel.generation += 1
+        daemon._interrupt_qq_call('owner_speech')
+        await daemon._receive(IncomingMessage('extra', 'extra', '还有一句', 2, 2, channel='qq_call',
+                                              delivery_context=channel.routing_context()))
+
+    async def generate(call, request):
+        if arrival in {'replyer', 'hangup'}:
+            await supplement()
+        if arrival == 'hangup':
+            channel.session_id = 'different-call'
+        return ['先接住第一句话', '这句等待重新判断']
+
+    async def send(provider, text, context, identifier):
+        assert channel.context_valid(context)
+        sent.append(text)
+
+    channel.send_call_stream = send
+    daemon.tool_batch.replyer.generate = generate
+
+    async def complete(system, messages, tools, **kwargs):
+        rounds.append(json.dumps(messages, ensure_ascii=False))
+        if len(rounds) == 1:
+            if arrival == 'planner':
+                await supplement()
+            calls = [reply_call('first-reply', mode='voice', bubbles=['先接住第一句话', '这句等待重新判断'])]
+        else:
+            assert sent == ([] if arrival == 'hangup' else ['先接住第一句话']), [m for m in messages if 'first-reply' in str(m)]
+            if arrival != 'hangup':
+                assert '还有一句' in rounds[-1]
+            calls = [ToolCall('end', 'end_turn', {'mood': {'decision': 'unchanged'}})]
+        return ProviderResponse([{'type': 'tool_use', 'id': c.id, 'name': c.name, 'input': c.arguments}
+                                 for c in calls], calls)
+
+    async def run():
+        daemon.provider = with_owner_recall(SimpleNamespace(complete=complete))
+        first = IncomingMessage('first', 'first', '你好', 1, 1, channel='qq_call',
+                                delivery_context=channel.routing_context())
+        daemon.store.add_event(first)
+        stop = asyncio.Event()
+        worker = asyncio.create_task(daemon._outbox_worker(stop))
+        task = daemon.start_active_turn(
+            daemon._complete_batch_turn([first], stop, 'first-speech', channel), stage='owner', channel='qq_call')
+        try:
+            await asyncio.wait_for(task, 3)
+            assert len(rounds) == 2
+            assert sent == ([] if arrival == 'hangup' else ['先接住第一句话'])
+            assert not daemon.store.due_outbox()
+        finally:
+            stop.set()
+            task.cancel()
+            worker.cancel()
+            await asyncio.gather(task, worker, return_exceptions=True)
+            daemon.finish_active_turn()
+    try:
+        asyncio.run(run())
+    finally:
+        daemon.store.close()
