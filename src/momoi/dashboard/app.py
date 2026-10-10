@@ -414,6 +414,7 @@ def create_dashboard_app(
         )
         if item is None:
             raise web.HTTPNotFound(text="conversation not found")
+        item["messages"] = store.dashboard_message_timeline(item["messages"])
         item["record_type"] = "episode"
         return web.json_response(item)
 
@@ -421,6 +422,7 @@ def create_dashboard_app(
         item = store.dashboard_conversation_turn(request.match_info["record_id"])
         if item is None:
             raise web.HTTPNotFound(text="conversation not found")
+        item["messages"] = store.dashboard_message_timeline(item["messages"])
         return web.json_response(item)
 
     async def reflection_candidates(request: web.Request) -> web.Response:

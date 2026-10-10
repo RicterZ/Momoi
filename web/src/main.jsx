@@ -1122,7 +1122,7 @@ function ConversationDetail({ item }) {
                 <div className="message-meta">
                   <time>{formatDate(message.created_at)}</time>
                   {message.role === "assistant" && (
-                    <span>{message.delivery_state}</span>
+                    <span>{message.delivery_state === "cancelled" ? "已取消" : message.delivery_state}</span>
                   )}
                 </div>
               </div>

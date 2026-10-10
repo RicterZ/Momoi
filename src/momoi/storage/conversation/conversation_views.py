@@ -7,6 +7,38 @@ from ...memory.text import estimate_tokens, token_chunk
 
 
 class ConversationViewStore:
+    def dashboard_message_timeline(self, messages):
+        """Expand archived owner batches for display without rewriting dialogue storage."""
+        timeline = []
+        for message in messages:
+            item = dict(message)
+            row = self._db.execute(
+                "SELECT source_event_ids_json, outbox_id FROM messages WHERE id=?",
+                (item["id"],),
+            ).fetchone()
+            if row and item["role"] == "user":
+                source_ids = json.loads(row["source_event_ids_json"] or "[]")
+                events = [self._db.execute(
+                    "SELECT id, content, occurred_at FROM events WHERE id=?", (event_id,)
+                ).fetchone() for event_id in source_ids]
+                # Keep the archived text when the original source is unavailable.
+                if len(events) > 1 and all(event is not None for event in events):
+                    for event in events:
+                        timeline.append({
+                            **item, "id": f'{item["id"]}:{event["id"]}',
+                            "content": event["content"], "created_at": event["occurred_at"],
+                            "timestamp": self.context_timestamp(event["occurred_at"]),
+                        })
+                    continue
+            if row and row["outbox_id"]:
+                delivery = self._db.execute(
+                    "SELECT state FROM outbox WHERE id=?", (row["outbox_id"],)
+                ).fetchone()
+                if delivery and delivery["state"] == "superseded":
+                    item["delivery_state"] = "cancelled"
+            timeline.append(item)
+        return sorted(timeline, key=lambda item: float(item["created_at"]))
+
     def list_episode_directory(
         self,
         limit: int = 64,
