@@ -2,7 +2,13 @@ import copy
 from typing import Any
 
 CUE_QUERY_TOOL_DESCRIPTION = (
-    '用对话语言描述当前需要的历史场景、意图、人物、任务和关键词，保留可区分的姓名与标识符。仅依据已知上下文解析指代、缩小范围，不猜答案或关联无关事件。semantic 直接描述要找的内容，不加“此前”“之前讨论过”等检索动作或时间前缀；只有时间本身是检索条件时才写具体时间。无需知道原始措辞；同时语义检索话题摘要及单独嵌入的 CUES。'
+    '每项是一条自然语言语义查询，用简短句子或有明确关系的短语描述要找的内容，保留谁做什么、对什么的偏好或事件之间的关系；'
+    '不要堆砌关键词，也不要把一句话拆成多个单词查询。空格分词和 OR 规则仅用于 keyword，不适用于 semantic。'
+    '例如 semantic=["老师通常如何安排晚餐来控制饮食"]，而不是 ["老师 晚餐 饮食 控制"]；'
+    'semantic=["老师对小桃主动联系他的态度"]，而不是 ["老师", "小桃", "主动", "联系"]。'
+    '只依据已知上下文解析指代，保留可区分的姓名与标识符，不猜答案、不补写未知经历。'
+    '直接描述内容，不加“此前”“之前讨论过”等检索前缀；只有时间本身是条件时才写具体时间。'
+    '无需知道原始措辞；同时语义检索话题摘要及单独嵌入的 CUES。'
 )
 from ...tools.contracts.memory import MEMORY_TOOL_SPECS
 from ...memory.storage.records import MEMORY_KINDS
@@ -45,7 +51,7 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
             "keyword": {
                 "type": "array", "maxItems": 6, "uniqueItems": True,
                 "items": {"type": "string", "minLength": 1, "maxLength": 60, "pattern": r"\S"},
-                "description": "可选，共用的字面关键词 OR 锚点；每项内多个词用空格分隔，数组项之间也为 OR，例如 [可爱 夸奖, 喜欢小桃]。只用已知关键词，无可靠词时省略。",
+                "description": '可选，共用的字面关键词 OR 锚点；每项内多个词用空格分隔，数组项之间也为 OR，例如 ["可爱 夸奖", "喜欢小桃"]。这些词只做字面匹配，不替代 semantic 中的自然语言描述。只用已知关键词，无可靠词时省略。',
             },
             "kind": {
                 "type": "array", "uniqueItems": True, "maxItems": len(MEMORY_KINDS),
