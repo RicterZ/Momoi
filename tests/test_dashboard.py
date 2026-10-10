@@ -628,6 +628,25 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         detail = await (await self.client.get("/api/thinking/flow-owner", headers=self._auth())).json()
         self.assertEqual(detail["flow"]["deliveries"][0]["state"], "sent")
 
+    async def test_interjections_stay_at_first_injection_when_turn_rounds_restart(self):
+        from momoi.models import IncomingMessage
+        now = time.time()
+        for index, text in enumerate(("开始聊天", "等等", "等等")):
+            self.store.add_event(IncomingMessage(f"resume-{index}", f"resume-{index}",
+                text, now + index, now + index, channel="napcat"))
+        self.store.begin_turn("resumed-flow", "owner", ["resume-0", "resume-1", "resume-2"])
+        for call_id, offset, round_number in (("initial", 0, 1), ("next", 3, 2), ("resumed", 5, 1)):
+            self.store.record_thinking_call(turn_id="resumed-flow", call_id=call_id,
+                created_at=now + offset, stage="owner", round=round_number, reasoning=call_id)
+        for offset, ids, round_number in ((2, ["resume-1"], 2),
+                (4, ["resume-1", "resume-2"], 1), (6, ["resume-1", "resume-2"], 1)):
+            self.store.append_turn_journal("resumed-flow", "owner_interjection",
+                {"event_ids": ids, "before_round": round_number}, created_at=now + offset)
+        detail = await (await self.client.get("/api/thinking/resumed-flow", headers=self._auth())).json()
+        self.assertEqual([item["id"] for item in detail["flow"]["inputs"]], ["resume-0"])
+        self.assertEqual([(item["id"], item["before_call_id"]) for item in detail["flow"]["interjections"]],
+            [("resume-1", "next"), ("resume-2", "resumed")])
+
     async def test_thinking_endpoint_lists_and_reads_calls(self) -> None:
         now = time.time()
         self.store.record_thinking_call(
