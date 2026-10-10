@@ -29,7 +29,6 @@ from ..turn_support import (
     ExternalToolTurnError,
     TurnBudgetExceeded,
     OwnerMessagesChanged,
-    tool_error_block as _tool_error_block,
     tool_result_block,
 )
 
@@ -293,23 +292,11 @@ class AgentLoop:
                 await self.owner_updates.settle(
                     current_events, delivery_channel.name
                 )
-                if accept_owner_updates
+                if accept_owner_updates and not response.tool_calls
                 else []
             )
             if updates:
                 messages.append(assistant_history_message(response.content, response.continuation))
-                if response.tool_calls:
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                _tool_error_block(
-                                    call.id, "superseded_by_owner_update"
-                                )
-                                for call in response.tool_calls
-                            ],
-                        }
-                    )
                 source_event_id = self._absorb_owner_updates(
                     updates, messages, delivery_channel, harness, draft
                 )

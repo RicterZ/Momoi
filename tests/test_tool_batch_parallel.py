@@ -88,3 +88,54 @@ def test_reply_and_read_overlap_and_cancel_together(tmp_path, cancel):
         asyncio.run(run())
     finally:
         daemon.store.close()
+
+
+@pytest.mark.parametrize('arrival', ['model', 'tool'])
+def test_owner_update_preserves_goal_and_skips_stale_reply(tmp_path, arrival):
+    from datetime import datetime, timedelta, timezone
+    daemon = MomoiDaemon(config(str(tmp_path)))
+    install_scripted_replyer(daemon)
+    first = IncomingMessage('first', 'first', '记得明天续写', 1, 1, channel=daemon.channel.name)
+    update = IncomingMessage('update', 'update', '头发还湿着', 2, 2, channel=daemon.channel.name)
+    rounds = 0
+
+    async def read(call):
+        await daemon._receive(update)
+        return {'ok': True, 'text': '已查询'}
+
+    async def complete(system, messages, tools, **kwargs):
+        nonlocal rounds
+        rounds += 1
+        if rounds == 1:
+            if arrival == 'model':
+                await daemon._receive(update)
+            calls = ([ToolCall('read', 'web_fetch', {'url': 'https://example.com'})]
+                     if arrival == 'tool' else [])
+            calls += [ToolCall('goal', 'goal_create', {
+                'title': '续写', 'success_criteria': '完成下一篇', 'next_action': '续写下一篇',
+                'next_review_at': (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+            }), reply_call('stale', bubbles=['旧回复'])]
+        else:
+            results = {b['tool_use_id']: json.loads(b['content']) for m in messages
+                       if isinstance(m.get('content'), list) for b in m['content']
+                       if b.get('type') == 'tool_result'}
+            assert 'goal_id' in results['goal'], results['goal']
+            assert results['stale']['error'] == 'superseded_by_owner_update'
+            assert '未执行' in results['stale']['message']
+            assert '[用户中途插话]' in json.dumps(messages, ensure_ascii=False)
+            assert json.dumps(messages, ensure_ascii=False).count('头发还湿着') == 1
+            calls = [ToolCall('end', 'end_turn', {'mood': {'decision': 'unchanged'}})]
+        return ProviderResponse([{'type': 'tool_use', 'id': c.id, 'name': c.name, 'input': c.arguments}
+                                 for c in calls], calls)
+
+    async def run():
+        daemon.provider = with_owner_recall(SimpleNamespace(complete=complete))
+        daemon.store.add_event(first)
+        with patch.object(daemon.tool_batch.tool_executor.builtin_tools, 'execute', side_effect=read):
+            await asyncio.wait_for(daemon._complete_batch_turn([first], asyncio.Event(), 'steer-goal'), 5)
+        assert rounds == 2
+        assert daemon.store._db.execute("SELECT count(*) FROM goals WHERE title='续写'").fetchone()[0] == 1
+    try:
+        asyncio.run(run())
+    finally:
+        daemon.store.close()

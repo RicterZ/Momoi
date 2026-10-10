@@ -131,7 +131,8 @@ class BubbleDelivery:
                 ),
             }
         if self.store.owner_channel_revision(channel) != revision:
-            return {"ok": False, "error": "superseded_by_owner_update"}
+            return {"ok": False, "error": "superseded_by_owner_update",
+                    "message": "语音合成期间收到用户新消息，本次语音未排队、未发送。请结合新消息决定是否重新回应。"}
         self.voice_audio[(turn_id, text)] = audio
         self.voice_audio.move_to_end((turn_id, text))
         # Bound memory for queued or subsequently cancelled messages. Evicted

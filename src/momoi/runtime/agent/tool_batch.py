@@ -191,6 +191,11 @@ class ToolBatchExecutor:
                 result = {"ok": False, "error": "tool_not_allowed"}
             elif validation_error:
                 result = validation_error
+            elif owner_updates and call.name in {"reply", "wait", "end_turn"}:
+                result = {
+                    "ok": False, "error": "superseded_by_owner_update",
+                    "message": f"用户在执行前补充了新消息，本次 {call.name} 未执行。请阅读后续用户插话再决定下一步；其他工具以各自结果为准，运行时没有接管未完成任务。",
+                }
             elif call.name == "wait":
                 if execution.stage != "owner" or request.wait_owner_messages is None:
                     result = {"ok": False, "error": "tool_not_allowed"}
@@ -673,6 +678,11 @@ class ToolBatchExecutor:
         calls = request.response.tool_calls
         index = 0
         while index < len(calls):
+            # Keep submitted work; only stale conversational actions need replanning.
+            if execution.accept_owner_updates:
+                owner_updates.extend(await request.settle_owner_updates(
+                    request.current_events, request.delivery_channel.name
+                ))
             group = [calls[index]]
             if parallel_safe(group[0]):
                 while index + len(group) < len(calls) and len(group) < 4:
@@ -712,15 +722,9 @@ class ToolBatchExecutor:
                                for pending in calls[index:])
                 break
             if execution.accept_owner_updates:
-                owner_updates = await request.settle_owner_updates(
+                owner_updates.extend(await request.settle_owner_updates(
                     request.current_events, request.delivery_channel.name
-                )
-                if owner_updates:
-                    results.extend(
-                        tool_error_block(pending.id, "superseded_by_owner_update")
-                        for pending in calls[index:]
-                    )
-                    break
+                ))
 
         request.messages.append({"role": "user", "content": [*results, *image_blocks]})
         # Keep the model's actual assistant text and native tool exchange for
