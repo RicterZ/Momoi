@@ -33,7 +33,7 @@ WEEKLY_REFLECTION_FINISH_SPEC = {
                         'kind': {'type': 'string', 'enum': ['profile', 'preference', 'relationship', 'third_party', 'cross_event_state']},
                         'triggers': {'type': 'array', 'maxItems': 8, 'uniqueItems': True,
                                      'items': {'type': 'string', 'minLength': 1, 'maxLength': 40},
-                                     'description': '仅限用户日常聊天中会说、命中时能让你想起这条记忆的词或短语；不要求逐字出现在证据中，不用概括标签或泛词，可为空。'},
+                                     'description': '仅限用户日常聊天中会说、命中时能让你想起这条记忆的词或短语；不要求逐字出现在证据中。禁止测量值、日期、时刻、数量、金额（固定专名除外）；不扩展推测的原因或后果，不用概括标签或泛词，可为空。'},
                         'events': {'type': 'array', 'minItems': 1, 'maxItems': 100, 'items': {
                             'type': 'object', 'additionalProperties': False,
                             'properties': {'refs': {'type': 'array', 'minItems': 1, 'maxItems': 100, 'uniqueItems': True,
