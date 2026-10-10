@@ -67,6 +67,7 @@ def test_real_worker_partial_reply_steers_same_turn(tmp_path):
     daemon.bubble_delivery.wait_reply = BubbleDelivery.wait_reply.__get__(daemon.bubble_delivery)
     sent = []
     rounds = []
+    wire_requests = []
     stop = asyncio.Event()
     first = IncomingMessage('first', 'first', '说两句', 1, 1, channel=daemon.channel.name)
     update = IncomingMessage('update', 'update', '改主意了', 2, 2, channel=daemon.channel.name)
@@ -79,6 +80,14 @@ def test_real_worker_partial_reply_steers_same_turn(tmp_path):
         return str(len(sent))
 
     async def complete(system, messages, tools, **kwargs):
+        from momoi.integrations.adapters.openai import openai_messages
+        import copy
+        wire = openai_messages(system, messages)
+        if wire_requests:
+            previous_wire, previous_tools = wire_requests[-1]
+            assert wire[:len(previous_wire)] == previous_wire
+            assert tools == previous_tools
+        wire_requests.append((copy.deepcopy(wire), copy.deepcopy(tools)))
         rounds.append(json.dumps(messages, ensure_ascii=False))
         if len(rounds) == 1:
             call = reply_call('first-reply', bubbles=['第一句', '不要发的第二句'])
