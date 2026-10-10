@@ -863,8 +863,13 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
   }
   if (module.id === "memory" && data.desktop_embedding_managed) {
     return <>
-      <SectionHeader module={module} />
-      <div className="settings-form-body"><p role="status">由客户端自动维护</p></div>
+      <SectionHeader module={module} control={<span className="tag">客户端托管</span>} />
+      <div className="settings-form-body">
+        <dl className="settings-managed-memory">
+          <div><dt>运行方式</dt><dd>本地模型</dd></div>
+          <div><dt>模型维护</dt><dd>自动管理</dd></div>
+        </dl>
+      </div>
     </>;
   }
   const testButton = testCapability && (

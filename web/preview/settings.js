@@ -20,6 +20,7 @@ export function createSettingsPreview(json) {
   ];
   const mcpStatus = () => Object.entries(mcpDocument.mcpServers).map(([name, config]) => ({ name, connected: !config.disabled, error: null, tools: config.disabled ? [] : (name === "brave-search" ? ["brave_web_search", "brave_local_search"] : ["fetch"]).map(tool => ({ name: `mcp__${name}__${tool}`, description: tool === "brave_web_search" ? "搜索公开网页，获取标题、摘要和原文链接。" : tool === "fetch" ? "提取网页正文，返回 Markdown 内容。" : "查询地点与商家信息。" })) }));
   let configuration = {
+    desktop_embedding_managed: process.env.MOMOI_PREVIEW_DESKTOP === "1",
     revision: "preview-1",
     app: {
       channels: { primary: "weixin", enabled: { weixin: {} } },
