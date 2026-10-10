@@ -1083,7 +1083,7 @@ function RuntimePropertyFields({ spec, value, onChange }) {
         const update = next => onChange({ ...value, [key]: next });
         if (child.properties) return <RuntimePropertyFields key={key} spec={child} value={value?.[key]} onChange={update} />;
         return <SelectField key={key} label={child.label || key} value={value?.[key] ?? child.default}
-          options={child.enum.map(option => ({ value: option, label: option === "" ? "跟随模型" : option === "off" ? "关闭" : option }))} onChange={update} />;
+          options={child.enum.map(option => ({ value: option, label: option === "" ? (key === "owner_voice" ? "跟随用户对话" : "跟随模型") : option === "off" ? "关闭" : option }))} onChange={update} />;
       })}
     </div>
   );

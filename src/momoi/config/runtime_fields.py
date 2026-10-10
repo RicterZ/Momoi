@@ -6,6 +6,7 @@ from ..integrations.request_context import THINKING_EFFORTS
 LOG_LEVELS = ("TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 THINKING_STAGES = {
     "owner": "用户对话（Planner）",
+    "owner_voice": "语音通话（Planner）",
     "replyer": "发言生成（Replyer）",
     "topic_selection": "话题召回筛选",
     "heartbeat": "心跳",
@@ -53,7 +54,7 @@ _FIELDS = {
                         "enum": ["", *THINKING_EFFORTS],
                         "default": "low" if stage in {"topic_selection", "replyer"} else "",
                         "advanced": False,
-                        "description": ("Replyer 留空时使用 low。" if stage == "replyer" else "空字符串表示跟随模型；") + "off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。",
+                        "description": ("Replyer 留空时使用 low。" if stage == "replyer" else "留空跟随用户对话（Planner）设置；" if stage == "owner_voice" else "空字符串表示跟随模型；") + "off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。",
                     }
                     for stage, label in THINKING_STAGES.items()
                 },

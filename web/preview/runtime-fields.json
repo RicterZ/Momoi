@@ -49,6 +49,22 @@
             "advanced": false,
             "description": "空字符串表示跟随模型；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
           },
+          "owner_voice": {
+            "type": "string",
+            "label": "语音通话（Planner）",
+            "enum": [
+              "",
+              "off",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "留空跟随用户对话（Planner）设置；off 表示关闭思考；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
           "replyer": {
             "type": "string",
             "label": "发言生成（Replyer）",
