@@ -611,6 +611,17 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail["items"][0]["actions"][0]["result"]["bubbles"], ["测试发言"])
         self.assertEqual(detail["items"][1]["trace"]["parent_call_id"], "planner-call")
         self.assertEqual(detail["flow"]["inputs"][0]["content"], "测试输入")
+        update = IncomingMessage("flow-update", "flow-update", "等等改一下", now+2, now+2, channel="napcat")
+        self.store.add_event(update)
+        self.store.append_turn_journal("flow-owner", "owner_interjection",
+                                       {"event_ids": [update.event_id], "before_round": 2}, trust="runtime")
+        detail = await (await self.client.get("/api/thinking/flow-owner", headers=self._auth())).json()
+        self.assertEqual(detail["flow"]["interjections"][0]["content"], "等等改一下")
+        self.assertIsNone(detail["flow"]["interjections"][0]["before_call_id"])
+        self.store.record_thinking_call(created_at=now+3, turn_id="flow-owner", call_id="planner-next",
+                                       stage="owner", round=2, model="test", tools=[], reasoning="接住插话")
+        detail = await (await self.client.get("/api/thinking/flow-owner", headers=self._auth())).json()
+        self.assertEqual(detail["flow"]["interjections"][0]["before_call_id"], "planner-next")
         self.assertTrue(detail["flow"]["running"])
         self.assertEqual(detail["flow"]["deliveries"][0]["state"], "pending")
         self.store.mark_sent(detail["flow"]["deliveries"][0]["id"])

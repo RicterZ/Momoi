@@ -93,6 +93,9 @@ def test_real_worker_partial_reply_steers_same_turn(tmp_path):
             call = reply_call('first-reply', bubbles=['第一句', '不要发的第二句'])
         elif len(rounds) == 2:
             assert sent == ['第一句']
+            detail = daemon.store.dashboard_thinking_detail('same-turn')
+            assert [item['content'] for item in detail['flow']['inputs']] == ['说两句']
+            assert [item['content'] for item in detail['flow']['interjections']] == ['改主意了']
             assert '[用户中途插话]' in rounds[-1] and '改主意了' in rounds[-1]
             results = [block for message in messages if isinstance(message.get('content'), list)
                        for block in message['content'] if block.get('type') == 'tool_result'

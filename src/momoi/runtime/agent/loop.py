@@ -84,6 +84,7 @@ class AgentLoop:
         history_messages = max(0, len(messages) - 1)
         batch_state = ToolBatchState()
         last_round_directives = ""
+        observed_input_ids = {event.event_id for event in current_events}
         llm_round = 0
         remind_owner_bubbles = False
         enable_tool_groups = self.tool_surface.discovery_groups()
@@ -172,6 +173,14 @@ class AgentLoop:
             # Stage-specific rules are enforced by the harness after the response.
             request_tools = [tool for tool in tools if tool["name"] != "end_turn"]
             llm_round += 1
+            new_inputs = [event.event_id for event in current_events
+                          if event.event_id not in observed_input_ids]
+            if new_inputs:
+                self.store.append_turn_journal(
+                    turn_id, "owner_interjection",
+                    {"event_ids": new_inputs, "before_round": llm_round}, trust="runtime",
+                )
+                observed_input_ids.update(new_inputs)
             require_tool = bool(required_tool)
 
             async def complete(

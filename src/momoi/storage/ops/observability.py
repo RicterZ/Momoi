@@ -257,11 +257,30 @@ class ObservabilityStore:
             f"""SELECT DISTINCT e.id, e.content, e.occurred_at, e.kind FROM turns t,
                 json_each(t.source_ids_json) src JOIN events e ON e.id=src.value
                 WHERE t.id IN ({placeholders}) ORDER BY e.occurred_at""", members)]
+        interjections = []
+        for row in self._db.execute(
+            f"""SELECT turn_id, payload_json FROM turn_journal
+                WHERE turn_id IN ({placeholders}) AND item_type='owner_interjection'
+                ORDER BY sequence""", members
+        ):
+            payload = json.loads(row["payload_json"])
+            before_call = next((call["call_id"] for call in calls
+                                if call["turn_id"] == row["turn_id"]
+                                and call["stage"] != "replyer"
+                                and call["round"] == payload["before_round"]), None)
+            for event_id in payload["event_ids"]:
+                event = self._db.execute(
+                    "SELECT id, content, occurred_at, kind FROM events WHERE id=?", (event_id,)
+                ).fetchone()
+                if event:
+                    interjections.append({**dict(event), "before_call_id": before_call})
+        interjection_ids = {item["id"] for item in interjections}
+        inputs = [item for item in inputs if item["id"] not in interjection_ids]
         deliveries = [dict(row) for row in self._db.execute(
             f"""SELECT id, turn_id, text, kind, state, target_channel, last_error FROM outbox
                 WHERE turn_id IN ({placeholders}) ORDER BY id""", members)]
         return {"ok": bool(calls), "turn_id": root, "turn_ids": members,
-                "calls": calls, "count": len(calls), "flow": {"inputs": inputs, "deliveries": deliveries,
+                "calls": calls, "count": len(calls), "flow": {"inputs": inputs, "interjections": interjections, "deliveries": deliveries,
                     "running": bool(self._db.execute(f"SELECT 1 FROM turns WHERE id IN ({placeholders}) AND state='running' LIMIT 1", members).fetchone())}}
 
     def enrich_thinking_calls(self, calls: list[dict]) -> None:

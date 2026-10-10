@@ -2619,9 +2619,11 @@ function ThinkingDetail({ item, calls, recall, flowData = {} }) {
         {!!flowData.inputs?.length && <section className="flow-input"><h3>本轮输入</h3>{flowData.inputs.map(input => <div key={input.id}><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></div>)}</section>}
         {roots.map(call => <Fragment key={call.call_id}>
           {call.plan_step_id && <div className="plan-step-marker"><span>STEP {call.plan_step_id}</span><strong>{call.plan_step_task || "执行计划步骤"}</strong></div>}
+          {(flowData.interjections || []).filter(input => input.before_call_id === call.call_id).map(input => <section className="flow-input" key={input.id}><h3>用户中途插话</h3><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></section>)}
           <ThinkingCall call={call} children={childrenFor(call)} />
           {recall && recallHasEvidence && ["topic_selection", "episode_cue_admit"].includes(call.stage) && flow.indexOf(call) === lastCuesIndex ? <RecallDetail recall={recall} /> : null}
         </Fragment>)}
+        {(flowData.interjections || []).filter(input => !input.before_call_id).map(input => <section className="flow-input" key={input.id}><h3>用户中途插话</h3><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></section>)}
         {recall && recallHasEvidence && lastCuesIndex < 0 ? <RecallDetail recall={recall} /> : null}
         {!!flowData.deliveries?.length && <section className="flow-deliveries"><h3>实际投递</h3><p className="flow-note">生成内容、提交发送和已送达是不同状态；以下直接读取 outbox。</p>{flowData.deliveries.map(delivery => <div className="flow-delivery" key={delivery.id}><span className={`flow-result-state ${["failed", "cancelled"].includes(delivery.state) ? "is-error" : ""}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"失败",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span><span>{delivery.target_channel} · {delivery.kind}</span><EmotionContent text={delivery.text} />{delivery.last_error && <p className="flow-note">{delivery.last_error}</p>}</div>)}</section>}
       </div>
