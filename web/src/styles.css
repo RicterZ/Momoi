@@ -1303,11 +1303,7 @@ a.tag:hover {
   font-size: 10px;
   font-weight: 800;
 }
-.memory-confidence {
-  flex: 0 0 auto;
-  color: var(--soft);
-  font-size: 9px;
-}
+.memory-head > .memory-chips { justify-content: flex-end; }
 .memory p {
   margin: 9px 0 0;
   overflow-wrap: anywhere;

@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import RequestMetrics from "./RequestMetrics.jsx";
 import Loading from "./Loading.jsx";
-import MemoryMetadata from "./MemoryMetadata.jsx";
+import MemoryMetadata, { MemoryTriggerTags } from "./MemoryMetadata.jsx";
 import { filterMemories, memoryTagLabels } from "./memoryInventory.js";
 import Tools from "./Tools.jsx";
 import EmotionContent from "./EmotionContent.jsx";
@@ -1246,14 +1246,9 @@ function Reflections({ refreshKey, token, routeParam }) {
                         <span className="memory-kind">
                           {memoryKindLabel(memory.kind)}
                         </span>
-                        {Number.isFinite(Number(memory.confidence)) && (
-                          <span className="memory-confidence">
-                            可信度 {Math.round(Number(memory.confidence) * 100)}%
-                          </span>
-                        )}
+                        <MemoryTriggerTags triggers={memory.triggers} />
                       </div>
                       <p>{memory.content}</p>
-                      <MemoryMetadata item={{ ...memory, activation: "reflection" }} />
                       {memory.evidence && <small>依据：{memory.evidence}</small>}
                     </div>
                   ))}
