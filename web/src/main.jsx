@@ -1419,6 +1419,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                     </div>
                   </div>
                   {!candidateMode && <MemoryMetadata item={item} />}
+                  {candidateMode && !!item.triggers?.length && <p className="secondary">触发词：{item.triggers.join("、")}</p>}
                   {editingId === item.identity ? (
                     <textarea
                       aria-label="记忆内容"

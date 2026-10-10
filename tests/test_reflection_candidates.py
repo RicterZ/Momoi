@@ -16,7 +16,7 @@ def store(tmp_path):
     value.close()
 
 
-def review(store, end, days, *, key='quiet', previous=(), content='老师选座时偏好安静的位置'):
+def review(store, end, days, *, key='quiet', previous=(), content='老师选座时偏好安静的位置', triggers=None):
     for day in days:
         seed(store, day, content, key=key)
     row = store.claim_due_weekly_reflection(ReflectionConfig(enabled=True), stamp(end + 'T05:00:00'))
@@ -24,7 +24,7 @@ def review(store, end, days, *, key='quiet', previous=(), content='老师选座�
     events = [{'refs': [item['id']], 'summary': '一次独立选座'}
               for day in source['days'] for item in day['observations']]
     events += [{'refs': [item['id']], 'summary': item['summary']} for item in previous]
-    finding = {'key': key, 'kind': 'preference', 'content': content, 'events': events, 'conflicts': []}
+    finding = {'key': key, 'kind': 'preference', 'content': content, 'events': events, 'conflicts': [], 'triggers': triggers or []}
     store.commit_weekly_reflection(end, 'unused', {'summary': '累计观察', 'findings': [finding]})
     return finding
 
@@ -173,3 +173,42 @@ def test_manual_admission_is_not_blocked_by_previously_deleted_memory(store):
     assert result['memory_id'] != old
     assert not store.memories.snapshots([old])
     assert store.memories.snapshots([result['memory_id']])
+
+
+def test_candidate_triggers_survive_restart_edit_and_admission(tmp_path):
+    path = tmp_path / 'trigger-db'
+    store = Store(path, timezone='Asia/Shanghai')
+    review(store, '2026-10-11', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'], triggers=['选座', '安静'])
+    store.close()
+    store = Store(path, timezone='Asia/Shanghai')
+    try:
+        item = store.reflection_candidates(end='2026-10-11')[0]
+        assert item['triggers'] == ['选座', '安静']
+        assert store.weekly_reflection_source('2026-10-18')['previous_candidates'][0]['triggers'] == item['triggers']
+        with patch('momoi.storage.reflection.candidates.datetime') as clock:
+            clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-11'
+            store.change_reflection_candidate(item['id'], item['revision'], content='老师选座偏好安静的位置')
+            store.change_reflection_candidate(item['id'], item['revision'] + 1, admit=True)
+        assert store.memories.repository.inventory()[0]['meta']['triggers'] == ['选座', '安静']
+    finally:
+        store.close()
+
+
+def test_existing_candidates_migrate_with_empty_triggers(tmp_path):
+    from momoi.storage.core.migrations import SCHEMA_VERSION
+    import sqlite3
+
+    path = tmp_path / 'old-db'
+    store = Store(path, timezone='Asia/Shanghai')
+    review(store, '2026-10-11', ['2026-10-06', '2026-10-07'])
+    store.close()
+    with sqlite3.connect(path) as db:
+        db.execute('ALTER TABLE reflection_candidates DROP COLUMN triggers_json')
+        db.execute(f'PRAGMA user_version={SCHEMA_VERSION - 1}')
+    store = Store(path, timezone='Asia/Shanghai')
+    try:
+        candidate = store.reflection_candidates(end='2026-10-11')[0]
+        assert candidate['triggers'] == [] and candidate['count'] == 2
+        assert candidate['content'] == '老师选座时偏好安静的位置'
+    finally:
+        store.close()

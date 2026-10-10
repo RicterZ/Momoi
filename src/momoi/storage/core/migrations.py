@@ -784,6 +784,11 @@ def _retire_memory_maintenance(database):
     )
 
 
+def _add_reflection_candidate_triggers(database):
+    if "triggers_json" not in _columns(database, "reflection_candidates"):
+        database.execute("ALTER TABLE reflection_candidates ADD COLUMN triggers_json TEXT NOT NULL DEFAULT '[]'")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -824,6 +829,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_reflection_candidates,
     _remove_reply_followup,
     _retire_memory_maintenance,
+    _add_reflection_candidate_triggers,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

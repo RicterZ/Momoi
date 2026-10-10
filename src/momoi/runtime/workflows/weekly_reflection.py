@@ -31,6 +31,9 @@ WEEKLY_REFLECTION_FINISH_SPEC = {
                         'key': {'type': 'string', 'minLength': 1, 'maxLength': 200,
                                 'description': '不含日期的稳定主题键。'},
                         'kind': {'type': 'string', 'enum': ['profile', 'preference', 'relationship', 'third_party', 'cross_event_state']},
+                        'triggers': {'type': 'array', 'maxItems': 8, 'uniqueItems': True,
+                                     'items': {'type': 'string', 'minLength': 1, 'maxLength': 40},
+                                     'description': '用户可能自然说出的具体触发词或短语；避免泛词，不确定时可为空。'},
                         'events': {'type': 'array', 'minItems': 1, 'maxItems': 100, 'items': {
                             'type': 'object', 'additionalProperties': False,
                             'properties': {'refs': {'type': 'array', 'minItems': 1, 'maxItems': 100, 'uniqueItems': True,
@@ -42,7 +45,7 @@ WEEKLY_REFLECTION_FINISH_SPEC = {
                         'content': {'type': 'string', 'minLength': 1, 'maxLength': 1000,
                                     'description': '通常一句话，直接陈述值得记住的认识及必要适用范围；不写日期标签、事件经过或论证。'},
                     },
-                    'required': ['key', 'kind', 'content', 'events', 'conflicts'],
+                    'required': ['key', 'kind', 'content', 'triggers', 'events', 'conflicts'],
                 },
             },
         },
@@ -64,7 +67,7 @@ def weekly_reflection_input(source):
             lines.append('</observation>')
         lines.append('</day>')
     lines.append('</weekly_observations>')
-    carried = [{key: item[key] for key in ('key', 'kind', 'content', 'events', 'conflicts', 'edited')}
+    carried = [{key: item[key] for key in ('key', 'kind', 'content', 'events', 'conflicts', 'edited', 'triggers')}
                for item in source.get('previous_candidates', [])]
     lines.append('<previous_candidates>' + escape(json.dumps(carried, ensure_ascii=False)) + '</previous_candidates>')
     lines.append('<related_memories>' + escape(json.dumps(source.get('related_memories', []), ensure_ascii=False)) + '</related_memories>')
@@ -78,8 +81,13 @@ def parse_weekly_reflection(arguments):
     )
     if error:
         return None, error
+    from ...memory.metadata import validate_triggers
     keys = set()
     for item in value['findings']:
+        try:
+            validate_triggers(item['triggers'])
+        except ValueError as error:
+            return None, {'ok': False, 'error': 'invalid_triggers', 'message': str(error)}
         if not item['content'].strip() or not item['key'].strip() or item['key'] in keys:
             return None, {'ok': False, 'error': 'invalid_or_duplicate_finding'}
         keys.add(item['key'])

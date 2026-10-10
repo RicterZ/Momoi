@@ -838,6 +838,7 @@ CREATE TABLE IF NOT EXISTS reflection_candidates (
     key TEXT NOT NULL UNIQUE,
     kind TEXT NOT NULL,
     content TEXT NOT NULL,
+    triggers_json TEXT NOT NULL DEFAULT '[]',
     events_json TEXT NOT NULL DEFAULT '[]',
     conflicts_json TEXT NOT NULL DEFAULT '[]',
     state TEXT NOT NULL DEFAULT 'active' CHECK(state IN ('active','deleted','admitted')),

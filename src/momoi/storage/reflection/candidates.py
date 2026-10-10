@@ -6,6 +6,7 @@ import time
 from datetime import date, datetime
 
 from ...memory.storage.transactions import transaction
+from ...memory.metadata import validate_triggers
 
 
 def month_start(end):
@@ -30,6 +31,7 @@ class ReflectionCandidateStore:
         result = []
         for row in self._db.execute("SELECT * FROM reflection_candidates WHERE state='active' ORDER BY updated_at DESC,id DESC"):
             item = dict(row)
+            item['triggers'] = json.loads(item.pop('triggers_json'))
             item['events'] = current_events(json.loads(item.pop('events_json')), end)
             item['conflicts'] = current_events(json.loads(item.pop('conflicts_json')), end)
             item['count'] = len(item['events'])
@@ -87,14 +89,16 @@ class ReflectionCandidateStore:
                         events.append(event)
             events = current_events(events, end)
             content = old['content'] if old and old['edited'] else finding['content'].strip()
+            triggers = (json.loads(old['triggers_json']) if old and old['edited']
+                        else validate_triggers(finding.get('triggers', json.loads(old['triggers_json']) if old else [])))
             now = time.time()
             self._db.execute(
-                """INSERT INTO reflection_candidates(key,kind,content,events_json,conflicts_json,updated_at)
-                   VALUES (?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET
-                   kind=excluded.kind,content=excluded.content,events_json=excluded.events_json,
+                """INSERT INTO reflection_candidates(key,kind,content,events_json,conflicts_json,updated_at,triggers_json)
+                   VALUES (?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET
+                   kind=excluded.kind,content=excluded.content,triggers_json=excluded.triggers_json,events_json=excluded.events_json,
                    conflicts_json=excluded.conflicts_json,updated_at=excluded.updated_at,revision=revision+1""",
                 (key, finding['kind'], content, json.dumps(events, ensure_ascii=False),
-                 json.dumps(conflicts, ensure_ascii=False), now),
+                 json.dumps(conflicts, ensure_ascii=False), now, json.dumps(triggers, ensure_ascii=False)),
             )
 
     def change_reflection_candidate(self, identifier, revision, *, content=None, delete=False, admit=False):
@@ -124,7 +128,7 @@ class ReflectionCandidateStore:
                     evidence = {'event_id': f'dashboard:reflection:{identifier}:{revision}', 'quote': row['content']}
                     memory_id = repository.write(
                         {'kind': row['kind'], 'key': key, 'content': row['content'],
-                         'activation': 'recall', 'expires_at': None, 'meta': {'tags': [], 'triggers': [], 'scope': ''}},
+                         'activation': 'recall', 'expires_at': None, 'meta': {'tags': [], 'triggers': json.loads(row['triggers_json']), 'scope': ''}},
                         [], evidence, [evidence], now=now,
                     )
                 self._db.execute("UPDATE reflection_candidates SET state='admitted',memory_id=?,revision=revision+1,updated_at=? WHERE id=?",
