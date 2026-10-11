@@ -102,6 +102,7 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
         first = await (await self.client.get('/api/chat/messages')).json()
         self.assertEqual(first['messages'][-1]['content'], '老师！')
         self.assertEqual(first['messages'][-1]['delivery_state'], 'queued')
+        self.assertEqual(first['messages'][-1]['turn_id'], 'chat-turn')
         self.assertTrue(first['typing'])
         self.runtime.daemon._active_turn_channel = 'dashboard'
         self.runtime.daemon._active_turn = object()

@@ -17,7 +17,7 @@ def register_chat_routes(app, store, runtime):
             raise web.HTTPBadRequest(text="invalid pagination") from None
         before_id = request.query.get("before_id", "")
         rows = store._db.execute("""SELECT * FROM (SELECT id, content, occurred_at AS created_at,
-                   'user' AS role, 'received' AS delivery_state, NULL AS media_id, 'text' AS kind FROM events
+                   'user' AS role, 'received' AS delivery_state, NULL AS media_id, 'text' AS kind, NULL AS turn_id FROM events
                    WHERE json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END, '$.channel')='dashboard'
                    UNION ALL SELECT 'reply:' || o.id, o.text,
                    COALESCE(m.created_at, p.created_at, t.started_at), 'assistant',
@@ -25,7 +25,7 @@ def register_chat_routes(app, store, runtime):
                         WHEN o.state IN ('pending','sending') THEN 'queued'
                         WHEN o.state='superseded' THEN 'cancelled'
                         WHEN o.state='failed' THEN 'failed' ELSE 'uncertain' END,
-                   CASE WHEN o.media_path IS NOT NULL THEN o.id ELSE NULL END, o.kind
+                   CASE WHEN o.media_path IS NOT NULL THEN o.id ELSE NULL END, o.kind, o.turn_id
                    FROM outbox o JOIN turns t ON t.id=o.turn_id
                    LEFT JOIN messages m ON m.outbox_id=o.id
                    LEFT JOIN turn_progress p ON o.dedupe_key='turn:' || p.turn_id || ':progress:' || p.tool_call_id || ':' || p.part_index
