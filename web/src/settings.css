@@ -1360,9 +1360,8 @@
 }
 
 .backup-settings > .settings-form-body { border-radius:0 0 10px 10px; }
-.backup-settings .settings-runtime-group { display:grid; grid-template-columns:minmax(0,1fr) 240px; gap:24px; align-items:center; min-height:0; padding:24px 0; }
+.backup-settings .settings-runtime-group { display:grid; grid-template-columns:minmax(0,1fr) 240px; gap:24px; align-items:center; min-height:104px; padding:24px 0; }
 .backup-settings .settings-runtime-group > .settings-button { justify-self:end; }
-.backup-settings .settings-runtime-copy h3 { margin:0; }
 .backup-controls { display:grid; gap:12px; min-width:0; justify-items:end; }
 .backup-actions { display:flex; gap:12px; align-items:center; }
 @media (max-width:700px) {
