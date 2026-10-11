@@ -88,7 +88,7 @@ def test_affinity_tools_follow_switch():
     from momoi.runtime.agent.tool_surface import ToolSurface
     enabled = False
     surface = ToolSurface(SimpleNamespace(tool_specs=[]), {}, affinity_enabled=lambda: enabled)
-    names = {'affinity_increase', 'affinity_decrease'}
+    names = {'affinity_change'}
     assert not names & {spec['name'] for spec in surface.conversation_specs()}
     assert not names & surface.permitted_names('owner')
     enabled = True
@@ -122,7 +122,7 @@ def test_affinity_review_only_writes_on_valid_approval(tmp_path, monkeypatch, de
         return SimpleNamespace(content=[{'type': 'text', 'text': decision}], usage={}, tool_calls=[])
     provider = SimpleNamespace(complete=complete)
     request = SimpleNamespace(turn_id='review', delivery_channel=SimpleNamespace(name='dashboard'))
-    call = SimpleNamespace(name='affinity_increase', arguments={'reason': '承诺兑现', 'evidence': '实际消息0'})
+    call = SimpleNamespace(name='affinity_change', arguments={'direction': 'increase', 'reason': '承诺兑现', 'evidence': '实际消息0'})
     try:
         result = asyncio.run(review_affinity(config, store, provider, call, request))
         assert store.self_state()['affinity'] == expected
@@ -166,7 +166,7 @@ def test_affinity_decrease_and_review_conflict(tmp_path, monkeypatch):
                 store._db.execute('UPDATE self_state SET affinity=30')
         return SimpleNamespace(content=[{'type': 'text', 'text': '{"allowed":true,"reason":"持续侵犯边界"}'}], usage={}, tool_calls=[])
     request = SimpleNamespace(turn_id='review', delivery_channel=SimpleNamespace(name='dashboard'))
-    call = SimpleNamespace(name='affinity_decrease', arguments={'reason': '边界被侵犯', 'evidence': '实际消息'})
+    call = SimpleNamespace(name='affinity_change', arguments={'direction': 'decrease', 'reason': '边界被侵犯', 'evidence': '实际消息'})
     try:
         result = asyncio.run(review_affinity(config, store, SimpleNamespace(complete=complete), call, request))
         assert store.self_state()['affinity'] == 19
@@ -183,7 +183,7 @@ def test_affinity_decrease_and_review_conflict(tmp_path, monkeypatch):
 
 def test_affinity_review_message_hides_numeric_state_and_history():
     from momoi.runtime.agent.affinity import affinity_review_message
-    message = affinity_review_message(60, "affinity_increase", {"reason": "本次理由", "evidence": "本次证据"},
+    message = affinity_review_message(60, "increase", {"reason": "本次理由", "evidence": "本次证据"},
         [{"role": "user", "content": "你好"}],
         [{"allowed": True, "before": 59, "value": 60, "amount": 1, "delta": 1,
           "planner_reason": "历史理由", "reason": "审批理由", "evidence": "历史证据",
@@ -206,7 +206,7 @@ def test_affinity_checker_thinking_record_links_to_planner(tmp_path, monkeypatch
     store = Store(config.database, config.workspace)
     store.begin_turn("review", "owner", [])
     store.record_thinking_call(created_at=1, turn_id="review", call_id="planner", stage="owner", round=2,
-                              trace={"tool_calls": [{"id": "affinity-call", "name": "affinity_increase", "arguments": {"reason": "理由", "evidence": "证据"}}]})
+                              trace={"tool_calls": [{"id": "affinity-call", "name": "affinity_change", "arguments": {"direction": "increase", "reason": "理由", "evidence": "证据"}}]})
     monkeypatch.setattr(store, "replyer_dialogue_rows", lambda channel, limit: [
         {"role": "user", "content": "实际消息"} for _ in range(10)])
     async def complete(*args, **kwargs):
@@ -214,7 +214,7 @@ def test_affinity_checker_thinking_record_links_to_planner(tmp_path, monkeypatch
         persist_thinking(store.record_thinking_call, reasoning="", assistant_text=text, tools=[], model="test")
         return SimpleNamespace(content=[{"type": "text", "text": text}], usage={}, tool_calls=[])
     request = SimpleNamespace(turn_id="review", call_id="planner", round_number=2, delivery_channel=SimpleNamespace(name="dashboard"))
-    call = ToolCall("affinity-call", "affinity_increase", {"reason": "理由", "evidence": "证据"})
+    call = ToolCall("affinity-call", "affinity_change", {"direction": "increase", "reason": "理由", "evidence": "证据"})
     try:
         asyncio.run(review_affinity(config, store, SimpleNamespace(complete=complete), call, request))
         calls = store.dashboard_thinking_detail("review")["calls"]
@@ -258,9 +258,9 @@ def test_daily_affinity_limit_persists_and_excludes_settlement(tmp_path, monkeyp
     assert store.apply_affinity_review('limit', 22, 1, {**args, 'settlement': True}, allowed)['allowed']
     assert store.affinity_daily_increases() == 3
     harness = TurnHarness.for_stage('owner')
-    assert harness.affinity_limit_error('affinity_increase', 3)
-    assert not harness.affinity_limit_error('affinity_decrease', 3)
-    assert not TurnHarness.for_stage('reflection').affinity_limit_error('affinity_increase', 3)
+    assert harness.affinity_limit_error('increase', 3)
+    assert not harness.affinity_limit_error('decrease', 3)
+    assert not TurnHarness.for_stage('reflection').affinity_limit_error('increase', 3)
     store.close()
     store = Store(path)
     assert store.affinity_daily_increases() == 3
@@ -270,3 +270,17 @@ def test_daily_affinity_limit_persists_and_excludes_settlement(tmp_path, monkeyp
     monkeypatch.setattr('momoi.storage.agenda.heartbeat_state.time.time', lambda: now + 86400)
     assert store.affinity_daily_increases() == 0
     store.close()
+
+
+def test_unchanged_only_reflection_without_context_or_llm(tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+    from momoi.runtime.agent.affinity import review_affinity
+    path = tmp_path / 'config.json'
+    bootstrap(path)
+    config = replace(ConfigurationManager(path).validate(), affinity_enabled=True)
+    call = SimpleNamespace(name='affinity_change', arguments={'direction': 'unchanged', 'reason': '没有关系变化'})
+    request = SimpleNamespace(affinity_settlement=False)
+    assert not asyncio.run(review_affinity(config, None, None, call, request))['ok']
+    request.affinity_settlement = True
+    assert asyncio.run(review_affinity(config, None, None, call, request))['state'] == 'unchanged'

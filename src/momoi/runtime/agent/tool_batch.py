@@ -315,9 +315,9 @@ class ToolBatchExecutor:
                         heartbeat_turn=execution.heartbeat,
                         harness_started=request.harness.started,
                     )
-            elif call.name in {"affinity_increase", "affinity_decrease"}:
+            elif call.name == "affinity_change":
                 from .affinity import review_affinity
-                limit_error = request.harness.affinity_limit_error(call.name, self.store.affinity_daily_increases())
+                limit_error = request.harness.affinity_limit_error(call.arguments.get("direction"), self.store.affinity_daily_increases())
                 result = ({"ok": False, "allowed": False, "error": "affinity_daily_limit", "reason": limit_error}
                           if limit_error else await review_affinity(self.config, self.store, self.provider, call, request))
             elif call.name == "mood_change":

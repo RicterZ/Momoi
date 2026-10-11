@@ -19,7 +19,7 @@ def affinity_review_message(current, direction, arguments, rows, previous):
     def dialogue(messages):
         return "\n".join(f"{row['role'].upper()}: {row['content']}" for row in messages)
 
-    lines = [f"申请{'增加' if direction == 'affinity_increase' else '降低'}好感度，当前关系阶段为：{stage}。",
+    lines = [f"申请{'增加' if direction == 'increase' else '降低'}好感度，当前关系阶段为：{stage}。",
              f"申请的理由是：{arguments['reason']}",
              "申请对象为聊天中的 ASSISTANT，申请调整的是 ASSISTANT 对 USER 的好感度。",
              f"申请提供的证据：{arguments['evidence']}",
@@ -44,11 +44,17 @@ async def review_affinity(config, store, provider, call, request):
     args, error = validate_tool_arguments(call.name, call.arguments, spec["input_schema"])
     if error:
         return {**error, "allowed": False, "reason": "只接受非空理由和证据，不接受幅度参数。"}
+    if not args["reason"].strip():
+        return {"ok": False, "allowed": False, "reason": "理由不能留空。"}
+    if args["direction"] == "unchanged":
+        if not getattr(request, "affinity_settlement", False):
+            return {"ok": False, "allowed": False, "reason": "只有每日复盘可选择保持不变。"}
+        return {"ok": True, "state": "unchanged", "reason": args["reason"]}
     if not args["reason"].strip() or not args["evidence"].strip():
         return {"ok": False, "allowed": False, "reason": "理由和证据不能留空。"}
     args = {**args, "amount": 1}
     current = store.self_state()["affinity"]
-    delta = 1 if call.name == "affinity_increase" else -1
+    delta = 1 if args["direction"] == "increase" else -1
     if not 0 <= current + delta <= 100:
         return {"ok": False, "allowed": False, "reason": "调整后好感度必须在 0–100 之间。"}
     rows = getattr(request, "affinity_dialogue", None)
@@ -57,7 +63,7 @@ async def review_affinity(config, store, provider, call, request):
     if len(rows) < 10:
         return {"ok": False, "allowed": False, "reason": "真实对话不足 10 条，暂不能审批。"}
     rules = prompt_text(config, "AFFINITY.md", files("momoi").joinpath("prompts/affinity.md").read_text(encoding="utf-8"))
-    message = affinity_review_message(current, call.name, args, rows, store.affinity_reviews())
+    message = affinity_review_message(current, args["direction"], args, rows, store.affinity_reviews())
     try:
         parent_call_id = current_log_context().get("call_id", getattr(request, "call_id", ""))
         with log_context(stage="affinity_checker", turn_id=request.turn_id, call_id=new_trace_id(),

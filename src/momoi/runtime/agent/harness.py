@@ -92,8 +92,8 @@ class TurnHarness:
         missing = self.spec.required_before_end - self.completed_tools
         return f"{sorted(missing)[0]}_required" if missing else None
 
-    def affinity_limit_error(self, name: str, increases: int) -> str | None:
-        if name == "affinity_increase" and self.spec.stage != "reflection" and increases >= 3:
+    def affinity_limit_error(self, direction: str, increases: int) -> str | None:
+        if direction == "increase" and self.spec.stage != "reflection" and increases >= 3:
             return "今日已成功增加好感度 3 次，普通阶段不能再增加；减少不受限，每日复盘结算不占额度。"
         return None
 

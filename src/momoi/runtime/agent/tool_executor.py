@@ -69,7 +69,7 @@ class ToolExecutor:
             "end_turn",
             "wait",
             "mood_change",
-            "affinity_increase", "affinity_decrease",
+            "affinity_change",
             "reply",
             "send_bubbles",
             "send_voice",
