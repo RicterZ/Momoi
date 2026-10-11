@@ -11,7 +11,8 @@ class WeeklyReflectionStore(ReflectionCandidateStore):
     def _weekly_reflection_slot(self, now, config):
         local = datetime.fromtimestamp(now, self._timezone)
         hour, minute = map(int, config.at.split(":"))
-        scheduled = (local - timedelta(days=(local.weekday() - 6) % 7)).replace(
+        # Sunday's daily review runs on Monday; review the complete Monday–Sunday week.
+        scheduled = (local - timedelta(days=local.weekday())).replace(
             hour=hour, minute=minute, second=0, microsecond=0,
         ) + timedelta(hours=1)
         if scheduled.timestamp() > now:

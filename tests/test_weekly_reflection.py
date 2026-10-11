@@ -14,7 +14,7 @@ from tests.test_weekly_reflection_storage import seed, stamp
 def test_weekly_validation_and_daily_rendering(tmp_path):
     store = Store(tmp_path / 'db', timezone='Asia/Shanghai')
     seed(store, '2026-10-06', '<日一>')
-    source = store.weekly_reflection_source('2026-10-11')
+    source = store.weekly_reflection_source('2026-10-12')
     content = weekly_reflection_input(source)
     assert '&lt;日一&gt;' in content and 'date="2026-10-06"' in content
     finding = dict(triggers=['回复'], key='topic', kind='preference', content='用户明确要求简短回复。', events=[{'refs': ['observation:1'], 'summary': '要求简短'}], conflicts=[])
@@ -30,7 +30,7 @@ def test_weekly_validation_and_daily_rendering(tmp_path):
 def test_weekly_workflow_commits_and_retries_failure(tmp_path):
     daemon = MomoiDaemon(replace(config(str(tmp_path)), timezone='Asia/Shanghai', reflection=ReflectionConfig(enabled=True)))
     seed(daemon.store, '2026-10-08')
-    now = stamp('2026-10-11T05:00:00')
+    now = stamp('2026-10-12T05:00:00')
     daemon.store.claim_due_weekly_reflection(daemon.config.reflection, now)
 
     async def fail(*args, **kwargs):
@@ -38,10 +38,10 @@ def test_weekly_workflow_commits_and_retries_failure(tmp_path):
 
     daemon._run_agent_workflow = fail
     with patch('momoi.storage.reflection.weekly.time.time', return_value=now):
-        asyncio.run(daemon._complete_weekly_reflection_turn('2026-10-11', asyncio.Event()))
-    assert daemon.store.weekly_reflection('2026-10-11')['state'] == 'pending'
+        asyncio.run(daemon._complete_weekly_reflection_turn('2026-10-12', asyncio.Event()))
+    assert daemon.store.weekly_reflection('2026-10-12')['state'] == 'pending'
     assert daemon.store.claim_due_weekly_reflection(daemon.config.reflection, now + 1) is None
-    retry_at = daemon.store.weekly_reflection('2026-10-11')['retry_at']
+    retry_at = daemon.store.weekly_reflection('2026-10-12')['retry_at']
     daemon.store.claim_due_weekly_reflection(daemon.config.reflection, max(now + 1, retry_at))
 
     async def finish(system, messages, tools, *, turn_id, workflow):
@@ -53,8 +53,8 @@ def test_weekly_workflow_commits_and_retries_failure(tmp_path):
         return workflow.completion_result()
 
     daemon._run_agent_workflow = finish
-    asyncio.run(daemon._complete_weekly_reflection_turn('2026-10-11', asyncio.Event()))
-    assert daemon.store.weekly_reflection('2026-10-11')['state'] == 'completed'
+    asyncio.run(daemon._complete_weekly_reflection_turn('2026-10-12', asyncio.Event()))
+    assert daemon.store.weekly_reflection('2026-10-12')['state'] == 'completed'
     assert not daemon.store.list_goals()
     daemon.store.close()
 
@@ -66,12 +66,12 @@ def test_scheduler_enqueues_weekly_review(tmp_path):
         stop = asyncio.Event()
         def claim(_config):
             stop.set()
-            return {'period_end': '2026-10-11'}
+            return {'period_end': '2026-10-12'}
         with patch.object(daemon.store, 'claim_due_reflection', return_value=None), \
              patch.object(daemon.store, 'claim_due_weekly_reflection', side_effect=claim):
             await daemon._scheduler_worker(stop)
         job = daemon.autonomous.get_nowait()
-        assert job.kind == 'weekly_reflection' and job.id == '2026-10-11'
+        assert job.kind == 'weekly_reflection' and job.id == '2026-10-12'
         daemon._release_autonomous_claim(job)
     asyncio.run(run())
     daemon.store.close()
@@ -81,7 +81,7 @@ def test_weekly_runs_through_real_agent_loop_and_handles_cancellation(tmp_path):
     from momoi.models import ProviderResponse
     daemon = MomoiDaemon(replace(config(str(tmp_path)), timezone='Asia/Shanghai', reflection=ReflectionConfig(enabled=True)))
     seed(daemon.store, '2026-10-08')
-    daemon.store.claim_due_weekly_reflection(daemon.config.reflection, stamp('2026-10-11T05:00:00'))
+    daemon.store.claim_due_weekly_reflection(daemon.config.reflection, stamp('2026-10-12T05:00:00'))
 
     class Provider:
         async def complete(self, system, messages, tools, **kwargs):
@@ -90,16 +90,16 @@ def test_weekly_runs_through_real_agent_loop_and_handles_cancellation(tmp_path):
             call = ToolCall('weekly-done', 'weekly_reflection_finish', {'summary': '盘点完成', 'findings': []})
             return ProviderResponse(content=[{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], tool_calls=[call])
     daemon.provider = Provider()
-    asyncio.run(daemon._complete_weekly_reflection_turn('2026-10-11', asyncio.Event()))
-    assert daemon.store.weekly_reflection('2026-10-11')['state'] == 'completed'
+    asyncio.run(daemon._complete_weekly_reflection_turn('2026-10-12', asyncio.Event()))
+    assert daemon.store.weekly_reflection('2026-10-12')['state'] == 'completed'
     seed(daemon.store, '2026-10-12')
-    daemon.store.claim_due_weekly_reflection(daemon.config.reflection, stamp('2026-10-18T05:00:00'))
+    daemon.store.claim_due_weekly_reflection(daemon.config.reflection, stamp('2026-10-19T05:00:00'))
 
     async def cancel(*args, **kwargs):
         raise asyncio.CancelledError()
     daemon._run_agent_workflow = cancel
     import pytest
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(daemon._complete_weekly_reflection_turn('2026-10-18', asyncio.Event()))
-    assert daemon.store.weekly_reflection('2026-10-18')['state'] == 'pending'
+        asyncio.run(daemon._complete_weekly_reflection_turn('2026-10-19', asyncio.Event()))
+    assert daemon.store.weekly_reflection('2026-10-19')['state'] == 'pending'
     daemon.store.close()

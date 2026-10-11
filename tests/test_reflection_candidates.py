@@ -30,15 +30,15 @@ def review(store, end, days, *, key='quiet', previous=(), content='老师选座�
 
 
 def test_cross_week_counts_expire_and_do_not_enter_memory(store):
-    review(store, '2026-10-11', ['2026-10-06', '2026-10-07'])
-    old = store.reflection_candidates(end='2026-10-11')[0]
+    review(store, '2026-10-12', ['2026-10-06', '2026-10-07'])
+    old = store.reflection_candidates(end='2026-10-12')[0]
     assert old['count'] == 2 and old['status'] == 'observation'
     # Omitted old events survive; new week carries compact observations instead of old daily transcripts.
-    review(store, '2026-10-18', ['2026-10-12', '2026-10-13', '2026-10-14'])
-    source = json.loads(store.weekly_reflection('2026-10-18')['input_json'])
+    review(store, '2026-10-19', ['2026-10-12', '2026-10-13', '2026-10-14'])
+    source = json.loads(store.weekly_reflection('2026-10-19')['input_json'])
     assert len(source['previous_candidates'][0]['events']) == 2
-    assert source['days'][0]['date'] == '2026-10-11'
-    candidate = store.reflection_candidates(end='2026-10-18')[0]
+    assert source['days'][0]['date'] == '2026-10-12'
+    candidate = store.reflection_candidates(end='2026-10-19')[0]
     assert candidate['count'] == 5 and candidate['status'] == 'pending'
     assert store.memories.repository.inventory() == []
     assert store.reflection_candidates(end='2026-11-08')[0]['count'] == 3
@@ -46,14 +46,14 @@ def test_cross_week_counts_expire_and_do_not_enter_memory(store):
 
 
 def test_edit_delete_and_admit_are_revision_checked_and_atomic(store):
-    review(store, '2026-10-11', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'])
-    item = store.reflection_candidates(end='2026-10-11')[0]
+    review(store, '2026-10-12', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'])
+    item = store.reflection_candidates(end='2026-10-12')[0]
     with patch('momoi.storage.reflection.candidates.datetime') as clock:
-        clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-11'
+        clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-12'
         store.change_reflection_candidate(item['id'], item['revision'], content='老师选座时喜欢安静一点')
         with pytest.raises(ValueError, match='changed'):
             store.change_reflection_candidate(item['id'], item['revision'], admit=True)
-        current = store.reflection_candidates(end='2026-10-11')[0]
+        current = store.reflection_candidates(end='2026-10-12')[0]
         result = store.change_reflection_candidate(current['id'], current['revision'], admit=True)
         assert store.change_reflection_candidate(current['id'], current['revision'], admit=True) == result
         assert store.reflection_candidates() == []
@@ -65,51 +65,51 @@ def test_edit_delete_and_admit_are_revision_checked_and_atomic(store):
 
 
 def test_frozen_week_cannot_overwrite_edit_or_revive_deleted_candidate(store):
-    review(store, '2026-10-11', ['2026-10-06', '2026-10-07'])
-    original = store.reflection_candidates(end='2026-10-11')[0]
+    review(store, '2026-10-12', ['2026-10-06', '2026-10-07'])
+    original = store.reflection_candidates(end='2026-10-12')[0]
     seed(store, '2026-10-12', '本周选座')
-    record = store.claim_due_weekly_reflection(ReflectionConfig(enabled=True), stamp('2026-10-18T05:00:00'))
+    record = store.claim_due_weekly_reflection(ReflectionConfig(enabled=True), stamp('2026-10-19T05:00:00'))
     source = json.loads(record['input_json'])
     finding = {'key': 'quiet', 'kind': 'preference', 'content': '模型想改写',
-               'events': [{'refs': [source['days'][1]['observations'][0]['id']], 'summary': '新选座'}], 'conflicts': []}
+               'events': [{'refs': [source['days'][0]['observations'][0]['id']], 'summary': '新选座'}], 'conflicts': []}
     store.change_reflection_candidate(original['id'], original['revision'], content='用户修订正文')
-    store.commit_weekly_reflection('2026-10-18', 'unused', {'summary': '归纳', 'findings': [finding]})
-    current = store.reflection_candidates(end='2026-10-18')[0]
+    store.commit_weekly_reflection('2026-10-19', 'unused', {'summary': '归纳', 'findings': [finding]})
+    current = store.reflection_candidates(end='2026-10-19')[0]
     assert current['content'] == '用户修订正文' and current['count'] == 3
     store.change_reflection_candidate(current['id'], current['revision'], delete=True)
     with store.transaction():
         store.apply_reflection_candidates(source, [finding])
-    assert store.reflection_candidates(end='2026-10-18') == []
+    assert store.reflection_candidates(end='2026-10-19') == []
 
 
 def test_remention_does_not_refresh_date_or_allow_split_support(store):
-    review(store, '2026-10-11', ['2026-10-06'])
-    assert store.reflection_candidates(end='2026-10-11') == []
-    previous = store.reflection_candidates(end='2026-10-11', include_seeds=True)[0]
+    review(store, '2026-10-12', ['2026-10-06'])
+    assert store.reflection_candidates(end='2026-10-12') == []
+    previous = store.reflection_candidates(end='2026-10-12', include_seeds=True)[0]
     seed(store, '2026-10-12', '又聊起上次选座')
-    source = store.weekly_reflection_source('2026-10-18')
-    new = source['days'][1]['observations'][0]['id']
+    source = store.weekly_reflection_source('2026-10-19')
+    new = source['days'][0]['observations'][0]['id']
     finding = {'key': 'quiet', 'kind': 'preference', 'content': previous['content'],
                'events': [{'refs': [previous['events'][0]['id'], new], 'summary': '同一次选座'}], 'conflicts': []}
     with store.transaction():
         store.apply_reflection_candidates(source, [finding])
-    item = store.reflection_candidates(end='2026-10-18', include_seeds=True)[0]
+    item = store.reflection_candidates(end='2026-10-19', include_seeds=True)[0]
     assert item['count'] == 1 and item['events'][0]['date'] == '2026-10-06'
     bad = deepcopy(finding)
     bad['events'].append({'refs': [new], 'summary': '不能拆成第二次'})
     with pytest.raises(ValueError, match='counted_twice'), store.transaction():
         store.apply_reflection_candidates(source, [bad])
-    assert store.reflection_candidates(end='2026-10-18', include_seeds=True)[0] == item
+    assert store.reflection_candidates(end='2026-10-19', include_seeds=True)[0] == item
 
 
 def test_expired_or_conflicting_candidate_cannot_be_admitted(store):
-    review(store, '2026-10-11', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'])
-    item = store.reflection_candidates(end='2026-10-11')[0]
+    review(store, '2026-10-12', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'])
+    item = store.reflection_candidates(end='2026-10-12')[0]
     with patch('momoi.storage.reflection.candidates.datetime') as clock:
         clock.now.return_value.date.return_value.isoformat.return_value = '2026-11-12'
         with pytest.raises(ValueError, match='not_ready'):
             store.change_reflection_candidate(item['id'], item['revision'], admit=True)
-        clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-11'
+        clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-12'
         with store.transaction():
             store._db.execute('UPDATE reflection_candidates SET conflicts_json=?', (json.dumps([item['events'][0]]),))
         with pytest.raises(ValueError, match='not_ready'):
@@ -119,16 +119,16 @@ def test_expired_or_conflicting_candidate_cannot_be_admitted(store):
 
 def test_weekly_commit_rolls_back_all_candidates_and_rejects_unknown_references(store):
     seed(store, '2026-10-06')
-    row = store.claim_due_weekly_reflection(ReflectionConfig(enabled=True), stamp('2026-10-11T05:00:00'))
+    row = store.claim_due_weekly_reflection(ReflectionConfig(enabled=True), stamp('2026-10-12T05:00:00'))
     source = json.loads(row['input_json'])
-    ref = source['days'][2]['observations'][0]['id']
+    ref = source['days'][1]['observations'][0]['id']
     good = {'key': 'quiet', 'kind': 'preference', 'content': '偏好安静',
             'events': [{'refs': [ref], 'summary': '独立选座'}], 'conflicts': []}
     bad = {**good, 'key': 'other', 'events': [{'refs': ['missing'], 'summary': '编造'}]}
     with pytest.raises(ValueError, match='unknown_observation'):
-        store.commit_weekly_reflection('2026-10-11', 'unused', {'summary': '失败', 'findings': [good, bad]})
-    assert store.reflection_candidates(end='2026-10-11', include_seeds=True) == []
-    assert store.weekly_reflection('2026-10-11')['state'] == 'running'
+        store.commit_weekly_reflection('2026-10-12', 'unused', {'summary': '失败', 'findings': [good, bad]})
+    assert store.reflection_candidates(end='2026-10-12', include_seeds=True) == []
+    assert store.weekly_reflection('2026-10-12')['state'] == 'running'
 
 
 def test_dashboard_candidate_auth_revision_and_manual_admission(store):
@@ -138,7 +138,7 @@ def test_dashboard_candidate_auth_revision_and_manual_admission(store):
     from momoi.dashboard.auth import issue_dashboard_jwt
     from momoi.dashboard.settings import DashboardSettings
 
-    review(store, '2026-10-11', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'])
+    review(store, '2026-10-12', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'])
 
     async def run():
         async with TestClient(TestServer(create_dashboard_app(store, token='secret', settings=DashboardSettings(())))) as client:
@@ -155,20 +155,20 @@ def test_dashboard_candidate_auth_revision_and_manual_admission(store):
             assert (await (await client.get(url)).json())['items'] == []
             assert (await client.delete(path, json={'revision': item['revision']})).status == 409
     with patch('momoi.storage.reflection.candidates.datetime') as clock:
-        clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-11'
+        clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-12'
         asyncio.run(run())
 
 
 def test_manual_admission_is_not_blocked_by_previously_deleted_memory(store):
     import hashlib
     from tests.test_memory_repository import write
-    review(store, '2026-10-11', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'])
-    item = store.reflection_candidates(end='2026-10-11')[0]
+    review(store, '2026-10-12', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'])
+    item = store.reflection_candidates(end='2026-10-12')[0]
     key = 'reflection.' + hashlib.sha256(item['key'].encode()).hexdigest()[:24]
     old = write(store.memories.repository, key=key, text=item['content'])
     store.forget_memory_by_id(old, '删除旧记录')
     with patch('momoi.storage.reflection.candidates.datetime') as clock:
-        clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-11'
+        clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-12'
         result = store.change_reflection_candidate(item['id'], item['revision'], admit=True)
     assert result['memory_id'] != old
     assert not store.memories.snapshots([old])
@@ -178,15 +178,15 @@ def test_manual_admission_is_not_blocked_by_previously_deleted_memory(store):
 def test_candidate_triggers_survive_restart_edit_and_admission(tmp_path):
     path = tmp_path / 'trigger-db'
     store = Store(path, timezone='Asia/Shanghai')
-    review(store, '2026-10-11', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'], triggers=['选座', '安静'])
+    review(store, '2026-10-12', ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'], triggers=['选座', '安静'])
     store.close()
     store = Store(path, timezone='Asia/Shanghai')
     try:
-        item = store.reflection_candidates(end='2026-10-11')[0]
+        item = store.reflection_candidates(end='2026-10-12')[0]
         assert item['triggers'] == ['选座', '安静']
-        assert store.weekly_reflection_source('2026-10-18')['previous_candidates'][0]['triggers'] == item['triggers']
+        assert store.weekly_reflection_source('2026-10-19')['previous_candidates'][0]['triggers'] == item['triggers']
         with patch('momoi.storage.reflection.candidates.datetime') as clock:
-            clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-11'
+            clock.now.return_value.date.return_value.isoformat.return_value = '2026-10-12'
             store.change_reflection_candidate(item['id'], item['revision'], content='老师选座偏好安静的位置')
             store.change_reflection_candidate(item['id'], item['revision'] + 1, admit=True)
         assert store.memories.repository.inventory()[0]['meta']['triggers'] == ['选座', '安静']
@@ -200,14 +200,14 @@ def test_existing_candidates_migrate_with_empty_triggers(tmp_path):
 
     path = tmp_path / 'old-db'
     store = Store(path, timezone='Asia/Shanghai')
-    review(store, '2026-10-11', ['2026-10-06', '2026-10-07'])
+    review(store, '2026-10-12', ['2026-10-06', '2026-10-07'])
     store.close()
     with sqlite3.connect(path) as db:
         db.execute('ALTER TABLE reflection_candidates DROP COLUMN triggers_json')
         db.execute(f'PRAGMA user_version={MIGRATIONS.index(_add_reflection_candidate_triggers)}')
     store = Store(path, timezone='Asia/Shanghai')
     try:
-        candidate = store.reflection_candidates(end='2026-10-11')[0]
+        candidate = store.reflection_candidates(end='2026-10-12')[0]
         assert candidate['triggers'] == [] and candidate['count'] == 2
         assert candidate['content'] == '老师选座时偏好安静的位置'
     finally:

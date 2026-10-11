@@ -28,55 +28,55 @@ def test_weekly_schedule_snapshot_retry_restart_and_no_promotion(tmp_path):
     enabled = ReflectionConfig(enabled=True)
     seed(store, '2026-10-06')
     seed(store, '2026-10-07')
-    # The current week is not yet eligible before Sunday daily review time + one hour.
-    assert store._weekly_reflection_slot(stamp('2026-10-11T03:59:59'), enabled).date().isoformat() == '2026-10-04'
-    assert store.claim_due_weekly_reflection(ReflectionConfig(), stamp('2026-10-11T05:00:00')) is None
-    row = store.claim_due_weekly_reflection(enabled, stamp('2026-10-11T05:00:00'))
-    assert row['period_end'] == '2026-10-11'
+    # The current week is not yet eligible before Monday's daily review time + one hour.
+    assert store._weekly_reflection_slot(stamp('2026-10-12T03:59:59'), enabled).date().isoformat() == '2026-10-05'
+    assert store.claim_due_weekly_reflection(ReflectionConfig(), stamp('2026-10-12T05:00:00')) is None
+    row = store.claim_due_weekly_reflection(enabled, stamp('2026-10-12T05:00:00'))
+    assert row['period_end'] == '2026-10-12'
     source = json.loads(row['input_json'])
-    assert len(source['days']) == 7 and source['period_start'] == '2026-10-04'
+    assert len(source['days']) == 7 and source['period_start'] == '2026-10-05'
     assert len([d for d in source['days'] if d['state'] == 'missing']) == 5
-    assert source['days'][2]['observations'][0]['key'] == 'topic'
-    assert store.claim_due_weekly_reflection(enabled, stamp('2026-10-11T06:00:00')) is None
-    assert store.next_weekly_reflection_due_at(enabled, stamp('2026-10-11T06:00:00')) is None
+    assert source['days'][1]['observations'][0]['key'] == 'topic'
+    assert store.claim_due_weekly_reflection(enabled, stamp('2026-10-12T06:00:00')) is None
+    assert store.next_weekly_reflection_due_at(enabled, stamp('2026-10-12T06:00:00')) is None
     store.close()
     store = Store(path, timezone='Asia/Shanghai')
-    assert store.weekly_reflection('2026-10-11')['state'] == 'pending'
+    assert store.weekly_reflection('2026-10-12')['state'] == 'pending'
     seed(store, '2026-10-08', '重试时新增加的观察')
-    row2 = store.claim_due_weekly_reflection(enabled, stamp('2026-10-11T06:00:00'))
+    row2 = store.claim_due_weekly_reflection(enabled, stamp('2026-10-12T06:00:00'))
     assert row2['input_json'] == row['input_json']
-    store.begin_turn('weekly', 'weekly_reflection', ['weekly-reflection:2026-10-11'])
-    store.commit_weekly_reflection('2026-10-11', 'weekly', {'summary': '盘点', 'findings': []})
-    assert store.next_weekly_reflection_due_at(enabled, stamp('2026-10-11T06:00:00')) == stamp('2026-10-18T04:00:00')
+    store.begin_turn('weekly', 'weekly_reflection', ['weekly-reflection:2026-10-12'])
+    store.commit_weekly_reflection('2026-10-12', 'weekly', {'summary': '盘点', 'findings': []})
+    assert store.next_weekly_reflection_due_at(enabled, stamp('2026-10-12T06:00:00')) == stamp('2026-10-19T04:00:00')
     assert store._db.execute('SELECT COUNT(*) FROM memories').fetchone()[0] == 0
     store.close()
 
 
 def test_weekly_excludes_deleted_observations_and_waits_for_daily(tmp_path):
     store = Store(tmp_path / 'db', timezone='Asia/Shanghai')
-    seed(store, '2026-10-10')
+    seed(store, '2026-10-11')
     memory = store.list_reflection_memories()[0]
     store.delete_reflection_memory(memory['id'])
-    assert not store.weekly_reflection_source('2026-10-11')['days'][-1]['observations']
+    assert not store.weekly_reflection_source('2026-10-12')['days'][-1]['observations']
     with store._db:
         store._db.execute("UPDATE reflections SET state='running'")
-    assert store.claim_due_weekly_reflection(ReflectionConfig(enabled=True), stamp('2026-10-11T05:00:00')) is None
+    assert store.claim_due_weekly_reflection(ReflectionConfig(enabled=True), stamp('2026-10-12T05:00:00')) is None
     store.close()
 
 
 
 
-def test_overdue_week_is_retried_after_next_sunday(tmp_path):
+def test_overdue_week_is_retried_after_next_monday(tmp_path):
     from unittest.mock import patch
     store = Store(tmp_path / 'db', timezone='Asia/Shanghai')
     enabled = ReflectionConfig(enabled=True)
-    now = stamp('2026-10-11T05:00:00')
+    now = stamp('2026-10-12T05:00:00')
     first = store.claim_due_weekly_reflection(enabled, now)
     with patch('momoi.storage.reflection.weekly.time.time', return_value=now):
-        store.release_weekly_reflection('2026-10-11', 'failure')
-    due = store.next_weekly_reflection_due_at(enabled, stamp('2026-10-18T05:00:00'))
+        store.release_weekly_reflection('2026-10-12', 'failure')
+    due = store.next_weekly_reflection_due_at(enabled, stamp('2026-10-19T05:00:00'))
     assert due == now + 900
-    retried = store.claim_due_weekly_reflection(enabled, stamp('2026-10-18T05:00:00'))
+    retried = store.claim_due_weekly_reflection(enabled, stamp('2026-10-19T05:00:00'))
     assert retried['period_end'] == first['period_end']
     assert retried['input_json'] == first['input_json']
     store.close()
@@ -96,8 +96,8 @@ def test_daily_triggers_survive_restart_and_reach_weekly_input(tmp_path):
     store.commit_reflection('2026-10-06', 'unused', result['summary'], result['memories'])
     store.close()
     store = Store(path, timezone='Asia/Shanghai')
-    source = store.weekly_reflection_source('2026-10-11')
-    assert source['days'][2]['observations'][0]['triggers'] == ['晚安']
+    source = store.weekly_reflection_source('2026-10-12')
+    assert source['days'][1]['observations'][0]['triggers'] == ['晚安']
     assert '<triggers>["晚安"]</triggers>' in weekly_reflection_input(source)
     store.close()
     item['triggers'] = ['晚安', '亲亲', '睡觉']
@@ -112,27 +112,51 @@ def test_daily_trigger_migration_preserves_existing_observations(tmp_path):
         store._db.execute('ALTER TABLE reflection_memories DROP COLUMN triggers_json')
         _add_daily_reflection_triggers(store._db)
         _add_daily_reflection_triggers(store._db)
-    observation = store.weekly_reflection_source('2026-10-11')['days'][2]['observations'][0]
+    observation = store.weekly_reflection_source('2026-10-12')['days'][1]['observations'][0]
     assert observation['content'] == '当天观察'
     assert observation['triggers'] == []
     store.close()
 
 
-def test_weekly_follows_daily_time_and_keeps_sunday_period_across_midnight(tmp_path):
+def test_weekly_follows_daily_time_and_keeps_monday_period_across_midnight(tmp_path):
     store = Store(tmp_path / 'db', timezone='Asia/Shanghai')
     try:
         config = ReflectionConfig(enabled=True, at='23:30')
-        before = stamp('2026-10-12T00:29:59')
-        due = stamp('2026-10-12T00:30:00')
-        assert store._weekly_reflection_slot(before, config).timestamp() == stamp('2026-10-05T00:30:00')
+        before = stamp('2026-10-13T00:29:59')
+        due = stamp('2026-10-13T00:30:00')
+        assert store._weekly_reflection_slot(before, config).timestamp() == stamp('2026-10-06T00:30:00')
         assert store._weekly_reflection_slot(due, config).timestamp() == due
         row = store.claim_due_weekly_reflection(config, due)
-        assert row['period_end'] == '2026-10-11'
+        assert row['period_end'] == '2026-10-12'
         assert row['scheduled_at'] == due
         disabled = ReflectionConfig(enabled=False, at='23:30')
         assert store.claim_due_weekly_reflection(disabled, due) is None
         assert store.next_weekly_reflection_due_at(disabled, due) is None
         morning = ReflectionConfig(enabled=True, at='07:15')
-        assert store._weekly_reflection_slot(stamp('2026-10-11T08:15:00'), morning).timestamp() == stamp('2026-10-11T08:15:00')
+        assert store._weekly_reflection_slot(stamp('2026-10-12T08:15:00'), morning).timestamp() == stamp('2026-10-12T08:15:00')
+    finally:
+        store.close()
+
+
+def test_weekly_includes_sunday_and_waits_until_monday_four(tmp_path):
+    store = Store(tmp_path / 'db', timezone='Asia/Shanghai')
+    try:
+        config = ReflectionConfig(enabled=True)
+        seed(store, '2026-10-11', '周日观察')
+        for before in ('2026-10-11T04:00:00', '2026-10-12T03:00:00', '2026-10-12T03:59:59'):
+            assert store._weekly_reflection_slot(stamp(before), config).timestamp() == stamp('2026-10-05T04:00:00')
+        with store._db:
+            store._db.execute("UPDATE reflections SET state='running' WHERE local_date='2026-10-11'")
+        due = stamp('2026-10-12T04:00:00')
+        assert store.claim_due_weekly_reflection(config, due) is None
+        with store._db:
+            store._db.execute("UPDATE reflections SET state='completed' WHERE local_date='2026-10-11'")
+        row = store.claim_due_weekly_reflection(config, due)
+        source = json.loads(row['input_json'])
+        assert row['scheduled_at'] == due
+        assert source['period_start'] == '2026-10-05'
+        assert source['period_end'] == '2026-10-12'
+        assert source['days'][-1]['date'] == '2026-10-11'
+        assert source['days'][-1]['observations'][0]['content'] == '周日观察'
     finally:
         store.close()
