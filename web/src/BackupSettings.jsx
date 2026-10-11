@@ -42,7 +42,7 @@ export default function BackupSettings({ token, header, Dialog }) {
     </Dialog>}
     {header}
     <div className="settings-form-body settings-runtime-controls">
-      <section className="settings-runtime-group"><div className="settings-runtime-copy"><div className="settings-voice-title"><h3>导出备份</h3><span className="panel-label">BACKUP // EXPORT</span></div><p className="settings-runtime-description">保存提示词、聊天、记忆、表情与创作，导出时短暂暂停。不含思考、调用结果、日志和密钥。</p></div>
+      <section className="settings-runtime-group"><div className="settings-runtime-copy"><div className="settings-voice-title"><h3>导出备份</h3><span className="panel-label">BACKUP // EXPORT</span></div><p className="settings-runtime-description">保存提示词、聊天、记忆、表情、创作与工作流，导出时短暂暂停。不含思考、调用结果、日志和密钥。</p></div>
         <button ref={exportButton} className="quiet-button settings-button" disabled={Boolean(busy)} onClick={() => run("export")}>{busy === "export" ? "导出中…" : "导出"}</button>
       </section>
       <section className="settings-runtime-group backup-restore-group"><div className="settings-runtime-copy"><div className="settings-voice-title"><h3>恢复备份</h3><span className="panel-label">BACKUP // RESTORE</span></div><p className="settings-runtime-description">恢复 ZIP 备份，旧数据自动升级。密钥与渠道设置保留，建议先备份。</p></div>

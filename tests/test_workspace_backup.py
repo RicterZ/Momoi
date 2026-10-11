@@ -25,6 +25,9 @@ def test_backup_roundtrip_and_exclusions(tmp_path):
         creation = workspace / 'artifacts/故事草稿/chapter.bak.txt'
         creation.parent.mkdir(parents=True)
         creation.write_text('Momoi 的创作')
+        workflow = workspace / 'workflows/custom.yaml'
+        workflow.parent.mkdir(parents=True, exist_ok=True)
+        workflow.write_text('name: custom-workflow\n')
         attachment = workspace / 'channel/napcat/files/received.txt'
         attachment.parent.mkdir(parents=True)
         attachment.write_text('渠道收到的文件')
@@ -34,16 +37,19 @@ def test_backup_roundtrip_and_exclusions(tmp_path):
         with zipfile.ZipFile(archive) as z:
             assert 'prompts/SOUL.md' in z.namelist()
             assert 'artifacts/故事草稿/chapter.bak.txt' in z.namelist()
+            assert 'workflows/custom.yaml' in z.namelist()
             assert not any(name.startswith('channel/') for name in z.namelist())
             assert 'providers.yaml' not in z.namelist()
             assert not any('llm-dumps' in name or 'thinking' in name for name in z.namelist())
         soul.write_text('后来修改的内容')
         creation.write_text('后来修改的创作')
+        workflow.write_text('name: changed-workflow\n')
         store._db.execute('DELETE FROM llm_usage'); store._db.commit()
         extracted = validate_archive(archive, tmp_path / 'restore', store._db)
         restore_archive(extracted, config, store)
         assert soul.read_text() == '我始终是同一个人'
         assert creation.read_text() == 'Momoi 的创作'
+        assert workflow.read_text() == 'name: custom-workflow\n'
         assert attachment.read_text() == '渠道收到的文件'
         assert store._db.execute('SELECT output_tokens FROM llm_usage').fetchone()[0] == 100
         assert store._db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
