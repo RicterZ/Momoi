@@ -43,7 +43,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         raise ConfigError("config.json must be a table/object")
     remove_retired_thinking_stages(raw)
     allowed = {
-        "budget",
+        "affinity", "budget",
         "providers",
         "timezone",
         "channels",
@@ -269,6 +269,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
     )
 
     return AppConfig(
+        affinity_enabled=normalize_fields(runtime_fields()["affinity"]["fields"], raw.get("affinity", {}), path="affinity")["enabled"],
         budget=BudgetConfig(**budget),
         channel=channel_config,
         system_prompt=system_prompt,

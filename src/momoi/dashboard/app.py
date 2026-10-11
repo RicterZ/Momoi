@@ -311,6 +311,11 @@ def create_dashboard_app(
         plugin = request.app[BALANCE_PROVIDER]
         store.set_usage_accounting(plugin.accounting if plugin is not None else None)
         data = store.dashboard_overview()
+        if configuration is not None:
+            data["affinity"]["enabled"] = configuration.read_app().get("affinity", {}).get("enabled", False) is True
+        else:
+            config = getattr(getattr(runtime, "daemon", None), "config", None)
+            data["affinity"]["enabled"] = bool(getattr(config, "affinity_enabled", False))
         data["budget"] = runtime.budget_status() if runtime is not None and hasattr(runtime, "budget_status") else {"enabled": False}
         if plugin is not None:
             try:

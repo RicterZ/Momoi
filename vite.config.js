@@ -701,7 +701,7 @@ function previewRecords() {
 
 function previewUsageApi() {
   const prompts = new Map([
-    ...[["planner", "PLANNER.md", "PLANNER.md"], ["replyer", "REPLYER.md", "roles/momoi/REPLYER.md"]].map(([id, filename, path]) => {
+    ...[["affinity", "AFFINITY.md", "AFFINITY.md"], ["planner", "PLANNER.md", "PLANNER.md"], ["replyer", "REPLYER.md", "roles/momoi/REPLYER.md"]].map(([id, filename, path]) => {
       const source = new URL(`./config.example/prompts/${path}`, import.meta.url);
       return [id, { id, filename, content: existsSync(source) ? readFileSync(source, "utf8") : "" }];
     }),
@@ -880,6 +880,7 @@ function previewUsageApi() {
               emotions: 0,
               memories: records.memories.length,
             },
+            affinity: {enabled: true, value: 10, maximum: 100},
             mood: {
               state: "happy",
               intensity: 0.65,

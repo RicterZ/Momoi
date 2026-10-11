@@ -80,9 +80,10 @@ class OwnerWorkflow:
             on_injected=self._record_trigger_injections,
         )
         runtime_text = (
-            f"<triggered_memories>\n{triggered}\n</triggered_memories>\n\n"
-            if triggered else ""
-        ) + "[用户中途插话]"
+            (f"<affinity>{self.store.self_state()['affinity']}/100</affinity>\n\n" if self.config.affinity_enabled else "")
+            + (f"<triggered_memories>\n{triggered}\n</triggered_memories>\n\n" if triggered else "")
+            + "[用户中途插话]"
+        )
         content = _owner_content_blocks(
             updates, channel.content_blocks, self.store.timezone, runtime_text
         )
@@ -329,6 +330,7 @@ class OwnerWorkflow:
                     current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
                 ),
             ),
+            ("affinity", str(self.store.self_state()["affinity"]) + "/100" if self.config.affinity_enabled else ""),
             ("runtime_directives", "\n\n".join(directives)),
             ("recent_recall_context", candidates["recent_recall_context"]),
             ("triggered_memories", triggered_memory_context(self.memory, batch, injected_memories, on_injected=self._record_trigger_injections)),

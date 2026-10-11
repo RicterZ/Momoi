@@ -1088,7 +1088,7 @@ function RuntimePropertyFields({ spec, value, onChange }) {
   );
 }
 
-const runtimeOrder = { turn: -1, heartbeat: 0, reflection: 1, episode_annealing: 2, episode_relation: 3, logging: 4, thinking: 5 };
+const runtimeOrder = { affinity: -2, turn: -1, heartbeat: 0, reflection: 1, episode_annealing: 2, episode_relation: 3, logging: 4, thinking: 5 };
 const runtimeDescriptions = {
   turn: "自然结束后等待快速补充；其他任务需要运行时立即让出。0 表示关闭。",
   logging: "控制运行日志的详细程度，用于查看服务状态与排查问题。",

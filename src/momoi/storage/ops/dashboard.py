@@ -69,6 +69,7 @@ class DashboardStore:
         return {
             "counts": counts,
             "current_state": self.dashboard_current_state(),
+            "affinity": {"value": state["affinity"], "maximum": 100},
             "mood": {
                 "state": state["mood_state"],
                 "intensity": state["mood_intensity"],

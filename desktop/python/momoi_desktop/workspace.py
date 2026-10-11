@@ -17,6 +17,7 @@ def prepare_workspace(workspace: Path) -> None:
     for name, path in (
         ("SOUL", soul_path),
         ("PLANNER", soul_path.parent / "PLANNER.md"),
+        ("AFFINITY", soul_path.parent / "AFFINITY.md"),
         ("REPLYER", soul_path.parent / "REPLYER.md"),
     ):
         if not path.exists() or not path.read_text(encoding="utf-8-sig").strip():

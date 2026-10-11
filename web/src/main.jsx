@@ -9,7 +9,7 @@ import MemoryMetadata, { MemoryTriggerTags } from "./MemoryMetadata.jsx";
 import { filterMemories, memoryTagLabels } from "./memoryInventory.js";
 import Tools from "./Tools.jsx";
 import EmotionContent from "./EmotionContent.jsx";
-import ConfigurationSettings, { ApplyDialog, SaveBar } from "./ConfigurationSettings.jsx";
+import ConfigurationSettings, { ApplyDialog, SaveBar, Icon } from "./ConfigurationSettings.jsx";
 
 const TOKEN_KEY = "momoi-dashboard-token";
 const REFLECTION_PAGE = 14;
@@ -572,6 +572,10 @@ function OverviewBody({ data, token, routeParam }) {
               <MoodHearts intensity={data.mood.intensity} />
             </div>
             <p className="state-detail">{data.mood.cause}</p>
+            {data.affinity?.enabled && <div className="affinity-meter">
+              <div className="affinity-meter-label"><span>好感度</span><span>{data.affinity.value}<small> / 100</small></span></div>
+              <div className="affinity-meter-track" role="progressbar" aria-label="好感度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.affinity.value}><span style={{width: `${data.affinity.value}%`}} /></div>
+            </div>}
             <StampMeta
               items={[{ label: "更新于", value: formatDate(data.mood.updated_at) }]}
             />
@@ -2674,6 +2678,7 @@ function ThinkingDetail({ item, calls, recall, flowData = {} }) {
 }
 
 const promptDetails = {
+  affinity: { code: "05 / AFFINITY", title: "好感度", description: "长期相处中的亲近、信任与关系变化。" },
   planner: { code: "03 / PLANNER", title: "行为规划", description: "主 agent 如何理解、取证、行动及派发回应。" },
   replyer: { code: "04 / REPLYER", title: "发言生成", description: "Replyer 如何结合人格、真实对话及回应意图生成发言。" },
   soul: {
@@ -2711,8 +2716,9 @@ function PromptEditor({ item, value, onChange, disabled }) {
 }
 
 function PromptSettings({ items, token, navigation }) {
-  const orderedItems = [...items].sort((a, b) => ["soul", "replyer", "planner", "heartbeat"].indexOf(a.id) - ["soul", "replyer", "planner", "heartbeat"].indexOf(b.id));
+  const orderedItems = [...items].sort((a, b) => ["soul", "replyer", "planner", "affinity", "heartbeat"].indexOf(a.id) - ["soul", "replyer", "planner", "affinity", "heartbeat"].indexOf(b.id));
   const [selectedId, setSelectedId] = useState(orderedItems[0]?.id);
+  const [mobileDetail, setMobileDetail] = useState(false);
   const selected = orderedItems.find(item => item.id === selectedId) || orderedItems[0];
   const initial = () => Object.fromEntries(items.map(item => [item.id, item.content || ""]));
   const [saved, setSaved] = useState(initial);
@@ -2727,7 +2733,7 @@ function PromptSettings({ items, token, navigation }) {
     if (!dirtyItems.length || saveLock.current) return;
     saveLock.current = true;
     setSaving(true);
-    setProgress({ state: "saving", title: "正在保存提示词", message: "正在提交人格、规划、发言与心跳提示词…" });
+    setProgress({ state: "saving", title: "正在保存提示词", message: "正在保存修改…" });
     try {
       const results = await Promise.allSettled(dirtyItems.map(async item => {
         const result = await api(`/api/settings/prompts/${encodeURIComponent(item.id)}`, {
@@ -2750,13 +2756,14 @@ function PromptSettings({ items, token, navigation }) {
     <form className="settings-prompts-form" onSubmit={save} data-dirty={dirtyItems.length > 0}>
       {progress && <ApplyDialog progress={progress} onClose={() => setProgress(null)} />}
       <div className="settings-form-body settings-persona">
-        <div className="prompt-workspace">
+        <div className={`prompt-workspace${mobileDetail ? " prompt-detail-open" : ""}`}>
+          <button type="button" className="quiet-button prompt-back" onClick={() => setMobileDetail(false)}><Icon name="chevron" />返回提示词列表</button>
           <div className="record-list prompt-list" role="navigation" aria-label="提示词文件">
             {orderedItems.map(item => <button type="button" key={item.id}
               className={`record-item${selected?.id === item.id ? " active" : ""}`}
-              aria-pressed={selected?.id === item.id} onClick={() => setSelectedId(item.id)}>
+              aria-pressed={selected?.id === item.id} onClick={() => { setSelectedId(item.id); setMobileDetail(true); }}>
               <span className="prompt-list-heading"><strong>{promptDetails[item.id].title}</strong>{drafts[item.id] !== saved[item.id] && <span className="prompt-unsaved">未保存</span>}</span>
-              <p className="prompt-list-description">{promptDetails[item.id].description}</p>
+              <p className="prompt-list-description">{promptDetails[item.id].description}</p><span className="prompt-list-file">{item.filename}</span>
             </button>)}
           </div>
           {selected && <PromptEditor key={selected.id} item={selected} value={drafts[selected.id]} disabled={saving} onChange={value => { setDrafts(current => ({ ...current, [selected.id]: value })); setStatus(null); }} />}

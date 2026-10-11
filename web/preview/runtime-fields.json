@@ -348,5 +348,16 @@
         "advanced": false
       }
     }
+  },
+  "affinity": {
+    "label": "好感度",
+    "fields": {
+      "enabled": {
+        "type": "boolean",
+        "label": "启用好感度",
+        "default": false,
+        "advanced": false
+      }
+    }
   }
 }

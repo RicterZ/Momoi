@@ -89,6 +89,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "recent_heartbeats",
     "runtime_directives",
     "self_state",
+    "affinity",
     "workflow_contract",
     "state_update_contract",
     "followup",

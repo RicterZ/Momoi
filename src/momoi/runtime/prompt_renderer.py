@@ -83,7 +83,14 @@ class PromptRenderer:
             default = files("momoi").joinpath("prompts/planner.md").read_text(encoding="utf-8")
             path = self.config.soul_prompt_path.parent / "PLANNER.md" if self.config.soul_prompt_path else None
             prompt = _live_prompt(path, default, optional=True) if path else default
-            soul_prompt = prompt.replace("{{SOUL}}", soul_prompt)
+            affinity = ""
+            if getattr(self.config, "affinity_enabled", False):
+                default_affinity = files("momoi").joinpath("prompts/affinity.md").read_text(encoding="utf-8")
+                affinity_path = self.config.soul_prompt_path.parent / "AFFINITY.md" if self.config.soul_prompt_path else None
+                affinity = _live_prompt(affinity_path, default_affinity, optional=True) if affinity_path else default_affinity
+            if "{{AFFINITY}}" not in prompt and affinity:
+                prompt = prompt.replace("{{SOUL}}", "{{AFFINITY}}\n\n{{SOUL}}")
+            soul_prompt = prompt.replace("{{AFFINITY}}", affinity).replace("{{SOUL}}", soul_prompt)
         blocks: list[dict[str, Any]] = []
         # Identity first, operating contract second: the rules then sit closest to
         # the conversation, where their influence on the next step is strongest.

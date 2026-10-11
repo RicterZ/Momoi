@@ -87,6 +87,7 @@ class AppConfig:
     summary_tokens: int = 6000
     soul_prompt: str = ""
     mcp_config: Path | None = None
+    affinity_enabled: bool = False
     exec_enabled: bool = False
     # Validated snapshot retained with a runtime generation for reliable rollback.
     mcp_servers: dict | None = field(default=None, repr=False)

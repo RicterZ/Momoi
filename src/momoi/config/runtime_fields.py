@@ -22,6 +22,9 @@ THINKING_STAGES = {
 }
 
 _FIELDS = {
+    "affinity": {"label": "好感度", "fields": {
+        "enabled": {"type": "boolean", "label": "启用好感度", "default": False},
+    }},
     "budget": {"label": "费用预算", "fields": {
         "daily_amount": {"type": "number", "label": "日预算（元）", "minimum": 0, "default": 0, "description": "金额设为 0 或留空，则不限制预算。"},
         "monthly_amount": {"type": "number", "label": "月预算（元）", "minimum": 0, "default": 0},

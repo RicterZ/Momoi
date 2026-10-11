@@ -1340,9 +1340,9 @@
 }
 
 .settings-runtime-half { position: relative; }
-.settings-runtime-half:has(+ .settings-runtime-half):nth-child(even) { padding-right: 24px; }
-.settings-runtime-half:nth-child(odd) { padding-left: 24px; }
-.settings-runtime-half:nth-child(odd)::before {
+.settings-runtime-half:is([aria-labelledby="runtime-heartbeat"], [aria-labelledby="runtime-episode_annealing"]) { padding-right: 24px; }
+.settings-runtime-half:is([aria-labelledby="runtime-reflection"], [aria-labelledby="runtime-episode_relation"]) { padding-left: 24px; }
+.settings-runtime-half:is([aria-labelledby="runtime-reflection"], [aria-labelledby="runtime-episode_relation"])::before {
   content: "";
   position: absolute;
   left: 0;
@@ -1354,9 +1354,8 @@
 .settings-runtime-thinking > .settings-runtime-fields { grid-column: 1 / -1; }
 .settings-thinking-toggle { align-self: center; justify-self: end; }
 @media (max-width: 700px) {
-  .settings-runtime-half:has(+ .settings-runtime-half):nth-child(even),
-  .settings-runtime-half:nth-child(odd) { padding-left: 0; padding-right: 0; }
-  .settings-runtime-half:nth-child(odd)::before { display: none; }
+  .settings-runtime-group.settings-runtime-half { padding-left: 0; padding-right: 0; }
+  .settings-runtime-half::before { display: none; }
 }
 
 .backup-settings > .settings-form-body { border-radius:0 0 10px 10px; }
@@ -1380,4 +1379,28 @@
 @media (max-width:650px) {
   .settings-budget-fields { width:100%; gap:14px 20px; }
   .settings-budget-fields > .settings-field { width:auto; }
+}
+
+.affinity-meter { margin: 18px 0; }
+.affinity-meter-label { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; margin-bottom: 9px; }
+.affinity-meter-label small { color: var(--muted); font-weight: 400; }
+.affinity-meter-track { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.affinity-meter-track > span { display: block; height: 100%; background: var(--pink); }
+.prompt-back { display: none; }
+.prompt-list-file { display: block; margin-top: 9px; color: var(--muted); font: 10px ui-monospace, monospace; }
+@media (max-width: 760px) {
+  .settings-persona .prompt-workspace { display: flex; flex-direction: column; height: auto; }
+  .settings-persona .prompt-list { display: block; border: 0; }
+  .prompt-list .record-item { padding: 18px; border-bottom: 1px solid var(--line); }
+  .prompt-list .record-item:last-child { border-bottom: 0; }
+  .settings-persona .prompt-card { display: none; }
+  .prompt-detail-open .prompt-list { display: none; }
+  .prompt-detail-open .prompt-back { display: inline-flex; align-self: flex-start; margin: 12px 18px 0; gap: 7px; }
+  .settings-persona .prompt-detail-open .prompt-card { display: flex; height: max(420px, calc(100dvh - 340px)); padding: 18px; }
+  .prompt-back svg { width: 14px; height: 14px; transform: rotate(180deg); }
+}
+@media (max-width: 700px) {
+  .settings-runtime-group[aria-labelledby="runtime-affinity"] { flex-wrap: nowrap; }
+  [aria-labelledby="runtime-affinity"] .settings-runtime-copy { flex-basis: auto; }
+  [aria-labelledby="runtime-affinity"] .settings-runtime-fields { width: auto; }
 }

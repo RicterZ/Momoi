@@ -802,6 +802,11 @@ def _add_trigger_injection_monitor(database):
         memory_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, warned INTEGER NOT NULL)""")
 
 
+def _add_affinity(database):
+    if "affinity" not in _columns(database, "self_state"):
+        database.execute("ALTER TABLE self_state ADD COLUMN affinity INTEGER NOT NULL DEFAULT 10 CHECK(affinity BETWEEN 0 AND 100)")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -845,6 +850,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_reflection_candidate_triggers,
     _add_daily_reflection_triggers,
     _add_trigger_injection_monitor,
+    _add_affinity,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

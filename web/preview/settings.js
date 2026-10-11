@@ -25,6 +25,7 @@ export function createSettingsPreview(json) {
     app: {
       channels: { primary: "weixin", enabled: { weixin: {} } },
       ...Object.fromEntries(Object.entries(appFields).map(([name, schema]) => [name, Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, spec.default]))])),
+      affinity: { enabled: true },
       budget: { daily_amount: 0.2, monthly_amount: 60 },
     },
     app_fields: appFields,

@@ -20,6 +20,9 @@ def test_backup_roundtrip_and_exclusions(tmp_path):
     try:
         soul = workspace / 'prompts/SOUL.md'
         soul.write_text('我始终是同一个人')
+        (workspace / 'prompts/AFFINITY.md').write_text('慢慢积累信任')
+        with store._db:
+            store._db.execute('UPDATE self_state SET affinity=37')
         (workspace / 'llm-dumps').mkdir()
         (workspace / 'llm-dumps/secret.json').write_text('not exported')
         creation = workspace / 'artifacts/故事草稿/chapter.bak.txt'
@@ -36,18 +39,24 @@ def test_backup_roundtrip_and_exclusions(tmp_path):
         archive = export_archive(config, out)
         with zipfile.ZipFile(archive) as z:
             assert 'prompts/SOUL.md' in z.namelist()
+            assert 'prompts/AFFINITY.md' in z.namelist()
             assert 'artifacts/故事草稿/chapter.bak.txt' in z.namelist()
             assert 'workflows/custom.yaml' in z.namelist()
             assert not any(name.startswith('channel/') for name in z.namelist())
             assert 'providers.yaml' not in z.namelist()
             assert not any('llm-dumps' in name or 'thinking' in name for name in z.namelist())
         soul.write_text('后来修改的内容')
+        (workspace / 'prompts/AFFINITY.md').write_text('后来修改的关系')
+        with store._db:
+            store._db.execute('UPDATE self_state SET affinity=1')
         creation.write_text('后来修改的创作')
         workflow.write_text('name: changed-workflow\n')
         store._db.execute('DELETE FROM llm_usage'); store._db.commit()
         extracted = validate_archive(archive, tmp_path / 'restore', store._db)
         restore_archive(extracted, config, store)
         assert soul.read_text() == '我始终是同一个人'
+        assert (workspace / 'prompts/AFFINITY.md').read_text() == '慢慢积累信任'
+        assert store.self_state()['affinity'] == 37
         assert creation.read_text() == 'Momoi 的创作'
         assert workflow.read_text() == 'name: custom-workflow\n'
         assert attachment.read_text() == '渠道收到的文件'
@@ -115,7 +124,8 @@ def test_restore_database_versions(tmp_path, newer):
             store._db.execute("ALTER TABLE reflection_memories DROP COLUMN triggers_json")
             store._db.execute("DROP TABLE trigger_message_window")
             store._db.execute("DROP TABLE trigger_warning_state")
-        store._db.execute(f"PRAGMA user_version={SCHEMA_VERSION + (1 if newer else -2)}")
+            store._db.execute("ALTER TABLE self_state DROP COLUMN affinity")
+        store._db.execute(f"PRAGMA user_version={SCHEMA_VERSION + (1 if newer else -3)}")
         store._db.commit()
         out = tmp_path / "out"
         out.mkdir()
