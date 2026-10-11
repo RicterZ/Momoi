@@ -362,6 +362,38 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self.client.close)
         self.auth = "Bearer " + issue_dashboard_jwt(config.dashboard.token)
 
+    async def test_budget_blocks_startup_and_resumes_next_period(self):
+        self.enable()
+        self.manager.save_runtime({"budget": {"enabled": True, "period": "daily", "amount": 1}}, self.manager.revision())
+        blocked = [True]
+        class BudgetDaemon(FakeDaemon):
+            def __init__(self, config):
+                super().__init__(config)
+                self.store = SimpleNamespace(close=lambda: setattr(self, "closed", True))
+                self.budget_guard = SimpleNamespace(config=config, accounting=None, status=lambda: {"enabled": True, "blocked": blocked[0]})
+        self.runtime.factory = BudgetDaemon
+        await self.runtime.apply()
+        self.assertEqual(self.runtime.state, "budget_paused")
+        self.assertIsNone(self.runtime.task)
+        self.assertTrue(FakeDaemon.instances[-1].closed)
+        stop = asyncio.Event()
+        task = asyncio.create_task(self.runtime.run(stop))
+        try:
+            blocked[0] = False
+            async with asyncio.timeout(2):
+                while self.runtime.state != "running":
+                    await asyncio.sleep(0.01)
+            daemon = self.runtime.daemon
+            blocked[0] = True
+            async with asyncio.timeout(2):
+                while self.runtime.state != "budget_paused":
+                    await asyncio.sleep(0.01)
+            self.assertTrue(daemon.closed)
+            self.assertIsNone(self.runtime.task)
+        finally:
+            stop.set()
+            await task
+
     def enable(self, model="test-model"):
         llm = copy.deepcopy(LLM)
         llm["options"]["model"] = model

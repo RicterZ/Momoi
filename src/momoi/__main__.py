@@ -39,6 +39,9 @@ async def run(
             print(f"Dashboard access token: {config.dashboard.token}", flush=True)
     else:
         config = load_config(config_path)
+        if config.budget.enabled:
+            from .config.manager import ConfigurationManager
+            configuration = ConfigurationManager(config_path)
     if dashboard and not config.dashboard.token:
         raise ValueError("dashboard.token is required when --dashboard is enabled")
     configure_logging(
@@ -49,7 +52,7 @@ async def run(
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
     stop = stop if stop is not None else asyncio.Event()
     with shutdown_signals(stop):
-        await _run(config, configuration if dashboard else None, dashboard, dashboard_host, dashboard_port, stop, dashboard_ready)
+        await _run(config, configuration if dashboard or config.budget.enabled else None, dashboard, dashboard_host, dashboard_port, stop, dashboard_ready)
 
 
 async def _run(config, configuration, dashboard, dashboard_host, dashboard_port, stop, dashboard_ready):
@@ -68,7 +71,13 @@ async def _run(config, configuration, dashboard, dashboard_host, dashboard_port,
         heartbeat_prompt_chars=len(config.heartbeat_prompt),
     )
     if not dashboard:
-        await MomoiDaemon(config).run(stop)
+        if config.budget.enabled:
+            from .runtime.supervisor import RuntimeSupervisor
+            runtime = RuntimeSupervisor(configuration)
+            runtime.active_config = config
+            await runtime.run(stop)
+        else:
+            await MomoiDaemon(config).run(stop)
         return
     from .dashboard.service import DashboardService
     from .dashboard.settings import DashboardSettings

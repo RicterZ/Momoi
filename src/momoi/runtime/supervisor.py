@@ -114,6 +114,10 @@ class RuntimeSupervisor:
         self.daemon = self.factory(config)
         self.daemon.services.balance
         self.budget_guard = getattr(self.daemon, "budget_guard", None)
+        if self.budget_guard and self.budget_guard.config.budget.enabled and self.budget_status()["blocked"]:
+            self.daemon.store.close()
+            self.daemon = None
+            return
         self.stop = asyncio.Event()
         self.task = asyncio.create_task(self.daemon.run(self.stop))
         ready = asyncio.create_task(self.daemon.ready.wait())
@@ -199,7 +203,7 @@ class RuntimeSupervisor:
                 return
             try:
                 await self._launch(config)
-                self.state = "running"
+                self.state = "running" if self.daemon is not None else "budget_paused"
                 self.applied_revision = revision
                 self.last_config = config
             except Exception as error:
