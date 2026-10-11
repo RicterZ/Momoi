@@ -48,9 +48,11 @@ def _mcp_error_message(payload: dict[str, Any]) -> str:
 
 class MCPManager:
     def __init__(
-        self, path: Path | None, *, servers: dict[str, dict[str, Any]] | None = None
+        self, path: Path | None, *, servers: dict[str, dict[str, Any]] | None = None,
+        connect_in_background: bool = False,
     ) -> None:
         self.path = path
+        self.connect_in_background = connect_in_background
         self._reload_lock = asyncio.Lock()
         self._calls = asyncio.Condition()
         self._active_calls = 0
@@ -74,6 +76,9 @@ class MCPManager:
         self._closing = False
 
     async def __aenter__(self) -> "MCPManager":
+        return await self._start(wait_for_connections=not self.connect_in_background)
+
+    async def _start(self, *, wait_for_connections: bool) -> "MCPManager":
         self._closing = False
         self.errors.clear()
         loop = asyncio.get_running_loop()
@@ -85,6 +90,9 @@ class MCPManager:
                 self._serve(name, config, queue, ready),
                 name=f"momoi-mcp-{name}",
             )
+            if not wait_for_connections:
+                ready.add_done_callback(lambda result, name=name: self._connection_ready(name, result))
+                continue
             try:
                 await ready
             except asyncio.CancelledError:
@@ -106,6 +114,17 @@ class MCPManager:
                 self._workers.pop(name)
                 self._queues.pop(name)
         return self
+
+    def _connection_ready(self, name: str, ready: asyncio.Future[None]) -> None:
+        try:
+            ready.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as error:
+            if not self._closing:
+                self.errors[name] = str(error)
+                log_event(logger, logging.ERROR, "mcp_connect_failure", server=name,
+                          error_type=type(error).__name__, action="skip_server")
 
     async def __aexit__(self, *_: object) -> None:
         self._closing = True
@@ -441,6 +460,8 @@ class MCPManager:
                 self._capabilities[wire_name] = discovered_capabilities[wire_name]
                 self.tool_specs.append(spec)
             self.tool_specs.sort(key=lambda item: str(item.get("name") or ""))
+            if self.connect_in_background:
+                self.generation += 1
             old_stack = self._stacks.get(name)
             self._sessions[name] = session
             self._stacks[name] = stack
@@ -487,7 +508,7 @@ class MCPManager:
                 self._tools.clear()
                 self._capabilities.clear()
                 self.configs = configs
-                await self.__aenter__()
+                await self._start(wait_for_connections=True)
                 self.generation += 1
             return {
                 "ok": not self.errors,

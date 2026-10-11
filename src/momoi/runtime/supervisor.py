@@ -122,9 +122,8 @@ class RuntimeSupervisor:
         self.task = asyncio.create_task(self.daemon.run(self.stop))
         ready = asyncio.create_task(self.daemon.ready.wait())
         try:
-            # MCP connections can take 60s before failing; leave time to skip them and finish startup.
             done, _ = await asyncio.wait(
-                {ready, self.task}, timeout=120, return_when=asyncio.FIRST_COMPLETED
+                {ready, self.task}, timeout=60, return_when=asyncio.FIRST_COMPLETED
             )
             if self.task in done:
                 await self.task

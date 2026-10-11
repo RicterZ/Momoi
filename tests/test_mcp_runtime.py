@@ -353,6 +353,57 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(starting, return_exceptions=True)
         self.assertEqual(manager._workers, {})
 
+    async def test_slow_and_failed_mcp_do_not_block_background_startup(self):
+        manager = MCPManager(None, servers={
+            'slow': {'command': 'slow'},
+            'broken': {'command': 'missing'},
+            'healthy': {'command': 'healthy'},
+        }, connect_in_background=True)
+        original = manager._connect
+        waiting = asyncio.Event()
+        release = asyncio.Event()
+
+        async def connect(name, config):
+            if name == 'slow':
+                waiting.set()
+                await release.wait()
+            await original(name, config)
+
+        with patch.object(manager, '_connect', connect):
+            try:
+                await asyncio.wait_for(manager.__aenter__(), 1)
+                async with asyncio.timeout(1):
+                    await waiting.wait()
+                    while not manager.has_tool('mcp__healthy__work') or 'broken' not in manager.errors:
+                        await asyncio.sleep(0)
+                self.assertNotIn('slow', manager._sessions)
+                self.assertTrue((await manager.call('mcp__healthy__work', {}))['ok'])
+                generation = manager.generation
+                release.set()
+                async with asyncio.timeout(1):
+                    while not manager.has_tool('mcp__slow__work'):
+                        await asyncio.sleep(0)
+                self.assertGreater(manager.generation, generation)
+            finally:
+                await manager.__aexit__()
+        self.assertEqual(manager._workers, {})
+        self.assertEqual(manager._sessions, {})
+
+    async def test_shutdown_cancels_pending_background_connection(self):
+        manager = MCPManager(None, servers={'slow': {'command': 'slow'}}, connect_in_background=True)
+        waiting = asyncio.Event()
+
+        async def connect(*_):
+            waiting.set()
+            await asyncio.Event().wait()
+
+        with patch.object(manager, '_connect', connect):
+            await manager.__aenter__()
+            await asyncio.wait_for(waiting.wait(), 1)
+            await asyncio.wait_for(manager.__aexit__(), 1)
+        self.assertEqual(manager._workers, {})
+        self.assertEqual(manager.errors, {})
+
 
 def test_brave_web_search_is_visible_without_enabling_other_group_tools():
     web = {"name": "mcp__brave-search__brave_web_search", "description": "Search",

@@ -164,7 +164,7 @@ class MomoiDaemon(
         self.provider.thinking_sink = self.store.record_thinking_call
         if accounting is not None:
             self.provider.usage_parser = accounting.parse_usage
-        self.mcp = MCPManager(config.mcp_config, servers=config.mcp_servers)
+        self.mcp = MCPManager(config.mcp_config, servers=config.mcp_servers, connect_in_background=True)
         self.tool_surface = ToolSurface(
             self.mcp,
             self.channels,
