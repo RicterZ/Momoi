@@ -1364,7 +1364,10 @@
 .backup-controls { display:grid; gap:16px; width:100%; justify-items:start; }
 .backup-confirm { display:flex; gap:10px; align-items:flex-start; font-size:13px; line-height:1.6; }
 .backup-confirm input { appearance:auto; flex:0 0 16px; width:16px; height:16px; margin:3px 0 0; accent-color:var(--pink); }
-.backup-controls .file-picker { width:280px; max-width:100%; }
+.backup-controls .file-picker { width:72px; max-width:100%; --control-h:36px; }
+.backup-settings .settings-button { width:72px; min-height:36px; padding:0 10px; }
+.backup-controls .file-picker-action { border-radius:9px; padding:0 10px; }
+.backup-file-name { max-width:100%; overflow-wrap:anywhere; font-size:12px; color:var(--muted); }
 
 .settings-budget-fields > .settings-field > .settings-label { position:static; width:auto; height:auto; overflow:visible; clip-path:none; white-space:normal; }
 .settings-budget-fields { max-width:100%; }
