@@ -5,7 +5,7 @@ from importlib.resources import files
 
 from ...integrations.request_context import model_request
 from ...memory.text import estimate_tokens
-from ...observability.context import log_context, new_trace_id
+from ...observability.context import log_context, new_trace_id, current_log_context
 from ...tools.validation import validate_tool_arguments
 from ..tool_contracts.affinity import AFFINITY_TOOLS
 from .replyer import prompt_text
@@ -57,7 +57,10 @@ async def review_affinity(config, store, provider, call, request):
     rules = prompt_text(config, "AFFINITY.md", files("momoi").joinpath("prompts/affinity.md").read_text(encoding="utf-8"))
     message = affinity_review_message(current, call.name, args, rows, store.affinity_reviews())
     try:
-        with log_context(stage="affinity_checker", turn_id=request.turn_id, call_id=new_trace_id()), model_request():
+        parent_call_id = current_log_context().get("call_id", getattr(request, "call_id", ""))
+        with log_context(stage="affinity_checker", turn_id=request.turn_id, call_id=new_trace_id(),
+                         parent_call_id=parent_call_id, tool_call_id=getattr(call, "id", ""),
+                         round=getattr(request, "round_number", 0), channel=request.delivery_channel.name), model_request():
             async with asyncio.timeout(60):
                 response = await provider.complete(
                     [{"type": "text", "text": files("momoi").joinpath("prompts/affinity_checker.md").read_text(encoding="utf-8").replace("{{AFFINITY}}", rules)}],

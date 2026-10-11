@@ -192,3 +192,37 @@ def test_affinity_review_message_hides_numeric_state_and_history():
     assert "当前关系阶段为：好朋友" in message
     assert "历史理由" in message and "历史证据" in message
     assert "ASSISTANT: 你好我也好" in message
+
+
+def test_affinity_checker_thinking_record_links_to_planner(tmp_path, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from momoi.runtime.agent.affinity import review_affinity
+    from momoi.llm.telemetry import persist_thinking
+    from momoi.models import ToolCall
+    path = tmp_path / "config.json"
+    bootstrap(path)
+    config = replace(ConfigurationManager(path).validate(), affinity_enabled=True)
+    store = Store(config.database, config.workspace)
+    store.begin_turn("review", "owner", [])
+    store.record_thinking_call(created_at=1, turn_id="review", call_id="planner", stage="owner", round=2,
+                              trace={"tool_calls": [{"id": "affinity-call", "name": "affinity_increase", "arguments": {"reason": "理由", "evidence": "证据"}}]})
+    monkeypatch.setattr(store, "replyer_dialogue_rows", lambda channel, limit: [
+        {"role": "user", "content": "实际消息"} for _ in range(10)])
+    async def complete(*args, **kwargs):
+        text = '{"allowed":false,"reason":"普通问候不足以增加信任"}'
+        persist_thinking(store.record_thinking_call, reasoning="", assistant_text=text, tools=[], model="test")
+        return SimpleNamespace(content=[{"type": "text", "text": text}], usage={}, tool_calls=[])
+    request = SimpleNamespace(turn_id="review", call_id="planner", round_number=2, delivery_channel=SimpleNamespace(name="dashboard"))
+    call = ToolCall("affinity-call", "affinity_increase", {"reason": "理由", "evidence": "证据"})
+    try:
+        asyncio.run(review_affinity(config, store, SimpleNamespace(complete=complete), call, request))
+        calls = store.dashboard_thinking_detail("review")["calls"]
+        checker = next(item for item in calls if item["stage"] == "affinity_checker")
+        assert checker["trace"]["parent_call_id"] == "planner"
+        assert checker["trace"]["tool_call_id"] == "affinity-call"
+        assert checker["round"] == 2
+        assert '"allowed":false' in checker["assistant_text"]
+        assert store.self_state()["affinity"] == 20
+    finally:
+        store.close()

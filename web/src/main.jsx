@@ -46,6 +46,7 @@ const navItems = [
 const thinkingStageLabels = {
   owner: "CHAT // 行为规划",
   replyer: "REPLY // 发言生成",
+  affinity_checker: "AFFINITY // 好感度审批",
   webhook: "EVENT // Webhook",
   heartbeat: "HEARTBEAT // 自主活动",
   reflection: "MEMORY // 每日复盘",
@@ -2563,12 +2564,20 @@ function FlowDeliveries({ deliveries = [] }) {
 
 function ThinkingCall({ call, children = [], nested = false }) {
   const replyer = call.stage === "replyer";
+  const affinityChecker = call.stage === "affinity_checker";
+  let affinityDecision = null;
+  if (affinityChecker && call.assistant_text) {
+    try {
+      const value = JSON.parse(call.assistant_text);
+      if (typeof value.allowed === "boolean" && typeof value.reason === "string") affinityDecision = value;
+    } catch { /* Keep malformed responses visible as raw output. */ }
+  }
   const planner = plannerStages.has(call.stage);
   const metrics = call.request_metrics;
   return <article className={`flow-call ${replyer ? "is-replyer" : planner ? "is-planner" : "is-workflow"}${nested ? " is-nested" : ""}`}>
     <header className="flow-call-head">
       <strong>{replyer ? "发言生成 · Replyer" : planner ? "行为规划 · Planner" : thinkingStageLabel(call.stage)}</strong>
-      <span>{replyer ? "由 reply 派发" : `第 ${call.round || 1} 轮`}</span>
+      <span>{replyer ? "由 reply 派发" : affinityChecker ? "独立审批" : `第 ${call.round || 1} 轮`}</span>
       <time>{formatDate(call.created_at)}</time>
     </header>
     <div className="flow-call-meta"><span>{call.model || "模型未记录"}</span><code>{call.call_id}</code>
@@ -2579,12 +2588,16 @@ function ThinkingCall({ call, children = [], nested = false }) {
       {call.reasoning || call.excerpt ? <section className="thinking-part reasoning-part">
         <h4>模型推理 <span>接口返回的 reasoning</span></h4>
         <p className="message-content thinking-body">{call.reasoning || call.excerpt}</p>
-      </section> : <p className="thinking-empty">接口未返回可见推理；可以从实际工具调用查看决策。</p>}
-      {call.assistant_text && (replyer ? <details className="thinking-part assistant-part flow-generated">
+      </section> : <p className="thinking-empty">{affinityChecker ? "接口未返回可见推理；审批返回见下方。" : "接口未返回可见推理；可以从实际工具调用查看决策。"}</p>}
+      {affinityDecision && <section className="thinking-part assistant-part">
+        <h4>审批结果 <span>{affinityDecision.allowed ? "允许调整" : "拒绝调整"}</span></h4>
+        <p className="message-content thinking-body">{affinityDecision.reason}</p>
+      </section>}
+      {call.assistant_text && !affinityDecision && (replyer ? <details className="thinking-part assistant-part flow-generated">
         <summary>生成的发言</summary>
         <EmotionContent className="message-content thinking-body" text={call.assistant_text} />
       </details> : <section className="thinking-part assistant-part">
-        <h4>内部正文</h4>
+        <h4>{affinityChecker ? "审批返回" : "内部正文"}</h4>
         <EmotionContent className="message-content thinking-body" text={call.assistant_text} />
       </section>)}
     </div>
