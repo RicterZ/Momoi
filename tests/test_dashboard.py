@@ -7,6 +7,9 @@ from datetime import datetime
 from importlib.resources import files as package_files
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
+
+from yarl import URL
 
 from aiohttp import FormData
 from aiohttp.test_utils import TestClient, TestServer
@@ -257,6 +260,37 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(touch.content_type, "image/png")
         unknown = await self.client.get("/not-a-static-file")
         self.assertEqual(unknown.status, 404)
+
+    async def test_static_assets_require_exact_contained_paths(self) -> None:
+        static = self.root / "static-fixture"
+        assets = static / "assets"
+        (assets / "nested").mkdir(parents=True)
+        (assets / "nested" / "App-main.js").write_bytes(b"public asset")
+        (static / "secret.txt").write_bytes(b"private")
+        with patch("momoi.dashboard.app.ASSET_ROOT", static):
+            response = await self.client.get("/assets/nested/App-main.js")
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.read(), b"public asset")
+            for path in (
+                "nested/app-main.js", "NESTED/App-main.js", "nested/APP-MA~1.JS",
+                "nested/App-main.js.", "nested/App-main.js%20", "nested/App-main.js:stream",
+                "C:%5CWindows%5Cwin.ini", "C:/Windows/win.ini", "%5C%5Cserver%5Cshare",
+                "..%5Csecret.txt", "../secret.txt", "%2e%2e/secret.txt", "%252e%252e/secret.txt",
+                "nested//App-main.js", "nested/./App-main.js", "nested%5CApp-main.js",
+                "nested/App-main.js/child", "%00", "CON", "NUL", "missing.js",
+            ):
+                with self.subTest(path=path):
+                    url = URL(str(self.client.make_url("/assets/")) + path, encoded=True)
+                    response = await self.client.session.get(url)
+                    self.assertEqual(response.status, 404)
+            try:
+                (assets / "escape.txt").symlink_to(static / "secret.txt")
+                (assets / "escape-dir").symlink_to(static, target_is_directory=True)
+            except OSError:
+                return  # Windows without symlink privileges still runs the path cases above.
+            for path in ("escape.txt", "escape-dir/secret.txt"):
+                response = await self.client.get("/assets/" + path)
+                self.assertEqual(response.status, 404)
 
     async def test_dashboard_current_state_excludes_expired_slots_without_mutating(self) -> None:
         now = time.time()

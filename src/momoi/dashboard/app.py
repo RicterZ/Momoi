@@ -232,11 +232,31 @@ def create_dashboard_app(
 
     async def asset(request: web.Request) -> web.Response:
         name = request.match_info["path"]
-        if not name or ".." in name.split("/"):
+        parts = name.split("/")
+        if any(
+            not part or part in {".", ".."} or "\\" in part or ":" in part
+            or part.endswith((".", " ")) or any(ord(c) < 32 for c in part)
+            for part in parts
+        ):
             raise web.HTTPNotFound()
-        resource = ASSET_ROOT.joinpath("assets", *name.split("/"))
-        if not resource.is_file():
-            raise web.HTTPNotFound()
+        root = ASSET_ROOT.joinpath("assets")
+        resource = root
+        try:
+            for part in parts:
+                # Exact directory entries avoid Windows case folding and 8.3 aliases.
+                resource = next(
+                    (child for child in resource.iterdir() if child.name == part), None
+                )
+                if resource is None:
+                    raise web.HTTPNotFound()
+                if isinstance(resource, Path) and not resource.resolve().is_relative_to(
+                    root.resolve()
+                ):
+                    raise web.HTTPNotFound()
+            if not resource.is_file():
+                raise web.HTTPNotFound()
+        except (OSError, ValueError, RuntimeError):
+            raise web.HTTPNotFound() from None
         content_type, _ = mimetypes.guess_type(name)
         return web.Response(
             body=resource.read_bytes(),
