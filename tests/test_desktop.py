@@ -184,3 +184,18 @@ def test_desktop_system_timezone_default_preserves_existing_selection(tmp_path, 
     atomic_write(path, json.dumps(app))
     prepare_workspace(tmp_path)
     assert json.loads(path.read_text())["timezone"] == "America/New_York"
+
+
+def test_desktop_affinity_defaults_seed_missing_and_preserve_existing(tmp_path):
+    from importlib.resources import files
+
+    expected = files("momoi_desktop").joinpath("default_prompts/AFFINITY.md").read_text(encoding="utf-8")
+    prepare_workspace(tmp_path)
+    path = tmp_path / "prompts/AFFINITY.md"
+    assert path.read_text() == expected
+    path.unlink()
+    prepare_workspace(tmp_path)
+    assert path.read_text() == expected
+    path.write_text("自定义关系边界", encoding="utf-8")
+    prepare_workspace(tmp_path)
+    assert path.read_text() == "自定义关系边界"
