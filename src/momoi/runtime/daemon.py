@@ -132,6 +132,8 @@ class MomoiDaemon(
         else:
             primary_name = str(getattr(config.channel, "plugin", ""))
             self.channel = self.channels[primary_name]
+        from ..channel.dashboard import DashboardChannel
+        self.channels["dashboard"] = DashboardChannel()
         for item in config.channel_configs:
             phone = getattr(item, "voice_call", None)
             if phone is not None and phone.enabled:

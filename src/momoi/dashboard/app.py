@@ -214,6 +214,9 @@ def create_dashboard_app(
         register_configuration_routes(app, configuration, runtime)
         from .backup_routes import register_backup_routes
         register_backup_routes(app, store, configuration, runtime)
+    if runtime is not None:
+        from .chat import register_chat_routes
+        register_chat_routes(app, store, runtime)
     workspace = store._workspace
 
     async def index(_request: web.Request) -> web.Response:

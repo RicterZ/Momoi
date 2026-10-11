@@ -2,6 +2,7 @@ import { hasModelApiKey } from "./setupGuide.js";
 import { Fragment, StrictMode, createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import Chat from "./Chat.jsx";
 import RequestMetrics from "./RequestMetrics.jsx";
 import Loading from "./Loading.jsx";
 import MemoryMetadata, { MemoryTriggerTags } from "./MemoryMetadata.jsx";
@@ -16,6 +17,7 @@ const ConfirmContext = createContext(null);
 
 const pages = {
   overview: ["今天也元气满满！", "MOMOI // HOME"],
+  chat: ["聊天", "MOMOI // CHAT"],
   conversations: ["话题", "MOMOI // CHAT LOG"],
   reflections: ["复盘", "MOMOI // SAVE DATA"],
   memories: ["记忆", "MOMOI // MEMORY"],
@@ -29,15 +31,16 @@ const pages = {
 
 const navItems = [
   ["overview", "01", "主页"],
-  ["conversations", "02", "话题"],
-  ["thinking", "03", "思考"],
-  ["reflections", "04", "复盘"],
-  ["memories", "05", "记忆"],
-  ["emotions", "06", "表情"],
-  ["goals", "07", "任务"],
-  ["metrics", "08", "监控"],
-  ["tools", "09", "工具"],
-  ["settings", "10", "设置"],
+  ["chat", "02", "聊天"],
+  ["conversations", "03", "话题"],
+  ["thinking", "04", "思考"],
+  ["reflections", "05", "复盘"],
+  ["memories", "06", "记忆"],
+  ["emotions", "07", "表情"],
+  ["goals", "08", "任务"],
+  ["metrics", "09", "监控"],
+  ["tools", "10", "工具"],
+  ["settings", "11", "设置"],
 ];
 
 const thinkingStageLabels = {
@@ -2774,6 +2777,7 @@ function ToolsPage(props) {
 
 const viewComponents = {
   overview: Overview,
+  chat: props => <Chat {...props} request={api} />,
   conversations: Conversations,
   reflections: Reflections,
   memories: Memories,
@@ -2878,7 +2882,7 @@ function App() {
   const locked = !token;
   const [pageTitle, eyebrow] = setupMode ? ["首次配置", "WELCOME // MOMOI"] : pages[view];
   const View = setupMode ? Settings : viewComponents[view];
-  const isRecord = !setupMode && (view === "conversations" || view === "thinking");
+  const isRecord = !setupMode && (view === "chat" || view === "conversations" || view === "thinking");
 
   async function allowSettingsLeave() {
     if ((!setupMode && !["settings", "tools"].includes(view)) || !document.querySelector('.settings-studio [data-dirty="true"]')) return true;
@@ -2971,7 +2975,7 @@ function App() {
             {version ? <span className="sidebar-version">{version}</span> : null}
           </div>
         </aside>}
-        <main className={isRecord ? "is-record" : undefined}>
+        <main className={isRecord ? `is-record${view === "chat" ? " is-chat" : ""}` : undefined}>
           <header className="topbar">
             <div>
               <p className="eyebrow">{eyebrow}</p>
