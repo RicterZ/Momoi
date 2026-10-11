@@ -22,6 +22,11 @@ THINKING_STAGES = {
 }
 
 _FIELDS = {
+    "budget": {"label": "费用预算", "fields": {
+        "enabled": {"type": "boolean", "label": "启用费用预算", "default": False},
+        "period": {"type": "string", "label": "预算周期", "enum": ["daily", "monthly"], "default": "daily"},
+        "amount": {"type": "number", "label": "预算上限（元）", "minimum": 0, "default": 0, "description": "按本地模型费用估算；达到上限暂停运行，新周期自动恢复。需启用账户余额中的费用估算。"},
+    }},
     "turn": {
         "label": "聊天续接",
         "fields": {

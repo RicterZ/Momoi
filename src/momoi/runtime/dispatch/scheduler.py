@@ -149,6 +149,12 @@ class Scheduler:
 
     async def _scheduler_worker(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
+            if self.config.budget.enabled and self.budget_guard.status()["blocked"]:
+                try:
+                    await asyncio.wait_for(stop.wait(), 1)
+                except TimeoutError:
+                    pass
+                continue
             self.agenda_changed.clear()
             closed_episodes = self.store.close_idle_episodes()
             if closed_episodes:

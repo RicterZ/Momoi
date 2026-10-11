@@ -16,6 +16,12 @@ class AgentWorker:
         hard_deadline = 0.0
         loop = asyncio.get_running_loop()
         while not stop.is_set():
+            if self.config.budget.enabled and self.budget_guard.status()["blocked"]:
+                try:
+                    await asyncio.wait_for(stop.wait(), 1)
+                except TimeoutError:
+                    pass
+                continue
             if not batch:
                 if owner_only and not self._deferred_incoming and self.incoming.empty():
                     return

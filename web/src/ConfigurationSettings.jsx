@@ -54,6 +54,7 @@ const modules = [
     optional: true,
     tip: "关闭后停止余额查询与费用估算，本地请求量与通用 Token 用量统计仍然保留。",
   },
+  { id: "budget", label: "费用预算", icon: "coin" },
   { id: "runtime", label: "运行设置" },
 ];
 const adapterLabels = {
@@ -1092,7 +1093,7 @@ const runtimeDescriptions = {
 };
 
 function RuntimeSection({ module, data, save, saving, previous, next }) {
-  const schemas = Object.fromEntries(Object.entries(data.app_fields || {}).filter(([name]) => name !== "tools" && name !== "current_state"));
+  const schemas = Object.fromEntries(Object.entries(data.app_fields || {}).filter(([name]) => name !== "tools" && name !== "current_state" && (module.id === "budget" ? name === "budget" : name !== "budget")));
   const groups = Object.entries(schemas).flatMap(([name, schema]) => name === "episode_annealing" && schema.fields.relations_enabled
     ? [
         { name, configName: name, schema: { ...schema, fields: Object.fromEntries(Object.entries(schema.fields).filter(([key]) => key !== "relations_enabled")) } },
@@ -1374,7 +1375,7 @@ export default function ConfigurationSettings({
   const [pollError, setPollError] = useState("");
   const [loading, setLoading] = useState(true);
   const [generation, setGeneration] = useState(0);
-  const [activeSection, setActiveSection] = useState("model");
+  const [activeSection, setActiveSection] = useState(() => window.location.hash.split("/")[1] || "model");
   useEffect(() => {
     if (setupMode) return;
     const navigate = () => {
@@ -1695,7 +1696,7 @@ export default function ConfigurationSettings({
                       {promptContent({ next, previous, busy: saving || actionBusy })}
                     </>
 
-                  ) : module.id === "runtime" ? (
+                  ) : ["runtime", "budget"].includes(module.id) ? (
                     <RuntimeSection key={generation} module={module} data={data} save={save} saving={saving || loading || actionBusy} previous={previous} next={next} />
                   ) : module.id === "channel" ? (
                     <ChannelSection

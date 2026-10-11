@@ -31,6 +31,7 @@ SECRET_NAMES = {
 }
 # Host/auth/storage ownership belongs to the dashboard process and cannot hot reload.
 EDITABLE = {
+    "budget",
     "channels",
     "context",
     "tools",

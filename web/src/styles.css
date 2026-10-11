@@ -2327,3 +2327,14 @@ a.tag:hover {
 .memory-toolbar > p { width: 100%; }
 
 .memory-trigger-editor { display: grid; gap: 8px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+
+.budget-panel { margin-bottom: 24px; }
+.budget-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.budget-heading a { color:var(--muted); font-size:12px; }
+.budget-amount { margin:16px 0; }
+.budget-amount strong { font-size:28px; }
+.budget-amount span { color:var(--muted); font-size:13px; }
+.budget-meter { display:grid; grid-template-columns:repeat(32,1fr); gap:4px; height:14px; }
+.budget-meter span { background:var(--line, #e5e9ef); }
+.budget-meter .filled { background:var(--blue, #79b9d6); }
+.budget-panel.is-paused .filled { background:var(--pink, #ee9cb5); }

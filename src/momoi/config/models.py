@@ -61,6 +61,13 @@ class CurrentStateConfig:
 
 
 @dataclass(frozen=True)
+class BudgetConfig:
+    enabled: bool = False
+    period: str = "daily"
+    amount: float = 0
+
+
+@dataclass(frozen=True)
 class AppConfig:
     providers: "ProviderCatalog"
     channel: object
@@ -83,6 +90,7 @@ class AppConfig:
     exec_enabled: bool = False
     # Validated snapshot retained with a runtime generation for reliable rollback.
     mcp_servers: dict | None = field(default=None, repr=False)
+    budget: BudgetConfig = BudgetConfig()
     notifications: NotificationConfig = NotificationConfig()
     tool_result_max_chars: int = 12000
     tool_result_retention_days: float = 30

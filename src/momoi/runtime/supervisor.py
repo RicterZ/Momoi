@@ -31,6 +31,7 @@ class RuntimeSupervisor:
         self.active_config = None
         self.suspended = False
         self.last_config = None
+        self.budget_guard = None
 
     def status(self):
         from ..channel.napcat import NapCatChannel
@@ -47,7 +48,11 @@ class RuntimeSupervisor:
             "saved_revision": self.configuration.revision(),
             "qq_connected": qq.connected if isinstance(qq, NapCatChannel) else False,
             "qq_call": self.voice_status(channels),
+            "budget": self.budget_status(),
         }
+
+    def budget_status(self):
+        return self.budget_guard.status() if self.budget_guard else {"enabled": False}
 
     def voice_status(self, channels):
         status = getattr(channels.get("qq_call"), "status", {"phase": "disabled"})
@@ -89,7 +94,7 @@ class RuntimeSupervisor:
     @property
     def accounting(self):
         provider = self.daemon.services.balance if self.daemon is not None else None
-        return provider.accounting if provider is not None else None
+        return provider.accounting if provider is not None else (self.budget_guard.accounting if self.budget_guard else None)
 
     async def _retire(self):
         if self.task is not None:
@@ -108,6 +113,7 @@ class RuntimeSupervisor:
     async def _launch(self, config):
         self.daemon = self.factory(config)
         self.daemon.services.balance
+        self.budget_guard = getattr(self.daemon, "budget_guard", None)
         self.stop = asyncio.Event()
         self.task = asyncio.create_task(self.daemon.run(self.stop))
         ready = asyncio.create_task(self.daemon.ready.wait())
@@ -213,6 +219,12 @@ class RuntimeSupervisor:
     async def run(self, stop):
         try:
             while not stop.is_set():
+                if not self.suspended and self.budget_guard and self.budget_status()["blocked"]:
+                    async with self.lock:
+                        await self._retire()
+                        self.state = "budget_paused"
+                elif not self.suspended and self.state == "budget_paused":
+                    self.request_apply()
                 if not self.suspended and (
                     self.changed.is_set()
                     or self.configuration.revision() != self.observed_revision

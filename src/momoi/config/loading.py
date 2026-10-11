@@ -9,6 +9,7 @@ from .environment import apply_env_overrides
 from .runtime_fields import LOG_LEVELS, runtime_fields
 from .models import (
     AppConfig,
+    BudgetConfig,
     ConfigError,
     DashboardConfig,
     EpisodeAnnealingConfig,
@@ -42,6 +43,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         raise ConfigError("config.json must be a table/object")
     remove_retired_thinking_stages(raw)
     allowed = {
+        "budget",
         "providers",
         "timezone",
         "channels",
@@ -156,6 +158,9 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
     current_state_raw = mapping(raw.get("current_state", {}), "current_state")
     from ..integrations.fields import normalize_fields
 
+    budget = normalize_fields(runtime_fields()["budget"]["fields"], raw.get("budget", {}), path="budget")
+    if budget["enabled"] and budget["amount"] <= 0:
+        raise ConfigError("budget.amount must be positive when enabled")
     thinking = normalize_fields(
         runtime_fields()["thinking"]["fields"],
         raw.get("thinking", {}),
@@ -265,6 +270,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
     )
 
     return AppConfig(
+        budget=BudgetConfig(**budget),
         channel=channel_config,
         system_prompt=system_prompt,
         transcript_turns_min=transcript_turns_min,

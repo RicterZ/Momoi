@@ -149,6 +149,13 @@ class MomoiDaemon(
                 item.emotions_changed()
         self.store.emotions_changed = emotions_changed
         self.provider = self.services.llm
+        from .budget import BudgetGuard
+        self.budget_guard = BudgetGuard(config, accounting)
+        original_complete = self.provider.complete
+        async def budgeted_complete(*args, **kwargs):
+            self.budget_guard.check()
+            return await original_complete(*args, **kwargs)
+        self.provider.complete = budgeted_complete
         self.provider.usage_sink = self.store.record_llm_call
         if hasattr(self.provider, "request_metrics_sink"):
             self.provider.request_metrics_sink = self.store.record_request_metric

@@ -491,6 +491,19 @@ function Overview({ refreshKey, token, routeParam }) {
   );
 }
 
+function BudgetMeter({ budget }) {
+  if (!budget?.enabled) return null;
+  const ratio = budget.available && budget.amount > 0 ? budget.spent / budget.amount : 0;
+  return <article className={`panel budget-panel${budget.blocked ? " is-paused" : ""}`}>
+    <div className="budget-heading"><span className="panel-label">BUDGET // {budget.period === "monthly" ? "MONTH" : "DAY"}</span><a href="#settings/budget">费用预算 ↗</a></div>
+    <div className="budget-amount"><strong>{budget.available ? formatYuan(budget.spent) : "—"}</strong><span> / {formatYuan(budget.amount)} · {budget.period === "monthly" ? "本月" : "今日"}</span></div>
+    <div className="budget-meter" role="progressbar" aria-label="费用预算已用" aria-valuemin={0} aria-valuemax={budget.amount} aria-valuenow={Math.min(budget.spent, budget.amount)}>
+      {Array.from({ length: 32 }, (_, i) => <span key={i} className={i / 32 < ratio ? "filled" : ""} />)}
+    </div>
+    <p className="secondary">{budget.blocked ? budget.reason : "本地模型费用估算 · 达到上限暂停所有调度，新周期自动恢复"}</p>
+  </article>;
+}
+
 function OverviewBody({ data, token, routeParam }) {
   const narrow = useNarrowScreen();
   const usage = data.usage || {};
@@ -524,6 +537,7 @@ function OverviewBody({ data, token, routeParam }) {
   ];
   return (
     <>
+      <BudgetMeter budget={data.budget} />
       <OverviewSection
         label="Usage"
         note="账户余额与调用统计"

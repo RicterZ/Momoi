@@ -286,6 +286,7 @@ def create_dashboard_app(
         plugin = request.app[BALANCE_PROVIDER]
         store.set_usage_accounting(plugin.accounting if plugin is not None else None)
         data = store.dashboard_overview()
+        data["budget"] = runtime.budget_status() if runtime is not None and hasattr(runtime, "budget_status") else {"enabled": False}
         if plugin is not None:
             try:
                 data["balance"] = await plugin.balance()
