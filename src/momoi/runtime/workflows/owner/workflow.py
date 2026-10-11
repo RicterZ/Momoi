@@ -256,7 +256,11 @@ class OwnerWorkflow:
                       recognition_wait_ms=round((time.time() - batch[-1].received_at) * 1000))
         self.owner_context_baseline()
         reconciliation_control = self._apply_reconciliation_commands(batch)
-        directives: list[str] = []
+        channel_label = {"dashboard": "网页聊天", "napcat": "QQ 私聊", "weixin": "微信私聊", "qq_call": "QQ 电话"}.get(channel.name, channel.name)
+        directives: list[str] = [
+            f"当前消息渠道：{channel.name}（{channel_label}）。"
+            "reply 省略 channel 时回复此渠道；历史对话或默认渠道不代表当前消息来源。"
+        ]
         background = getattr(self, "_background_pause", None)
         if background is not None and background.context:
             directives.append(background.context)
