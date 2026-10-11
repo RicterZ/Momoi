@@ -1670,7 +1670,7 @@ export default function ConfigurationSettings({
           <div className="settings-panels">
             {visibleModules.map((module, index) => {
               const preceding = visibleModules[index - 1];
-              const previous = preceding ? {
+              const previous = setupMode && preceding ? {
                 label: preceding.label,
                 onClick: () => {
                   if (setupMode && root.current?.querySelector('[data-dirty="true"]')) {
@@ -1688,17 +1688,7 @@ export default function ConfigurationSettings({
                 buttonLabel: module.id === "prompts" ? "使用默认提示词" : module.id === "voice" ? "完成配置" : "下一步",
                 disabled: !stepReady(module.id),
                 onClick: () => advanceSetup(following?.id),
-              } : following
-                ? {
-                    label: following.label,
-                    onClick: () => {
-                      setActiveSection(following.id);
-                      document
-                        .getElementById(`settings-tab-${following.id}`)
-                        ?.focus();
-                    },
-                  }
-                : null;
+              } : null;
               return (
                 <section
                   className="settings-panel"
