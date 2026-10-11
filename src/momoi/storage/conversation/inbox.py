@@ -56,7 +56,7 @@ class InboxStore:
         if not known:
             known = self._db.execute(
                 """SELECT 1 FROM outbox WHERE target_channel='napcat' AND state='sent'
-                   AND CAST(json_extract(payload_json, '$._delivery_receipt.message_id') AS TEXT)=? LIMIT 1""",
+                   AND CAST(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE 'null' END, '$._delivery_receipt.message_id') AS TEXT)=? LIMIT 1""",
                 (message_id,),
             ).fetchone()
         return bool(known) and not self.message_recall_recorded("napcat", message_id)
@@ -72,7 +72,7 @@ class InboxStore:
         ).fetchall()
         from ..episode.execution_evidence import clip
         own = self._db.execute(
-            """SELECT m.content, json_extract(o.payload_json, '$._delivery_receipt.message_id') native_id
+            """SELECT m.content, json_extract(CASE WHEN json_valid(o.payload_json) THEN o.payload_json ELSE 'null' END, '$._delivery_receipt.message_id') native_id
                FROM messages m JOIN outbox o ON o.id=m.outbox_id
                WHERE m.id=? AND m.role='assistant' AND o.target_channel='napcat' AND o.state='sent'""",
             (message_id,),
@@ -89,7 +89,7 @@ class InboxStore:
 
     def message_recalled(self, channel: str, message_id: str) -> bool:
         return self._db.execute(
-            "SELECT 1 FROM events WHERE kind=? AND message_id=? AND json_extract(payload_json, '$.author')='owner' LIMIT 1",
+            "SELECT 1 FROM events WHERE kind=? AND message_id=? AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE 'null' END, '$.author')='owner' LIMIT 1",
             (f"{channel}.recall", message_id),
         ).fetchone() is not None
 

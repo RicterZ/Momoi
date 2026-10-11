@@ -260,7 +260,7 @@ class TranscriptStore:
                     WHERE ((m.role='user' AND EXISTS (
                         SELECT 1 FROM json_each(m.source_event_ids_json) src
                         JOIN events e ON e.id=src.value
-                        WHERE json_extract(e.payload_json, '$.channel') IN (?, ?))) OR
+                        WHERE json_extract(CASE WHEN json_valid(e.payload_json) THEN e.payload_json ELSE 'null' END, '$.channel') IN (?, ?))) OR
                         (m.role='assistant' AND m.delivery_state='delivered'
                          AND o.target_channel IN (?, ?)))
                     ORDER BY m.id DESC LIMIT ?""", (*channels, *channels, limit)).fetchall()
@@ -337,8 +337,8 @@ class TranscriptStore:
                        CASE WHEN m.role='event'
                             THEN CASE WHEN t.workflow_kind='channel_event'
                                       THEN COALESCE((
-                                          SELECT json_extract(e.payload_json, '$.channel') || ':' ||
-                                                 json_extract(e.payload_json, '$.notice_type')
+                                          SELECT json_extract(CASE WHEN json_valid(e.payload_json) THEN e.payload_json ELSE 'null' END, '$.channel') || ':' ||
+                                                 json_extract(CASE WHEN json_valid(e.payload_json) THEN e.payload_json ELSE 'null' END, '$.notice_type')
                                           FROM json_each(m.source_event_ids_json) src
                                           JOIN events e ON e.id=src.value LIMIT 1
                                       ), 'channel:notice')

@@ -39,6 +39,28 @@ def test_replyer_channel_history_uses_actual_delivery(tmp_path):
         store.close()
 
 
+
+def test_replyer_generates_with_malformed_legacy_event_payload(tmp_path):
+    store = Store(tmp_path / 'db')
+    try:
+        for channel in ('napcat', 'dashboard'):
+            event = IncomingMessage(channel, channel, channel + ' input', 1, 1, channel=channel)
+            store.add_event(event)
+            store.begin_turn(channel, 'owner', [event.event_id])
+            store.commit_turn([event], event.text, AgentReply([]), turn_id=channel)
+        with store._db:
+            store._db.execute("UPDATE events SET payload_json='not-json' WHERE id='napcat'")
+        config = SimpleNamespace(soul_prompt_path=tmp_path / 'SOUL.md', soul_prompt='测试人格', timezone='UTC', thinking_stages={'replyer': 'low'})
+        request = SimpleNamespace(turn_id='dashboard', round_number=1, delivery_channel=SimpleNamespace(name='dashboard'), current_events=[])
+        async def complete(system, messages, tools):
+            assert 'dashboard input' in str(messages)
+            assert 'napcat input' not in str(messages)
+            return ProviderResponse([{'type': 'text', 'text': '回复正常'}], [])
+        replyer = Replyer(config, store, SimpleNamespace(complete=complete))
+        assert asyncio.run(replyer.generate(ToolCall('reply-test', 'reply', {'intent': '回应', 'reference': ''}), request)) == ['回复正常']
+    finally:
+        store.close()
+
 def test_replyer_isolated_request_and_actual_speech(tmp_path):
     (tmp_path / 'SOUL.md').write_text('测试人格')
     (tmp_path / 'REPLYER.md').write_text('测试表达')

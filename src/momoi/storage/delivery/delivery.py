@@ -130,7 +130,7 @@ class DeliveryStore:
         row = self._db.execute(
             """SELECT id, payload_json FROM outbox
                WHERE target_channel=? AND state='sent' AND (? IS NULL OR id=?)
-                 AND json_extract(payload_json, '$._delivery_receipt.message_id') IS NOT NULL
+                 AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE 'null' END, '$._delivery_receipt.message_id') IS NOT NULL
                ORDER BY id DESC LIMIT 1""", (channel, outbox_id, outbox_id),
         ).fetchone()
         if row is None:
