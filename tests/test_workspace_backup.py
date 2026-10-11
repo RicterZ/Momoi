@@ -59,7 +59,7 @@ def test_reject_changed_database_schema(tmp_path):
         out = tmp_path / 'out'; out.mkdir()
         archive = export_archive(config, out)
         store._db.execute('CREATE TABLE unexpected (data TEXT)')
-        with pytest.raises(ValueError, match='版本'):
+        with pytest.raises(ValueError, match='结构不兼容'):
             validate_archive(archive, tmp_path / 'restore', store._db)
     finally:
         store.close()
@@ -83,3 +83,36 @@ def test_cancelled_backup_waits_for_snapshot_writer():
         with pytest.raises(asyncio.CancelledError):
             await task
     asyncio.run(check())
+
+
+@pytest.mark.parametrize("newer", [False, True])
+def test_restore_database_versions(tmp_path, newer):
+    from momoi.storage.core.migrations import SCHEMA_VERSION
+    path = tmp_path / "workspace/config.json"
+    bootstrap(path)
+    config = ConfigurationManager(path).validate()
+    store = Store(config.database, config.workspace)
+    try:
+        store.record_llm_call(created_at=123, model="test", metrics={"output": 100})
+        if not newer:
+            store._db.execute("ALTER TABLE reflection_memories DROP COLUMN triggers_json")
+        store._db.execute(f"PRAGMA user_version={SCHEMA_VERSION + (1 if newer else -1)}")
+        store._db.commit()
+        out = tmp_path / "out"
+        out.mkdir()
+        archive = export_archive(config, out)
+        store.close()
+        config.database.unlink()
+        store = Store(config.database, config.workspace)
+        if newer:
+            with pytest.raises(ValueError, match="请升级"):
+                validate_archive(archive, tmp_path / "restore", store._db)
+            assert store._db.execute("SELECT count(*) FROM llm_usage").fetchone()[0] == 0
+        else:
+            extracted = validate_archive(archive, tmp_path / "restore", store._db)
+            restore_archive(extracted, config, store)
+            assert store._db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+            assert store._db.execute("SELECT output_tokens FROM llm_usage").fetchone()[0] == 100
+            assert "triggers_json" in {row[1] for row in store._db.execute("PRAGMA table_info(reflection_memories)")}
+    finally:
+        store.close()

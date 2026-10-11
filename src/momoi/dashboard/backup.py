@@ -1,6 +1,7 @@
 """Portable relationship archives; runtime diagnostics and credentials stay local."""
 import hashlib
 import json
+import re
 import shutil
 import sqlite3
 import stat
@@ -8,14 +9,36 @@ import zipfile
 from contextlib import closing
 from pathlib import Path, PurePosixPath
 
+from ..storage.core.schema import initialize_schema
+from ..storage.core.migrations import SCHEMA_VERSION
+
 FORMAT = "momoi-backup"
 MAX_BYTES = 2 * 1024**3
 DIRECTORIES = ("prompts", "emotion", "channel/napcat/files", "channel/weixin/media")
 
 
 def schema(db):
-    return {(kind, name): sql for kind, name, sql in db.execute(
-        "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'")}
+    objects = {}
+    for kind, name, sql in db.execute(
+        "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'"
+    ):
+        tokens = tuple(re.findall(r"'[^']*(?:''[^']*)*'|\"[^\"]*\"|`[^`]*`|\[[^\]]*\]|\w+|[^\s]", sql))
+        if kind == "table":
+            # ALTER TABLE appends columns; compare definitions without column order.
+            start = tokens.index("(")
+            depth, clauses, clause = 0, [], []
+            for token in tokens[start + 1:-1]:
+                if token == "," and depth == 0:
+                    clauses.append(tuple(clause))
+                    clause = []
+                    continue
+                depth += (token == "(") - (token == ")")
+                clause.append(token)
+            clauses.append(tuple(clause))
+            objects[kind, name] = (tokens[:start], tuple(sorted(clauses)))
+        else:
+            objects[kind, name] = tokens
+    return objects
 
 
 def sanitize(db):
@@ -103,8 +126,19 @@ def validate_archive(archive, directory, current_db):
                 raise ValueError("备份校验失败")
     with closing(sqlite3.connect(root / "data/momoi.sqlite3")) as db:
         db.execute("PRAGMA trusted_schema=OFF")
-        if schema(db) != schema(current_db) or db.execute("PRAGMA user_version").fetchone()[0] != current_db.execute("PRAGMA user_version").fetchone()[0]:
-            raise ValueError("备份数据库版本不匹配，请使用相同版本的 Momoi 恢复")
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        if version > SCHEMA_VERSION:
+            raise ValueError("备份数据库版本较新，请升级 Momoi 后恢复")
+        if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or db.execute("PRAGMA foreign_key_check").fetchone():
+            raise ValueError("备份数据库损坏")
+        # Upgrade only the extracted copy; the running database stays untouched.
+        if version < SCHEMA_VERSION:
+            try:
+                initialize_schema(db)
+            except (RuntimeError, ValueError, sqlite3.Error) as error:
+                raise ValueError(f"备份数据库迁移失败：{error}") from error
+        if schema(db) != schema(current_db):
+            raise ValueError("备份数据库结构不兼容，无法恢复")
         if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or db.execute("PRAGMA foreign_key_check").fetchone():
             raise ValueError("备份数据库损坏")
         sanitize(db)
