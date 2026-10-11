@@ -455,3 +455,33 @@ def test_description_is_required_even_for_disabled_servers():
                 server["description"] = description
             with pytest.raises(ValueError, match="description must be"):
                 parse_mcp_servers(json.dumps({"mcpServers": {"test": server}}))
+
+
+class MCPErrorEnvelopeTest(unittest.IsolatedAsyncioTestCase):
+    async def test_business_errors_reach_model_without_misclassifying_data(self):
+        from unittest.mock import AsyncMock
+        from mcp.types import CallToolResult, TextContent
+
+        failure = {"result": {"status": "error", "message": "SSLError: [SSL: UNEXPECTED_EOF_WHILE_READING]", "data": []}}
+        for structured, expected in (
+            (failure, False),
+            ({"result": {"ok": False, "message": "invalid query"}}, False),
+            ({"result": {"status": "success", "data": [{"status": "error"}]}}, True),
+            ({"result": [{"status": "error"}]}, True),
+        ):
+            for text_only in (False, True):
+                with self.subTest(structured=structured, text_only=text_only):
+                    result = CallToolResult(
+                        content=[TextContent(type="text", text=json.dumps(structured))],
+                        structuredContent=None if text_only else structured,
+                        isError=False,
+                    )
+                    manager = MCPManager(None, servers={})
+                    manager._sessions["test"] = SimpleNamespace(call_tool=AsyncMock(return_value=result))
+                    output = await manager._invoke("test", "search", {})
+                    self.assertEqual(output["ok"], expected)
+                    if structured == failure:
+                        self.assertEqual(output["error"], "mcp_tool_error")
+                        self.assertIn("安全连接失败", output["message"])
+                        self.assertNotIn("SSLError", output["message"])
+                        self.assertIn("SSLError", json.dumps(output["result"]))

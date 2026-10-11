@@ -229,20 +229,11 @@ def turn_tool_names(draft: TurnDraft) -> list[str]:
 
 
 def reconciliation_message(turn_id: str) -> str:
-    short_id = turn_id[:12]
-    return (
-        "An external tool may have already run before this turn was interrupted. "
-        "To avoid repeating the action, I did not continue automatically. "
-        f"After checking the actual result, send /resolve {short_id} <result>, "
-        f"or /resume {short_id} <current state> to continue."
-    )
+    return "任务中断了，部分操作是否完成还无法确认，已暂停以免重复执行。"
 
 
 def provider_failure_message(error: ProviderError) -> str:
-    detail = " ".join(str(error).split()) or type(error).__name__
-    if len(detail) > 300:
-        detail = detail[:297].rstrip() + "..."
-    return f"The model service failed during this turn. Reason: {detail}"
+    return "模型服务请求失败，这次处理已停止，未能完成。"
 
 
 class ExternalToolTurnError(RuntimeError):

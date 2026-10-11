@@ -1514,7 +1514,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_batch_turn([event], asyncio.Event(), turn_id)
             self.assertEqual(provider.calls, 0)
             self.assertIn(
-                "per-turn processing limit", daemon.store.due_outbox()[0].text
+                "执行上限", daemon.store.due_outbox()[0].text
             )
             turn = daemon.store._db.execute(
                 "SELECT state, llm_calls FROM turns WHERE id=?", (turn_id,)
@@ -1560,8 +1560,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(provider.calls, 1)
             failure = daemon.store.due_outbox()[0].text
-            self.assertIn("model service failed", failure)
-            self.assertIn("Reason: model engine error", failure)
+            self.assertIn("模型服务请求失败", failure)
+            self.assertNotIn("model engine error", failure)
             self.assertNotIn("without repeated retries", failure)
             turn = daemon.store._db.execute(
                 "SELECT state, failure_reason FROM turns WHERE id=?", (turn_id,)
@@ -1685,7 +1685,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon._complete_batch = fail_after_tool  # type: ignore[method-assign]
             await daemon._complete_batch_turn([event], asyncio.Event(), turn_id)
 
-            self.assertIn(f"/resolve {turn_id[:12]}", daemon.store.due_outbox()[0].text)
+            self.assertIn("已暂停以免重复执行", daemon.store.due_outbox()[0].text)
+            self.assertNotIn("/resolve", daemon.store.due_outbox()[0].text)
             self.assertEqual(
                 daemon.store._db.execute(
                     "SELECT status FROM reconciliations WHERE turn_id=?", (turn_id,)

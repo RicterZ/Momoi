@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import json
 import logging
 import os
 import re
@@ -32,18 +33,40 @@ MCPRequest = tuple[
 ]
 
 
+def _mcp_error_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    value = payload.get("structuredContent")
+    if value is None:
+        content = payload.get("content", [])
+        if len(content) == 1 and content[0].get("type") == "text":
+            try:
+                value = json.loads(content[0].get("text", ""))
+            except (ValueError, TypeError):
+                return None
+    # Inspect result envelopes only, never arbitrary records inside returned data.
+    for _ in range(4):
+        if not isinstance(value, dict):
+            break
+        if value.get("status") == "error" or value.get("ok") is False:
+            return value
+        if set(value) != {"result"}:
+            break
+        value = value["result"]
+    return None
+
+
 def _mcp_error_message(payload: dict[str, Any]) -> str:
-    structured = payload.get("structuredContent")
+    structured = _mcp_error_payload(payload) or payload.get("structuredContent")
+    detail = ""
     if isinstance(structured, dict):
-        for key in ("message", "error", "detail"):
-            if structured.get(key):
-                return safe_preview(structured[key], 500)
-    content = payload.get("content")
-    if isinstance(content, list):
-        for item in content:
-            if isinstance(item, dict) and item.get("text"):
-                return safe_preview(item["text"], 500)
-    return "The MCP server reported a tool error."
+        detail = next((str(structured[key]) for key in ("message", "error", "detail") if structured.get(key)), "")
+    if not detail:
+        detail = next((str(item["text"]) for item in payload.get("content", [])
+                       if isinstance(item, dict) and item.get("text")), "")
+    if "SSLError" in detail or "SSL:" in detail or "TLS" in detail:
+        return "工具访问上游服务时安全连接失败，未取得结果。"
+    if "Timeout" in detail or "timed out" in detail:
+        return "工具访问上游服务超时，未取得结果。"
+    return safe_preview(detail, 200) or "工具执行失败，未取得结果。"
 
 
 class MCPManager:
@@ -310,7 +333,7 @@ class MCPManager:
     ) -> dict[str, Any]:
         result = await self._sessions[server].call_tool(tool, arguments)
         payload = result.model_dump(mode="json", by_alias=True, exclude_none=True)
-        is_error = bool(result.isError)
+        is_error = bool(result.isError) or _mcp_error_payload(payload) is not None
         message = _mcp_error_message(payload) if is_error else None
         response = {
             "ok": not is_error,

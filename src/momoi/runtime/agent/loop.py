@@ -103,7 +103,7 @@ class AgentLoop:
         harness.validate_surface({str(tool["name"]) for tool in tools})
         def open_circuit(reason: str) -> bool:
             nonlocal circuit_reason, harness, permitted_tools, tools
-            if circuit_reason or workflow is not None or stage not in {"owner", "webhook"}:
+            if circuit_reason or workflow is not None or stage not in {"owner", "webhook", "goal", "heartbeat"}:
                 return False
             circuit_reason = reason
             if stage == "owner" and (external_tool_used or self.store.turn_has_external_effect(turn_id)):
@@ -116,11 +116,13 @@ class AgentLoop:
                         required_before_end=frozenset({"reply"})),
                 permitted_tool_names=permitted_tools,
             )
+            harness.heartbeat_recall_ready = True  # Failure notices do not need a new recall.
             messages.append({"role": "user", "content": (
                 "[运行时通知] 本轮连续多次工具或协议错误，已触发熔断，任务执行已停止。"
                 "现在只允许 reply；此前的开场和任务流程要求不再适用。"
                 "请通过 reply(mode=text) 简短告诉用户这次处理出错、未完成的部分，"
-                "不要照抄内部错误、堆栈或工具参数，不要声称已完成或承诺自动重试。"
+                "用一句话说明哪项任务因什么原因未完成；不要照抄内部错误、堆栈、命令或工具参数，"
+                "不要声称已完成或承诺自动重试。"
                 "已有操作可能生效时如实说明不确定性。发出通知后停止调用工具，"
                 "不要要求等待用户回复。错误摘要仅供理解："
                 + json.dumps(reason[:500], ensure_ascii=False)
@@ -542,6 +544,8 @@ class AgentLoop:
             external_tool_used = external_tool_used or batch.external_effect
             batch_state = batch.state
             last_tool_error = batch.last_tool_error
+            if circuit_reason and "reply" in harness.completed_tools and not updates:
+                return AgentReply([])
             if updates:
                 if batch.updates_in_result:
                     source_event_id = updates[-1].event_id

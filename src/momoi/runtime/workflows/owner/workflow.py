@@ -149,8 +149,7 @@ class OwnerWorkflow:
                 reason=safe_preview(str(error), 300),
             )
             failure_message = (
-                "This task reached its per-turn processing limit, so I stopped to "
-                "avoid further usage. Ask me to continue when ready."
+                "这次处理已达到执行上限，已暂停，任务尚未完成。"
             )
             failure_reason = type(error).__name__
         except WorkflowProtocolError as error:
@@ -198,8 +197,7 @@ class OwnerWorkflow:
                 exc_info=True,
             )
             failure_message = (
-                "This turn stopped because of an internal error and was not retried "
-                "automatically."
+                "处理时发生内部错误，已停止，任务尚未完成。"
             )
             failure_reason = type(error).__name__
         owner_content = self._render_batch(batch)

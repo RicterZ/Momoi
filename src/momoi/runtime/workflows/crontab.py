@@ -95,7 +95,7 @@ class GoalWorkflow:
             )
             draft = TurnDraft(
                 notification_messages=[
-                    "I paused this task after it reached the per-turn processing limit."
+                    "这项任务已达到本轮执行上限，已暂停，尚未完成。"
                 ],
                 notification_key="goal.budget",
                 notification_priority="urgent",

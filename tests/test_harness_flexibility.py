@@ -60,6 +60,9 @@ def test_execution_failures_have_separate_budget_and_bounded_recovery(daemon, fa
         rounds += 1
         if rounds <= failures:
             assert "熔断" not in str(messages)
+            assert not daemon.store.due_outbox()
+            if rounds > 1:
+                assert "file_not_found" in str(messages)
             return response(ToolCall(str(rounds), "read_file", {"path": f"missing-{rounds}"}))
         assert ("熔断" in str(messages)) == (failures == MAX_CONSECUTIVE_EXECUTION_FAILURES)
         if failures == MAX_CONSECUTIVE_EXECUTION_FAILURES:
@@ -172,3 +175,38 @@ def test_circuit_recovery_is_bounded_and_cannot_restart_task(daemon, recovery):
     assert not daemon.store._db.execute(
         "SELECT 1 FROM tool_audit WHERE turn_id=? AND tool_name='write_file'", (turn_id,)
     ).fetchone()
+
+
+@pytest.mark.parametrize("stage", ["goal", "heartbeat"])
+def test_background_circuit_reports_only_after_failures_reach_limit(daemon, stage):
+    from momoi.models import TurnDraft
+    from momoi.runtime.agent import TurnExecutionSpec
+
+    install_scripted_replyer(daemon)
+    turn_id = f"{stage}-circuit"
+    daemon.store.begin_turn(turn_id, stage, [])
+    rounds = 0
+    limit = daemon.config.turn_max_protocol_retries
+
+    async def complete(system, messages, tools, **kwargs):
+        nonlocal rounds
+        rounds += 1
+        if rounds <= limit:
+            assert not daemon.store.due_outbox()
+            return response(ToolCall(str(rounds), "unknown_tool", {}))
+        assert "熔断" in str(messages)
+        assert ("heartbeat_begin_must_be_first_and_alone" if stage == "heartbeat" else "tool_not_allowed") in str(messages)
+        if rounds == limit + 1:
+            return response(reply_call("notice", bubbles=["后台任务连续出错，已暂停。"]))
+        assert daemon.store.due_outbox(), str(messages[-2:])
+        return response(end_call())
+
+    daemon.provider = SimpleNamespace(complete=complete)
+    asyncio.run(daemon._run_tool_loop(
+        daemon._system(planner=True), [{"role": "user", "content": "处理后台任务"}],
+        daemon.tool_surface.conversation_specs(), [], TurnDraft(),
+        execution=TurnExecutionSpec(stage, goal_id="test-goal" if stage == "goal" else None), source_event_id=turn_id,
+        turn_id=turn_id, delivery_channel=daemon.channel,
+    ))
+    assert rounds <= limit + 2
+    assert [item.text for item in daemon.store.due_outbox()] == ["后台任务连续出错，已暂停。"]
