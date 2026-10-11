@@ -206,7 +206,7 @@ flowchart TB
 
 从 [GitHub Releases](https://github.com/RicterZ/Momoi/releases) 下载安装包。
 发布工作流完成构建和测试后自动附加安装包。桌面版包含本地后端、默认人格提示词和六张表情；
-首次启动后通过 Dashboard 引导配置模型及消息渠道。
+首次启动后通过 Dashboard 引导配置模型。消息渠道可跳过，直接使用网页聊天。
 
 ### Docker Compose
 
@@ -219,7 +219,7 @@ docker compose -f docker-compose.yml logs momoi
 ```
 
 打开 `http://127.0.0.1:8788`，使用启动日志中的 Dashboard token 登录。
-在设置页连接模型、编辑提示词、启用消息渠道，并完成微信扫码登录。
+在设置页连接模型即可使用网页聊天。QQ、微信和语音均为可选配置，可稍后接入。
 
 镜像已包含 BGE 模型，语义记忆默认在 Momoi 进程内编码，无需额外容器或端口。
 QQ 用户单独部署 NapCat，在 Momoi 设置页填写可访问的 OneBot WebSocket 地址和主人 QQ。
@@ -309,7 +309,7 @@ Momoi 提供内置工具，也支持在 workspace 的 `mcp.json` 中配置 stdio
 ### Dashboard
 
 打开 `http://127.0.0.1:8788`。Dashboard 可以查看 Planner/Replyer 决策流、逐请求 token、缓存命中、延迟和费用估算，以及对话、召回证据、复盘、记忆、Goal、图片反应、用量和思考记录，也可以编辑记忆、Goal、图片反应与提示词文件。
-首次使用启动输出中的口令登录，然后在设置页配置 Provider、启用消息渠道并完成微信扫码登录。
+首次使用启动输出中的口令登录，然后配置模型即可使用网页聊天；QQ 和微信可稍后接入。
 保存配置会自动重建业务实例，dashboard 保持可用。纯后台运行使用 `momoi --no-dashboard`。
 已有工作区需设置 `dashboard.token` 或 `MOMOI_DASHBOARD_TOKEN`。
 请只在本机或可信网络中开放。

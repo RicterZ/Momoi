@@ -29,7 +29,7 @@ const modules = [
     id: "channel",
     label: "消息渠道",
     icon: "chat",
-    tip: "主渠道负责收发消息，不能停用。微信需要完成扫码登录；Windows 桌面版可启动内置 QQ，其他部署连接已运行的 NapCat。",
+    tip: "QQ 和微信可选，网页聊天始终可用。",
   },
   {
     id: "voice",
@@ -656,7 +656,7 @@ export function ApplyDialog({ progress, onClose, onRetry }) {
   );
 }
 
-export function SaveBar({ busy, dirty, status, next, previous, hint = "", saveDisabled = false }) {
+export function SaveBar({ busy, dirty, status, next, previous, skip, hint = "", saveDisabled = false }) {
   return (
     <footer className="settings-save-bar">
       <PreviousButton previous={previous} busy={busy} />
@@ -670,6 +670,7 @@ export function SaveBar({ busy, dirty, status, next, previous, hint = "", saveDi
         </span>
       </div>
       <div className="settings-save-actions">
+        {skip && <button type="button" className="quiet-button settings-button" disabled={busy} onClick={skip}>跳过，仅网页聊天</button>}
         <button
           type="submit"
           className="quiet-button settings-button"
@@ -1199,7 +1200,7 @@ const channelOptions = [
 ];
 const channelDefaults = (name) =>
   name === "napcat" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : {};
-function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, qqConnected }) {
+function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, skip, qqConnected }) {
   const [channels, setChannels] = useState(data.app.channels || { primary: "", enabled: {} });
   const [saved, setSaved] = useState(channels);
   const [status, setStatus] = useState(null);
@@ -1228,7 +1229,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
     event.preventDefault();
     if (busy || loginActive || !dirty) return;
     try {
-      if (!channels.primary || !(channels.primary in channels.enabled)) throw new Error("请至少启用一个消息渠道。");
+      if (Object.keys(channels.enabled).length && (!channels.primary || !(channels.primary in channels.enabled))) throw new Error("请选择主消息渠道。");
       if (channels.enabled.napcat) {
         if (!/^\d+$/.test(channels.enabled.napcat.owner_qq || "")) throw new Error("请填写主人 QQ 号码，仅包含数字。");
         let url;
@@ -1327,7 +1328,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
           })}
         </div>
         <fieldset className="settings-channel-primary" disabled={busy || loginActive || enabledChoices.length < 2}>
-            <SelectField label="主消息渠道" value={channels.primary} options={enabledChoices.length ? enabledChoices : [{ value: "", label: "请先启用一个渠道" }]} onChange={primary => { if (!busy && !loginActive) change({ ...channels, primary }); }} hint="启用多个渠道后，可切换主消息渠道。" />
+            <SelectField label="主消息渠道" value={channels.primary} options={enabledChoices.length ? enabledChoices : [{ value: "", label: "网页聊天" }]} onChange={primary => { if (!busy && !loginActive) change({ ...channels, primary }); }} hint={enabledChoices.length ? "启用多个渠道后可切换。" : "可随时添加 QQ 或微信。"} />
           </fieldset>
       </div>
       {loginOpen && (
@@ -1360,7 +1361,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
           </div>
         </SettingsDialog>
       )}
-      <SaveBar busy={busy || loginActive} dirty={dirty} status={status} next={next} previous={previous} />
+      <SaveBar busy={busy || loginActive} dirty={dirty} status={status} next={next} previous={previous} skip={skip} />
     </form>
   );
 }
@@ -1568,6 +1569,20 @@ export default function ConfigurationSettings({
       setActionBusy(false);
     }
   }
+  async function skipChannels(target) {
+    if (saving || loading || actionBusy) return;
+    try {
+      if (["starting", "waiting", "scanned", "verification_required"].includes(runtime?.weixin_login?.status)) {
+        if (!await action("/api/settings/channels/weixin/login", undefined, "DELETE")) return;
+      }
+      if (Object.keys(data.app.channels?.enabled || {}).length) {
+        await save("/api/settings/configuration/app", { channels: { primary: "", enabled: {} } }, "PATCH");
+      }
+      setGeneration(value => value + 1);
+      setError("");
+      setActiveSection(target);
+    } catch (problem) { setError(problem.message); }
+  }
   const visibleModules = setupMode ? modules.filter(module => ["model", "prompts", "channel", "voice"].includes(module.id)) : modules;
   const stepReady = id => id === "model" ? hasModelApiKey(data) : id === "channel" ? hasMessageChannel(data) : true;
   function advanceSetup(target) {
@@ -1579,13 +1594,13 @@ export default function ConfigurationSettings({
       setError(activeSection === "model" ? "请先填写并保存语言模型 API 密钥。" : "请先配置并保存消息渠道。");
       return;
     }
-    if (!target && (!hasModelApiKey(data) || !hasMessageChannel(data))) {
-      setError("请先完成 API 密钥和消息渠道配置。");
+    if (!target && !hasModelApiKey(data)) {
+      setError("请先完成语言模型配置。");
       return;
     }
     setError("");
     if (target) setActiveSection(target);
-    else onSetupComplete?.();
+    else onSetupComplete?.({ webOnly: !hasMessageChannel(data) });
   }
   const issue = error || pollError || runtime?.error || data?.validation_error;
   const runtimeContent = issue ? (
@@ -1600,8 +1615,8 @@ export default function ConfigurationSettings({
     <div className="settings-studio" ref={root}>
       {setupMode && <div className="setup-guide" role="status">
         <strong>欢迎使用 Momoi · 第 {visibleModules.findIndex(module => module.id === activeSection) + 1} / 4 步</strong>
-        <p>依次配置 API 密钥、提示词、消息渠道和语音合成。每步修改后请保存，再继续。</p>
-        <p>{activeSection === "model" ? "填写服务商提供的 API 密钥、服务地址和模型名称。" : activeSection === "prompts" ? "已内置默认提示词，可以直接使用默认内容并继续。" : activeSection === "channel" ? "选择消息渠道并保存配置，再完成扫码登录。QQ 请填写接收消息的主人账号。" : "语音合成为可选项，可以配置后保存，也可以直接完成配置。"}</p>
+        <p>先配模型，其余可跳过。</p>
+        <p>{activeSection === "model" ? "填写 API 密钥、服务地址和模型名称，保存后继续。" : activeSection === "prompts" ? "可直接使用默认提示词。" : activeSection === "channel" ? "跳过后使用网页聊天。" : "语音可稍后配置。"}</p>
       </div>}
       {applyProgress && <ApplyDialog progress={applyProgress} onClose={() => setApplyProgress(null)} onRetry={retryMonitor} />}
       {data ? (
@@ -1670,7 +1685,7 @@ export default function ConfigurationSettings({
               const following = visibleModules[index + 1];
               const next = setupMode ? {
                 label: following?.label || "完成配置",
-                buttonLabel: module.id === "prompts" ? "使用默认提示词，继续" : module.id === "voice" ? "完成配置 / 跳过语音" : "下一步",
+                buttonLabel: module.id === "prompts" ? "使用默认提示词" : module.id === "voice" ? "完成配置" : "下一步",
                 disabled: !stepReady(module.id),
                 onClick: () => advanceSetup(following?.id),
               } : following
@@ -1693,7 +1708,7 @@ export default function ConfigurationSettings({
                   key={module.id}
                   hidden={activeSection !== module.id}
                 >
-                  {module.id === "backup" ? (<BackupSettings token={token} />) : module.id === "prompts" ? (
+                  {module.id === "backup" ? (<BackupSettings token={token} header={<SectionHeader module={module} />} />) : module.id === "prompts" ? (
                     <>
                       <SectionHeader module={module} />
                       {promptContent({ next, previous, busy: saving || actionBusy })}
@@ -1711,6 +1726,7 @@ export default function ConfigurationSettings({
                       save={save}
                       login={runtime?.weixin_login}
                       qqConnected={runtime?.qq_connected}
+                      skip={setupMode ? () => skipChannels(following?.id) : undefined}
                       action={action}
                       saving={saving || loading}
                       actionBusy={actionBusy}

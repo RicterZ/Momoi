@@ -189,7 +189,7 @@ class ConfigurationManagerTest(unittest.TestCase):
                 "app", {"dashboard": {"token": "x"}}, snapshot["revision"]
             )
 
-    def test_required_sections_cannot_be_disabled_or_removed(self):
+    def test_model_is_required_and_external_channels_are_optional(self):
         saved = self.manager.save_binding("llm", LLM, self.manager.revision())
         revision = saved["revision"]
         with self.assertRaisesRegex(ConfigError, "model cannot be disabled"):
@@ -201,16 +201,18 @@ class ConfigurationManagerTest(unittest.TestCase):
         saved = self.manager.save_runtime(
             {"channels": {"primary": "weixin", "enabled": {"weixin": {}}}}, revision
         )
-        for document in (
-            {"channels": {"primary": "", "enabled": {}}},
-            {"channels": None},
-        ):
+        saved = self.manager.save_runtime({"channels": {"primary": "", "enabled": {}}}, saved["revision"])
+        self.assertEqual(self.manager.validate().channel_configs, ())
+        for document in ({"channels": None}, {"channels": {"primary": "napcat", "enabled": {}}}):
             with self.assertRaises(ConfigError):
                 self.manager.save_runtime(document, saved["revision"])
         app = saved["app"]
-        del app["channels"]
-        with self.assertRaisesRegex(ConfigError, "channels cannot be disabled"):
-            self.manager.save("app", app, saved["revision"])
+        app["channels"] = {"primary": "napcat", "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}}}
+        saved = self.manager.save("app", app, saved["revision"])
+        app = saved["app"]
+        app["channels"] = {"primary": "", "enabled": {}}
+        self.manager.save("app", app, saved["revision"])
+        self.assertIsNone(self.manager.validate().channel)
 
     def test_section_patch_preserves_other_runtime_settings(self):
         saved = self.manager.save_runtime(
@@ -362,6 +364,24 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self.client.close)
         self.auth = "Bearer " + issue_dashboard_jwt(config.dashboard.token)
 
+    async def test_model_only_runtime_can_add_and_remove_external_channels(self):
+        self.manager.save_binding("llm", LLM, self.manager.revision())
+        await self.runtime.apply()
+        self.assertEqual(self.runtime.state, "running")
+        self.assertEqual(self.runtime.daemon.config.channel_configs, ())
+        first = self.runtime.daemon
+        self.manager.save_runtime({"channels": {"primary": "napcat", "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}}}}, self.manager.revision())
+        await self.runtime.apply()
+        self.assertTrue(first.closed)
+        self.assertEqual(self.runtime.daemon.config.channel.plugin, "napcat")
+        second = self.runtime.daemon
+        self.manager.save_runtime({"channels": {"primary": "", "enabled": {}}}, self.manager.revision())
+        await self.runtime.apply()
+        self.assertTrue(second.closed)
+        self.assertEqual(self.runtime.state, "running")
+        self.assertEqual(self.runtime.status()["missing"], [])
+        self.assertEqual(self.runtime.daemon.config.channel_configs, ())
+
     async def test_budget_blocks_startup_and_resumes_next_period(self):
         self.enable()
         self.manager.save_runtime({"budget": {"enabled": True, "daily_amount": 1}}, self.manager.revision())
@@ -477,7 +497,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(data["capabilities"]["embedding"]["enabled"])
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         await self.runtime.apply()
-        self.assertEqual(self.runtime.status()["missing"], ["llm", "channel"])
+        self.assertEqual(self.runtime.status()["missing"], ["llm"])
         response = await self.client.put(
             "/api/settings/providers/llm",
             json={"revision": data["revision"], "document": LLM},
@@ -532,7 +552,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(recalled[0]["key"], "section-test")
 
-    async def test_channel_patch_rejects_disable_through_http(self):
+    async def test_channel_patch_allows_web_only_through_http(self):
         self.enable()
         self.client.session.headers["Authorization"] = self.auth
         response = await self.client.patch(
@@ -542,7 +562,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
                 "document": {"channels": {"primary": "", "enabled": {}}},
             },
         )
-        self.assertEqual(response.status, 400)
+        self.assertEqual(response.status, 200)
 
     async def test_tools_skill_management_requires_auth_and_roundtrips(self):
         response = await self.client.get("/api/tools/skills")

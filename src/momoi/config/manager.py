@@ -296,13 +296,6 @@ class ConfigurationManager:
     def save_runtime(self, document, revision):
         if not isinstance(document, dict) or set(document) - EDITABLE:
             raise ConfigError("only runtime settings can be changed here")
-        if "channels" in document and (
-            not isinstance(document["channels"], dict)
-            or not document["channels"].get("enabled")
-        ):
-            raise ConfigError(
-                "configure at least one channel; channels cannot be disabled"
-            )
         current = {
             key: value for key, value in self.read_app().items() if key in EDITABLE
         }
@@ -417,12 +410,6 @@ class ConfigurationManager:
                 key: value for key, value in app.items() if key not in EDITABLE
             }
             candidate.update(restore_secrets(document, app))
-            if app.get("channels", {}).get("enabled") and not candidate.get(
-                "channels", {}
-            ).get("enabled"):
-                raise ConfigError(
-                    "configure at least one channel; channels cannot be disabled"
-                )
             previous_context = app.get("context", {})
             for key in ("soul_prompt", "heartbeat_prompt"):
                 if candidate.get("context", {}).get(key) != previous_context.get(key):

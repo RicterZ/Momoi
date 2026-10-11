@@ -2870,10 +2870,10 @@ function App() {
       .catch(error => { if (error.name !== "AbortError") setSetupError(error.message); });
     return () => controller.abort();
   }, [token, refreshKey]);
-  function finishSetup() {
+  function finishSetup({ webOnly = false } = {}) {
     sessionStorage.removeItem("momoi-setup-pending");
     setSetupMode(false);
-    location.hash = "overview";
+    location.hash = webOnly ? "chat" : "overview";
   }
   const [version, setVersion] = useState("");
   const [timezone, setTimezone] = useState("UTC");

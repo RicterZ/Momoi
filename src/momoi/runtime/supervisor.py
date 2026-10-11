@@ -182,8 +182,6 @@ class RuntimeSupervisor:
             self.missing = []
             if not config.providers.enabled("llm"):
                 self.missing.append("llm")
-            if not config.channel_configs:
-                self.missing.append("channel")
             for item in config.channel_configs:
                 if getattr(item, "plugin", "") == "weixin":
                     try:

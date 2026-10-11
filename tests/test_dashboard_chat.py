@@ -143,3 +143,47 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
         self.client.session.headers['Authorization'] = self.auth
         history = await (await self.client.get('/api/chat/messages')).json()
         self.assertEqual([row['content'] for row in history['messages']], ['接着聊吧', '老师，我记得！'])
+
+    async def test_model_only_daemon_receives_and_delivers_web_chat(self):
+        from dataclasses import replace
+        from momoi.integrations.models import LLMConfig
+        from momoi.models import ProviderResponse, ToolCall
+        from momoi.runtime.daemon import MomoiDaemon
+        from tests.support import provider_catalog, reply_call, install_scripted_replyer, with_owner_recall
+        config = ConfigurationManager(self.store._workspace / 'config.json').validate()
+        config = replace(config, providers=provider_catalog(LLMConfig('http://127.0.0.1', 'test', 'test', 100, 0, 1, 0)))
+        self.assertEqual(config.channel_configs, ())
+        daemon = MomoiDaemon(config)
+        self.addCleanup(daemon.store.close)
+        self.assertEqual(daemon.channel.name, 'dashboard')
+        self.assertEqual(set(daemon.channels), {'dashboard'})
+        install_scripted_replyer(daemon)
+        class Provider:
+            calls = 0
+            async def complete(self, _, messages, tools, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return ProviderResponse([], [reply_call('web-reply', bubbles=['老师，网页上也可以聊天！'])])
+                return ProviderResponse([], [ToolCall('web-end', 'end_turn', {'mood': {'decision': 'unchanged'}})])
+        daemon.provider = with_owner_recall(Provider())
+        self.runtime.daemon = daemon
+        self.client.session.headers['Authorization'] = self.auth
+        response = await self.client.post('/api/chat/messages', json={'text': '只配模型可以聊天吗？', 'id': 'web_only_test'})
+        self.assertEqual(response.status, 202)
+        event = daemon.incoming.get_nowait()
+        turn = daemon._turn_id(event.event_id)
+        daemon.store.begin_turn(turn, 'owner', [event.event_id])
+        await daemon._complete_batch([event], turn)
+        stop = asyncio.Event()
+        worker = asyncio.create_task(daemon._outbox_worker(stop))
+        try:
+            async with asyncio.timeout(2):
+                while daemon.store.due_outbox():
+                    await asyncio.sleep(0.01)
+            data = await (await self.client.get('/api/chat/messages')).json()
+            self.assertEqual(data['messages'][-1]['content'], '老师，网页上也可以聊天！')
+            self.assertEqual(data['messages'][-1]['delivery_state'], 'delivered')
+        finally:
+            stop.set()
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)

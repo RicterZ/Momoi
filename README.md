@@ -244,7 +244,7 @@ edited in the Dashboard.
 Download the installer from [GitHub Releases](https://github.com/RicterZ/Momoi/releases).
 The release workflow builds and tests the installer before attaching it. The
 app includes a local backend, default prompts and six emotion assets; configure
-your model and message channel through the first-run Dashboard guide.
+your model through the first-run Dashboard guide. Message channels are optional; skip them to use web chat.
 
 ### Docker Compose
 
@@ -258,8 +258,7 @@ docker compose -f docker-compose.yml logs momoi
 ```
 
 Open `http://127.0.0.1:8788` and sign in with the Dashboard token from the startup
-logs. Use Settings to connect a model, edit prompts, enable message channels,
-and sign in to Weixin by scanning its QR code.
+logs. Connect a model in Settings to use web chat. QQ, WeChat and voice are optional and can be configured later.
 
 For QQ, deploy NapCat separately and enter its reachable OneBot WebSocket URL
 and the owner QQ in Momoi's Settings. The image includes BGE and encodes semantic

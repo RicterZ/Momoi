@@ -21,7 +21,7 @@ class DashboardChannel:
         return []
 
     def workflow_variables(self):
-        return {"dashboard_owner_id": "owner"}
+        return {"owner_id": "owner", "dashboard_owner_id": "owner"}
 
     async def convert_voice(self, voice):
         return voice.native_text or None

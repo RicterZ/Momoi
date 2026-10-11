@@ -60,8 +60,8 @@ class MomoiDaemon(
             raise
 
     def _compose(self, config, channel, tts_provider):
-        if not config.providers.enabled("llm") or not config.channel_configs:
-            raise ValueError("runtime requires an enabled LLM and at least one channel")
+        if not config.providers.enabled("llm"):
+            raise ValueError("runtime requires an enabled LLM")
         heartbeat_path = config.heartbeat_prompt_path
         if config.heartbeat.enabled and (
             heartbeat_path is None or not heartbeat_path.is_file()
@@ -127,13 +127,13 @@ class MomoiDaemon(
         self.channels = {item.name: item for item in created}
         if len(self.channels) != len(created):
             raise ValueError("channel plugin names must be unique")
+        from ..channel.dashboard import DashboardChannel
+        self.channels["dashboard"] = DashboardChannel()
         if channel is not None:
             self.channel = channel
         else:
-            primary_name = str(getattr(config.channel, "plugin", ""))
+            primary_name = str(getattr(config.channel, "plugin", "dashboard"))
             self.channel = self.channels[primary_name]
-        from ..channel.dashboard import DashboardChannel
-        self.channels["dashboard"] = DashboardChannel()
         for item in config.channel_configs:
             phone = getattr(item, "voice_call", None)
             if phone is not None and phone.enabled:
