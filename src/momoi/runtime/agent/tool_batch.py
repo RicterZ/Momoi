@@ -476,7 +476,13 @@ class ToolBatchExecutor:
                         reply_request = replace(request, delivery_channel=target,
                                                 state=ToolBatchState(previous_tool_name, last_sent_bubbles, last_sent_channel))
                         owner_revision = self.store.owner_channel_revision(target.name)
-                        bubbles = await self.replyer.generate(call, reply_request)
+                        if target.name == "dashboard":
+                            await target.set_typing(True)
+                        try:
+                            bubbles = await self.replyer.generate(call, reply_request)
+                        finally:
+                            if target.name == "dashboard":
+                                await target.set_typing(False)
                         mode = call.arguments.get("mode", "text")
                         first_call_updated = first_call_reply and (
                             bool(owner_updates) or self.store.owner_channel_revision(target.name) != owner_revision

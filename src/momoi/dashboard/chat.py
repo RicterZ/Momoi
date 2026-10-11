@@ -37,11 +37,15 @@ def register_chat_routes(app, store, runtime):
         status = runtime.status()
         daemon = runtime.daemon
         channel = getattr(daemon, "channels", {}).get("dashboard")
-        active = daemon is not None and getattr(daemon, "_active_turn_channel", "") == "dashboard" and getattr(daemon, "_active_turn", None) is not None
-        pending = store._db.execute("SELECT 1 FROM events WHERE processed=0 AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END, '$.channel')='dashboard' LIMIT 1").fetchone() is not None
+        pending = store._db.execute("""SELECT 1 FROM events e
+            WHERE e.processed=0 AND json_extract(CASE WHEN json_valid(e.payload_json) THEN e.payload_json ELSE '{}' END, '$.channel')='dashboard'
+            AND NOT EXISTS (SELECT 1 FROM outbox o JOIN turn_progress p
+                ON o.dedupe_key='turn:' || p.turn_id || ':progress:' || p.tool_call_id || ':' || p.part_index
+                WHERE o.target_channel='dashboard' AND o.state='sent' AND p.created_at >= e.occurred_at)
+            LIMIT 1""").fetchone() is not None
         return web.json_response({"messages": [dict(row) for row in reversed(rows)],
                                   "has_more": has_more, "runtime": status,
-                                  "typing": bool(getattr(channel, "typing", False) or active or pending) and status["runtime_active"]})
+                                  "typing": bool(getattr(channel, "typing", False) or pending) and status["runtime_active"]})
 
     async def send(request):
         try:

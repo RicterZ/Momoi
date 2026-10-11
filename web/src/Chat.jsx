@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import EmotionContent from "./EmotionContent.jsx";
 import "./chat.css";
 
@@ -62,19 +62,29 @@ export default function Chat({ token, request, refreshKey }) {
       } catch (error) {
         if (!controller.signal.aborted) setConnectionError(error.message);
       } finally {
-        if (!controller.signal.aborted) timer = setTimeout(poll, 1500);
+        if (!controller.signal.aborted) timer = setTimeout(poll, 500);
       }
     }
     poll();
     return () => { controller.abort(); clearTimeout(timer); };
   }, [token, request, refreshKey, reload]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!scroll.current) return;
     if (olderOffset.current !== null) {
       scroll.current.scrollTop += scroll.current.scrollHeight - olderOffset.current;
       olderOffset.current = null;
     } else if (stick.current) scroll.current.scrollTop = scroll.current.scrollHeight;
+  }, [messages, typing]);
+
+  useEffect(() => {
+    const box = scroll.current;
+    const observer = new ResizeObserver(() => {
+      if (stick.current) box.scrollTop = box.scrollHeight;
+    });
+    observer.observe(box);
+    for (const child of box.children) observer.observe(child);
+    return () => observer.disconnect();
   }, [messages, typing]);
 
   async function loadOlder() {

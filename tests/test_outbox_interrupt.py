@@ -14,6 +14,25 @@ from momoi.integrations.contracts.tts import AudioOutput
 
 
 class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
+    async def test_dashboard_bubbles_deliver_without_artificial_gap(self):
+        self.store.begin_turn('web-fast', 'owner', [])
+        self.store.queue_progress('web-fast', 'reply', ['第一条', '第二条', '第三条'], 'dashboard')
+        stop = asyncio.Event()
+        sent = []
+
+        async def send(payload):
+            sent.append(payload['segments'][0]['data']['text'])
+            if len(sent) == 3:
+                stop.set()
+            return 'dashboard:test'
+
+        self.daemon.channels['dashboard'].send_message = send
+        with patch.object(self.daemon, '_wait_outbox_gap', AsyncMock()) as gap:
+            await asyncio.wait_for(self.daemon._outbox_worker(stop), 1)
+            gap.assert_not_awaited()
+        self.assertEqual(sent, ['第一条', '第二条', '第三条'])
+        self.assertTrue(all(row[0] == 'sent' for row in self.store._db.execute('SELECT state FROM outbox')))
+
     async def test_call_interrupt_preserves_reason_in_owner_turn_and_log(self):
         from momoi.channel.napcat.voice_call.channel import QQCallChannel
         from types import SimpleNamespace

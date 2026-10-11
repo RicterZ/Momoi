@@ -102,12 +102,21 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
         first = await (await self.client.get('/api/chat/messages')).json()
         self.assertEqual(first['messages'][-1]['content'], '老师！')
         self.assertEqual(first['messages'][-1]['delivery_state'], 'queued')
+        self.assertTrue(first['typing'])
+        self.runtime.daemon._active_turn_channel = 'dashboard'
+        self.runtime.daemon._active_turn = object()
         row = self.store.due_outbox()[0]
         await self.runtime.daemon.channels['dashboard'].send_message(row.payload)
         self.store.mark_sent(row.id)
         second = await (await self.client.get('/api/chat/messages')).json()
         self.assertEqual(second['messages'][-1]['delivery_state'], 'delivered')
         self.assertEqual(second['messages'][-1]['id'], first['messages'][-1]['id'])
+        self.assertFalse(second['typing'], 'Planner cleanup must not appear as typing after delivery')
+        await self.runtime.daemon.channels['dashboard'].set_typing(True)
+        self.assertTrue((await (await self.client.get('/api/chat/messages')).json())['typing'])
+        await self.runtime.daemon.channels['dashboard'].set_typing(False)
+        self.store.add_event(IncomingMessage('dashboard:interjection', 'interjection', '还有一句', time.time(), time.time(), channel='dashboard'))
+        self.assertTrue((await (await self.client.get('/api/chat/messages')).json())['typing'])
         media = self.store._workspace / 'artifacts' / 'image.png'
         media.parent.mkdir(exist_ok=True)
         media.write_bytes(b'example-image')
