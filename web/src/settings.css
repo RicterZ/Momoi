@@ -584,7 +584,6 @@
 .prompt-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .settings-persona .prompt-list { display: block; }
 .prompt-list-heading strong { font-size: 13px; }
-.prompt-list .panel-label { font-size: 10px; text-transform: none; }
 .prompt-list .prompt-list-description { display: block; margin-top: 10px; font-size: 11px; line-height: 1.7; overflow: visible; }
 .prompt-unsaved { font-size: 10px; color: var(--pink); }
 .settings-persona .prompt-card {

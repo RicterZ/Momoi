@@ -2730,7 +2730,6 @@ function PromptSettings({ items, token, navigation }) {
               className={`record-item${selected?.id === item.id ? " active" : ""}`}
               aria-pressed={selected?.id === item.id} onClick={() => setSelectedId(item.id)}>
               <span className="prompt-list-heading"><strong>{promptDetails[item.id].title}</strong>{drafts[item.id] !== saved[item.id] && <span className="prompt-unsaved">未保存</span>}</span>
-              <span className="panel-label">{item.filename}</span>
               <p className="prompt-list-description">{promptDetails[item.id].description}</p>
             </button>)}
           </div>
