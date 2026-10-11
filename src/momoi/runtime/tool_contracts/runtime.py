@@ -70,7 +70,10 @@ WAIT_TOOL_SPEC = {
     "description": "用户话未说完时，等待指定秒数再继续当前 turn；期间新消息不打断等待，暂停后台 turn 调度。结束后统一接入当前渠道的文字、图片、表情和动作。不是定时提醒工具。",
     "input_schema": {
         "type": "object", "additionalProperties": False,
-        "properties": {"seconds": {"type": "integer", "minimum": 1, "maximum": 60}},
+        "properties": {"seconds": {
+            "type": "integer", "minimum": 1, "maximum": 60,
+            "description": "等待秒数：语音模式建议 5 秒，文字模式建议 10 秒；特殊情况不限定建议时长，根据上下文判断，单次最长 60 秒。",
+        }},
         "required": ["seconds"],
     },
 }
