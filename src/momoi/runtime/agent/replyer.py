@@ -7,7 +7,7 @@ from ...integrations.request_context import model_request
 from ...observability.context import log_context, new_trace_id, current_log_context
 from ...memory.text import estimate_tokens
 from ...storage.delivery.emotions import EMOTION_REACTION_POLICY
-from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_POLICY
+from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_DESCRIPTION, QQ_POKE_POLICY
 from ..transcript.replyer import visible_dialogue
 
 
@@ -87,6 +87,8 @@ class Replyer:
             raise ValueError("Replyer returned empty text")
         bubbles = [part.strip() for part in text.split("\n\n") if part.strip()]
         for bubble in bubbles:
+            if QQ_POKE_DESCRIPTION in bubble or "[戳一戳用户]" in bubble:
+                raise ValueError("戳一戳的历史动作说明不能作为文字发送，请用 qq://poke 单独作为一个气泡")
             if QQ_POKE_MARKER not in bubble:
                 continue
             if bubble != QQ_POKE_MARKER:

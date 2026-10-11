@@ -89,6 +89,13 @@ class DaemonTest(unittest.TestCase):
                 for block in daemon._system_with_tool_policies(daemon._system(), [])
             )
             self.assertIn("# 可用能力使用指引", rendered_system)
+            self.assertIn("自然语言正文是内部思考，用户看不到，也不会执行动作", rendered_system)
+            planner = root / "PLANNER.md"
+            planner.write_text("{{SOUL}}\n自定义运行指引")
+            custom_system = "\n".join(block["text"] for block in
+                                     daemon._system_with_tool_policies(daemon._system(planner=True), []))
+            self.assertIn("自定义运行指引", custom_system)
+            self.assertIn("自然语言正文是内部思考，用户看不到，也不会执行动作", custom_system)
             self.assertIn("### 外部 MCP 工具", rendered_system)
             self.assertNotIn("可以选用上方列出的 `emotion://` 表情", rendered_system)
             self.assertNotIn("# Available capability guidance", rendered_system)

@@ -105,7 +105,8 @@ def test_memory_evidence_reads_reply_result_not_intent():
 
 
 @pytest.mark.parametrize("delivery_context, expression", [({}, "实际回复"),
-    ({"channel_notice": "message_recall"}, "实际回复"), ({"channel_notice": "poke"}, "qq://poke")])
+    ({"channel_notice": "message_recall"}, "实际回复"), ({"channel_notice": "poke"}, "qq://poke"),
+    ({"channel_notice": "poke"}, "[QQ 动作：戳一戳用户]")])
 @pytest.mark.parametrize("quote", [False, True])
 def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_context, expression, quote):
     from momoi.config.models import AppConfig
@@ -136,7 +137,7 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_contex
             call = ToolCall('reply-one', 'reply', {'intent': '直接接住输入', 'reference': '',
                 **({'reply_to_message_id': 'event'} if quote and not delivery_context else {})})
         else:
-            assert expression in str(history)
+            assert ('请用 qq://poke' if expression == '[QQ 动作：戳一戳用户]' else expression) in str(history)
             call = ToolCall('done', 'end_turn', {'mood': {'decision': 'unchanged'}})
         return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
 
@@ -150,6 +151,11 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_contex
             [event], TurnDraft(), execution=TurnExecutionSpec('owner', permitted_tools=daemon.tool_surface.permitted_names('owner')),
             source_event_id='event', turn_id='owner-test', delivery_channel=daemon.channel))
         assert rounds == 2
+        if expression == '[QQ 动作：戳一戳用户]':
+            assert 'invalid_reply' in str(messages) and '请用 qq://poke' in str(messages)
+            assert not daemon.store.due_outbox()
+            assert daemon.store._db.execute("SELECT COUNT(*) FROM turn_progress WHERE turn_id='owner-test'").fetchone()[0] == 0
+            return
         assert expression in daemon.store._db.execute("SELECT text FROM turn_progress WHERE turn_id='owner-test'").fetchone()[0]
         if quote and not delivery_context:
             pending = daemon.store.due_outbox()[0]
@@ -321,6 +327,11 @@ def test_replyer_text_and_voice_have_identical_system_and_history():
 
 @pytest.mark.parametrize("channel_name, mode, output, accepted", [
     ("napcat", "text", "qq://poke", True),
+    ("napcat", "text", "[QQ 动作：戳一戳用户]", False),
+    ("napcat", "voice", "[QQ 动作：戳一戳用户]", False),
+    ("other", "text", "[QQ 动作：戳一戳用户]", False),
+    ("napcat", "text", "戳回来 [QQ 动作：戳一戳用户]", False),
+    ("napcat", "text", "[戳一戳用户]", False),
     ("napcat", "voice", "qq://poke", False),
     ("other", "text", "qq://poke", False),
     ("napcat", "text", "hello qq://poke", False),
@@ -342,7 +353,7 @@ def test_replyer_poke_is_an_action_not_spoken_or_literal_text(channel_name, mode
     if accepted:
         assert asyncio.run(replyer.generate(call, request)) == ['qq://poke']
     else:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match='请用 qq://poke' if '戳一戳用户]' in output else None):
             asyncio.run(replyer.generate(call, request))
 
 

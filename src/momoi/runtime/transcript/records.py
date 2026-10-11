@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from ...storage.core.timestamps import context_timestamp
 from .models import TranscriptGroup
-from ...storage.delivery.actions import QQ_POKE_MARKER
+from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_DESCRIPTION
 
 def render_bubble(
     text: str,
@@ -18,7 +18,7 @@ def render_bubble(
     sender: str = "",
 ) -> str:
     if text == QQ_POKE_MARKER:
-        text = "[QQ 动作：戳一戳用户]"
+        text = QQ_POKE_DESCRIPTION
     if sender == "user":
         prefix = "[message]" + (f"[{time}]" if time else "") + "[user]"
         if turn:

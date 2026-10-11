@@ -2,7 +2,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from xml.sax.saxutils import escape
-from ...storage.delivery.actions import QQ_POKE_MARKER
+from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_DESCRIPTION
 
 
 def visible_dialogue(rows, *, timezone="UTC"):
@@ -17,7 +17,7 @@ def visible_dialogue(rows, *, timezone="UTC"):
         if not text:
             continue
         if text == QQ_POKE_MARKER:
-            text = "[QQ 动作：戳一戳用户]"
+            text = QQ_POKE_DESCRIPTION
         if role == "user":
             timestamp = datetime.fromtimestamp(float(row["created_at"]), ZoneInfo(str(timezone))).isoformat()
             text = f'[message][{timestamp}][user] {escape(text)}'

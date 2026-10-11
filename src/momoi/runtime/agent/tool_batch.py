@@ -520,6 +520,8 @@ class ToolBatchExecutor:
                         if delivery.bubbles is not None:
                             last_sent_bubbles = copy.deepcopy(result["bubbles"])
                             last_sent_channel = delivery.channel
+                    except ValueError as error:
+                        result = {"ok": False, "error": "invalid_reply", "message": str(error)}
                     except Exception as error:
                         logger.exception("reply_generation_failed")
                         result = {"ok": False, "error": "reply_generation_failed", "message": type(error).__name__}
