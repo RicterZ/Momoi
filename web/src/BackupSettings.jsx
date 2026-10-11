@@ -28,7 +28,8 @@ export default function BackupSettings({ token, header, Dialog }) {
     finally { setBusy(""); }
   }
   return <section className="backup-settings">
-    {exported && <Dialog title="备份已导出" onClose={() => setExported(false)} returnFocusRef={exportButton}>
+    {exported && <Dialog title="备份" onClose={() => setExported(false)} returnFocusRef={exportButton}>
+      <p className="confirm-copy">备份已成功导出。</p>
       <div className="confirm-actions"><button className="quiet-button" onClick={() => setExported(false)}>确定</button></div>
     </Dialog>}
     {pendingFile && <Dialog title="确认备份" onClose={() => { setPendingFile(null); input.current.value = ""; }} returnFocusRef={input}>
