@@ -332,12 +332,6 @@
   "budget": {
     "label": "费用预算",
     "fields": {
-      "enabled": {
-        "type": "boolean",
-        "label": "启用费用预算",
-        "default": false,
-        "advanced": false
-      },
       "daily_amount": {
         "type": "number",
         "label": "日预算（元）",

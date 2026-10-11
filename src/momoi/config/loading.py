@@ -159,8 +159,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
     from ..integrations.fields import normalize_fields
 
     budget = normalize_fields(runtime_fields()["budget"]["fields"], migrate_budget(raw.get("budget", {})), path="budget")
-    if budget["enabled"] and not (budget["daily_amount"] > 0 or budget["monthly_amount"] > 0):
-        raise ConfigError("启用费用预算时，请填写日预算或月预算")
+    budget["enabled"] = budget["daily_amount"] > 0 or budget["monthly_amount"] > 0
     thinking = normalize_fields(
         runtime_fields()["thinking"]["fields"],
         raw.get("thinking", {}),

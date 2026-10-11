@@ -1374,9 +1374,10 @@
 .backup-file-name { max-width:100%; overflow-wrap:anywhere; font-size:12px; color:var(--muted); }
 
 .settings-budget-fields > .settings-field > .settings-label { position:static; width:auto; height:auto; overflow:visible; clip-path:none; white-space:normal; }
-.settings-budget-fields { max-width:100%; }
+.settings-budget-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:428px; max-width:100%; gap:14px 28px; }
+.settings-budget-fields > .settings-field { width:auto; }
+.settings-budget-note { grid-column:1 / -1; flex-basis:100%; margin:0; }
 @media (max-width:650px) {
-  .settings-budget-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; }
+  .settings-budget-fields { width:100%; gap:14px 20px; }
   .settings-budget-fields > .settings-field { width:auto; }
-  .settings-budget-fields > .settings-toggle { grid-column:1 / -1; justify-self:end; }
 }

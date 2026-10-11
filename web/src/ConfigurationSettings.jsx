@@ -1182,8 +1182,9 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
                 );
                 return spec.format === "time"
                   ? <TimeField key={key} label={spec.label} value={draft[configName][key]} onChange={onChange} />
-                  : <OptionField key={key} name={key} spec={name === "turn" ? { ...spec, description: undefined } : spec} value={draft[configName][key]} onChange={onChange} />;
+                  : <OptionField key={key} name={key} spec={["turn", "budget"].includes(name) ? { ...spec, description: undefined } : spec} value={draft[configName][key]} onChange={onChange} />;
               })}
+              {name === "budget" && <p className="settings-channel-note settings-budget-note">金额设为 0 或留空，则不限制预算。</p>}
             </fieldset>
           </section>
         ))}

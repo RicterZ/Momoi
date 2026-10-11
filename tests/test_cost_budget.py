@@ -42,7 +42,11 @@ def test_budget_configuration_validation(tmp_path):
     manager = ConfigurationManager(path)
     manager.save_runtime({'budget': {'enabled': True, 'monthly_amount': 12}}, manager.revision())
     assert manager.validate().budget == BudgetConfig(True, monthly_amount=12)
-    for value in (0, -1, float('nan'), float('inf')):
+    manager.save_runtime({'budget': {'monthly_amount': 0}}, manager.revision())
+    assert not manager.validate().budget.enabled
+    manager.save_runtime({'budget': {'enabled': False, 'daily_amount': 2}}, manager.revision())
+    assert manager.validate().budget.enabled
+    for value in (-1, float('nan'), float('inf')):
         with pytest.raises(ConfigError):
             manager.save_runtime({'budget': {'monthly_amount': value}}, manager.revision())
 
@@ -79,7 +83,7 @@ def test_existing_single_period_budget_is_preserved_and_editable(tmp_path):
     path.write_text(json.dumps(raw))
     manager = ConfigurationManager(path)
     assert manager.validate().budget == BudgetConfig(True, monthly_amount=60)
-    assert manager.snapshot()['app']['budget'] == {'enabled': True, 'daily_amount': 0, 'monthly_amount': 60}
+    assert manager.snapshot()['app']['budget'] == {'daily_amount': 0, 'monthly_amount': 60}
     manager.save_runtime({'budget': {'daily_amount': 2}}, manager.revision())
     assert manager.validate().budget == BudgetConfig(True, daily_amount=2, monthly_amount=60)
     assert 'period' not in manager.read_app()['budget']

@@ -23,7 +23,6 @@ THINKING_STAGES = {
 
 _FIELDS = {
     "budget": {"label": "费用预算", "fields": {
-        "enabled": {"type": "boolean", "label": "启用费用预算", "default": False},
         "daily_amount": {"type": "number", "label": "日预算（元）", "minimum": 0, "default": 0, "description": "金额设为 0 或留空，则不限制预算。"},
         "monthly_amount": {"type": "number", "label": "月预算（元）", "minimum": 0, "default": 0},
     }},
@@ -116,7 +115,10 @@ def runtime_fields() -> dict:
 
 def migrate_budget(value):
     """Keep previously saved single-period limits when exposing both controls."""
-    if not isinstance(value, dict) or not {"period", "amount"}.intersection(value):
+    if not isinstance(value, dict):
+        return value
+    value = {key: item for key, item in value.items() if key != "enabled"}
+    if not {"period", "amount"}.intersection(value):
         return value
     period = value.get("period", "daily")
     if period not in {"daily", "monthly"}:
