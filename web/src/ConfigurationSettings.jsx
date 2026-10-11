@@ -1708,7 +1708,7 @@ export default function ConfigurationSettings({
                   key={module.id}
                   hidden={activeSection !== module.id}
                 >
-                  {module.id === "backup" ? (<BackupSettings token={token} header={<SectionHeader module={module} />} />) : module.id === "prompts" ? (
+                  {module.id === "backup" ? (<BackupSettings token={token} Dialog={SettingsDialog} header={<SectionHeader module={module} />} />) : module.id === "prompts" ? (
                     <>
                       <SectionHeader module={module} />
                       {promptContent({ next, previous, busy: saving || actionBusy })}
