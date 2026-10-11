@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import NotRequired, TypedDict
 import unicodedata
+import re
 
 
 # Model-authored triggers share one contract; storage still accepts legacy lists.
@@ -43,6 +44,19 @@ def normalize_trigger(text: str) -> str:
     return unicodedata.normalize("NFKC", text).casefold()
 
 
+def validate_trigger_pattern(word):
+    try:
+        pattern = re.compile(word, re.IGNORECASE)
+    except re.error:
+        # Preserve existing literal phrases with unescaped punctuation.
+        return
+    if pattern.search("") is not None:
+        raise ValueError("触发正则过于宽泛：不能匹配空文本，请加入具体词语或字符")
+    probes = ("你好", "今天下雨", "hello", "12345", "abc中文", "🌸🐈", "。！？", " \n")
+    if sum(pattern.search(text) is not None for text in probes) >= 5:
+        raise ValueError("触发正则过于宽泛：请限定具体词语、字符或句式")
+
+
 def validate_triggers(value):
     if (not isinstance(value, list) or len(value) > 8
             or any(not isinstance(word, str) or not word.strip() or word != word.strip()
@@ -50,6 +64,8 @@ def validate_triggers(value):
         raise ValueError("triggers must be at most eight nonempty phrases of at most 40 characters")
     if len({normalize_trigger(word) for word in value}) != len(value):
         raise ValueError("memory triggers must be distinct")
+    for word in value:
+        validate_trigger_pattern(word)
     return list(value)
 
 

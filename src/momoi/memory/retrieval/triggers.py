@@ -1,5 +1,5 @@
 """Deterministic phrase recall, independent of embeddings and LLM selection."""
-from ..metadata import normalize_trigger
+from ..metadata import normalize_trigger, validate_trigger_pattern
 import re
 from ..text import estimate_tokens
 
@@ -36,6 +36,10 @@ def triggered_memories(repository, text, *, limit, token_budget):
 
 
 def matches_trigger(pattern, text):
+    try:
+        validate_trigger_pattern(pattern)
+    except ValueError:
+        return False
     try:
         if re.search(pattern, text, re.IGNORECASE):
             return True

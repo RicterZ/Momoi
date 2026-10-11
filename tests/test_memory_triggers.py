@@ -34,6 +34,26 @@ def test_unicode_regex_triggers(database, pattern, text, matched):
     assert bool(memory.triggered(text)) == matched
 
 
+@pytest.mark.parametrize('pattern', ['.*', '^.*$', '.+', r'[\s\S]+', '你好|.*', r'\w*', '^', '$', '你好|'])
+def test_overbroad_regex_is_rejected(database, pattern):
+    with pytest.raises(ValueError, match='过于宽泛'):
+        seed(Memory(database), triggers=[pattern])
+
+
+def test_repeated_matches_in_one_or_multiple_messages_inject_memory_once(database):
+    memory = Memory(database)
+    identifier = seed(memory, triggers=['你好', '你好+$'])
+    for text in ('你好你好', ['你好', '你好']):
+        rows = memory.triggered(text)
+        assert [row['id'] for row in rows] == [identifier]
+        snapshots = {}
+        events = [IncomingMessage(str(i), str(i), value, 1, 1) for i, value in enumerate([text] if isinstance(text, str) else text)]
+        from momoi.runtime.context.triggers import triggered_memory_context
+        context = triggered_memory_context(memory, events, snapshots)
+        assert context.count('<memory ') == 1
+        assert triggered_memory_context(memory, events, snapshots, only_new=True) == ''
+
+
 def test_literal_recall_without_llm_or_vectors_and_visibility(database):
     m = Memory(database, dense_recall=AsyncMock(side_effect=AssertionError('no embedding')))
     call = seed(m)
