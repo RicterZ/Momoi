@@ -1091,6 +1091,7 @@ const runtimeOrder = { turn: -1, heartbeat: 0, reflection: 1, episode_annealing:
 const runtimeDescriptions = {
   turn: "自然结束后等待快速补充；其他任务需要运行时立即让出。0 表示关闭。",
   logging: "控制运行日志的详细程度，用于查看服务状态与排查问题。",
+  budget: "任一预算到限暂停，新周期恢复。",
   thinking: "为不同运行阶段设置思考强度；默认跟随模型，单独设置后不随模型切换而改变。",
 };
 
@@ -1119,7 +1120,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
       for (const [name, schema] of Object.entries(schemas)) {
         const changes = {};
         for (const [key, spec] of Object.entries(schema.fields)) {
-          const value = draft[name][key];
+          const value = name === "budget" && spec.type === "number" && !String(draft[name][key]).trim() ? 0 : draft[name][key];
           const change = runtimeFieldChanges(spec, value, saved[name][key]);
           if (change === undefined) continue;
           if (spec.pattern && !new RegExp(spec.pattern).test(String(value))) {
@@ -1152,7 +1153,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
               {runtimeDescriptions[name] && <p className="settings-runtime-description" id={`runtime-${name}-description`}>{runtimeDescriptions[name]}</p>}
             </div>
             {name === "thinking" && <button type="button" className="settings-disabled-toggle settings-thinking-toggle" aria-label={thinkingExpanded ? "收起阶段设置" : "展开阶段设置"} aria-expanded={thinkingExpanded} aria-controls="thinking-stage-fields" onClick={() => setThinkingExpanded(value => !value)}><span className="recall-panel-toggle" aria-hidden="true" /></button>}
-            <fieldset id={name === "thinking" ? "thinking-stage-fields" : undefined} hidden={name === "thinking" && !thinkingExpanded} className="settings-runtime-fields" disabled={saving} aria-describedby={runtimeDescriptions[name] ? `runtime-${name}-description` : undefined}>
+            <fieldset id={name === "thinking" ? "thinking-stage-fields" : undefined} hidden={name === "thinking" && !thinkingExpanded} className={`settings-runtime-fields${name === "budget" ? " settings-budget-fields" : ""}`} disabled={saving} aria-describedby={runtimeDescriptions[name] ? `runtime-${name}-description` : undefined}>
               {Object.entries(schema.fields).sort(([, a], [, b]) => Number(a.type === "boolean") - Number(b.type === "boolean")).map(([key, spec]) => {
                 if (name === "reflection" && key === "enabled") return null;
                 if (name === "reflection" && key === "at") return (

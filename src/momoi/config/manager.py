@@ -13,7 +13,7 @@ from .loading import parse_config, remove_retired_thinking_stages
 from ..integrations.configuration import managed_catalog
 from .models import ConfigError
 from .workspace import atomic_write, default_config, empty_providers
-from .runtime_fields import runtime_fields
+from .runtime_fields import runtime_fields, migrate_budget
 from ..integrations.configuration import CatalogLoader, parse_provider_catalog
 from ..integrations.registry import adapter_schemas, adapter_definition
 from ..integrations.configuration import CAPABILITIES
@@ -238,6 +238,8 @@ class ConfigurationManager:
         app, providers = self.read_app(), self.read_providers()
         app_fields = runtime_fields()
         app_values = {key: value for key, value in app.items() if key in EDITABLE}
+        if "budget" in app_values:
+            app_values["budget"] = migrate_budget(app_values["budget"])
         for section, schema in app_fields.items():
             current = app_values.get(section, {})
             if isinstance(current, dict):
@@ -308,6 +310,8 @@ class ConfigurationManager:
         for section, value in document.items():
             if section in controls and isinstance(value, dict):
                 previous = current.get(section, {})
+                if section == "budget":
+                    previous = migrate_budget(previous)
                 if section == "thinking" and isinstance(value.get("stages"), dict):
                     value = {
                         **value,

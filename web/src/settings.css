@@ -1362,3 +1362,11 @@
 .backup-controls { display:grid; gap:16px; width:100%; }
 .backup-confirm { display:flex; gap:10px; align-items:flex-start; font-size:13px; line-height:1.6; }
 .backup-settings .settings-section-header { padding:24px; }
+
+.settings-budget-fields > .settings-field > .settings-label { position:static; width:auto; height:auto; overflow:visible; clip-path:none; white-space:normal; }
+.settings-budget-fields { max-width:100%; }
+@media (max-width:650px) {
+  .settings-budget-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; }
+  .settings-budget-fields > .settings-field { width:auto; }
+  .settings-budget-fields > .settings-toggle { grid-column:1 / -1; justify-self:end; }
+}

@@ -364,7 +364,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_budget_blocks_startup_and_resumes_next_period(self):
         self.enable()
-        self.manager.save_runtime({"budget": {"enabled": True, "period": "daily", "amount": 1}}, self.manager.revision())
+        self.manager.save_runtime({"budget": {"enabled": True, "daily_amount": 1}}, self.manager.revision())
         blocked = [True]
         class BudgetDaemon(FakeDaemon):
             def __init__(self, config):

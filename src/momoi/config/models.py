@@ -63,8 +63,8 @@ class CurrentStateConfig:
 @dataclass(frozen=True)
 class BudgetConfig:
     enabled: bool = False
-    period: str = "daily"
-    amount: float = 0
+    daily_amount: float = 0
+    monthly_amount: float = 0
 
 
 @dataclass(frozen=True)

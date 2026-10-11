@@ -24,8 +24,8 @@ THINKING_STAGES = {
 _FIELDS = {
     "budget": {"label": "费用预算", "fields": {
         "enabled": {"type": "boolean", "label": "启用费用预算", "default": False},
-        "period": {"type": "string", "label": "预算周期", "enum": ["daily", "monthly"], "default": "daily"},
-        "amount": {"type": "number", "label": "预算上限（元）", "minimum": 0, "default": 0, "description": "按本地模型费用估算；达到上限暂停运行，新周期自动恢复。需启用账户余额中的费用估算。"},
+        "daily_amount": {"type": "number", "label": "日预算（元）", "minimum": 0, "default": 0, "description": "留空或 0：不设限。"},
+        "monthly_amount": {"type": "number", "label": "月预算（元）", "minimum": 0, "default": 0, "description": "留空或 0：不设限。"},
     }},
     "turn": {
         "label": "聊天续接",
@@ -111,4 +111,16 @@ def runtime_fields() -> dict:
     for section in result.values():
         for spec in section["fields"].values():
             spec["advanced"] = False
+    return result
+
+
+def migrate_budget(value):
+    """Keep previously saved single-period limits when exposing both controls."""
+    if not isinstance(value, dict) or not {"period", "amount"}.intersection(value):
+        return value
+    period = value.get("period", "daily")
+    if period not in {"daily", "monthly"}:
+        return value
+    result = {key: item for key, item in value.items() if key not in {"period", "amount"}}
+    result.setdefault(f"{period}_amount", value.get("amount", 0))
     return result

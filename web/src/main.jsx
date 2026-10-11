@@ -495,16 +495,14 @@ function Overview({ refreshKey, token, routeParam }) {
 }
 
 function BudgetMeter({ budget }) {
-  if (!budget?.enabled) return null;
   const ratio = budget.available && budget.amount > 0 ? budget.spent / budget.amount : 0;
-  return <article className={`panel budget-panel${budget.blocked ? " is-paused" : ""}`}>
-    <div className="budget-heading"><span className="panel-label">BUDGET // {budget.period === "monthly" ? "MONTH" : "DAY"}</span><a href="#settings/budget">费用预算 ↗</a></div>
-    <div className="budget-amount"><strong>{budget.available ? formatYuan(budget.spent) : "—"}</strong><span> / {formatYuan(budget.amount)} · {budget.period === "monthly" ? "本月" : "今日"}</span></div>
-    <div className="budget-meter" role="progressbar" aria-label="费用预算已用" aria-valuemin={0} aria-valuemax={budget.amount} aria-valuenow={Math.min(budget.spent, budget.amount)}>
-      {Array.from({ length: 32 }, (_, i) => <span key={i} className={i / 32 < ratio ? "filled" : ""} />)}
-    </div>
-    <p className="secondary">{budget.blocked ? budget.reason : "本地模型费用估算 · 达到上限暂停所有调度，新周期自动恢复"}</p>
-  </article>;
+  const period = budget.period === "daily" ? "日" : "月";
+  return <>
+    <strong>{budget.available ? formatYuan(budget.spent) : "—"}<small> / {formatYuan(budget.amount)}</small></strong>
+    <a className={`usage-budget-meter${budget.blocked ? " is-paused" : ""}`} href="#settings/budget" title={budget.reason || `${period}预算 · 点击调整`}>
+      <span className="usage-budget-track" role="progressbar" aria-label={`${period}预算已用`} aria-valuemin={0} aria-valuemax={budget.amount} aria-valuenow={Math.min(budget.spent, budget.amount)} aria-valuetext={budget.available ? `${formatYuan(budget.spent)} / ${formatYuan(budget.amount)}` : "费用估算不可用"}><span className="usage-budget-fill" style={{ width: `${Math.min(100, Math.max(0, ratio * 100))}%` }} aria-hidden="true" /></span>
+    </a>
+  </>;
 }
 
 function OverviewBody({ data, token, routeParam }) {
@@ -540,7 +538,6 @@ function OverviewBody({ data, token, routeParam }) {
   ];
   return (
     <>
-      <BudgetMeter budget={data.budget} />
       <OverviewSection
         label="Usage"
         note="账户余额与调用统计"
@@ -552,6 +549,7 @@ function OverviewBody({ data, token, routeParam }) {
           rows={usage.daily}
           today={usage.today}
           balance={data.balance}
+          budget={data.budget}
           costAvailable={usage.cost_available === true}
           days={narrow ? 7 : 30}
         />
@@ -682,7 +680,7 @@ function linePath(points) {
     .join(" ");
 }
 
-function UsageChart({ rows, today, balance, costAvailable, days = 30, token, selectedDate, timezone }) {
+function UsageChart({ rows, today, balance, budget, costAvailable, days = 30, token, selectedDate, timezone }) {
   const [hover, setHover] = useState(null);
   const [detail, setDetail] = useState({});
   const [retry, setRetry] = useState(0);
@@ -811,8 +809,8 @@ function UsageChart({ rows, today, balance, costAvailable, days = 30, token, sel
           <PixelMeter value={(Number(todayStats.cache_hit_rate) || 0) / 100} />
         </div>
         <div>
-          <span>{hourly ? "当日估算金额" : "今日估算金额"}</span>
-          <strong>{hasStats && showCost ? formatYuan(todayStats.estimated_cost) : "-"}</strong>
+          <span>{budget?.enabled ? (budget.period === "monthly" ? "当月估算金额" : "今日估算金额") : hourly ? "当日估算金额" : "今日估算金额"}</span>
+          {budget?.enabled ? <BudgetMeter budget={budget} /> : <strong>{hasStats && showCost ? formatYuan(todayStats.estimated_cost) : "-"}</strong>}
         </div>
       </div>
       <div className="usage-chart-status" aria-live="polite">

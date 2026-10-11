@@ -900,7 +900,7 @@ function previewUsageApi() {
               reply_check_at: null,
             },
             usage,
-            budget: { enabled: true, period: "monthly", amount: 60, spent: 18.72, available: true, blocked: false },
+            budget: settingsPreview.budgetStatus(),
             balance: {
               source: "forge",
               currency: "CNY",

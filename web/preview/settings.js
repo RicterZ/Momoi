@@ -25,6 +25,7 @@ export function createSettingsPreview(json) {
     app: {
       channels: { primary: "weixin", enabled: { weixin: {} } },
       ...Object.fromEntries(Object.entries(appFields).map(([name, schema]) => [name, Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, spec.default]))])),
+      budget: { enabled: true, daily_amount: 0.2, monthly_amount: 60 },
     },
     app_fields: appFields,
     adapters,
@@ -84,7 +85,7 @@ export function createSettingsPreview(json) {
     }
     return { ...value, options };
   };
-  return (req, res, path) => {
+  const handle = (req, res, path) => {
     if (path === "/api/tools/mcp" || path === "/api/tools/mcp/reload") { json(res, { ok: true, servers: mcpStatus() }); return true; }
     if (path.startsWith("/api/tools/skills")) {
       const name = decodeURIComponent(path.split("/")[4] || "");
@@ -249,4 +250,11 @@ export function createSettingsPreview(json) {
     });
     return true;
   };
+  handle.budgetStatus = () => {
+    const budget = configuration.app.budget;
+    const daily = budget.daily_amount > 0;
+    const blocked = budget.enabled && ((daily && 0.07 >= budget.daily_amount) || (budget.monthly_amount > 0 && 18.72 >= budget.monthly_amount));
+    return { enabled: budget.enabled, period: daily ? "daily" : "monthly", amount: daily ? Number(budget.daily_amount) : Number(budget.monthly_amount), spent: daily ? 0.07 : 18.72, available: true, blocked, reason: blocked ? "达到费用预算，调度已暂停。" : "" };
+  };
+  return handle;
 }

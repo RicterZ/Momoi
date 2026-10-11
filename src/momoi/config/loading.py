@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..channel import load_channel_config
 from .environment import apply_env_overrides
-from .runtime_fields import LOG_LEVELS, runtime_fields
+from .runtime_fields import LOG_LEVELS, runtime_fields, migrate_budget
 from .models import (
     AppConfig,
     BudgetConfig,
@@ -158,9 +158,9 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
     current_state_raw = mapping(raw.get("current_state", {}), "current_state")
     from ..integrations.fields import normalize_fields
 
-    budget = normalize_fields(runtime_fields()["budget"]["fields"], raw.get("budget", {}), path="budget")
-    if budget["enabled"] and budget["amount"] <= 0:
-        raise ConfigError("budget.amount must be positive when enabled")
+    budget = normalize_fields(runtime_fields()["budget"]["fields"], migrate_budget(raw.get("budget", {})), path="budget")
+    if budget["enabled"] and not (budget["daily_amount"] > 0 or budget["monthly_amount"] > 0):
+        raise ConfigError("启用费用预算时，请填写日预算或月预算")
     thinking = normalize_fields(
         runtime_fields()["thinking"]["fields"],
         raw.get("thinking", {}),
