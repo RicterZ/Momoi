@@ -11,14 +11,14 @@
 .chat-line { display:flex; flex-direction:column; align-items:flex-start; margin-bottom:14px; }
 .chat-line.owner { align-items:flex-end; }
 .chat-message { max-width:78%; padding:12px 16px; border:1px solid var(--line); border-radius:4px 14px 14px 14px; background:var(--surface); }
-.chat-line.owner .chat-message { background:var(--blue-soft); border-color:#cbe9fa; border-radius:14px 4px 14px 14px; }
+.chat-line.owner .chat-message { background:var(--surface); border-color:#cbe9fa; border-radius:14px 4px 14px 14px; }
 .chat-message p, .chat-text { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; line-height:1.8; }
 .chat-time { margin-top:6px; padding:0 3px; color:var(--soft); font-size:10px; }
 .chat-composer { display:flex; align-items:center; gap:16px; margin:0 24px 20px; padding:14px 16px 12px; border:2px solid var(--ink); border-radius:12px; background:var(--surface); box-shadow:3px 3px 0 var(--pink-soft); }
 .chat-composer:focus-within { box-shadow:3px 3px 0 var(--pink); }
 .chat-composer textarea { flex:1; min-width:0; width:100%; min-height:48px; max-height:160px; resize:none; border:0; outline:none; background:transparent; color:var(--ink); font:inherit; font-size:14px; line-height:1.7; }
 .chat-composer textarea::placeholder { color:var(--soft); }
-.chat-send { flex:0 0 auto; height:40px; display:flex; align-items:center; justify-content:center; gap:8px; background:var(--surface); border-color:var(--blue); padding:8px 14px; font-size:13px; font-weight:700; line-height:20px; border-radius:8px; }
+.chat-send { flex:0 0 auto; height:40px; display:flex; align-items:center; justify-content:center; gap:8px; background:var(--surface); padding:8px 14px; font-size:13px; font-weight:700; line-height:20px; border-radius:8px; }
 .chat-send-icon { display:block; flex:none; width:14px; height:14px; }
 .chat-send:disabled { opacity:.45; cursor:default; }
 .chat-budget-note { margin:0 24px 14px; padding:12px; display:flex; gap:12px; justify-content:space-between; background:var(--pink-soft); border-radius:8px; font-size:12px; }
