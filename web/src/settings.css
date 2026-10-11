@@ -579,7 +579,8 @@
 .settings-persona .prompt-workspace {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
-  min-height: 460px;
+  height: clamp(420px, calc(100dvh - 420px), 800px);
+  min-height: 0;
 }
 .prompt-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .settings-persona .prompt-list { display: block; }
@@ -587,6 +588,7 @@
 .prompt-list .prompt-list-description { display: block; margin-top: 10px; font-size: 11px; line-height: 1.7; overflow: visible; }
 .prompt-unsaved { font-size: 10px; color: var(--pink); }
 .settings-persona .prompt-card {
+  min-height: 0;
   --control-accent: var(--blue);
   --control-focus: var(--pink);
   padding: 18px;
@@ -607,6 +609,8 @@
   font-size: 11px;
 }
 .settings-persona .prompt-field {
+  flex: 1;
+  min-height: 0;
   grid-template-rows: minmax(0, 1fr);
 }
 .settings-persona .prompt-card-head {
@@ -620,7 +624,7 @@
   text-transform: none;
 }
 .settings-persona .prompt-field textarea {
-  height: 360px;
+  height: 100%;
   min-height: 0;
   resize: none;
   overflow-y: auto;
@@ -873,7 +877,8 @@
     --control-accent: var(--pink);
     --control-focus: var(--blue);
   }
-  .settings-persona .prompt-workspace { grid-template-columns: minmax(0, 1fr); }
+  .settings-persona .prompt-workspace { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .settings-persona .prompt-card { height: 520px; }
   .settings-persona .prompt-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-right: 0; border-bottom: 2px solid var(--ink); }
   .prompt-list .record-item { padding: 14px; border-bottom: 0; }
 
