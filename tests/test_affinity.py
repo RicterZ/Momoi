@@ -97,7 +97,7 @@ def test_affinity_tools_follow_switch():
 
 
 @pytest.mark.parametrize('decision, expected', [
-    ('{"allowed":true,"reason":"兑现了重要承诺"}', 22),
+    ('{"allowed":true,"reason":"兑现了重要承诺"}', 21),
     ('{"allowed":false,"reason":"只有普通问候"}', 20),
     ('{"allowed":"true","reason":"错误类型"}', 20),
     ('not JSON', 20),
@@ -122,14 +122,20 @@ def test_affinity_review_only_writes_on_valid_approval(tmp_path, monkeypatch, de
         return SimpleNamespace(content=[{'type': 'text', 'text': decision}], usage={}, tool_calls=[])
     provider = SimpleNamespace(complete=complete)
     request = SimpleNamespace(turn_id='review', delivery_channel=SimpleNamespace(name='dashboard'))
-    call = SimpleNamespace(name='affinity_increase', arguments={'amount': 2, 'reason': '承诺兑现', 'evidence': '实际消息0'})
+    call = SimpleNamespace(name='affinity_increase', arguments={'reason': '承诺兑现', 'evidence': '实际消息0'})
     try:
         result = asyncio.run(review_affinity(config, store, provider, call, request))
         assert store.self_state()['affinity'] == expected
         assert len(captured[0]['dialogue']) == 10
         assert {item['role'] for item in captured[0]['dialogue']} == {'user', 'assistant'}
         assert captured[0]['evidence'] == '实际消息0'
-        assert result['allowed'] is (expected == 22)
+        assert captured[0]['amount'] == 1
+        assert result['allowed'] is (expected == 21)
+        captured.clear()
+        invalid_call = SimpleNamespace(name=call.name, arguments={**call.arguments, 'amount': 2})
+        assert not asyncio.run(review_affinity(config, store, provider, invalid_call, request))['allowed']
+        assert not captured
+        assert store.self_state()['affinity'] == expected
         rows.pop()
         captured.clear()
         assert not asyncio.run(review_affinity(config, store, provider, call, request))['allowed']
@@ -158,10 +164,10 @@ def test_affinity_decrease_and_review_conflict(tmp_path, monkeypatch):
                 store._db.execute('UPDATE self_state SET affinity=30')
         return SimpleNamespace(content=[{'type': 'text', 'text': '{"allowed":true,"reason":"持续侵犯边界"}'}], usage={}, tool_calls=[])
     request = SimpleNamespace(turn_id='review', delivery_channel=SimpleNamespace(name='dashboard'))
-    call = SimpleNamespace(name='affinity_decrease', arguments={'amount': 2, 'reason': '边界被侵犯', 'evidence': '实际消息'})
+    call = SimpleNamespace(name='affinity_decrease', arguments={'reason': '边界被侵犯', 'evidence': '实际消息'})
     try:
         result = asyncio.run(review_affinity(config, store, SimpleNamespace(complete=complete), call, request))
-        assert result['value'] == 18
+        assert result['value'] == 19
         assert store.affinity_reviews()[0]['planner_reason'] == '边界被侵犯'
         assert store.affinity_reviews()[0]['reason'] == '持续侵犯边界'
         conflict = True

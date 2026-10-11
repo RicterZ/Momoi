@@ -17,11 +17,12 @@ async def review_affinity(config, store, provider, call, request):
     spec = next(spec for spec in AFFINITY_TOOLS if spec["name"] == call.name)
     args, error = validate_tool_arguments(call.name, call.arguments, spec["input_schema"])
     if error:
-        return {**error, "allowed": False, "reason": "需要正整数点数、非空理由和证据。"}
+        return {**error, "allowed": False, "reason": "只接受非空理由和证据，每次固定调整 1 点。"}
     if not args["reason"].strip() or not args["evidence"].strip():
         return {"ok": False, "allowed": False, "reason": "理由和证据不能留空。"}
+    args = {**args, "amount": 1}
     current = store.self_state()["affinity"]
-    delta = args["amount"] * (1 if call.name == "affinity_increase" else -1)
+    delta = 1 if call.name == "affinity_increase" else -1
     if not 0 <= current + delta <= 100:
         return {"ok": False, "allowed": False, "reason": "调整后好感度必须在 0–100 之间。", "value": current}
     rows = store.replyer_dialogue_rows(request.delivery_channel.name, limit=40)
