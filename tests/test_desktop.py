@@ -122,7 +122,6 @@ def test_desktop_prompt_defaults_match_examples(tmp_path):
     for name in ("SOUL", "PLANNER", "REPLYER"):
         expected = (examples / f"{name}.md").read_text(encoding="utf-8")
         assert expected.strip()
-        assert files("momoi_desktop").joinpath(f"default_prompts/{name}.md").read_text(encoding="utf-8") == expected
         assert (tmp_path / f"prompts/{name}.md").read_text(encoding="utf-8") == expected
 
 

@@ -98,6 +98,9 @@ def test_code_zip_ships_windows_bridge_and_portable_media_worker(tmp_path, monke
         'desktop/python/momoi_desktop/backend.py': '# Desktop backend',
         'desktop/python/momoi_desktop/default_emotions/happy.png': 'resource',
         'packaging/windows/components.json': '{}',
+        'config.example/prompts/SOUL.md': '小桃人格',
+        'config.example/prompts/PLANNER.md': '默认规划',
+        'config.example/prompts/REPLYER.md': '小桃表达',
     }
     for name, content in paths.items():
         path = tmp_path / name
@@ -113,6 +116,9 @@ def test_code_zip_ships_windows_bridge_and_portable_media_worker(tmp_path, monke
         assert 'app/qq_call_bridge/windows/start-av-host.ps1' in bundle.namelist()
         assert 'app/momoi/channel/napcat/voice_call/audio.py' in bundle.namelist()
         assert 'app/momoi/channel/napcat/voice_call/broker.py' in bundle.namelist()
+        for name in ('SOUL', 'PLANNER', 'REPLYER'):
+            assert bundle.read(f'app/momoi_desktop/default_prompts/{name}.md') == (
+                tmp_path / f'config.example/prompts/{name}.md').read_bytes()
         assert bundle.read('app/momoi_desktop/backend.py') == b'# Desktop backend'
         assert bundle.read('app/momoi_desktop/default_emotions/happy.png') == b'resource'
         assert set(manifest['files']) == set(bundle.namelist()) - {'release.json'}

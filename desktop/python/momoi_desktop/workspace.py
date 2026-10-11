@@ -23,6 +23,9 @@ def prepare_workspace(workspace: Path) -> None:
         if not path.exists() or (name != "AFFINITY" and not path.read_text(encoding="utf-8-sig").strip()):
             resource = (files("momoi").joinpath("prompts/affinity.md") if name == "AFFINITY"
                         else files("momoi_desktop").joinpath(f"default_prompts/{name}.md"))
+            if name != "AFFINITY" and not resource.is_file():
+                # Source checkouts use the same examples copied into release packages.
+                resource = Path(__file__).resolve().parents[3] / f"config.example/prompts/{name}.md"
             content = resource.read_text(encoding="utf-8")
             atomic_write(path, content)
     bootstrap(config_path)

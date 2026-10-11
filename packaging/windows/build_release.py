@@ -44,6 +44,9 @@ def build_release(output: Path, version: str):
         for path in sorted((parent / package).rglob("*")):
             if path.is_file() and "__pycache__" not in path.parts and path.suffix not in (".pyc", ".pyo"):
                 payload["app/" + path.relative_to(parent).as_posix()] = path.read_bytes()
+    for name in ("SOUL", "PLANNER", "REPLYER"):
+        payload[f"app/momoi_desktop/default_prompts/{name}.md"] = (
+            ROOT / f"config.example/prompts/{name}.md").read_bytes()
     from prepare_qq_call import windows_code_files
     for name, content in windows_code_files().items():
         payload["app/qq_call_bridge/" + name] = content
