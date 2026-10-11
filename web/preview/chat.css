@@ -33,6 +33,10 @@
 .chat-welcome h2 { margin:0; font-size:24px; }
 .chat-welcome p { margin:0; font-size:13px; color:var(--muted); }
 .chat-typing { display:flex; gap:6px; padding:16px; }
-.chat-typing i { width:5px; height:5px; background:var(--pink); }
+.chat-typing i { width:5px; height:5px; background:var(--pink); animation:chat-dot-bounce 1.2s ease-in-out infinite; }
+.chat-typing i:nth-child(2) { animation-delay:.15s; }
+.chat-typing i:nth-child(3) { animation-delay:.3s; }
+@keyframes chat-dot-bounce { 0%, 60%, 100% { transform:translateY(0); } 30% { transform:translateY(-4px); } }
+@media (prefers-reduced-motion:reduce) { .chat-typing i { animation:none; } }
 .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
 @media(max-width:760px) { .chat-main { padding:20px 16px 12px !important; } .chat-main .topbar { margin-bottom:16px; } .chat-room-head { padding:14px 16px; } .chat-scroll { padding:20px 16px; } .chat-message { max-width:88%; font-size:13px; } .chat-composer { display:flex; align-items:center; gap:16px; margin:0 12px 14px; padding:12px; } .chat-room-head p { font-size:10px; } .chat-budget-note { margin:0 12px 12px; flex-wrap:wrap; } .chat-preview-note { font-size:9px; } }

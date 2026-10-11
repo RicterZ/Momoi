@@ -116,6 +116,18 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get(f'/api/chat/media/{media_row.id}')
         self.assertEqual(response.status, 200)
         self.assertEqual(await response.read(), b'example-image')
+        emotion = self.store._workspace / 'emotion' / 'test.gif'
+        emotion.parent.mkdir(exist_ok=True)
+        emotion.write_bytes(b'GIF89a-test')
+        with self.store._db:
+            self.store._db.execute('UPDATE outbox SET media_path=? WHERE id=?', ('emotion/test.gif', media_row.id))
+        response = await self.client.get(f'/api/chat/media/{media_row.id}')
+        self.assertEqual(response.status, 200)
+        self.assertEqual(await response.read(), b'GIF89a-test')
+        for path in ('config.json', '../outside.gif'):
+            with self.store._db:
+                self.store._db.execute('UPDATE outbox SET media_path=? WHERE id=?', (path, media_row.id))
+            self.assertEqual((await self.client.get(f'/api/chat/media/{media_row.id}')).status, 404)
         with self.store._db:
             self.store._db.execute('UPDATE outbox SET media_path=? WHERE id=?', (str(self.store._workspace / 'config.json'), media_row.id))
         self.assertEqual((await self.client.get(f'/api/chat/media/{media_row.id}')).status, 404)

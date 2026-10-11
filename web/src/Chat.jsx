@@ -14,6 +14,7 @@ function ChatAttachment({ message, token }) {
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl;
+    setUrl(""); setError(false);
     fetch(`/api/chat/media/${message.media_id}`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
       .then(response => { if (!response.ok) throw new Error(); return response.blob(); })
       .then(blob => { if (!controller.signal.aborted) { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl); } })

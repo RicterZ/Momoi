@@ -82,8 +82,9 @@ def register_chat_routes(app, store, runtime):
         row = store._db.execute("SELECT media_path FROM outbox WHERE id=? AND target_channel='dashboard'", (identifier,)).fetchone()
         if row is None or not row[0]:
             raise web.HTTPNotFound()
-        path = Path(row[0]).resolve()
         workspace = store._workspace
+        path = Path(row[0])
+        path = (path if path.is_absolute() else workspace / path).resolve()
         if not any(path.is_relative_to((workspace / name).resolve()) for name in ("artifacts", "emotion", "channel")) or not path.is_file():
             raise web.HTTPNotFound()
         return web.FileResponse(path, headers={"Content-Disposition": "attachment", "X-Content-Type-Options": "nosniff"})
