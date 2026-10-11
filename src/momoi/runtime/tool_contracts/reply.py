@@ -12,7 +12,7 @@ MEDIA_BUBBLE_SCHEMA[0]["properties"]["segments"]["contains"] = {
 
 REPLY_TOOL_SPEC = {
     "name": "reply",
-    "description": "仅在确实有内容需要发送时调用，把本次回应意图和必要依据交给 Replyer 生成并发送实际发言；等待发送完成或被打断后返回；bubbles 只含确认发出的内容，未确认投递单列。发送超时仍可能在队列中，不要重复发送。无需发言或已有回应且无新增内容时，不调用本工具；普通对话停止调用工具即可结束。",
+    "description": "把本次回应意图和必要依据交给 Replyer 生成并发送实际发言；等待发送完成或被打断后返回；bubbles 只含确认发出的内容，未确认投递单列。发送超时仍可能在队列中，不要重复发送。",
     "input_schema": {
         "type": "object",
         "properties": {
