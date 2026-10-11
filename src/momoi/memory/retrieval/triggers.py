@@ -36,6 +36,8 @@ def triggered_memories(repository, text, *, limit, token_budget):
 
 
 def matches_trigger(pattern, text):
+    if pattern == "|":
+        return "|" in text
     try:
         validate_trigger_pattern(pattern)
     except ValueError:

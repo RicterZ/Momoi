@@ -17,6 +17,7 @@ TRIGGER_INPUT_SCHEMA = {
         "选择能覆盖相关日常说法的最简入口：细分类别、做法或状态若会漏掉同一话题的普通说法，优先其自然领域词；但不能扩大到无关领域。词脱离原对话后仍应指向适用话题，不用跨领域的抽象词代替具体主题。不要选‘小桃’‘老师’等跨话题通用称呼或虚词。"
         "允许自然口语、简称和拟声词，不要求逐字出现在证据中；不堆叠同义词，不推测原因、后果或无关场景。"
         "触发词应稳定：即使具体数值或当前状态变化，仍能让人想起这件事；不因某个词出现在原话中就照搬易变细节。选择所谈事情的稳定入口，例如体重记录用‘体重’，不用‘70kg’。禁止测量值、日期、时刻、数量、金额及其带单位形式，固定专名除外。支持 Python 正则搜索（中文和 Unicode），例如‘（$’匹配中文左括号结尾；普通词仍可直接填写。正则元字符作为字面字符时需转义。"
+        "不支持正则‘或者’分支，请用多个触发词表达不同入口；符号 | 可单独填写，或用 \\|、[|] 匹配。禁止匹配空文本或几乎任意文本的宽泛规则。"
         "命中仅提供相关记忆，当前意图仍由上下文判断。工具名或内部流程名不是日常聊天入口；没有自然入口的执行规则可为空，不为每条记忆强配触发词。"
     ),
 }
@@ -45,6 +46,21 @@ def normalize_trigger(text: str) -> str:
 
 
 def validate_trigger_pattern(word):
+    escaped = False
+    in_class = False
+    for char in word:
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == "[":
+            in_class = True
+        elif char == "]":
+            in_class = False
+        elif char == "|" and not in_class and word != "|":
+            raise ValueError("触发正则不支持‘或者’分支，请拆成多个触发词；匹配符号 | 请使用 \\| 或 [|]")
+    if word == "|":
+        return
     try:
         pattern = re.compile(word, re.IGNORECASE)
     except re.error:

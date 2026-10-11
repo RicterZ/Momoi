@@ -24,7 +24,7 @@ def seed(memory, *, key='call', text='老师发“喵”等呼唤时，通常是
 @pytest.mark.parametrize(('pattern', 'text', 'matched'), [
     ('（$', '你好（', True), ('（$', '你好（\n', True), ('（$', '你好（呀', False),
     (r'^你好\s*🌸$', '你好\n🌸', True), (r'\w+你好$', '桃井你好', True),
-    (r'\($', '你好(', True), ('猫|ねこ|🐈', 'ねこ', True),
+    (r'\($', '你好(', True), ('ねこ', 'ねこ', True),
     ('HELLO', 'hello', True), ('Ｈｅｌｌｏ', 'hello', True),
     ('[旧词', '这是[旧词', True),
 ])
@@ -34,10 +34,24 @@ def test_unicode_regex_triggers(database, pattern, text, matched):
     assert bool(memory.triggered(text)) == matched
 
 
-@pytest.mark.parametrize('pattern', ['.*', '^.*$', '.+', r'[\s\S]+', '你好|.*', r'\w*', '^', '$', '你好|'])
+@pytest.mark.parametrize('pattern', ['.*', '^.*$', '.+', r'[\s\S]+', r'\w*', '^', '$'])
 def test_overbroad_regex_is_rejected(database, pattern):
     with pytest.raises(ValueError, match='过于宽泛'):
         seed(Memory(database), triggers=[pattern])
+
+
+@pytest.mark.parametrize('pattern', ['猫|狗', '(猫|狗)$', '你好|.*', '你好|', r'猫\||狗'])
+def test_regex_alternation_requires_separate_triggers(database, pattern):
+    with pytest.raises(ValueError, match='拆成多个触发词'):
+        seed(Memory(database), triggers=[pattern])
+
+
+@pytest.mark.parametrize('pattern', ['|', r'\|', '[|]', r'你好\|$', '你好[|]$'])
+def test_literal_pipe_triggers(database, pattern):
+    memory = Memory(database)
+    seed(memory, triggers=[pattern])
+    assert len(memory.triggered('你好|')) == 1
+    assert memory.triggered('你好') == []
 
 
 def test_repeated_matches_in_one_or_multiple_messages_inject_memory_once(database):
