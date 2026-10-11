@@ -1,5 +1,6 @@
 """Deterministic phrase recall, independent of embeddings and LLM selection."""
 from ..metadata import normalize_trigger
+import re
 from ..text import estimate_tokens
 
 
@@ -9,13 +10,13 @@ def triggered_memories(repository, text, *, limit, token_budget):
         raise ValueError("trigger input must contain only strings")
     if limit <= 0 or token_budget <= 0:
         return []
-    texts = [normalize_trigger(value) for value in texts if value.strip()]
+    texts = [value for value in texts if value.strip()]
     if not texts:
         return []
     matches = []
     for row in repository.search_rows(activation="recall"):
         words = [word for word in row["meta"].get("triggers", [])
-                 if word and any(normalize_trigger(word) in value for value in texts)]
+                 if word and any(matches_trigger(word, value) for value in texts)]
         if words:
             matches.append({**row, "matched_triggers": words})
     matches.sort(key=lambda row: (
@@ -32,3 +33,15 @@ def triggered_memories(repository, text, *, limit, token_budget):
         if len(selected) >= limit:
             break
     return selected
+
+
+def matches_trigger(pattern, text):
+    try:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    except re.error:
+        # Existing literal triggers may contain unescaped parentheses or brackets.
+        return normalize_trigger(pattern) in normalize_trigger(text)
+    if not any(char in pattern for char in r".\^$*+?{}[]|()"):
+        return normalize_trigger(pattern) in normalize_trigger(text)
+    return False

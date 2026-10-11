@@ -21,6 +21,19 @@ def seed(memory, *, key='call', text='老师发“喵”等呼唤时，通常是
     )
 
 
+@pytest.mark.parametrize(('pattern', 'text', 'matched'), [
+    ('（$', '你好（', True), ('（$', '你好（\n', True), ('（$', '你好（呀', False),
+    (r'^你好\s*🌸$', '你好\n🌸', True), (r'\w+你好$', '桃井你好', True),
+    (r'\($', '你好(', True), ('猫|ねこ|🐈', 'ねこ', True),
+    ('HELLO', 'hello', True), ('Ｈｅｌｌｏ', 'hello', True),
+    ('[旧词', '这是[旧词', True),
+])
+def test_unicode_regex_triggers(database, pattern, text, matched):
+    memory = Memory(database)
+    seed(memory, triggers=[pattern])
+    assert bool(memory.triggered(text)) == matched
+
+
 def test_literal_recall_without_llm_or_vectors_and_visibility(database):
     m = Memory(database, dense_recall=AsyncMock(side_effect=AssertionError('no embedding')))
     call = seed(m)

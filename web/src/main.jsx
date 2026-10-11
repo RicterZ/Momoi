@@ -1446,7 +1446,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                     <label className="memory-trigger-editor">触发词
                       <textarea className="edit-area" aria-label="记忆触发词" rows={3}
                         value={triggerDraft} onChange={event => setTriggerDraft(event.target.value)}
-                        placeholder="每行一个触发词，留空可清除" />
+                        placeholder="每行一个词或正则，如 （$；留空可清除" />
                       <small>最多 8 个，每个不超过 40 字；仅全局召回记忆参与自动触发。</small>
                     </label>
                   )}
