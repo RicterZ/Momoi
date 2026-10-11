@@ -794,6 +794,14 @@ def _add_reflection_candidate_triggers(database):
         database.execute("ALTER TABLE reflection_candidates ADD COLUMN triggers_json TEXT NOT NULL DEFAULT '[]'")
 
 
+def _add_trigger_injection_monitor(database):
+    database.execute("""CREATE TABLE IF NOT EXISTS trigger_message_window (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL UNIQUE,
+        memory_ids_json TEXT NOT NULL)""")
+    database.execute("""CREATE TABLE IF NOT EXISTS trigger_warning_state (
+        memory_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, warned INTEGER NOT NULL)""")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -836,6 +844,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _retire_memory_maintenance,
     _add_reflection_candidate_triggers,
     _add_daily_reflection_triggers,
+    _add_trigger_injection_monitor,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

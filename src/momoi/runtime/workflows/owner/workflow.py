@@ -12,6 +12,7 @@ from ....models import AgentReply, IncomingMessage, TurnDraft
 from ....llm.errors import ProviderError
 from ...agent import TurnExecutionSpec, WorkflowProtocolError
 from ...context.triggers import triggered_memory_context
+from ...context.trigger_monitor import record_trigger_injections
 from ...context.current_state import pack_current_turn_context
 from ...context.presentation import heartbeat_self_state_lines
 from ...turn_support import (
@@ -27,6 +28,10 @@ logger = logging.getLogger("momoi.runtime.turns")
 
 
 class OwnerWorkflow:
+    def _record_trigger_injections(self, events, rows):
+        if record_trigger_injections(self.store, events, rows, self.channel.name):
+            self.outbox_changed.set()
+
     async def _wait_owner_continuation(self, current_events, channel):
         seconds = self.config.owner_continuation_seconds
         if seconds <= 0 or self._active_turn is None:
@@ -72,6 +77,7 @@ class OwnerWorkflow:
         """Steer the same turn with matched memories followed by new owner input."""
         triggered = triggered_memory_context(
             self.memory, updates, draft.memory_context if draft is not None else {}, only_new=True,
+            on_injected=self._record_trigger_injections,
         )
         runtime_text = (
             f"<triggered_memories>\n{triggered}\n</triggered_memories>\n\n"
@@ -325,7 +331,7 @@ class OwnerWorkflow:
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("recent_recall_context", candidates["recent_recall_context"]),
-            ("triggered_memories", triggered_memory_context(self.memory, batch, injected_memories)),
+            ("triggered_memories", triggered_memory_context(self.memory, batch, injected_memories, on_injected=self._record_trigger_injections)),
         )
         current_content = _owner_content_blocks(
             batch, channel.content_blocks, self.store.timezone, runtime_text

@@ -1,6 +1,8 @@
 """Deterministic phrase recall, independent of embeddings and LLM selection."""
 from ..metadata import normalize_trigger, validate_trigger_pattern
 import re
+from re import _parser, _compiler, _constants
+from functools import lru_cache
 from ..text import estimate_tokens
 
 
@@ -43,7 +45,7 @@ def matches_trigger(pattern, text):
     except ValueError:
         return False
     try:
-        if re.search(pattern, text, re.IGNORECASE):
+        if bounded_pattern(pattern).search(text):
             return True
     except re.error:
         # Existing literal triggers may contain unescaped parentheses or brackets.
@@ -51,3 +53,21 @@ def matches_trigger(pattern, text):
     if not any(char in pattern for char in r".\^$*+?{}[]|()"):
         return normalize_trigger(pattern) in normalize_trigger(text)
     return False
+
+
+@lru_cache(maxsize=512)
+def bounded_pattern(pattern):
+    nodes = _parser.parse(pattern, re.IGNORECASE)
+
+    def bound(items):
+        for index, (operation, argument) in enumerate(items):
+            if operation in {_constants.MAX_REPEAT, _constants.MIN_REPEAT, _constants.POSSESSIVE_REPEAT}:
+                minimum, maximum, child = argument
+                if maximum == _constants.MAXREPEAT:
+                    items[index] = (operation, (minimum, max(minimum, 1000), child))
+            elif operation == _constants.SUBPATTERN:
+                bound(argument[3])
+            elif operation == _constants.ATOMIC_GROUP:
+                bound(argument)
+    bound(nodes)
+    return _compiler.compile(nodes, re.IGNORECASE)

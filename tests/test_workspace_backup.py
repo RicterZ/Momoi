@@ -113,7 +113,9 @@ def test_restore_database_versions(tmp_path, newer):
         store.record_llm_call(created_at=123, model="test", metrics={"output": 100})
         if not newer:
             store._db.execute("ALTER TABLE reflection_memories DROP COLUMN triggers_json")
-        store._db.execute(f"PRAGMA user_version={SCHEMA_VERSION + (1 if newer else -1)}")
+            store._db.execute("DROP TABLE trigger_message_window")
+            store._db.execute("DROP TABLE trigger_warning_state")
+        store._db.execute(f"PRAGMA user_version={SCHEMA_VERSION + (1 if newer else -2)}")
         store._db.commit()
         out = tmp_path / "out"
         out.mkdir()

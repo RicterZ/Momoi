@@ -54,6 +54,44 @@ def test_literal_pipe_triggers(database, pattern):
     assert memory.triggered('你好') == []
 
 
+@pytest.mark.parametrize('pattern', ['(a+)+$', '(a*)*', r'(a+)\1', '(?=你好).*', r'a+a+$', '(ab)+$', '(?>(a+)+)$'])
+def test_expensive_regex_is_rejected(database, pattern):
+    with pytest.raises(ValueError, match='被拒绝'):
+        seed(Memory(database), triggers=[pattern])
+
+
+def test_trigger_warning_threshold_window_deduplication_and_restart(daemon):
+    from momoi.runtime.context.trigger_monitor import record_trigger_injections
+    from momoi.storage import Store
+    identifier = seed(daemon.memory, triggers=['你好'])
+    rows = daemon.memory.triggered('你好')
+
+    def send(index, rows=rows, store=None):
+        event = IncomingMessage(f'warning:{index}', str(index), '你好', index, index, channel='dashboard')
+        return record_trigger_injections(store or daemon.store, [event], rows, daemon.channel.name)
+
+    for index in range(10):
+        assert not send(index)
+    assert send(10)
+    assert not send(10)
+    assert not send(11)
+    alerts = daemon.store._db.execute("SELECT text,target_channel FROM outbox WHERE dedupe_key LIKE '%trigger-warning%'").fetchall()
+    assert len(alerts) == 1
+    assert alerts[0]['target_channel'] == daemon.channel.name
+    assert '触发词“你好”可能过宽导致多次注入。' in alerts[0]['text']
+    reopened = Store(daemon.config.database, daemon.config.workspace)
+    try:
+        assert not send(12, store=reopened)
+        for index in range(13, 113):
+            assert not send(index, rows=[], store=reopened)
+        assert reopened._db.execute('SELECT COUNT(*) FROM trigger_message_window').fetchone()[0] == 100
+        for index in range(113, 123):
+            assert not send(index, store=reopened)
+        assert send(123, store=reopened)
+    finally:
+        reopened.close()
+
+
 def test_repeated_matches_in_one_or_multiple_messages_inject_memory_once(database):
     memory = Memory(database)
     identifier = seed(memory, triggers=['你好', '你好+$'])

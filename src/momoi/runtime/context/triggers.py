@@ -2,12 +2,14 @@
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 
-def triggered_memory_context(memory, events, snapshots, *, only_new=False):
+def triggered_memory_context(memory, events, snapshots, *, only_new=False, on_injected=None):
     rows = memory.triggered([
         event.text for event in events if not event.delivery_context.get("channel_notice")
     ])
     if only_new:
         rows = [row for row in rows if row["id"] not in snapshots]
+    if on_injected is not None:
+        on_injected(events, rows)
     if not rows:
         return ""
     snapshots.update(memory.snapshots([row["id"] for row in rows]))

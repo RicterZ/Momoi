@@ -4,6 +4,7 @@ from types import MappingProxyType
 from typing import NotRequired, TypedDict
 import unicodedata
 import re
+from re import _parser, _constants
 
 
 # Model-authored triggers share one contract; storage still accepts legacy lists.
@@ -19,6 +20,7 @@ TRIGGER_INPUT_SCHEMA = {
         "允许自然口语、简称和拟声词，不要求逐字出现在证据中；不堆叠同义词，不推测原因、后果或无关场景。"
         "触发词应稳定：即使具体数值或当前状态变化，仍能让人想起这件事；不因某个词出现在原话中就照搬易变细节。选择所谈事情的稳定入口，例如体重记录用‘体重’，不用‘70kg’。禁止测量值、日期、时刻、数量、金额及其带单位形式，固定专名除外。支持 Python 正则搜索（中文和 Unicode），例如‘（$’匹配中文左括号结尾；普通词仍可直接填写。正则元字符作为字面字符时需转义。"
         "不支持正则‘或者’分支：例如猫|狗应拆成数组 [\"猫\",\"狗\"]，因为多个触发词已经表示任一命中。符号 | 可单独填写，或用 \\|、[|] 匹配。禁止匹配空文本或几乎任意文本的宽泛规则，例如 .*、.+、^、$；它们会让无关聊天也注入记忆。"
+        "为避免阻塞，只支持一个针对单个字符或字符组的重复；不支持嵌套重复、多个重复、前后查找或反向引用。单个重复最多匹配1000个字符。"
         "命中仅提供相关记忆，当前意图仍由上下文判断。工具名或内部流程名不是日常聊天入口；没有自然入口的执行规则可为空，不为每条记忆强配触发词。"
     ),
 }
@@ -67,6 +69,26 @@ def validate_trigger_pattern(word):
     except re.error:
         # Preserve existing literal phrases with unescaped punctuation.
         return
+    repeats = 0
+
+    def check(nodes):
+        nonlocal repeats
+        for operation, argument in nodes:
+            if operation in {_constants.MAX_REPEAT, _constants.MIN_REPEAT, _constants.POSSESSIVE_REPEAT}:
+                repeats += 1
+                minimum, maximum, child = argument
+                if (repeats > 1 or len(child) != 1
+                        or child[0][0] not in {_constants.LITERAL, _constants.NOT_LITERAL, _constants.IN, _constants.ANY}
+                        or minimum > 1000 or (maximum != _constants.MAXREPEAT and maximum > 1000)):
+                    raise ValueError(f"触发正则 {word!r} 被拒绝：重复结构可能产生大量回溯。只支持一个针对单个字符或字符组的重复，例如 你好\\s*，不支持嵌套重复或多个重复")
+            elif operation == _constants.SUBPATTERN:
+                check(argument[3])
+            elif operation == _constants.ATOMIC_GROUP:
+                check(argument)
+            elif operation in {_constants.ASSERT, _constants.ASSERT_NOT, _constants.GROUPREF, _constants.GROUPREF_EXISTS, _constants.BRANCH}:
+                raise ValueError(f"触发正则 {word!r} 被拒绝：不支持前后查找、反向引用或分支，请改用具体词语和简单字符匹配")
+
+    check(_parser.parse(word, re.IGNORECASE))
     if pattern.search("") is not None:
         raise ValueError(f"触发正则 {word!r} 过于宽泛：它能匹配空文本，任何消息都可能命中并注入记忆。请加入具体词语或字符，例如匹配中文左括号结尾使用 （$，不要使用 .*")
     probes = ("你好", "今天下雨", "hello", "12345", "abc中文", "🌸🐈", "。！？", " \n")
