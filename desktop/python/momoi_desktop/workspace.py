@@ -20,8 +20,10 @@ def prepare_workspace(workspace: Path) -> None:
         ("AFFINITY", soul_path.parent / "AFFINITY.md"),
         ("REPLYER", soul_path.parent / "REPLYER.md"),
     ):
-        if not path.exists() or not path.read_text(encoding="utf-8-sig").strip():
-            content = files("momoi_desktop").joinpath(f"default_prompts/{name}.md").read_text(encoding="utf-8")
+        if not path.exists() or (name != "AFFINITY" and not path.read_text(encoding="utf-8-sig").strip()):
+            resource = (files("momoi").joinpath("prompts/affinity.md") if name == "AFFINITY"
+                        else files("momoi_desktop").joinpath(f"default_prompts/{name}.md"))
+            content = resource.read_text(encoding="utf-8")
             atomic_write(path, content)
     bootstrap(config_path)
     if fresh and (timezone := os.environ.get("MOMOI_DESKTOP_TIMEZONE")):
