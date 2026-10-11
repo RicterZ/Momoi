@@ -67,3 +67,18 @@
   align-items: center;
   justify-content: center;
 }
+
+@media (max-width: 760px) {
+  .tool-workspace { height: auto; max-height: none; grid-template-rows: auto auto; }
+  .tool-library, .tool-detail { overflow: visible; }
+  .tool-library-body { flex: none; max-height: 320px; overflow-y: auto; }
+  .tool-list { grid-template-columns: minmax(0, 1fr); }
+  .tool-detail:has(.tool-mcp-form), .tool-detail:has(.tool-skill-view) { overflow: visible; }
+  .tool-mcp-form, .tool-skill-view { height: auto; }
+  .tool-mcp-form > .tool-fields, .tool-skill-body { flex: none; overflow: visible; }
+  .tool-detail-header { position: static; }
+  .tool-fields, .tool-detail-header { padding: 18px; }
+  .tool-key-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .tool-key-row > input:nth-child(2) { grid-column: 1; grid-row: 2; }
+  .tool-key-row > button { grid-column: 2; grid-row: 1 / 3; }
+}
