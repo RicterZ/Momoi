@@ -173,6 +173,7 @@ class MomoiDaemon(
             emotion_catalog=lambda: bool(self.store.emotion_context().strip()),
             store=self.store,
             skills=self.builtin_tools.skills,
+            affinity_enabled=lambda: self.config.affinity_enabled,
         )
         self.delivery_policy = DeliveryPolicy(config, self.store)
         self.tool_executor = ToolExecutor(
@@ -229,6 +230,7 @@ class MomoiDaemon(
             self.outbox_changed,
             replyer=Replyer(config, self.store, self.provider),
             memory=self.memory,
+            provider=self.provider,
         )
         self.agenda_changed = asyncio.Event()
         self._owner_continuation_waiting = False

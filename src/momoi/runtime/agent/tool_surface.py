@@ -22,6 +22,7 @@ from ..tool_contracts.runtime import (
     TOOL_ENABLE_SPEC,
 )
 from ..tool_contracts.plan import PLAN_TOOLS
+from ..tool_contracts.affinity import AFFINITY_TOOLS
 from .progress import public_tool_spec
 from ..tool_contracts.reply import REPLY_TOOL_SPEC
 from ..tool_contracts.qq_call import QQ_CALL_STATUS_SPEC
@@ -48,7 +49,8 @@ BUILTIN_GROUP_DESCRIPTIONS = {
 class ToolSurface:
     """Projects the tool catalog exposed to each workflow."""
 
-    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False, exec_enabled: bool = False, emotion_catalog: Callable[[], bool] | None = None, store: Any = None, skills: Any = None):
+    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False, exec_enabled: bool = False, emotion_catalog: Callable[[], bool] | None = None, store: Any = None, skills: Any = None, affinity_enabled: Callable[[], bool] | None = None):
+        self.affinity_enabled = affinity_enabled or (lambda: False)
         self.mcp = mcp
         self.store = store
         self.skills = skills
@@ -170,6 +172,7 @@ class ToolSurface:
             copy.deepcopy(RECALL_TOOL_SPEC),
             copy.deepcopy(WAIT_TOOL_SPEC),
             copy.deepcopy(MOOD_CHANGE_TOOL_SPEC),
+            *(copy.deepcopy(AFFINITY_TOOLS) if self.affinity_enabled() else []),
             heartbeat_begin_spec(),
             copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC),
             copy.deepcopy(GOAL_REVIEW_TOOL_SPEC),
@@ -203,6 +206,8 @@ class ToolSurface:
         channel_tools = {spec["name"] for group, specs in self.discovery_groups().items()
                          if group in {"builtin_qq_messages", "builtin_calls", "builtin_mcp_management"} for spec in specs}
         shared = {"reply", "mood_change", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
+        if self.affinity_enabled():
+            shared.update(spec["name"] for spec in AFFINITY_TOOLS)
         general_chat = {
             "recall",
             "episode_relations",

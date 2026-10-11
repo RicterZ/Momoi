@@ -106,8 +106,9 @@ class ToolBatchExecutor:
         tool_results: Any,
         outbox_changed: Any,
         replyer: Any = None,
-        *, memory: Any,
+        *, memory: Any, provider: Any = None,
     ) -> None:
+        self.provider = provider
         self.config = config
         self.store = store
         self.tool_surface = tool_surface
@@ -314,6 +315,9 @@ class ToolBatchExecutor:
                         heartbeat_turn=execution.heartbeat,
                         harness_started=request.harness.started,
                     )
+            elif call.name in {"affinity_increase", "affinity_decrease"}:
+                from .affinity import review_affinity
+                result = await review_affinity(self.config, self.store, self.provider, call, request)
             elif call.name == "mood_change":
                 if execution.stage not in {"owner", "heartbeat", "webhook"}:
                     result = {"ok": False, "error": "tool_not_allowed"}
