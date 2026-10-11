@@ -82,8 +82,8 @@ MOOD_UPDATE_SCHEMA: dict[str, Any] = {
     "properties": {
         "state": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9_-]{0,31}$",
-            "description": ('当前情绪，例如好奇、平静、沮丧或疲惫。'),
+            "pattern": "^(?:[\u4e00-\u9fff]{2,6}|[a-z][a-z0-9_-]{0,31})$",
+            "description": "用 2–6 个汉字的简短词语描述当前情绪，例如好奇、平静、沮丧或疲惫；不要写英文标签或完整句子。",
         },
         "intensity": {"type": "number", "minimum": 0, "maximum": 1},
         "cause": {"type": "string", "minLength": 1, "maxLength": 300},
@@ -231,7 +231,7 @@ def end_turn_correction(error: str, schema: dict[str, Any], arguments: dict[str,
         "goal_end_turn_requires_empty_arguments": "Submit the Goal outcome through goal_review; end_turn accepts only {} in this stage.",
         "unexpected_end_turn_fields": "end_turn accepts only mood. Submit Goal outcomes through goal_review and Heartbeat activity and schedule through heartbeat_activity.",
         "heartbeat_activity_required_before_end_turn": "Call heartbeat_activity successfully before end_turn; they may share a batch.",
-        "invalid_mood_decision": 'mood must be {"decision":"unchanged"} or {"decision":"updated","state":"calm","intensity":0.3,"cause":"具体原因"}. A string is invalid.',
+        "invalid_mood_decision": 'mood must be {"decision":"unchanged"} or {"decision":"updated","state":"平静","intensity":0.3,"cause":"具体原因"}. A string is invalid.',
         "bubbles_not_allowed_in_end_turn": "Send the response through reply first; remove bubbles from end_turn.",
         "activity_not_allowed_in_end_turn": "Remove activity; record Heartbeat activity through heartbeat_activity before ending.",
     }

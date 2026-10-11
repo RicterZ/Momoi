@@ -131,7 +131,7 @@ def parse_mood_update(
     intensity = value.get("intensity")
     if (
         not isinstance(state, str)
-        or re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", state) is None
+        or re.fullmatch(r"[\u4e00-\u9fff]{2,6}|[a-z][a-z0-9_-]{0,31}", state) is None
         or not isinstance(cause, str)
         or not cause.strip()
         or len(cause) > 300

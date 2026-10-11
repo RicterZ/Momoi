@@ -5,9 +5,9 @@ from ..conversation.turns import EPISODE_MAINTENANCE_RESTART_REASON
 from .turn_workflow import turn_workflow_kind_sql
 
 
-BASELINE_MOOD_STATE = "calm"
+BASELINE_MOOD_STATE = "平静"
 BASELINE_MOOD_INTENSITY = 0.35
-BASELINE_MOOD_CAUSE = "resting baseline"
+BASELINE_MOOD_CAUSE = "平静休息中"
 DEFAULT_ACTIVITY = ""
 
 

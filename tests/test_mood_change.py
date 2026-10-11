@@ -22,7 +22,7 @@ def test_mood_change_is_committed_only_on_normal_completion(daemon, outcome):
         assert daemon.store.self_state()['mood_updated_at'] == before['mood_updated_at']
         if rounds == 1:
             return response(ToolCall('mood', 'mood_change', {
-                'state': 'happy', 'intensity': 0.7, 'cause': '一起解决了问题',
+                'state': '开心', 'intensity': 0.7, 'cause': '一起解决了问题',
             }))
         assert 'staged' in str(messages[-1])
         if outcome == 'cancel':
@@ -39,7 +39,7 @@ def test_mood_change_is_committed_only_on_normal_completion(daemon, outcome):
         asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), turn_id))
     after = daemon.store.self_state()
     if outcome == 'finish':
-        assert after['mood_state'] == 'happy'
+        assert after['mood_state'] == '开心'
         assert after['mood_intensity'] == 0.7
         assert after['mood_cause'] == '一起解决了问题'
         assert not daemon.store.due_outbox()
