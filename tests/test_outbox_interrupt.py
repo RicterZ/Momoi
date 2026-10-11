@@ -14,7 +14,7 @@ from momoi.integrations.contracts.tts import AudioOutput
 
 
 class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
-    async def test_dashboard_bubbles_deliver_without_artificial_gap(self):
+    async def test_dashboard_bubbles_use_short_natural_gap(self):
         self.store.begin_turn('web-fast', 'owner', [])
         self.store.queue_progress('web-fast', 'reply', ['第一条', '第二条', '第三条'], 'dashboard')
         stop = asyncio.Event()
@@ -29,7 +29,11 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.daemon.channels['dashboard'].send_message = send
         with patch.object(self.daemon, '_wait_outbox_gap', AsyncMock()) as gap:
             await asyncio.wait_for(self.daemon._outbox_worker(stop), 1)
-            gap.assert_not_awaited()
+            self.assertEqual(gap.await_count, 2)
+            for call in gap.await_args_list:
+                self.assertGreaterEqual(call.args[1], 0.6)
+                self.assertLessEqual(call.args[1], 1.2)
+            self.assertFalse(self.daemon.channels['dashboard'].typing)
         self.assertEqual(sent, ['第一条', '第二条', '第三条'])
         self.assertTrue(all(row[0] == 'sent' for row in self.store._db.execute('SELECT state FROM outbox')))
 

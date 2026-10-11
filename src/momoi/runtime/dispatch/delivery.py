@@ -70,9 +70,10 @@ class OutboxWorker:
                     self.store.mark_not_dispatched(row.id, "ChannelNotConfigured")
                     continue
                 delivery = (row.channel, row.turn_id)
-                if delivery == previous_delivery and channel.name not in {"qq_call", "dashboard"}:
+                if delivery == previous_delivery and channel.name != "qq_call":
                     delay = random.uniform(
-                        *message_gap_bounds(row.text, self.daemon_policy)
+                        *((0.6, 1.2) if channel.name == "dashboard"
+                          else message_gap_bounds(row.text, self.daemon_policy))
                     )
                     log_event(
                         logger,
