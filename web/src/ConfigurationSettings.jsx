@@ -1092,7 +1092,7 @@ const runtimeOrder = { turn: -1, heartbeat: 0, reflection: 1, episode_annealing:
 const runtimeDescriptions = {
   turn: "自然结束后等待快速补充；其他任务需要运行时立即让出。0 表示关闭。",
   logging: "控制运行日志的详细程度，用于查看服务状态与排查问题。",
-  budget: "任一预算到限暂停，新周期恢复。",
+  budget: "设置 Momoi 的每日或每月预算。",
   thinking: "为不同运行阶段设置思考强度；默认跟随模型，单独设置后不随模型切换而改变。",
 };
 

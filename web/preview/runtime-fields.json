@@ -343,7 +343,7 @@
         "label": "日预算（元）",
         "minimum": 0,
         "default": 0,
-        "description": "留空或 0：不设限。",
+        "description": "金额设为 0 或留空，则不限制预算。",
         "advanced": false
       },
       "monthly_amount": {
@@ -351,7 +351,6 @@
         "label": "月预算（元）",
         "minimum": 0,
         "default": 0,
-        "description": "留空或 0：不设限。",
         "advanced": false
       }
     }
