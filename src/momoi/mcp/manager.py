@@ -1,6 +1,5 @@
 import asyncio
 import copy
-import json
 import logging
 import os
 import re
@@ -12,6 +11,8 @@ from typing import Any
 
 import httpx
 from mcp import ClientSession, StdioServerParameters
+from mcp.shared.exceptions import McpError
+from mcp.types import CONNECTION_CLOSED
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
@@ -33,29 +34,8 @@ MCPRequest = tuple[
 ]
 
 
-def _mcp_error_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
-    value = payload.get("structuredContent")
-    if value is None:
-        content = payload.get("content", [])
-        if len(content) == 1 and content[0].get("type") == "text":
-            try:
-                value = json.loads(content[0].get("text", ""))
-            except (ValueError, TypeError):
-                return None
-    # Inspect result envelopes only, never arbitrary records inside returned data.
-    for _ in range(4):
-        if not isinstance(value, dict):
-            break
-        if value.get("status") == "error" or value.get("ok") is False:
-            return value
-        if set(value) != {"result"}:
-            break
-        value = value["result"]
-    return None
-
-
 def _mcp_error_message(payload: dict[str, Any]) -> str:
-    structured = _mcp_error_payload(payload) or payload.get("structuredContent")
+    structured = payload.get("structuredContent")
     detail = ""
     if isinstance(structured, dict):
         detail = next((str(structured[key]) for key in ("message", "error", "detail") if structured.get(key)), "")
@@ -331,9 +311,20 @@ class MCPManager:
     async def _invoke(
         self, server: str, tool: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        result = await self._sessions[server].call_tool(tool, arguments)
+        try:
+            result = await self._sessions[server].call_tool(tool, arguments)
+        except McpError as error:
+            # The SDK also uses McpError for local timeouts/closed connections.
+            if error.error.code in {httpx.codes.REQUEST_TIMEOUT, CONNECTION_CLOSED}:
+                raise
+            return {
+                "ok": False,
+                "error": "mcp_protocol_error",
+                "message": safe_preview(error.error.message, 200),
+                "protocol_error": error.error.model_dump(mode="json", exclude_none=True),
+            }
         payload = result.model_dump(mode="json", by_alias=True, exclude_none=True)
-        is_error = bool(result.isError) or _mcp_error_payload(payload) is not None
+        is_error = bool(result.isError)
         message = _mcp_error_message(payload) if is_error else None
         response = {
             "ok": not is_error,

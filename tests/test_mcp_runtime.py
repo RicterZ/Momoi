@@ -458,30 +458,45 @@ def test_description_is_required_even_for_disabled_servers():
 
 
 class MCPErrorEnvelopeTest(unittest.IsolatedAsyncioTestCase):
-    async def test_business_errors_reach_model_without_misclassifying_data(self):
+    async def test_only_standard_is_error_controls_tool_failure(self):
         from unittest.mock import AsyncMock
         from mcp.types import CallToolResult, TextContent
 
-        failure = {"result": {"status": "error", "message": "SSLError: [SSL: UNEXPECTED_EOF_WHILE_READING]", "data": []}}
-        for structured, expected in (
-            (failure, False),
-            ({"result": {"ok": False, "message": "invalid query"}}, False),
-            ({"result": {"status": "success", "data": [{"status": "error"}]}}, True),
-            ({"result": [{"status": "error"}]}, True),
-        ):
+        business = {"result": {"status": "error", "ok": False, "message": "SSLError: SSL: EOF"}}
+        for is_error in (False, True):
             for text_only in (False, True):
-                with self.subTest(structured=structured, text_only=text_only):
+                with self.subTest(is_error=is_error, text_only=text_only):
                     result = CallToolResult(
-                        content=[TextContent(type="text", text=json.dumps(structured))],
-                        structuredContent=None if text_only else structured,
-                        isError=False,
+                        content=[TextContent(type="text", text=json.dumps(business))],
+                        structuredContent=None if text_only else business,
+                        isError=is_error,
                     )
                     manager = MCPManager(None, servers={})
                     manager._sessions["test"] = SimpleNamespace(call_tool=AsyncMock(return_value=result))
                     output = await manager._invoke("test", "search", {})
-                    self.assertEqual(output["ok"], expected)
-                    if structured == failure:
+                    self.assertEqual(output["ok"], not is_error)
+                    self.assertIn("SSLError", json.dumps(output["result"]))
+                    if is_error:
                         self.assertEqual(output["error"], "mcp_tool_error")
                         self.assertIn("安全连接失败", output["message"])
-                        self.assertNotIn("SSLError", output["message"])
-                        self.assertIn("SSLError", json.dumps(output["result"]))
+                    else:
+                        self.assertIsNone(output["error"])
+                        self.assertNotIn("message", output)
+
+    async def test_protocol_error_preserves_code_and_local_timeout_stays_ambiguous(self):
+        from unittest.mock import AsyncMock
+        from mcp.shared.exceptions import McpError
+        from mcp.types import ErrorData, CONNECTION_CLOSED
+
+        manager = MCPManager(None, servers={})
+        call = AsyncMock(side_effect=McpError(ErrorData(code=-32602, message="Unknown tool")))
+        manager._sessions["test"] = SimpleNamespace(call_tool=call)
+        result = await manager._invoke("test", "missing", {})
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "mcp_protocol_error")
+        self.assertEqual(result["protocol_error"]["code"], -32602)
+        self.assertEqual(result["message"], "Unknown tool")
+        for code in (408, CONNECTION_CLOSED):
+            call.side_effect = McpError(ErrorData(code=code, message="Connection unavailable"))
+            with self.assertRaises(McpError):
+                await manager._invoke("test", "slow", {})
