@@ -18,7 +18,7 @@ def register_chat_routes(app, store, runtime):
         before_id = request.query.get("before_id", "")
         rows = store._db.execute("""SELECT * FROM (SELECT id, content, occurred_at AS created_at,
                    'user' AS role, 'received' AS delivery_state, NULL AS media_id, 'text' AS kind FROM events
-                   WHERE json_extract(payload_json, '$.channel')='dashboard'
+                   WHERE json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END, '$.channel')='dashboard'
                    UNION ALL SELECT 'reply:' || o.id, o.text,
                    COALESCE(m.created_at, p.created_at, t.started_at), 'assistant',
                    CASE WHEN o.state='sent' THEN 'delivered'
@@ -38,7 +38,7 @@ def register_chat_routes(app, store, runtime):
         daemon = runtime.daemon
         channel = getattr(daemon, "channels", {}).get("dashboard")
         active = daemon is not None and getattr(daemon, "_active_turn_channel", "") == "dashboard" and getattr(daemon, "_active_turn", None) is not None
-        pending = store._db.execute("SELECT 1 FROM events WHERE processed=0 AND json_extract(payload_json, '$.channel')='dashboard' LIMIT 1").fetchone() is not None
+        pending = store._db.execute("SELECT 1 FROM events WHERE processed=0 AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END, '$.channel')='dashboard' LIMIT 1").fetchone() is not None
         return web.json_response({"messages": [dict(row) for row in reversed(rows)],
                                   "has_more": has_more, "runtime": status,
                                   "typing": bool(getattr(channel, "typing", False) or active or pending) and status["runtime_active"]})

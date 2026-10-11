@@ -74,6 +74,24 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(row['content'].startswith('dashboard') for row in first['messages'] + second['messages']))
         self.assertEqual((await self.client.get('/api/chat/messages?before=nan')).status, 400)
 
+    async def test_history_ignores_malformed_legacy_event_payloads(self):
+        self.client.session.headers['Authorization'] = self.auth
+        now = time.time()
+        for index, payload in enumerate(("", "not-json", '{"channel":')):
+            event_id = f'legacy:{index}'
+            self.store.add_event(IncomingMessage(event_id, str(index), 'legacy', now, now, channel='napcat'))
+            self.store._db.execute('UPDATE events SET payload_json=? WHERE id=?', (payload, event_id))
+        self.store._db.commit()
+        response = await self.client.get('/api/chat/messages')
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())['messages'], [])
+        self.assertEqual((await self.client.post('/api/chat/messages', json={'text': '你好', 'id': 'valid_msg_01'})).status, 202)
+        response = await self.client.get('/api/chat/messages')
+        self.assertEqual(response.status, 200)
+        data = await response.json()
+        self.assertEqual([row['content'] for row in data['messages']], ['你好'])
+        self.assertTrue(data['typing'])
+
     async def test_live_reply_delivery_and_media_access(self):
         self.client.session.headers['Authorization'] = self.auth
         now = time.time()
