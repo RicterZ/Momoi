@@ -281,8 +281,11 @@ class ObservabilityStore:
                     interjection_ids.add(event_id)
         inputs = [item for item in inputs if item["id"] not in interjection_ids]
         deliveries = [dict(row) for row in self._db.execute(
-            f"""SELECT id, turn_id, text, kind, state, target_channel, last_error FROM outbox
-                WHERE turn_id IN ({placeholders}) ORDER BY id""", members)]
+            f"""SELECT o.id, o.turn_id, o.text, o.kind, o.state, o.target_channel, o.last_error,
+                       p.tool_call_id, p.part_index FROM outbox o
+                LEFT JOIN turn_progress p ON o.dedupe_key =
+                    'turn:' || p.turn_id || ':progress:' || p.tool_call_id || ':' || p.part_index
+                WHERE o.turn_id IN ({placeholders}) ORDER BY o.id""", members)]
         return {"ok": bool(calls), "turn_id": root, "turn_ids": members,
                 "calls": calls, "count": len(calls), "flow": {"inputs": inputs, "interjections": interjections, "deliveries": deliveries,
                     "running": bool(self._db.execute(f"SELECT 1 FROM turns WHERE id IN ({placeholders}) AND state='running' LIMIT 1", members).fetchone())}}

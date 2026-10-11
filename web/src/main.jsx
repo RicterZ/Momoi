@@ -2541,7 +2541,23 @@ function RecallDetail({ recall }) {
 // Keep retired follow-up records readable in historical thinking logs.
 const plannerStages = new Set(["owner", "heartbeat", "webhook", "goal", "plan_step", "reply_followup"]);
 
-function ThinkingCall({ call, children = [], nested = false }) {
+function FlowDeliveries({ deliveries = [] }) {
+  return deliveries.length > 0 && <section className="flow-deliveries">
+          <header className="flow-deliveries-head"><h3>实际投递</h3><span>{deliveries.length} 条</span></header>
+          <div className="flow-delivery-list">{deliveries.map((delivery, index) => <article className="flow-delivery" key={delivery.id}>
+            <span className="flow-delivery-index">{String(index + 1).padStart(2, "0")}</span>
+            <div className="flow-delivery-body">
+              <div className="flow-delivery-meta"><span>{({napcat: "QQ", weixin: "微信", qq_call: "QQ 通话"})[delivery.target_channel] || delivery.target_channel} · {({text: "文字", image: "图片", voice: "语音", audio: "音频", file: "文件"})[delivery.kind] || delivery.kind}</span>
+                <span className={`flow-delivery-state is-${delivery.state}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"发送失败",superseded:"已取消",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span>
+              </div>
+              <EmotionContent className="message-content flow-delivery-text" text={delivery.text} />
+              {delivery.last_error && ["failed", "ambiguous"].includes(delivery.state) && <details className="flow-action-data"><summary>投递详情</summary><pre className="flow-json">{delivery.last_error}</pre></details>}
+            </div>
+          </article>)}</div>
+        </section>;
+}
+
+function ThinkingCall({ call, children = [], nested = false, deliveries = [] }) {
   const replyer = call.stage === "replyer";
   const planner = plannerStages.has(call.stage);
   const metrics = call.request_metrics;
@@ -2577,11 +2593,12 @@ function ThinkingCall({ call, children = [], nested = false }) {
         <dt>必要参考</dt><dd>{action.arguments?.reference || "无额外参考"}</dd>
         {action.arguments?.mode === "voice" && <><dt>发言方式</dt><dd>语音</dd></>}
       </dl> : <details className="flow-action-data"><summary>决策参数</summary><pre className="flow-json">{JSON.stringify(action.arguments || {}, null, 2)}</pre></details>}
-      {children.filter(child => child.trace?.tool_call_id === action.id).map(child => <ThinkingCall key={child.call_id} call={child} nested />)}
+      {children.filter(child => child.trace?.tool_call_id === action.id).map(child => <ThinkingCall key={child.call_id} call={child} nested deliveries={deliveries} />)}
+      {action.name === "reply" && <FlowDeliveries deliveries={deliveries.filter(delivery => delivery.turn_id === call.turn_id && delivery.tool_call_id === action.id)} />}
       {action.result && <details className="flow-action-data"><summary>工具结果{action.result.error ? ` · ${action.result.error}` : ""}</summary><pre className="flow-json">{JSON.stringify(action.result, null, 2)}</pre></details>}
     </section>)}
     {!call.actions?.length && call.tools?.length > 0 && <p className="flow-note">旧记录仅保存工具名称：{call.tools.join(" / ")}；没有可核对的参数与结果。</p>}
-    {children.filter(child => !(call.actions || []).some(action => action.id === child.trace?.tool_call_id)).map(child => <ThinkingCall key={child.call_id} call={child} nested />)}
+    {children.filter(child => !(call.actions || []).some(action => action.id === child.trace?.tool_call_id)).map(child => <ThinkingCall key={child.call_id} call={child} nested deliveries={deliveries} />)}
   </article>;
 }
 
@@ -2594,6 +2611,8 @@ function ThinkingDetail({ item, calls, recall, flowData = {} }) {
   const knownIds = new Set(flow.map(call => call.call_id));
   const roots = flow.filter(call => !call.trace?.parent_call_id || !knownIds.has(call.trace.parent_call_id));
   const childrenFor = (call) => flow.filter(child => child.trace?.parent_call_id === call.call_id);
+  const replyKeys = new Set(flow.flatMap(call => (call.actions || []).filter(action => action.name === "reply").map(action => JSON.stringify([call.turn_id, action.id]))));
+  const unlinkedDeliveries = (flowData.deliveries || []).filter(delivery => !replyKeys.has(JSON.stringify([delivery.turn_id, delivery.tool_call_id])));
   const episodeId = item?.episode_id;
   const episodeTitle = item?.episode_title || "查看聊天记录";
   const titleItem = item?.plan_id || item?.plan
@@ -2638,24 +2657,12 @@ function ThinkingDetail({ item, calls, recall, flowData = {} }) {
         {roots.map(call => <Fragment key={call.call_id}>
           {call.plan_step_id && <div className="plan-step-marker"><span>STEP {call.plan_step_id}</span><strong>{call.plan_step_task || "执行计划步骤"}</strong></div>}
           {(flowData.interjections || []).filter(input => input.before_call_id === call.call_id).map(input => <section className="flow-input" key={input.id}><h3>用户中途插话</h3><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></section>)}
-          <ThinkingCall call={call} children={childrenFor(call)} />
+          <ThinkingCall call={call} children={childrenFor(call)} deliveries={flowData.deliveries || []} />
           {recall && recallHasEvidence && ["topic_selection", "episode_cue_admit"].includes(call.stage) && flow.indexOf(call) === lastCuesIndex ? <RecallDetail recall={recall} /> : null}
         </Fragment>)}
         {(flowData.interjections || []).filter(input => !input.before_call_id).map(input => <section className="flow-input" key={input.id}><h3>用户中途插话</h3><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></section>)}
         {recall && recallHasEvidence && lastCuesIndex < 0 ? <RecallDetail recall={recall} /> : null}
-        {!!flowData.deliveries?.length && <section className="flow-deliveries">
-          <header className="flow-deliveries-head"><h3>实际投递</h3><span>{flowData.deliveries.length} 条</span></header>
-          <div className="flow-delivery-list">{flowData.deliveries.map((delivery, index) => <article className="flow-delivery" key={delivery.id}>
-            <span className="flow-delivery-index">{String(index + 1).padStart(2, "0")}</span>
-            <div className="flow-delivery-body">
-              <div className="flow-delivery-meta"><span>{({napcat: "QQ", weixin: "微信", qq_call: "QQ 通话"})[delivery.target_channel] || delivery.target_channel} · {({text: "文字", image: "图片", voice: "语音", audio: "音频", file: "文件"})[delivery.kind] || delivery.kind}</span>
-                <span className={`flow-delivery-state is-${delivery.state}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"发送失败",superseded:"已取消",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span>
-              </div>
-              <EmotionContent className="message-content flow-delivery-text" text={delivery.text} />
-              {delivery.last_error && ["failed", "ambiguous"].includes(delivery.state) && <details className="flow-action-data"><summary>投递详情</summary><pre className="flow-json">{delivery.last_error}</pre></details>}
-            </div>
-          </article>)}</div>
-        </section>}
+        {!!unlinkedDeliveries.length && <details className="flow-action-data"><summary>未关联到 reply 的历史投递</summary><FlowDeliveries deliveries={unlinkedDeliveries} /></details>}
 
       </div>
     </>

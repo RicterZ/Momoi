@@ -658,6 +658,11 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail["flow"]["interjections"][0]["before_call_id"], "planner-next")
         self.assertTrue(detail["flow"]["running"])
         self.assertEqual(detail["flow"]["deliveries"][0]["state"], "pending")
+        self.assertEqual(detail["flow"]["deliveries"][0]["tool_call_id"], "reply-tool")
+        self.store.queue_progress("flow-owner", "reply-next", ["插话后的发言"], "napcat")
+        detail = await (await self.client.get("/api/thinking/flow-owner", headers=self._auth())).json()
+        self.assertEqual([(row["tool_call_id"], row["text"]) for row in detail["flow"]["deliveries"]],
+                         [("reply-tool", "测试发言"), ("reply-next", "插话后的发言")])
         self.store.mark_sent(detail["flow"]["deliveries"][0]["id"])
         detail = await (await self.client.get("/api/thinking/flow-owner", headers=self._auth())).json()
         self.assertEqual(detail["flow"]["deliveries"][0]["state"], "sent")
