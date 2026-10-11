@@ -2656,8 +2656,12 @@ function ThinkingDetail({ item, calls, recall, flowData = {} }) {
         {roots.map(call => <Fragment key={call.call_id}>
           {call.plan_step_id && <div className="plan-step-marker"><span>STEP {call.plan_step_id}</span><strong>{call.plan_step_task || "执行计划步骤"}</strong></div>}
           {(flowData.interjections || []).filter(input => input.before_call_id === call.call_id).map(input => <section className="flow-input" key={input.id}><h3>用户中途插话</h3><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></section>)}
-          <ThinkingCall call={call} children={childrenFor(call)} />
-          {(call.actions || []).filter(action => action.name === "reply").map(action => <FlowDeliveries key={action.id} deliveries={(flowData.deliveries || []).filter(delivery => delivery.turn_id === call.turn_id && delivery.tool_call_id === action.id)} />)}
+          <ThinkingCall call={call} children={childrenFor(call).filter(child => child.stage !== "replyer")} />
+          {(call.actions || []).filter(action => action.name === "reply").map(action => <Fragment key={action.id}>
+            {childrenFor(call).filter(child => child.stage === "replyer" && child.trace?.tool_call_id === action.id).map(child => <ThinkingCall key={child.call_id} call={child} />)}
+            <FlowDeliveries deliveries={(flowData.deliveries || []).filter(delivery => delivery.turn_id === call.turn_id && delivery.tool_call_id === action.id)} />
+          </Fragment>)}
+          {childrenFor(call).filter(child => child.stage === "replyer" && !(call.actions || []).some(action => action.name === "reply" && action.id === child.trace?.tool_call_id)).map(child => <ThinkingCall key={child.call_id} call={child} />)}
           {recall && recallHasEvidence && ["topic_selection", "episode_cue_admit"].includes(call.stage) && flow.indexOf(call) === lastCuesIndex ? <RecallDetail recall={recall} /> : null}
         </Fragment>)}
         {(flowData.interjections || []).filter(input => !input.before_call_id).map(input => <section className="flow-input" key={input.id}><h3>用户中途插话</h3><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></section>)}
