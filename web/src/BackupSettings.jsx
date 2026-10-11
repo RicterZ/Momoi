@@ -31,9 +31,11 @@ export default function BackupSettings({ token, header }) {
         <button className="quiet-button settings-button" disabled={Boolean(busy)} onClick={() => run("export")}>{busy === "export" ? "导出中…" : "导出"}</button>
       </section>
       <section className="settings-runtime-group backup-restore-group"><div className="settings-runtime-copy"><h3>恢复备份</h3><p className="settings-runtime-description">使用同版本 ZIP 替换当前数据，密钥与渠道设置保留。建议先导出备份。</p></div>
-        <div className="backup-controls"><label className={`file-picker${file ? " has-file" : ""}`} title={file?.name}><input className="file-picker-input" aria-label="选择备份 ZIP" ref={input} type="file" accept=".zip,application/zip" disabled={Boolean(busy)} onChange={e => { setFile(e.target.files[0] || null); setConfirmed(false); }} /><span className="file-picker-face"><span className="file-picker-action">上传</span></span></label>{file && <span className="backup-file-name" title={file.name}>{file.name}</span>}
-          <label className="backup-confirm"><input type="checkbox" checked={confirmed} disabled={Boolean(busy)} onChange={e => setConfirmed(e.target.checked)} />确认替换当前聊天、记忆和提示词</label>
+        <div className="backup-controls"><div className="backup-actions"><label className={`file-picker${file ? " has-file" : ""}`} title={file?.name}><input className="file-picker-input" aria-label="选择备份 ZIP" ref={input} type="file" accept=".zip,application/zip" disabled={Boolean(busy)} onChange={e => { setFile(e.target.files[0] || null); setConfirmed(false); }} /><span className="file-picker-face"><span className="file-picker-action">上传</span></span></label>
           <button className="quiet-button settings-button" disabled={Boolean(busy) || !file || !confirmed} onClick={() => run("restore")}>{busy === "restore" ? "恢复中…" : "恢复"}</button>
+          </div>
+          {file && <span className="backup-file-name" title={file.name}>{file.name}</span>}
+          <label className="backup-confirm"><input type="checkbox" checked={confirmed} disabled={Boolean(busy) || !file} onChange={e => setConfirmed(e.target.checked)} />确认替换当前数据</label>
         </div>
       </section>
       <div role="status" aria-live="polite">{message && <p>{message}</p>}{error && <p className="form-error">{error}</p>}</div>

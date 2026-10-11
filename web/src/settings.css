@@ -1359,10 +1359,16 @@
   .settings-runtime-half:nth-child(odd)::before { display: none; }
 }
 
-.backup-settings .backup-restore-group { flex-direction:column; flex-wrap:nowrap; align-items:stretch; }
-.backup-restore-group > .settings-runtime-copy { flex:0 0 auto; }
-.backup-controls { display:grid; gap:16px; width:100%; justify-items:start; }
-.backup-confirm { display:flex; gap:10px; align-items:flex-start; font-size:13px; line-height:1.6; }
+.backup-settings .settings-runtime-group { display:grid; grid-template-columns:minmax(0,1fr) 240px; gap:24px; align-items:start; min-height:0; padding:24px 0; }
+.backup-settings .settings-runtime-group > .settings-button { justify-self:end; }
+.backup-settings .settings-runtime-copy h3 { margin:0; }
+.backup-controls { display:grid; gap:12px; min-width:0; justify-items:end; }
+.backup-actions { display:flex; gap:12px; align-items:center; }
+.backup-confirm { display:flex; gap:8px; align-items:flex-start; font-size:12px; line-height:1.6; }
+@media (max-width:700px) {
+  .backup-settings .settings-runtime-group { grid-template-columns:minmax(0,1fr); gap:16px; }
+  .backup-settings .settings-runtime-group > .settings-button, .backup-controls { justify-self:start; justify-items:start; }
+}
 .backup-confirm input { appearance:auto; flex:0 0 16px; width:16px; height:16px; margin:3px 0 0; accent-color:var(--pink); }
 .backup-controls .file-picker { width:72px; max-width:100%; --control-h:36px; }
 .backup-settings .settings-button { width:72px; min-height:36px; padding:0 10px; }
