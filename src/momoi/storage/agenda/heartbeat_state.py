@@ -28,7 +28,7 @@ class HeartbeatStateStore:
                 if changed.rowcount != 1:
                     return {"ok": False, "allowed": False, "reason": "审批期间好感度已变化，请重新申请。"}
             result = {"ok": True, **decision, "value": current + delta if decision["allowed"] else current}
-            self._append_turn_journal(turn_id, "affinity_review", {"before": current, "delta": delta, "amount": arguments["amount"], "planner_reason": arguments["reason"], "evidence": arguments["evidence"], **result},
+            self._append_turn_journal(turn_id, "affinity_review", {"before": current, "delta": delta, "amount": arguments["amount"], "planner_reason": arguments["reason"], "evidence": arguments["evidence"], "dialogue": [{"role": row["role"], "content": row["content"]} for row in arguments.get("dialogue", [])], **result},
                                       visibility="internal", trust="runtime", created_at=time.time())
         return result
 

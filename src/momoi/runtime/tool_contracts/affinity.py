@@ -2,7 +2,7 @@
 AFFINITY_TOOLS = [
     {
         "name": name,
-        "description": f"申请{direction}好感度 1 点，幅度固定；提供理由和可核实的证据。系统附上最近最多 40 条真实对话（至少 10 条，包含角色），经独立 LLM 审批允许后修改数值；拒绝时返回原因。",
+        "description": f"申请{direction}好感度；提供理由和可核实的证据。系统附上最近最多 40 条真实对话（至少 10 条，包含角色），经独立 LLM 审批允许后修改数值；拒绝时返回原因。",
         "input_schema": {
             "type": "object", "additionalProperties": False,
             "properties": {

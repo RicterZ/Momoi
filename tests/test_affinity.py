@@ -118,7 +118,7 @@ def test_affinity_review_only_writes_on_valid_approval(tmp_path, monkeypatch, de
     async def complete(system, messages, tools, **kwargs):
         assert '{{AFFINITY}}' not in str(system)
         assert '# 好感度规则' in str(system)
-        captured.append(json.loads(messages[0]['content']))
+        captured.append(messages[0]['content'])
         return SimpleNamespace(content=[{'type': 'text', 'text': decision}], usage={}, tool_calls=[])
     provider = SimpleNamespace(complete=complete)
     request = SimpleNamespace(turn_id='review', delivery_channel=SimpleNamespace(name='dashboard'))
@@ -126,10 +126,12 @@ def test_affinity_review_only_writes_on_valid_approval(tmp_path, monkeypatch, de
     try:
         result = asyncio.run(review_affinity(config, store, provider, call, request))
         assert store.self_state()['affinity'] == expected
-        assert len(captured[0]['dialogue']) == 10
-        assert {item['role'] for item in captured[0]['dialogue']} == {'user', 'assistant'}
-        assert captured[0]['evidence'] == '实际消息0'
-        assert captured[0]['amount'] == 1
+        assert captured[0].count('USER:') == 5
+        assert captured[0].count('ASSISTANT:') == 5
+        assert '申请提供的证据：实际消息0' in captured[0]
+        assert '当前关系阶段为：熟悉' in captured[0]
+        assert 'amount' not in captured[0]
+        assert 'current_affinity' not in captured[0]
         assert result['allowed'] is (expected == 21)
         captured.clear()
         invalid_call = SimpleNamespace(name=call.name, arguments={**call.arguments, 'amount': 2})
@@ -167,7 +169,8 @@ def test_affinity_decrease_and_review_conflict(tmp_path, monkeypatch):
     call = SimpleNamespace(name='affinity_decrease', arguments={'reason': '边界被侵犯', 'evidence': '实际消息'})
     try:
         result = asyncio.run(review_affinity(config, store, SimpleNamespace(complete=complete), call, request))
-        assert result['value'] == 19
+        assert store.self_state()['affinity'] == 19
+        assert 'value' not in result
         assert store.affinity_reviews()[0]['planner_reason'] == '边界被侵犯'
         assert store.affinity_reviews()[0]['reason'] == '持续侵犯边界'
         conflict = True
@@ -176,3 +179,16 @@ def test_affinity_decrease_and_review_conflict(tmp_path, monkeypatch):
         assert store.self_state()['affinity'] == 30
     finally:
         store.close()
+
+
+def test_affinity_review_message_hides_numeric_state_and_history():
+    from momoi.runtime.agent.affinity import affinity_review_message
+    message = affinity_review_message(60, "affinity_increase", {"reason": "本次理由", "evidence": "本次证据"},
+        [{"role": "user", "content": "你好"}],
+        [{"allowed": True, "before": 59, "value": 60, "amount": 1, "delta": 1,
+          "planner_reason": "历史理由", "reason": "审批理由", "evidence": "历史证据",
+          "dialogue": [{"role": "assistant", "content": "你好我也好"}]}])
+    assert not any(character.isdigit() for character in message)
+    assert "当前关系阶段为：好朋友" in message
+    assert "历史理由" in message and "历史证据" in message
+    assert "ASSISTANT: 你好我也好" in message
