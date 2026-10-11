@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from time import time
+from dataclasses import replace
 
 from ...observability.events import log_event
 from ...observability.values import safe_preview
@@ -225,7 +226,7 @@ class Scheduler:
             if operation_id is not None and operation_id not in self._queued_memory_operations:
                 self._enqueue_memory_operation(operation_id)
                 continue
-            reflection = self.store.claim_due_reflection(self.config.reflection)
+            reflection = self.store.claim_due_reflection(replace(self.config.reflection, enabled=True) if self.config.affinity_enabled else self.config.reflection)
             if reflection is not None:
                 log_event(
                     logger,
@@ -266,7 +267,7 @@ class Scheduler:
                     self.store.next_episode_relation_retry_at()
                     if self.config.episode_annealing.relations_enabled else None,
                     self.store.next_reflection_due_at(
-                        self.config.reflection,
+                        replace(self.config.reflection, enabled=True) if self.config.affinity_enabled else self.config.reflection,
                     ),
                     self.store.next_weekly_reflection_due_at(self.config.reflection),
                     self.store.next_heartbeat_due_at(self.config.heartbeat.enabled),

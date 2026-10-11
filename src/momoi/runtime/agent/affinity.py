@@ -51,7 +51,9 @@ async def review_affinity(config, store, provider, call, request):
     delta = 1 if call.name == "affinity_increase" else -1
     if not 0 <= current + delta <= 100:
         return {"ok": False, "allowed": False, "reason": "调整后好感度必须在 0–100 之间。"}
-    rows = store.replyer_dialogue_rows(request.delivery_channel.name, limit=40)
+    rows = getattr(request, "affinity_dialogue", None)
+    if rows is None:
+        rows = store.replyer_dialogue_rows(request.delivery_channel.name, limit=40)
     if len(rows) < 10:
         return {"ok": False, "allowed": False, "reason": "真实对话不足 10 条，暂不能审批。"}
     rules = prompt_text(config, "AFFINITY.md", files("momoi").joinpath("prompts/affinity.md").read_text(encoding="utf-8"))
@@ -81,5 +83,5 @@ async def review_affinity(config, store, provider, call, request):
         return {"ok": False, "allowed": False, "reason": "审批失败或返回格式无效，好感度未修改。", "error": type(error).__name__}
     if not getattr(config, "affinity_enabled", False):
         return {"ok": False, "allowed": False, "reason": "审批期间好感度已关闭，未修改。"}
-    result = store.apply_affinity_review(request.turn_id, current, delta, {**args, "dialogue": rows}, decision)
+    result = store.apply_affinity_review(request.turn_id, current, delta, {**args, "dialogue": rows, "settlement": bool(getattr(request, "affinity_settlement", False)), "settlement_date": getattr(request, "affinity_settlement_date", None)}, decision)
     return {key: value for key, value in result.items() if key != "value"}

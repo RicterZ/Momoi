@@ -2,6 +2,7 @@ import asyncio
 import logging
 import json
 from typing import Any
+from types import SimpleNamespace
 
 from ...observability.events import log_event
 from ...models import ToolCall
@@ -184,13 +185,45 @@ class ReflectionWorkflow:
             }
         ]
         from ..tool_contracts.runtime import READ_TOOL_RESULT_SPEC
-        tools = [REFLECTION_FINISH_SPEC, *REFLECTION_RETRIEVAL_SPECS, READ_TOOL_RESULT_SPEC]
+        settlement_done = not self.config.affinity_enabled or bool(self.store._db.execute(
+            "SELECT 1 FROM turn_journal WHERE (item_type='affinity_settlement' AND json_extract(payload_json, '$.local_date')=?) "
+            "OR (item_type='affinity_review' AND json_extract(payload_json, '$.settlement_date')=?) LIMIT 1",
+            (local_date, local_date)).fetchone())
+        settlement_spec = {
+            "name": "affinity_settle",
+            "description": "每日好感度结算，结束复盘前必须调用一次。判断增加、降低或保持；增减仍由 checker 审批，不占普通阶段每日额度。",
+            "input_schema": {"type": "object", "additionalProperties": False,
+                "properties": {"direction": {"type": "string", "enum": ["increase", "decrease", "unchanged"]},
+                    "reason": {"type": "string", "minLength": 1, "maxLength": 1000},
+                    "evidence": {"type": "string", "minLength": 1, "maxLength": 4000}},
+                "required": ["direction", "reason", "evidence"]},
+        }
+        tools = [*([settlement_spec] if self.config.affinity_enabled else []), REFLECTION_FINISH_SPEC, *REFLECTION_RETRIEVAL_SPECS, READ_TOOL_RESULT_SPEC]
         retrieval = ReflectionRetrieval(self.store, self.memory_tools, window[1])
         workflow_complete = False
         workflow_result: dict[str, object] | None = None
 
         async def execute_tool(call: ToolCall) -> dict[str, Any]:
-            nonlocal workflow_complete, workflow_result
+            nonlocal workflow_complete, workflow_result, settlement_done
+            if call.name == "affinity_settle":
+                if settlement_done:
+                    return {"ok": False, "error": "affinity_already_settled", "message": "本次复盘已结算，不重复调整。"}
+                if call.arguments["direction"] == "unchanged":
+                    result = {"ok": True, "state": "unchanged", "reason": call.arguments["reason"]}
+                else:
+                    from ..agent.affinity import review_affinity
+                    evidence_rows = [row for row in rows if row.get("role") == "user" or
+                                     (row.get("role") == "assistant" and row.get("delivery_state") == "delivered")]
+                    settlement_call = ToolCall(call.id, "affinity_" + call.arguments["direction"],
+                                               {key: call.arguments[key] for key in ("reason", "evidence")})
+                    result = await review_affinity(self.config, self.store, self.provider, settlement_call,
+                        SimpleNamespace(turn_id=turn_id, affinity_dialogue=evidence_rows,
+                                        affinity_settlement=True, affinity_settlement_date=local_date, delivery_channel=self.channel))
+                settlement_done = True
+                self.store.append_turn_journal(turn_id, "affinity_settlement", {"local_date": local_date, **result}, trust="runtime")
+                return result
+            if call.name == "reflection_finish" and not settlement_done:
+                return {"ok": False, "error": "affinity_settlement_required", "message": "请先调用 affinity_settle 完成本日关系结算，可以保持不变；不得为了结算而强行增减。"}
             if call.name != "reflection_finish":
                 return await retrieval.execute(call)
             validation_errors = []

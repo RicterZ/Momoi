@@ -241,3 +241,32 @@ def test_affinity_shares_mood_context_only_when_enabled(tmp_path):
         assert "<mood" in text and "<affinity>20/100</affinity>" in text
     finally:
         store.close()
+
+
+def test_daily_affinity_limit_persists_and_excludes_settlement(tmp_path, monkeypatch):
+    from momoi.runtime.agent.harness import TurnHarness
+    path = tmp_path / 'db'
+    store = Store(path)
+    store.begin_turn('limit', 'owner', [])
+    args = {'amount': 1, 'reason': '理由', 'evidence': '证据'}
+    allowed = {'allowed': True, 'reason': '审批允许'}
+    for value in (20, 21, 22):
+        assert store.apply_affinity_review('limit', value, 1, args, allowed)['allowed']
+    assert store.affinity_daily_increases() == 3
+    assert not store.apply_affinity_review('limit', 23, 1, args, allowed)['allowed']
+    assert store.apply_affinity_review('limit', 23, -1, args, allowed)['allowed']
+    assert store.apply_affinity_review('limit', 22, 1, {**args, 'settlement': True}, allowed)['allowed']
+    assert store.affinity_daily_increases() == 3
+    harness = TurnHarness.for_stage('owner')
+    assert harness.affinity_limit_error('affinity_increase', 3)
+    assert not harness.affinity_limit_error('affinity_decrease', 3)
+    assert not TurnHarness.for_stage('reflection').affinity_limit_error('affinity_increase', 3)
+    store.close()
+    store = Store(path)
+    assert store.affinity_daily_increases() == 3
+    assert store.self_state()['affinity'] == 23
+    import time
+    now = time.time()
+    monkeypatch.setattr('momoi.storage.agenda.heartbeat_state.time.time', lambda: now + 86400)
+    assert store.affinity_daily_increases() == 0
+    store.close()

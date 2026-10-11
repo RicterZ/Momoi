@@ -317,7 +317,9 @@ class ToolBatchExecutor:
                     )
             elif call.name in {"affinity_increase", "affinity_decrease"}:
                 from .affinity import review_affinity
-                result = await review_affinity(self.config, self.store, self.provider, call, request)
+                limit_error = request.harness.affinity_limit_error(call.name, self.store.affinity_daily_increases())
+                result = ({"ok": False, "allowed": False, "error": "affinity_daily_limit", "reason": limit_error}
+                          if limit_error else await review_affinity(self.config, self.store, self.provider, call, request))
             elif call.name == "mood_change":
                 if execution.stage not in {"owner", "heartbeat", "webhook"}:
                     result = {"ok": False, "error": "tool_not_allowed"}
