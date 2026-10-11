@@ -168,7 +168,7 @@ class GoalWorkflow:
                     _live_prompt(GOAL_PROMPT_PATH, GOAL_SYSTEM_PROMPT),
                 ),
                 ("due_goal", due_goal_lines(self.store.goal(goal_id) or {"id": goal_id, "status": "deleted"}, scheduled_review_at=review_at)),
-                ("self_state", heartbeat_self_state_lines(self.store.self_state_context(), current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"))),
+                ("self_state", heartbeat_self_state_lines(self.store.self_state_context(affinity_enabled=self.config.affinity_enabled), current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"))),
                 ("recent_goals", recent_goals),
             )
 

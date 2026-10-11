@@ -32,7 +32,7 @@ class HeartbeatStateStore:
                                       visibility="internal", trust="runtime", created_at=time.time())
         return result
 
-    def self_state_context(self, now: float | None = None) -> str:
+    def self_state_context(self, now: float | None = None, *, affinity_enabled: bool = False) -> str:
         now = time.time() if now is None else now
         state = self.self_state()
 
@@ -50,6 +50,7 @@ class HeartbeatStateStore:
                         0, int((now - float(state["mood_updated_at"])) / 60)
                     ),
                 },
+                **({"affinity": state["affinity"]} if affinity_enabled else {}),
                 "activity": {
                     "text": state["activity"],
                     "result": state["activity_result"],

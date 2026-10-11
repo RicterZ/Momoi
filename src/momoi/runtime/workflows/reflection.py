@@ -7,6 +7,7 @@ from ...observability.events import log_event
 from ...models import ToolCall
 from ...storage.reflection.reflection_values import reflection_window
 from ..agent import AgentWorkflow
+from ..context.presentation import heartbeat_self_state_lines
 from ..parsing import parse_reflection_finish
 from ..tool_contracts.reflection import REFLECTION_FINISH_SPEC
 from ..transcript.reflection import BACKGROUND_TOOLS, reflection_transcript
@@ -162,6 +163,9 @@ class ReflectionWorkflow:
             ("recall_memories", confirmed_memory),
             ("reflection_memories", learned),
             ("mood_timeline", str(source.get("mood_timeline") or "(none)")),
+            ("self_state", heartbeat_self_state_lines(
+                self.store.self_state_context(affinity_enabled=True),
+            ) if self.config.affinity_enabled else ""),
             ("episode_timeline", str(source.get("episode_timeline") or "(none)")),
 
         )

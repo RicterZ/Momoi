@@ -125,6 +125,8 @@ def heartbeat_self_state_lines(value: str = "{}", *, current_time: str = "") -> 
             "state", "intensity", "age_minutes", "updated_at",
         )})
         lines.append(f"<mood{attributes}><cause>{escape(str(mood.get('cause') or ''))}</cause></mood>")
+    if "affinity" in state:
+        lines.append(f"<affinity>{escape(str(state["affinity"]))}/100</affinity>")
     if state.get("last_heartbeat_at"):
         lines.append(f'<heartbeat at={quoteattr(str(state["last_heartbeat_at"]))} />')
     return "\n".join(lines)

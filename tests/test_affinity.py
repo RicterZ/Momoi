@@ -55,7 +55,7 @@ def test_affinity_planner_enabled_disabled_and_custom_prompt(daemon, tmp_path):
         assert system.index('RELATIONSHIP') > system.index('PERSONA')
         assert system.count('RELATIONSHIP') == 1
         assert '{{AFFINITY}}' not in system
-        assert 'RELATIONSHIP' not in str(daemon._system(planner=False))
+        assert 'RELATIONSHIP' in str(daemon._system(planner=False))
     event = IncomingMessage('affinity-input', 'owner', '你好', 1, 1)
     assert '<affinity>20/100</affinity>' in str(daemon._owner_update_message([event], daemon.channel, {}))
     daemon.config = replace(daemon.config, affinity_enabled=False)
@@ -79,7 +79,7 @@ def test_affinity_value_is_in_current_planner_user_message(daemon):
     with pytest.raises(ContextCaptured):
         asyncio.run(daemon._complete_batch([event], 'affinity-turn'))
     current_text = ''.join(block.get('text', '') for block in captured['messages'][-1]['content'])
-    assert '<affinity>\n20/100\n</affinity>' in current_text
+    assert '<affinity>20/100</affinity>' in current_text
     assert all('<affinity>' not in str(message) for message in captured['messages'][:-1])
 
 
@@ -224,5 +224,20 @@ def test_affinity_checker_thinking_record_links_to_planner(tmp_path, monkeypatch
         assert checker["round"] == 2
         assert '"allowed":false' in checker["assistant_text"]
         assert store.self_state()["affinity"] == 20
+    finally:
+        store.close()
+
+
+def test_affinity_shares_mood_context_only_when_enabled(tmp_path):
+    import json
+    from momoi.runtime.context.presentation import heartbeat_self_state_lines
+    store = Store(tmp_path / "db")
+    try:
+        disabled = store.self_state_context()
+        assert "affinity" not in json.loads(disabled)
+        assert "<affinity>" not in heartbeat_self_state_lines(disabled)
+        enabled = store.self_state_context(affinity_enabled=True)
+        text = heartbeat_self_state_lines(enabled)
+        assert "<mood" in text and "<affinity>20/100</affinity>" in text
     finally:
         store.close()

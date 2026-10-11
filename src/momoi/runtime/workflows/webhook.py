@@ -58,7 +58,7 @@ class WebhookWorkflow:
                 ),
                 (
                     "self_state",
-                    heartbeat_self_state_lines(self.store.self_state_context(), current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds")),
+                    heartbeat_self_state_lines(self.store.self_state_context(affinity_enabled=self.config.affinity_enabled), current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds")),
                 ),
                 ("recent_events", recent_events),
             )

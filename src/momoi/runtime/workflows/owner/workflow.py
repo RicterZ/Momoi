@@ -326,11 +326,10 @@ class OwnerWorkflow:
             (
                 "self_state",
                 heartbeat_self_state_lines(
-                    self.store.self_state_context(),
+                    self.store.self_state_context(affinity_enabled=self.config.affinity_enabled),
                     current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
                 ),
             ),
-            ("affinity", str(self.store.self_state()["affinity"]) + "/100" if self.config.affinity_enabled else ""),
             ("runtime_directives", "\n\n".join(directives)),
             ("recent_recall_context", candidates["recent_recall_context"]),
             ("triggered_memories", triggered_memory_context(self.memory, batch, injected_memories, on_injected=self._record_trigger_injections)),

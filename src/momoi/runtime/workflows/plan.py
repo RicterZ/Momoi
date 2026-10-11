@@ -87,7 +87,7 @@ class PlanWorkflow:
             )
             messages[-1]["content"].insert(0, {"type": "text", "text": pack_current_turn_context(
                 self.store, "plan_step", ("self_state", heartbeat_self_state_lines(
-                    self.store.self_state_context(),
+                    self.store.self_state_context(affinity_enabled=self.config.affinity_enabled),
                     current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
                 )),
             )})
