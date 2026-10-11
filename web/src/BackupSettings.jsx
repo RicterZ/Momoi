@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 
-export default function BackupSettings({ token }) {
+export default function BackupSettings({ token, header }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -25,14 +25,14 @@ export default function BackupSettings({ token }) {
     finally { setBusy(""); }
   }
   return <section className="backup-settings">
-    <div className="settings-section-header"><span className="panel-label">SAVE DATA // BACKUP</span><h2>备份与恢复</h2><p>保留同一个 Momoi，以及你们积累的共同历史。</p></div>
-    <div className="settings-form-body">
-      <section className="settings-runtime-group"><div className="settings-runtime-copy"><h3>导出备份</h3><p className="settings-runtime-description">导出前暂停运行，生成并压缩一致的数据库快照。包括 SOUL、自定义提示词、聊天、记忆、任务、表情与渠道媒体素材；不含思考、工具调用结果、日志、浏览器数据或账户密钥。</p></div>
+    {header}
+    <div className="settings-form-body settings-runtime-controls">
+      <section className="settings-runtime-group"><div className="settings-runtime-copy"><h3>导出备份</h3><p className="settings-runtime-description">导出提示词、聊天、记忆和素材。期间暂停运行，完成后自动恢复。不含思考、调用结果、日志和密钥。</p></div>
         <button className="quiet-button settings-button" disabled={Boolean(busy)} onClick={() => run("export")}>{busy === "export" ? "正在生成备份…" : "导出 ZIP"}</button>
       </section>
-      <section className="settings-runtime-group"><div className="settings-runtime-copy"><h3>恢复备份</h3><p className="settings-runtime-description">使用相同版本导出的 Momoi ZIP。恢复会替换当前聊天、记忆和提示词；模型密钥与消息渠道设置保留。建议先导出当前备份。未发送的旧消息不会重发，正在执行的计划会暂停。</p></div>
-        <div className="backup-controls"><label className="settings-field">选择备份 ZIP<input ref={input} type="file" accept=".zip,application/zip" disabled={Boolean(busy)} onChange={e => { setFile(e.target.files[0] || null); setConfirmed(false); }} /></label>
-          <label className="backup-confirm"><input type="checkbox" checked={confirmed} disabled={Boolean(busy)} onChange={e => setConfirmed(e.target.checked)} />我确认用这份备份替换当前共同历史与提示词</label>
+      <section className="settings-runtime-group backup-restore-group"><div className="settings-runtime-copy"><h3>恢复备份</h3><p className="settings-runtime-description">选择相同版本的备份，替换当前聊天、记忆和提示词。模型密钥与渠道设置保留。建议先备份；旧消息不重发，执行中的计划会暂停。</p></div>
+        <div className="backup-controls"><label className={`file-picker${file ? " has-file" : ""}`} title={file?.name}><input className="file-picker-input" aria-label="选择备份 ZIP" ref={input} type="file" accept=".zip,application/zip" disabled={Boolean(busy)} onChange={e => { setFile(e.target.files[0] || null); setConfirmed(false); }} /><span className="file-picker-face"><span className="file-picker-action">{file ? file.name : "选择备份 ZIP"}</span></span></label>
+          <label className="backup-confirm"><input type="checkbox" checked={confirmed} disabled={Boolean(busy)} onChange={e => setConfirmed(e.target.checked)} />确认替换当前聊天、记忆和提示词</label>
           <button className="quiet-button settings-button" disabled={Boolean(busy) || !file || !confirmed} onClick={() => run("restore")}>{busy === "restore" ? "正在验证并恢复…" : "恢复备份"}</button>
         </div>
       </section>

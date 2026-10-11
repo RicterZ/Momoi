@@ -1359,9 +1359,12 @@
   .settings-runtime-half:nth-child(odd)::before { display: none; }
 }
 
-.backup-controls { display:grid; gap:16px; width:100%; }
+.backup-settings .backup-restore-group { flex-direction:column; flex-wrap:nowrap; align-items:stretch; }
+.backup-restore-group > .settings-runtime-copy { flex:0 0 auto; }
+.backup-controls { display:grid; gap:16px; width:100%; justify-items:start; }
 .backup-confirm { display:flex; gap:10px; align-items:flex-start; font-size:13px; line-height:1.6; }
-.backup-settings .settings-section-header { padding:24px; }
+.backup-confirm input { appearance:auto; flex:0 0 16px; width:16px; height:16px; margin:3px 0 0; accent-color:var(--pink); }
+.backup-controls .file-picker { width:280px; max-width:100%; }
 
 .settings-budget-fields > .settings-field > .settings-label { position:static; width:auto; height:auto; overflow:visible; clip-path:none; white-space:normal; }
 .settings-budget-fields { max-width:100%; }
