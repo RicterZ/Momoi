@@ -2726,14 +2726,14 @@ function PromptSettings({ items, token, navigation }) {
       {progress && <ApplyDialog progress={progress} onClose={() => setProgress(null)} />}
       <div className="settings-form-body settings-persona">
         <div className="prompt-workspace">
-          <nav className="record-list prompt-list" aria-label="提示词文件">
+          <div className="record-list prompt-list" role="navigation" aria-label="提示词文件">
             {orderedItems.map(item => <button type="button" key={item.id}
               className={`record-item${selected?.id === item.id ? " active" : ""}`}
               aria-pressed={selected?.id === item.id} onClick={() => setSelectedId(item.id)}>
               <span className="prompt-list-heading"><strong>{promptDetails[item.id].title}</strong>{drafts[item.id] !== saved[item.id] && <span className="prompt-unsaved">未保存</span>}</span>
               <span className="panel-label">{item.filename}</span>
             </button>)}
-          </nav>
+          </div>
           {selected && <PromptEditor key={selected.id} item={selected} value={drafts[selected.id]} disabled={saving} onChange={value => { setDrafts(current => ({ ...current, [selected.id]: value })); setStatus(null); }} />}
         </div>
       </div>

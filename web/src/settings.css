@@ -574,6 +574,7 @@
 }
 .settings-form-body.settings-persona {
   background: var(--surface);
+  padding: 0;
 }
 .settings-persona .prompt-workspace {
   display: grid;
@@ -872,7 +873,7 @@
     --control-focus: var(--blue);
   }
   .settings-persona .prompt-workspace { grid-template-columns: minmax(0, 1fr); }
-  .prompt-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-right: 0; border-bottom: 2px solid var(--ink); }
+  .settings-persona .prompt-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-right: 0; border-bottom: 2px solid var(--ink); }
   .prompt-list .record-item { padding: 14px; border-bottom: 0; }
 
 }
