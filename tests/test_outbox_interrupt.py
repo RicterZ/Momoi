@@ -27,12 +27,15 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
             return 'dashboard:test'
 
         self.daemon.channels['dashboard'].send_message = send
-        with patch.object(self.daemon, '_wait_outbox_gap', AsyncMock()) as gap:
+        with patch.object(self.daemon, '_wait_outbox_gap', AsyncMock()) as gap, \
+                patch('momoi.runtime.dispatch.delivery.random.uniform', return_value=6) as random_gap:
             await asyncio.wait_for(self.daemon._outbox_worker(stop), 1)
             self.assertEqual(gap.await_count, 2)
             for call in gap.await_args_list:
-                self.assertGreaterEqual(call.args[1], 0.6)
-                self.assertLessEqual(call.args[1], 1.2)
+                self.assertEqual(call.args[1], 3)
+            self.assertEqual(random_gap.call_count, 2)
+            from momoi.runtime.dispatch.delivery import message_gap_bounds
+            random_gap.assert_called_with(*message_gap_bounds('第三条', self.daemon.daemon_policy))
             self.assertFalse(self.daemon.channels['dashboard'].typing)
         self.assertEqual(sent, ['第一条', '第二条', '第三条'])
         self.assertTrue(all(row[0] == 'sent' for row in self.store._db.execute('SELECT state FROM outbox')))

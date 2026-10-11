@@ -72,9 +72,10 @@ class OutboxWorker:
                 delivery = (row.channel, row.turn_id)
                 if delivery == previous_delivery and channel.name != "qq_call":
                     delay = random.uniform(
-                        *((0.6, 1.2) if channel.name == "dashboard"
-                          else message_gap_bounds(row.text, self.daemon_policy))
+                        *message_gap_bounds(row.text, self.daemon_policy)
                     )
+                    if channel.name == "dashboard":
+                        delay /= 2
                     log_event(
                         logger,
                         TRACE,
