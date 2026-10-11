@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { readFileSync } from "node:fs";
 import { previewRequestMetrics } from "./web/preview/metrics.js";
 import react from "@vitejs/plugin-react";
 import { createSettingsPreview } from "./web/preview/settings.js";
@@ -700,6 +701,8 @@ function previewRecords() {
 
 function previewUsageApi() {
   const prompts = new Map([
+    ...[["planner", "PLANNER.md", "PLANNER.md"], ["replyer", "REPLYER.md", "roles/momoi/REPLYER.md"]].map(([id, filename, path]) =>
+      [id, { id, filename, content: readFileSync(new URL(`./config.example/prompts/${path}`, import.meta.url), "utf8") }]),
     [
       "soul",
       {

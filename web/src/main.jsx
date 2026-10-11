@@ -2686,6 +2686,9 @@ function PromptEditor({ item, value, onChange, disabled }) {
 }
 
 function PromptSettings({ items, token, navigation }) {
+  const orderedItems = [...items].sort((a, b) => ["soul", "replyer", "planner", "heartbeat"].indexOf(a.id) - ["soul", "replyer", "planner", "heartbeat"].indexOf(b.id));
+  const [selectedId, setSelectedId] = useState(orderedItems[0]?.id);
+  const selected = orderedItems.find(item => item.id === selectedId) || orderedItems[0];
   const initial = () => Object.fromEntries(items.map(item => [item.id, item.content || ""]));
   const [saved, setSaved] = useState(initial);
   const [drafts, setDrafts] = useState(initial);
@@ -2722,8 +2725,16 @@ function PromptSettings({ items, token, navigation }) {
     <form className="settings-prompts-form" onSubmit={save} data-dirty={dirtyItems.length > 0}>
       {progress && <ApplyDialog progress={progress} onClose={() => setProgress(null)} />}
       <div className="settings-form-body settings-persona">
-        <div className="prompt-grid">
-          {[...items].sort((a, b) => ["soul", "replyer", "planner", "heartbeat"].indexOf(a.id) - ["soul", "replyer", "planner", "heartbeat"].indexOf(b.id)).map(item => <PromptEditor key={item.id} item={item} value={drafts[item.id]} disabled={saving} onChange={value => { setDrafts(current => ({ ...current, [item.id]: value })); setStatus(null); }} />)}
+        <div className="prompt-workspace">
+          <nav className="record-list prompt-list" aria-label="提示词文件">
+            {orderedItems.map(item => <button type="button" key={item.id}
+              className={`record-item${selected?.id === item.id ? " active" : ""}`}
+              aria-pressed={selected?.id === item.id} onClick={() => setSelectedId(item.id)}>
+              <span className="prompt-list-heading"><strong>{promptDetails[item.id].title}</strong>{drafts[item.id] !== saved[item.id] && <span className="prompt-unsaved">未保存</span>}</span>
+              <span className="panel-label">{item.filename}</span>
+            </button>)}
+          </nav>
+          {selected && <PromptEditor key={selected.id} item={selected} value={drafts[selected.id]} disabled={saving} onChange={value => { setDrafts(current => ({ ...current, [selected.id]: value })); setStatus(null); }} />}
         </div>
       </div>
       <SaveBar {...navigation} busy={saving || navigation.busy} dirty={dirtyItems.length > 0} status={status} hint="" />

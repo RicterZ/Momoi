@@ -575,11 +575,16 @@
 .settings-form-body.settings-persona {
   background: var(--surface);
 }
-.settings-persona .prompt-grid {
+.settings-persona .prompt-workspace {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: 460px;
 }
+.prompt-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.settings-persona .prompt-list { display: block; }
+.prompt-list-heading strong { font-size: 13px; }
+.prompt-list .panel-label { font-size: 10px; text-transform: none; }
+.prompt-unsaved { font-size: 10px; color: var(--pink); }
 .settings-persona .prompt-card {
   --control-accent: var(--blue);
   --control-focus: var(--pink);
@@ -588,12 +593,6 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-}
-.settings-persona .prompt-grid > .prompt-card:nth-child(even) {
-  border-left: 2px solid var(--ink);
-}
-.settings-persona .prompt-grid > .prompt-card:nth-child(n + 3) {
-  border-top: 2px solid var(--ink);
 }
 .settings-persona .prompt-code {
   display: none;
@@ -872,17 +871,10 @@
     --control-accent: var(--pink);
     --control-focus: var(--blue);
   }
-  .settings-persona .prompt-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .settings-persona .prompt-grid > .prompt-card + .prompt-card {
-    border-left: 0;
-    border-top: 2px solid var(--ink);
-  }
-  .settings-persona .prompt-grid > .prompt-card:nth-child(even) {
-    --control-accent: var(--pink);
-    --control-focus: var(--blue);
-  }
+  .settings-persona .prompt-workspace { grid-template-columns: minmax(0, 1fr); }
+  .prompt-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-right: 0; border-bottom: 2px solid var(--ink); }
+  .prompt-list .record-item { padding: 14px; border-bottom: 0; }
+
 }
 
 .settings-secret-input input {
