@@ -585,6 +585,7 @@
 .settings-persona .prompt-list { display: block; }
 .prompt-list-heading strong { font-size: 13px; }
 .prompt-list .panel-label { font-size: 10px; text-transform: none; }
+.prompt-list .prompt-list-description { display: block; margin-top: 10px; font-size: 11px; line-height: 1.7; overflow: visible; }
 .prompt-unsaved { font-size: 10px; color: var(--pink); }
 .settings-persona .prompt-card {
   --control-accent: var(--blue);
@@ -610,6 +611,7 @@
   grid-template-rows: minmax(0, 1fr);
 }
 .settings-persona .prompt-card-head {
+  margin-bottom: 18px;
   align-items: baseline;
   justify-content: flex-start;
   flex-wrap: wrap;

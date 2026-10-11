@@ -2670,7 +2670,6 @@ function PromptEditor({ item, value, onChange, disabled }) {
         <h2>{details.title}</h2>
         <span className="panel-label">PROMPTS // {item.filename}</span>
       </header>
-      <p className="prompt-description">{details.description}</p>
       <label className="prompt-field">
         <textarea
           className="dash-input"
@@ -2732,6 +2731,7 @@ function PromptSettings({ items, token, navigation }) {
               aria-pressed={selected?.id === item.id} onClick={() => setSelectedId(item.id)}>
               <span className="prompt-list-heading"><strong>{promptDetails[item.id].title}</strong>{drafts[item.id] !== saved[item.id] && <span className="prompt-unsaved">未保存</span>}</span>
               <span className="panel-label">{item.filename}</span>
+              <p className="prompt-list-description">{promptDetails[item.id].description}</p>
             </button>)}
           </div>
           {selected && <PromptEditor key={selected.id} item={selected} value={drafts[selected.id]} disabled={saving} onChange={value => { setDrafts(current => ({ ...current, [selected.id]: value })); setStatus(null); }} />}
