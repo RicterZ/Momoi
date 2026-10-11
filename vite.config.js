@@ -880,7 +880,7 @@ function previewUsageApi() {
               emotions: 0,
               memories: records.memories.length,
             },
-            affinity: {enabled: true, value: 10, maximum: 100},
+            affinity: {enabled: true, value: 20, maximum: 100},
             mood: {
               state: "happy",
               intensity: 0.65,

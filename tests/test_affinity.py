@@ -26,7 +26,7 @@ def test_affinity_config_prompt_and_persistence(tmp_path):
     with pytest.raises(ValueError):
         settings.update('affinity', '')
     store = Store(config.database, config.workspace)
-    assert store.self_state()['affinity'] == 10
+    assert store.self_state()['affinity'] == 20
     with store._db:
         store._db.execute('UPDATE self_state SET affinity=37')
     for value in (-1, 101):
@@ -56,7 +56,7 @@ def test_affinity_planner_enabled_disabled_and_custom_prompt(daemon, tmp_path):
         assert '{{AFFINITY}}' not in system
         assert 'RELATIONSHIP' not in str(daemon._system(planner=False))
     event = IncomingMessage('affinity-input', 'owner', '你好', 1, 1)
-    assert '<affinity>10/100</affinity>' in str(daemon._owner_update_message([event], daemon.channel, {}))
+    assert '<affinity>20/100</affinity>' in str(daemon._owner_update_message([event], daemon.channel, {}))
     daemon.config = replace(daemon.config, affinity_enabled=False)
     assert 'RELATIONSHIP' not in str(daemon._system(planner=True))
     assert '<affinity>' not in str(daemon._owner_update_message([event], daemon.channel, {}))
@@ -78,5 +78,5 @@ def test_affinity_value_is_in_current_planner_user_message(daemon):
     with pytest.raises(ContextCaptured):
         asyncio.run(daemon._complete_batch([event], 'affinity-turn'))
     current_text = ''.join(block.get('text', '') for block in captured['messages'][-1]['content'])
-    assert '<affinity>\n10/100\n</affinity>' in current_text
+    assert '<affinity>\n20/100\n</affinity>' in current_text
     assert all('<affinity>' not in str(message) for message in captured['messages'][:-1])

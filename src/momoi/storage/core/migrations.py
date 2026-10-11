@@ -804,7 +804,7 @@ def _add_trigger_injection_monitor(database):
 
 def _add_affinity(database):
     if "affinity" not in _columns(database, "self_state"):
-        database.execute("ALTER TABLE self_state ADD COLUMN affinity INTEGER NOT NULL DEFAULT 10 CHECK(affinity BETWEEN 0 AND 100)")
+        database.execute("ALTER TABLE self_state ADD COLUMN affinity INTEGER NOT NULL DEFAULT 20 CHECK(affinity BETWEEN 0 AND 100)")
 
 
 MIGRATIONS: tuple[Migration, ...] = (
