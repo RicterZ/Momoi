@@ -14,7 +14,9 @@ from ..storage.core.migrations import SCHEMA_VERSION
 
 FORMAT = "momoi-backup"
 MAX_BYTES = 2 * 1024**3
-DIRECTORIES = ("prompts", "emotion", "channel/napcat/files", "channel/weixin/media")
+DIRECTORIES = ("prompts", "emotion", "artifacts")
+# Older archives may contain channel attachments; validate but do not restore them.
+ARCHIVE_DIRECTORIES = (*DIRECTORIES, "channel/napcat/files", "channel/weixin/media")
 
 
 def schema(db):
@@ -70,7 +72,7 @@ def export_archive(config, directory):
         if folder.is_symlink():
             continue
         for path in folder.rglob("*") if folder.exists() else ():
-            if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(folder.resolve()) and ".bak" not in path.name and ".before" not in path.name:
+            if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(folder.resolve()) and (name != "prompts" or (".bak" not in path.name and ".before" not in path.name)):
                 files[path.relative_to(config.workspace).as_posix()] = path
     for name, path in (("SOUL.md", config.soul_prompt_path), ("HEARTBEAT.md", config.heartbeat_prompt_path), ("PLANNER.md", config.soul_prompt_path.parent / "PLANNER.md"), ("REPLYER.md", config.soul_prompt_path.parent / "REPLYER.md")):
         if path is not None and path.is_file() and not path.is_symlink():
@@ -104,7 +106,7 @@ def validate_archive(archive, directory, current_db):
                     or ":" in entry.filename or entry.is_dir()
                     or stat.S_ISLNK(entry.external_attr >> 16)
                     or not (entry.filename in {"manifest.json", "data/momoi.sqlite3"}
-                            or any(entry.filename.startswith(prefix + "/") for prefix in DIRECTORIES))):
+                            or any(entry.filename.startswith(prefix + "/") for prefix in ARCHIVE_DIRECTORIES))):
                 raise ValueError("备份包含不允许的路径")
         if source.getinfo("manifest.json").file_size > 1024 * 1024:
             raise ValueError("备份清单过大")

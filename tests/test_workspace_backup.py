@@ -22,18 +22,29 @@ def test_backup_roundtrip_and_exclusions(tmp_path):
         soul.write_text('我始终是同一个人')
         (workspace / 'llm-dumps').mkdir()
         (workspace / 'llm-dumps/secret.json').write_text('not exported')
+        creation = workspace / 'artifacts/故事草稿/chapter.bak.txt'
+        creation.parent.mkdir(parents=True)
+        creation.write_text('Momoi 的创作')
+        attachment = workspace / 'channel/napcat/files/received.txt'
+        attachment.parent.mkdir(parents=True)
+        attachment.write_text('渠道收到的文件')
         store.record_llm_call(created_at=123, model='test', metrics={'output': 100})
         out = tmp_path / 'out'; out.mkdir()
         archive = export_archive(config, out)
         with zipfile.ZipFile(archive) as z:
             assert 'prompts/SOUL.md' in z.namelist()
+            assert 'artifacts/故事草稿/chapter.bak.txt' in z.namelist()
+            assert not any(name.startswith('channel/') for name in z.namelist())
             assert 'providers.yaml' not in z.namelist()
             assert not any('llm-dumps' in name or 'thinking' in name for name in z.namelist())
         soul.write_text('后来修改的内容')
+        creation.write_text('后来修改的创作')
         store._db.execute('DELETE FROM llm_usage'); store._db.commit()
         extracted = validate_archive(archive, tmp_path / 'restore', store._db)
         restore_archive(extracted, config, store)
         assert soul.read_text() == '我始终是同一个人'
+        assert creation.read_text() == 'Momoi 的创作'
+        assert attachment.read_text() == '渠道收到的文件'
         assert store._db.execute('SELECT output_tokens FROM llm_usage').fetchone()[0] == 100
         assert store._db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
     finally:
@@ -114,5 +125,32 @@ def test_restore_database_versions(tmp_path, newer):
             assert store._db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
             assert store._db.execute("SELECT output_tokens FROM llm_usage").fetchone()[0] == 100
             assert "triggers_json" in {row[1] for row in store._db.execute("PRAGMA table_info(reflection_memories)")}
+    finally:
+        store.close()
+
+
+def test_legacy_channel_attachments_are_not_restored(tmp_path):
+    import hashlib
+    path = tmp_path / 'workspace/config.json'
+    bootstrap(path)
+    config = ConfigurationManager(path).validate()
+    store = Store(config.database, config.workspace)
+    try:
+        out = tmp_path / 'out'
+        out.mkdir()
+        archive = export_archive(config, out)
+        with zipfile.ZipFile(archive) as source:
+            files = {name: source.read(name) for name in source.namelist()}
+        manifest = json.loads(files['manifest.json'])
+        name = 'channel/napcat/files/old.txt'
+        files[name] = b'legacy attachment'
+        manifest['files'][name] = hashlib.sha256(files[name]).hexdigest()
+        files['manifest.json'] = json.dumps(manifest).encode()
+        with zipfile.ZipFile(archive, 'w') as target:
+            for name, content in files.items():
+                target.writestr(name, content)
+        extracted = validate_archive(archive, tmp_path / 'restore', store._db)
+        restore_archive(extracted, config, store)
+        assert not (config.workspace / 'channel/napcat/files/old.txt').exists()
     finally:
         store.close()
