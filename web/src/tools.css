@@ -68,10 +68,18 @@
   justify-content: center;
 }
 
+.tool-back { display: none; }
+.tool-back svg { width: 16px; height: 16px; transform: rotate(180deg); }
+
 @media (max-width: 760px) {
-  .tool-workspace { height: auto; max-height: none; grid-template-rows: auto auto; }
+  .tool-workspace { height: auto; max-height: none; grid-template-rows: auto; }
   .tool-library, .tool-detail { overflow: visible; }
-  .tool-library-body { flex: none; max-height: 320px; overflow-y: auto; }
+  .tool-library-body { flex: none; overflow: visible; }
+  .tool-library { border: 0; }
+  .tool-detail { display: none; }
+  .toolbox-detail-open .tool-library, .toolbox-detail-open .tool-navigation { display: none; }
+  .toolbox-detail-open .tool-detail { display: block; }
+  .toolbox-detail-open .tool-back { display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
   .tool-list { grid-template-columns: minmax(0, 1fr); }
   .tool-detail:has(.tool-mcp-form), .tool-detail:has(.tool-skill-view) { overflow: visible; }
   .tool-mcp-form, .tool-skill-view { height: auto; }
