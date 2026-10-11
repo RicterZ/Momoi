@@ -1387,7 +1387,6 @@
 .affinity-meter-track { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
 .affinity-meter-track > span { display: block; height: 100%; background: var(--pink); }
 .prompt-back { display: none; }
-.prompt-list-file { display: block; margin-top: 9px; color: var(--muted); font: 10px ui-monospace, monospace; }
 @media (max-width: 760px) {
   .settings-persona .prompt-workspace { display: flex; flex-direction: column; height: auto; }
   .settings-persona .prompt-list { display: block; border: 0; }

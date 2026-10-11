@@ -2699,12 +2699,12 @@ function PromptEditor({ item, value, onChange, disabled }) {
     <section className="prompt-card">
       <header className="prompt-card-head">
         <h2>{details.title}</h2>
-        <span className="panel-label">PROMPTS // {item.filename}</span>
+        <span className="panel-label">{details.code}</span>
       </header>
       <label className="prompt-field">
         <textarea
           className="dash-input"
-          aria-label={`${details.title} ${item.filename}`}
+          aria-label={details.title}
           value={value}
           rows={item.id === "soul" ? 18 : 10}
           disabled={disabled}
@@ -2763,7 +2763,7 @@ function PromptSettings({ items, token, navigation }) {
               className={`record-item${selected?.id === item.id ? " active" : ""}`}
               aria-pressed={selected?.id === item.id} onClick={() => { setSelectedId(item.id); setMobileDetail(true); }}>
               <span className="prompt-list-heading"><strong>{promptDetails[item.id].title}</strong>{drafts[item.id] !== saved[item.id] && <span className="prompt-unsaved">未保存</span>}</span>
-              <p className="prompt-list-description">{promptDetails[item.id].description}</p><span className="prompt-list-file">{item.filename}</span>
+              <p className="prompt-list-description">{promptDetails[item.id].description}</p>
             </button>)}
           </div>
           {selected && <PromptEditor key={selected.id} item={selected} value={drafts[selected.id]} disabled={saving} onChange={value => { setDrafts(current => ({ ...current, [selected.id]: value })); setStatus(null); }} />}
