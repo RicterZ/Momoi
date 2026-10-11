@@ -94,7 +94,7 @@ MOOD_UPDATE_SCHEMA: dict[str, Any] = {
 
 MOOD_CHANGE_TOOL_SPEC: dict[str, Any] = {
     "name": "mood_change",
-    "description": "仅持续情绪发生变化时调用，包含自然平复。暂存当前情绪、强度和具体原因，正常结束本轮时提交；没有变化无需调用。",
+    "description": "当前支持中文短词作为 state，例如平静、焦急、开心。格式以当前工具 schema 为准，历史报错中的旧限制不代表当前规则。仅持续情绪发生变化时调用，包含自然平复。暂存当前情绪、强度和具体原因，正常结束本轮时提交；没有变化无需调用。",
     "input_schema": MOOD_UPDATE_SCHEMA,
 }
 
