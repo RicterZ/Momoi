@@ -373,6 +373,23 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         }
         self.manager.save("app", app, snapshot["revision"])
 
+    async def test_backup_routes_require_auth_and_restore_roundtrip(self):
+        for endpoint in ("export", "restore"):
+            self.assertEqual((await self.client.post(f"/api/settings/backup/{endpoint}")).status, 401)
+        self.client.session.headers["Authorization"] = self.auth
+        self.enable()
+        response = await self.client.post("/api/settings/backup/export")
+        self.assertEqual(response.status, 200, await response.text() if response.status != 200 else "")
+        self.assertEqual(response.content_type, "application/zip")
+        archive = await response.read()
+        self.assertFalse(self.runtime.suspended)
+        response = await self.client.post("/api/settings/backup/restore", data=archive)
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertFalse(self.runtime.suspended)
+        response = await self.client.post("/api/settings/backup/restore", data=b"bad zip")
+        self.assertEqual(response.status, 400)
+        self.assertFalse(self.runtime.suspended)
+
     async def test_native_audio_configuration_skips_full_validation_and_secrets(self):
         self.enable()
         self.client.session.headers["Authorization"] = self.auth

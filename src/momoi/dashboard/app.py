@@ -212,6 +212,8 @@ def create_dashboard_app(
         from .configuration import register_configuration_routes
 
         register_configuration_routes(app, configuration, runtime)
+        from .backup_routes import register_backup_routes
+        register_backup_routes(app, store, configuration, runtime)
     workspace = store._workspace
 
     async def index(_request: web.Request) -> web.Response:

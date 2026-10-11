@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import BackupSettings from "./BackupSettings.jsx";
 import Loading from "./Loading.jsx";
 import DesktopQQ from "./DesktopQQ.jsx";
 import { waitForConfiguration } from "./configurationRuntime.js";
@@ -56,6 +57,7 @@ const modules = [
   },
   { id: "budget", label: "费用预算", icon: "coin" },
   { id: "runtime", label: "运行设置" },
+  { id: "backup", label: "备份与恢复" },
 ];
 const adapterLabels = {
   openai: "OpenAI",
@@ -1690,7 +1692,7 @@ export default function ConfigurationSettings({
                   key={module.id}
                   hidden={activeSection !== module.id}
                 >
-                  {module.id === "prompts" ? (
+                  {module.id === "backup" ? (<BackupSettings token={token} />) : module.id === "prompts" ? (
                     <>
                       <SectionHeader module={module} />
                       {promptContent({ next, previous, busy: saving || actionBusy })}

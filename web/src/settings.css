@@ -1358,3 +1358,7 @@
   .settings-runtime-half:nth-child(odd) { padding-left: 0; padding-right: 0; }
   .settings-runtime-half:nth-child(odd)::before { display: none; }
 }
+
+.backup-controls { display:grid; gap:16px; width:100%; }
+.backup-confirm { display:flex; gap:10px; align-items:flex-start; font-size:13px; line-height:1.6; }
+.backup-settings .settings-section-header { padding:24px; }
