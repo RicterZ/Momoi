@@ -2557,7 +2557,7 @@ function FlowDeliveries({ deliveries = [] }) {
         </section>;
 }
 
-function ThinkingCall({ call, children = [], nested = false, deliveries = [] }) {
+function ThinkingCall({ call, children = [], nested = false }) {
   const replyer = call.stage === "replyer";
   const planner = plannerStages.has(call.stage);
   const metrics = call.request_metrics;
@@ -2593,12 +2593,11 @@ function ThinkingCall({ call, children = [], nested = false, deliveries = [] }) 
         <dt>必要参考</dt><dd>{action.arguments?.reference || "无额外参考"}</dd>
         {action.arguments?.mode === "voice" && <><dt>发言方式</dt><dd>语音</dd></>}
       </dl> : <details className="flow-action-data"><summary>决策参数</summary><pre className="flow-json">{JSON.stringify(action.arguments || {}, null, 2)}</pre></details>}
-      {children.filter(child => child.trace?.tool_call_id === action.id).map(child => <ThinkingCall key={child.call_id} call={child} nested deliveries={deliveries} />)}
-      {action.name === "reply" && <FlowDeliveries deliveries={deliveries.filter(delivery => delivery.turn_id === call.turn_id && delivery.tool_call_id === action.id)} />}
+      {children.filter(child => child.trace?.tool_call_id === action.id).map(child => <ThinkingCall key={child.call_id} call={child} nested />)}
       {action.result && <details className="flow-action-data"><summary>工具结果{action.result.error ? ` · ${action.result.error}` : ""}</summary><pre className="flow-json">{JSON.stringify(action.result, null, 2)}</pre></details>}
     </section>)}
     {!call.actions?.length && call.tools?.length > 0 && <p className="flow-note">旧记录仅保存工具名称：{call.tools.join(" / ")}；没有可核对的参数与结果。</p>}
-    {children.filter(child => !(call.actions || []).some(action => action.id === child.trace?.tool_call_id)).map(child => <ThinkingCall key={child.call_id} call={child} nested deliveries={deliveries} />)}
+    {children.filter(child => !(call.actions || []).some(action => action.id === child.trace?.tool_call_id)).map(child => <ThinkingCall key={child.call_id} call={child} nested />)}
   </article>;
 }
 
@@ -2657,7 +2656,8 @@ function ThinkingDetail({ item, calls, recall, flowData = {} }) {
         {roots.map(call => <Fragment key={call.call_id}>
           {call.plan_step_id && <div className="plan-step-marker"><span>STEP {call.plan_step_id}</span><strong>{call.plan_step_task || "执行计划步骤"}</strong></div>}
           {(flowData.interjections || []).filter(input => input.before_call_id === call.call_id).map(input => <section className="flow-input" key={input.id}><h3>用户中途插话</h3><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></section>)}
-          <ThinkingCall call={call} children={childrenFor(call)} deliveries={flowData.deliveries || []} />
+          <ThinkingCall call={call} children={childrenFor(call)} />
+          {(call.actions || []).filter(action => action.name === "reply").map(action => <FlowDeliveries key={action.id} deliveries={(flowData.deliveries || []).filter(delivery => delivery.turn_id === call.turn_id && delivery.tool_call_id === action.id)} />)}
           {recall && recallHasEvidence && ["topic_selection", "episode_cue_admit"].includes(call.stage) && flow.indexOf(call) === lastCuesIndex ? <RecallDetail recall={recall} /> : null}
         </Fragment>)}
         {(flowData.interjections || []).filter(input => !input.before_call_id).map(input => <section className="flow-input" key={input.id}><h3>用户中途插话</h3><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></section>)}
