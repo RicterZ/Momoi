@@ -42,6 +42,7 @@ export default function Tools({ token, request, confirm, refreshKey }) {
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
   const lock = useRef(false);
+  const oauthPopup = useRef(null);
   const workspace = useRef(null);
   const dirty = (editing !== null && !same(editing, saved)) || Boolean(install && Object.values(install).some(Boolean));
   const call = (path, options = {}) => request(path, { token, ...options });
@@ -85,6 +86,14 @@ export default function Tools({ token, request, confirm, refreshKey }) {
         const result = await call(`/api/tools/mcp/${encodeURIComponent(selected)}/oauth`);
         if (cancelled) return;
         setOauthFlow(result);
+        if (result.url && oauthPopup.current && !oauthPopup.current.closed) {
+          oauthPopup.current.location.replace(result.url);
+          oauthPopup.current = null;
+        }
+        if (["error", "complete"].includes(result.status) && oauthPopup.current) {
+          oauthPopup.current.close();
+          oauthPopup.current = null;
+        }
         if (result.status === "complete") await refresh();
         if (["pending", "starting"].includes(result.status)) timer = setTimeout(poll, 1500);
       } catch (problem) { if (!cancelled) setError(problem.message); }
@@ -93,11 +102,25 @@ export default function Tools({ token, request, confirm, refreshKey }) {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [selected, oauthFlow?.status === "pending" || oauthFlow?.status === "starting"]);
   async function authenticate() {
+    if (lock.current || dirty || selected === null) return;
+    // Open synchronously inside the click gesture, before awaiting the API.
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) { setError("浏览器阻止了授权弹窗，请允许此网站弹窗后重试。"); return; }
+    popup.opener = null;
+    popup.document.title = "正在准备 OAuth 授权";
+    popup.document.body.textContent = "正在准备授权页面，请稍候…";
+    oauthPopup.current = popup;
     await mutate(async () => {
-      if (dirty || selected === null) throw new Error("请先保存服务配置，再进行授权。");
-      const result = await call(`/api/tools/mcp/${encodeURIComponent(selected)}/oauth`, { method: "POST", body: {} });
-      setOauthFlow(result);
-      if (result.status === "complete") await refresh();
+      try {
+        const result = await call(`/api/tools/mcp/${encodeURIComponent(selected)}/oauth`, { method: "POST", body: {} });
+        setOauthFlow(result);
+        if (result.url) { popup.location.replace(result.url); oauthPopup.current = null; }
+        if (["error", "complete"].includes(result.status)) { popup.close(); oauthPopup.current = null; }
+        if (result.status === "complete") await refresh();
+      } catch (problem) {
+        popup.close(); oauthPopup.current = null;
+        throw problem;
+      }
     });
   }
   async function backToList() {
@@ -177,7 +200,7 @@ export default function Tools({ token, request, confirm, refreshKey }) {
         {config.oauth && <><div className="tool-field-grid"><Field label="OAuth 客户端 ID"><input className="dash-input" required value={config.oauth.clientId || ""} onChange={event => change({ oauth: { ...config.oauth, clientId: event.target.value } })} /></Field><Field label="OAuth 客户端密钥" hint="公开客户端可留空；Google Web 应用需要填写。支持环境变量引用。"><input className="dash-input" type="password" autoComplete="new-password" value={config.oauth.clientSecret || ""} onChange={event => change({ oauth: { ...config.oauth, clientSecret: event.target.value } })} /></Field></div>
           <Field label="OAuth 回调地址" hint="在 OAuth 提供方登记同一地址。远程部署需填写浏览器可访问的 HTTPS Dashboard 地址。"><input className="dash-input" type="url" required value={config.oauth.redirectUri || ""} onChange={event => change({ oauth: { ...config.oauth, redirectUri: event.target.value } })} /></Field>
           <Field label="OAuth 权限范围" hint="多个 scope 用空格分隔；留空时由服务器发现。"><textarea className="dash-input" rows={2} value={config.oauth.scope || ""} onChange={event => change({ oauth: { ...config.oauth, scope: event.target.value } })} /></Field>
-          <div className="tool-detail-heading"><button className="quiet-button" type="button" disabled={dirty || selected === null || ["pending", "starting"].includes(oauthFlow?.status)} onClick={authenticate}>进行 OAuth 授权</button>{oauthFlow?.url && <a className="quiet-button" href={oauthFlow.url} target="_blank" rel="noopener noreferrer">打开授权页面</a>}</div>
+          <div className="tool-detail-heading"><button className="quiet-button" type="button" disabled={dirty || selected === null || ["pending", "starting"].includes(oauthFlow?.status)} onClick={authenticate}>进行 OAuth 授权</button></div>
           <p className="tool-note" role="status">{oauthFlow?.status === "complete" ? "OAuth 认证成功，已重载 MCP 连接。" : oauthFlow?.status === "error" ? "OAuth 认证失败或已超时，请检查配置后重试。" : ["starting", "pending"].includes(oauthFlow?.status) ? "等待浏览器授权，完成后后台自动更新。" : "先保存配置，再在浏览器中完成首次授权。后台自动使用和刷新令牌，无需终端输入。"}</p>
         </>}
         <KeyValues label="请求 Header" value={config.headers} onChange={headers => change({ headers })} /></>}

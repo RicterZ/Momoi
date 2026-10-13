@@ -398,7 +398,7 @@ Dashboard 的 MCP 远程服务表单提供「认证方式：无 / OAuth」。选
 ```
 
 1. 在 OAuth 提供方创建 Web 应用，将 `redirectUri` 原样登记为授权重定向 URI。远程 Dashboard 必须使用 HTTPS；本地可使用 `http://localhost:8788/api/tools/mcp/oauth/callback`。
-2. 保存 MCP 配置，点击「进行 OAuth 授权」，再点击「打开授权页面」，在浏览器完成登录和同意。Google Workspace 还需按其官方指南加入预览计划、启用 API/MCP 服务并配置同意屏幕和 scope。
+2. 保存 MCP 配置，点击「进行 OAuth 授权」，浏览器会自动弹出授权页面，在其中完成登录和同意。若弹窗被阻止，允许此网站弹窗后重试。Google Workspace 还需按其官方指南加入预览计划、启用 API/MCP 服务并配置同意屏幕和 scope。
 3. Dashboard 自动接收回调、保存令牌并重载连接。之后后台无终端交互地使用和刷新令牌，包括重启后；授权被撤销、刷新失败或需要新增权限时，需重新授权。
 
 首次用户同意不能跳过；这不是只凭客户端 ID/密钥即可访问用户数据的 client-credentials 模式。公开客户端可省略 `clientSecret`，Google Web 应用需提供；`scope` 可省略以使用服务器发现的范围。`url` 兼容 `baseUrl` 和 Google 示例的 `serverUrl`，但仍须填写 Momoi 的 `description`。

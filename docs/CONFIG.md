@@ -432,7 +432,8 @@ changing the independent Header editor. Do not combine OAuth with an
 
 Register the exact redirect URI with the provider. Remote Dashboards require
 HTTPS; localhost may use `http://localhost:8788/api/tools/mcp/oauth/callback`.
-Save the server, start OAuth authorization and open the authorization link.
+Save the server and start OAuth authorization; the authorization page opens
+automatically in a new window. If blocked, allow popups for Dashboard and retry.
 After browser consent, Dashboard receives the callback, saves tokens and reloads
 MCP. Subsequent background operation and token refresh require no terminal input,
 including after restart. Revocation, failed refresh or additional scopes require
