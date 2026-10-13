@@ -1060,7 +1060,9 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
         finally:
             await server.close()
-        self.assertEqual(retry_sleep.await_args_list, [call(1)])
+        self.assertEqual(retry_sleep.await_args_list[0], call(1))
+        self.assertEqual(len(retry_sleep.await_args_list), 2)
+        self.assertGreater(retry_sleep.await_args_list[1].args[0], 290)
         self.assertEqual(attempts, 4)
 
     async def test_openai_provider_retries_unusable_success_response(self) -> None:
@@ -1720,6 +1722,8 @@ def test_rate_limit_and_empty_content_remain_errors():
             config = LLMConfig(str(server.make_url("/")).rstrip("/"), "test", "test", 100, 0, 1, 1,
                                api_format="anthropic")
             async with AnthropicProvider(config) as provider:
+                # Cooldown is covered separately; this test checks response validation.
+                provider._circuit.wait = AsyncMock()
                 for error in ("rate limited", "no text content"):
                     with pytest.raises(ProviderError, match=error):
                         await provider.complete("system", [{"role": "user", "content": "test"}])

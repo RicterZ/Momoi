@@ -72,6 +72,9 @@ def test_http_attempt_records_success_failure_missing_usage_and_headers(protocol
         await server.start_server()
         provider = (OpenAIProvider if protocol == "openai" else AnthropicProvider)(LLMConfig(str(server.make_url("/")).rstrip("/"), "secret", "test", 100, 0, 1, 0, "openai"))
         provider.request_metrics_sink = records.append
+        # Response metrics are tested here; cooldown has its own clock-based tests.
+        from unittest.mock import AsyncMock
+        provider._circuit.wait = AsyncMock()
         try:
             async with provider:
                 with log_context(stage="owner", turn_id="turn", call_id="call", round=2):

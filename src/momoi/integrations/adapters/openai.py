@@ -18,7 +18,7 @@ from ...llm.telemetry import (
     record_response,
     thinking_effort,
 )
-from ...llm.transport import http_error, openai_url, retry_request
+from ...llm.transport import ProviderCircuit, http_error, openai_url, retry_request
 from ...integrations.models import LLMConfig
 from ...observability.events import log_event
 from ...observability.values import safe_preview
@@ -168,6 +168,7 @@ def _log_unusable_response(
 class OpenAIProvider:
     def __init__(self, config: LLMConfig, dump_dir: Path | None = None) -> None:
         self.config = config
+        self._circuit = ProviderCircuit()
         self.dump_dir = dump_dir
         self.request_metrics_sink = None
         self.usage_sink: Callable[..., None] | None = None
@@ -390,6 +391,7 @@ class OpenAIProvider:
 
         return await retry_request(
             protocol="openai",
+            circuit=self._circuit,
             max_retries=config.max_retries,
             request_fields={
                 "model": config.model,

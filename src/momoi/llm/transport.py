@@ -1,5 +1,5 @@
 import asyncio
-from asyncio import CancelledError
+from asyncio import CancelledError, Lock
 import json
 import logging
 from time import monotonic
@@ -15,6 +15,26 @@ from ..observability.values import safe_preview
 from ..models import ProviderResponse
 
 logger = logging.getLogger(__name__)
+
+
+class ProviderCircuit:
+    """Shared across calls and workflows belonging to one provider instance."""
+    def __init__(self):
+        self.retry_at = 0.0
+        self.lock = Lock()
+
+    async def wait(self):
+        async with self.lock:
+            remaining = self.retry_at - monotonic()
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+
+    def failed(self, error):
+        status = getattr(error, "_http_status", 0)
+        self.retry_at = monotonic() + (300 if 400 <= status < 500 and status not in {408, 429} else 60)
+
+    def succeeded(self):
+        self.retry_at = 0.0
 
 
 def anthropic_url(base_url: str, path: str) -> str:
@@ -43,7 +63,10 @@ async def retry_request(
     operation: Callable[[float], Awaitable[ProviderResponse]],
     retryable: Callable[[Exception], bool] = should_retry,
     monitor=None,
+    circuit=None,
 ) -> ProviderResponse:
+    if circuit is not None:
+        await circuit.wait()
     last_error: Exception | None = None
     for attempt in range(max_retries + 1):
         attempt_started = monotonic()
@@ -58,10 +81,16 @@ async def retry_request(
         )
         try:
             if monitor is None:
-                return await operation(attempt_started)
+                result = await operation(attempt_started)
+                if circuit is not None:
+                    circuit.succeeded()
+                return result
             record, token = monitor.begin(attempt + 1)
             try:
-                return await operation(attempt_started)
+                result = await operation(attempt_started)
+                if circuit is not None:
+                    circuit.succeeded()
+                return result
             except BaseException as error:
                 record["status"] = "cancelled" if isinstance(error, CancelledError) else "error"
                 record["error_type"] = type(error).__name__
@@ -113,6 +142,8 @@ async def retry_request(
                 reason=reason,
                 duration_ms=int((monotonic() - attempt_started) * 1000),
             )
+            if circuit is not None:
+                circuit.failed(error)
             if isinstance(error, ProviderError):
                 raise
             break
