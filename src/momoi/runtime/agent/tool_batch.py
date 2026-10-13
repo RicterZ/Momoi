@@ -47,6 +47,7 @@ class ToolBatchState:
     previous_tool_name: str | None = None
     last_sent_bubbles: list[ChannelMessage] | None = None
     last_sent_channel: str = ""
+    calls_since_reply: int = 0
 
 
 @dataclass(frozen=True)
@@ -141,6 +142,7 @@ class ToolBatchExecutor:
         results: list[dict[str, Any]] = []
         image_blocks: list[dict[str, Any]] = []
         owner_updates: list[IncomingMessage] = []
+        completed_calls: list[tuple[str, bool]] = []
         allowed_tool_names = {str(spec["name"]) for spec in request.request_tools}
 
         async def execute_call(call: ToolCall) -> str:
@@ -691,6 +693,8 @@ class ToolBatchExecutor:
                 trace, call, recall_result if recall_result is not None else result, request.draft,
             )
             results.append(tool_result_block(call.id, result))
+            if result.get("error") not in {"paused_for_owner", "superseded_by_owner_update"}:
+                completed_calls.append((call.name, bool(result.get("ok"))))
             previous_tool_name = call.name
             return last_tool_error
 
@@ -759,7 +763,33 @@ class ToolBatchExecutor:
                     request.current_events, request.delivery_channel.name
                 ))
 
-        request.messages.append({"role": "user", "content": [*results, *image_blocks]})
+        calls_since_reply = state.calls_since_reply
+        notice_blocks: list[dict[str, Any]] = []
+        if execution.stage == "owner":
+            # A successful reply anywhere in this batch satisfies the progress reminder.
+            if any(name == "reply" and ok for name, ok in completed_calls):
+                calls_since_reply = 0
+            else:
+                calls_since_reply += sum(
+                    name not in {"reply", "end_turn"} for name, _ in completed_calls
+                )
+                if (not ended and calls_since_reply // 3 > state.calls_since_reply // 3):
+                    text = (
+                        '<runtime_notice type="reply_progress_reminder">\n'
+                        f'自本轮开始或上次成功 reply 以来，已连续执行 {calls_since_reply} 次非 reply 工具调用，'
+                        '尚未向用户发送新的回应。\n'
+                        '用户可能已经等待较久。请优先调用 reply，告知目前已确认的部分信息、'
+                        '当前进展或仍需核实的事项，再继续后续工作。\n'
+                        '不要编造结果、承诺完成时间或重复上一条回应；这不是要求结束任务。\n'
+                        '</runtime_notice>'
+                    )
+                    notice_blocks.append({"type": "text", "text": text})
+                    self.store.append_turn_journal(request.turn_id, "runtime_notice", {
+                        "type": "reply_progress_reminder", "text": text,
+                        "calls_since_reply": calls_since_reply,
+                        "call_id": request.call_id, "round": request.round_number,
+                    }, trust="runtime")
+        request.messages.append({"role": "user", "content": [*results, *image_blocks, *notice_blocks]})
         # Keep the model's actual assistant text and native tool exchange for
         # later Turns. Delivered speech is confirmed separately by the stored
         # conversation rows; a plain assistant text response never implies send.
@@ -783,6 +813,7 @@ class ToolBatchExecutor:
                 previous_tool_name=previous_tool_name,
                 last_sent_bubbles=last_sent_bubbles,
                 last_sent_channel=last_sent_channel,
+                calls_since_reply=calls_since_reply,
             ),
             last_tool_error=last_tool_error,
             ended=ended,
