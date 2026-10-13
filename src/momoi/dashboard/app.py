@@ -100,11 +100,19 @@ def _dashboard_recall(store: Store, turn_id: str) -> dict[str, object] | None:
         or not isinstance(retrieval, dict)
     ):
         return None
+    plans = [plan, *[
+        supplemental
+        for supplemental in plan.get("supplemental_queries") or []
+        if isinstance(supplemental, dict)
+    ]]
     units = [
         {
-            "id": str(unit.get("id") or ""),
+            "id": (f"supplemental:{plan_index}:" if plan_index else "")
+            + str(unit.get("id") or ""),
             "intent": str(unit.get("intent") or ""),
-            "mode": str(unit.get("recall_mode") or ""),
+            "mode": str(unit.get("recall_mode") or "search"),
+            "filters": unit.get("memory_filters")
+            if isinstance(unit.get("memory_filters"), dict) else {},
             "queries": [
                 {
                     "semantic": str(query.get("semantic") or ""),
@@ -117,7 +125,8 @@ def _dashboard_recall(store: Store, turn_id: str) -> dict[str, object] | None:
             ],
             "reused_from": str(unit.get("recall_from_turn_id") or ""),
         }
-        for unit in plan.get("intent_units") or []
+        for plan_index, query_plan in enumerate(plans)
+        for unit in query_plan.get("intent_units") or []
         if isinstance(unit, dict)
     ]
     selection = retrieval.get("topic_selection") or {}

@@ -2401,6 +2401,9 @@ function RecallDetail({ recall }) {
                 </span>
               </header>
               <div className="recall-unit-body">
+                {unit.mode !== "skip" && !unit.queries?.length && !unit.reused_from && (
+                  <p>{unit.intent || "按筛选条件获取记忆，不进行语义检索"}</p>
+                )}
                 {unit.mode === "skip" ? (
                   <div className="recall-skip">
                     <p>{unit.intent || "当前上下文已足够"}</p>
@@ -2419,7 +2422,7 @@ function RecallDetail({ recall }) {
                   <div className="recall-queries">
                     {unit.queries.map((query, index) => (
                       <div className="recall-query" key={`${unit.id}:${index}`}>
-                        <p>{query.semantic}</p>
+                        {query.semantic ? <p>{query.semantic}</p> : null}
                         {!!query.keywords?.length && (
                           <ul className="recall-keywords" aria-label="检索关键词">
                             {query.keywords.map((keyword) => (
@@ -2431,6 +2434,13 @@ function RecallDetail({ recall }) {
                     ))}
                   </div>
                 )}
+                {unit.filters?.scope || unit.filters?.kinds?.length || unit.filters?.tags_any?.length ? (
+                  <ul className="recall-keywords" aria-label="记忆筛选条件">
+                    {unit.filters.scope ? <li>范围：{unit.filters.scope}</li> : null}
+                    {(unit.filters.kinds || []).map((kind) => <li key={`kind:${kind}`}>性质：{memoryKindLabel(kind)}</li>)}
+                    {(unit.filters.tags_any || []).map((tag) => <li key={`tag:${tag}`}>标签：{tag}</li>)}
+                  </ul>
+                ) : null}
               </div>
             </article>
           ))}

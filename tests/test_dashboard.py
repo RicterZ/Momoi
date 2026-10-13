@@ -686,6 +686,51 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(item["id"], item["before_call_id"]) for item in detail["flow"]["interjections"]],
             [("resume-1", "next"), ("resume-2", "resumed")])
 
+    async def test_thinking_recall_includes_filters_and_supplemental_queries(self) -> None:
+        self.store.record_thinking_call(
+            turn_id="turn-one", call_id="recall-display", stage="owner", round=1,
+            created_at=time.time(), reasoning="Checking recall evidence.",
+        )
+        record = self.store.context_plan("turn-one")
+        plan = {
+            "version": 7,
+            "intent_units": [{
+                "id": "u1", "intent": "", "recall_queries": [],
+                "memory_filters": {"scope": "heartbeat", "kinds": ["practice"],
+                                   "tags_any": ["rules"]},
+            }],
+            "supplemental_queries": [{
+                "version": 7,
+                "intent_units": [
+                    {"id": "u1", "recall_queries": [{
+                        "semantic": "heartbeat rules", "keywords": ["heartbeat"],
+                    }]},
+                    {"id": "u2", "recall_queries": [{
+                        "semantic": "how rules are recorded", "keywords": ["heartbeat"],
+                    }]},
+                ],
+            }, {
+                "version": 7,
+                "intent_units": [{"id": "u1", "recall_queries": [{
+                    "semantic": "", "keywords": ["rules"],
+                }]}],
+            }],
+        }
+        self.store.save_context_plan("turn-one", 2, ["event-one"], plan)
+        self.store.save_context_retrieval("turn-one", 2, record["retrieval"], state="recalled")
+        response = await self.client.get("/api/thinking/turn-one", headers=self._auth())
+        recall = (await response.json())["recall"]
+        units = recall["units"]
+        self.assertEqual(len(units), 4)
+        self.assertEqual(len({unit["id"] for unit in units}), 4)
+        self.assertTrue(all(unit["mode"] == "search" for unit in units))
+        self.assertEqual(units[0]["filters"], plan["intent_units"][0]["memory_filters"])
+        self.assertEqual(units[0]["queries"], [])
+        self.assertEqual(units[1]["queries"][0]["semantic"], "heartbeat rules")
+        self.assertEqual(units[2]["queries"][0]["semantic"], "how rules are recorded")
+        self.assertEqual(units[3]["queries"][0], {"semantic": "", "keywords": ["rules"]})
+        self.assertEqual(recall["episodes"][0]["id"], "episode-one")
+
     async def test_thinking_endpoint_lists_and_reads_calls(self) -> None:
         now = time.time()
         self.store.record_thinking_call(

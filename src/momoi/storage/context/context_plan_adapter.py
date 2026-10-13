@@ -20,7 +20,7 @@ def _query(value: object) -> dict[str, object] | None:
     else:
         semantic = " ".join(str(value or "").split())[:240]
         keywords = list(search_alternatives(semantic[:120]))[:8]
-    if not semantic:
+    if not semantic and not keywords:
         return None
     return {"semantic": semantic, "keywords": list(dict.fromkeys(keywords))}
 

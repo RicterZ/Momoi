@@ -7,6 +7,19 @@ from momoi.storage import Store
 
 
 class ContextPlanAdapterTest(unittest.TestCase):
+    def test_keyword_only_query_survives_storage_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.begin_turn("keyword-only", "owner", [])
+            plan = {"version": 7, "intent_units": [{
+                "id": "u1", "recall_queries": [{
+                    "semantic": "", "keywords": ["heartbeat", "rules"],
+                }],
+            }]}
+            store.save_context_plan("keyword-only", 1, [], plan)
+            self.assertEqual(store.context_plan("keyword-only")["plan"], plan)
+            store.close()
+
     def test_legacy_record_is_normalized_at_storage_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
