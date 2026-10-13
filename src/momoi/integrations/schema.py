@@ -155,7 +155,7 @@ def builtin_schema(name, capability):
         fields["trailing_silence"]["label"] = "断句静音（秒）"
     if (name, capability) == ("deepseek", "balance"):
         fields["api_key"]["description"] = "可留空：仅估算费用，不查询账户余额。填写后启用余额查询。"
-        fields["accounting"]["description"] = "按 DeepSeek 用量和官方价格估算模型费用；模型使用其他服务商时请关闭。关闭后仍可查询余额并记录通用 Token 用量。"
+        fields["accounting"]["description"] = "使用 DeepSeek 计价策略；关闭后仍使用内置价格估算，不影响预算和启动。"
     if (name, capability) == ("local", "embedding"):
         fields["model_path"].update(label="BGE 模型目录",
             description="留空使用安装包内置模型。直接调用本地 BGE，无需服务地址。")

@@ -21,7 +21,7 @@ class DeepSeekAccountingTest(unittest.TestCase):
         plugin = _plugin()
         weekday_peak = datetime(2026, 8, 17, 10, 0, tzinfo=SHANGHAI).timestamp()
         weekday_offpeak = datetime(2026, 8, 17, 21, 0, tzinfo=SHANGHAI).timestamp()
-        for model in ("deepseek-v4-flash", "deepseek-v4-pro", "deepseek-flash"):
+        for model in ("deepseek-v4-flash", "deepseek-flash"):
             self.assertEqual(plugin.token_rates(model, weekday_peak), (0.04, 2.0, 8.0))
             self.assertEqual(plugin.token_rates(model, weekday_offpeak), (0.02, 1.0, 4.0))
         self.assertAlmostEqual(
@@ -34,6 +34,13 @@ class DeepSeekAccountingTest(unittest.TestCase):
             ),
             1.82,
         )
+
+    def test_pro_rates_and_unknown_alias_estimate(self):
+        plugin = _plugin()
+        peak = datetime(2026, 10, 13, 10, tzinfo=SHANGHAI).timestamp()
+        self.assertEqual(plugin.token_rates("deepseek-v4-pro", peak), (0.30, 9.0, 27.0))
+        self.assertEqual(plugin.token_rates("custom-model", peak), (0.04, 2.0, 8.0))
+        self.assertEqual(plugin.token_rates("custom-model", peak + 12 * 3600), (0.04, 2.0, 8.0))
 
     def test_weekday_peak_boundaries_use_beijing_time(self) -> None:
         plugin = _plugin()
@@ -56,7 +63,7 @@ class DeepSeekAccountingTest(unittest.TestCase):
         for day in (12, 13):
             for hour in (9, 10, 14, 17):
                 timestamp = datetime(2026, 9, day, hour, tzinfo=SHANGHAI).timestamp()
-                self.assertEqual(plugin.token_rates("deepseek-v4-pro", timestamp), (0.02, 1.0, 4.0))
+                self.assertEqual(plugin.token_rates("deepseek-v4-pro", timestamp), (0.15, 4.5, 13.5))
 
     def test_parse_usage_reads_deepseek_billing_fields(self) -> None:
         plugin = _plugin()

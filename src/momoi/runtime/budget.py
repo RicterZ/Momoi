@@ -12,7 +12,8 @@ class BudgetExceeded(RuntimeError):
 class BudgetGuard:
     def __init__(self, config, accounting):
         self.config = config
-        self.accounting = accounting
+        from ..integrations.adapters.deepseek import DeepSeekAccounting
+        self.accounting = accounting or DeepSeekAccounting()
 
     def status(self, now=None):
         budget = self.config.budget

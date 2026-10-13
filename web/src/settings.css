@@ -1403,3 +1403,11 @@
   [aria-labelledby="runtime-affinity"] .settings-runtime-copy { flex-basis: auto; }
   [aria-labelledby="runtime-affinity"] .settings-runtime-fields { width: auto; }
 }
+
+
+.settings-budget-account.settings-runtime-nested { grid-template-columns: minmax(0, 1fr) auto; }
+.settings-budget-account > .settings-fields { grid-column: 1 / -1; }
+.settings-budget-account > .settings-toggle { font-size: 12px; gap: 8px; }
+@media (max-width: 650px) {
+}
+.settings-budget-account > fieldset.settings-fields { box-shadow: none; }

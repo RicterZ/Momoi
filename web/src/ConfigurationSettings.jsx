@@ -47,14 +47,6 @@ const modules = [
     optional: true,
     tip: "这里仅控制向量编码与语义检索。关闭后，记忆写入和关键词召回仍然可用。",
   },
-  {
-    id: "balance",
-    label: "账户余额",
-    icon: "coin",
-    names: ["balance"],
-    optional: true,
-    tip: "关闭后停止余额查询与费用估算，本地请求量与通用 Token 用量统计仍然保留。",
-  },
   { id: "budget", label: "费用预算", icon: "coin" },
   { id: "runtime", label: "运行设置" },
   { id: "backup", label: "备份与恢复" },
@@ -74,10 +66,11 @@ const primaryFields = {
   asr: ["secret_id", "secret_key", "endpoint"],
   tts: ["api_key", "reference_id", "voice_id", "model"],
   embedding: ["endpoint", "api_key", "model", "dimensions"],
-  balance: ["base_url", "api_key", "timeout_seconds", "accounting"],
+  balance: ["base_url", "api_key", "timeout_seconds"],
 };
 // Hide transport tuning from the form without removing saved option values.
 const hiddenFields = {
+  balance: ["accounting"],
   embedding: ["base_url", "document_batch_size", "timeout_seconds"],
 };
 const fieldHints = {
@@ -900,7 +893,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
                 disabled={managed || saving}
                 onChange={(enabled) => change({ ...draft, enabled })}
               >
-                启用功能
+                {module.id === "balance" ? "查询余额" : "启用功能"}
               </Toggle>
             )
           }
@@ -1112,7 +1105,11 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
   const [saved, setSaved] = useState(initial);
   const [status, setStatus] = useState(null);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
-  const dirty = !equal(draft, saved);
+  const [balance, setBalance] = useState(() => providerDraft(["balance"], data, true));
+  const [savedBalance, setSavedBalance] = useState(balance);
+  const balanceDirty = module.id === "budget" && !equal(balance, savedBalance);
+  const dirty = !equal(draft, saved) || balanceDirty;
+  function changeBalance(next) { setBalance(next); setStatus(null); }
   async function submit(event) {
     event.preventDefault();
     if (saving || !dirty) return;
@@ -1131,7 +1128,14 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
         }
         if (Object.keys(changes).length) document[name] = changes;
       }
-      const result = await save("/api/settings/configuration/app", document, "PATCH");
+      let result = data;
+      if (balanceDirty) {
+        result = await save("/api/settings/providers", { balance: {
+          ...normalizeProvider("balance", balance.values.balance, data.adapters), enabled: balance.enabled,
+        } });
+        setSavedBalance(balance);
+      }
+      if (Object.keys(document).length) result = await save("/api/settings/configuration/app", document, "PATCH");
       const updated = Object.fromEntries(Object.entries(schemas).map(([name, schema]) => [
         name, Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, runtimeFieldValue(spec, result.app[name]?.[key])])),
       ]));
@@ -1188,6 +1192,17 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
             </fieldset>
           </section>
         ))}
+        {module.id === "budget" && <section className="settings-runtime-group settings-runtime-nested settings-budget-account" aria-labelledby="budget-balance-title">
+          <div className="settings-runtime-copy">
+            <div className="settings-voice-title"><h3 id="budget-balance-title">账户余额</h3><span className="panel-label">BUDGET // BALANCE</span></div><p className="settings-runtime-description">关闭查询不影响费用估算。</p></div><Toggle checked={balance.enabled} disabled={saving} onChange={enabled => changeBalance({ ...balance, enabled })}>查询余额</Toggle>
+          {balance.enabled && <Fields disabled={saving}>
+            {balance.enabled && primaryFields.balance.map(key => {
+              const value = balance.values.balance;
+              const spec = data.adapters.find(item => item.capability === "balance" && item.adapter === value.adapter)?.fields?.[key];
+              return spec && <OptionField key={key} name={key} spec={spec} value={value.options[key]} onChange={option => changeBalance({ ...balance, values: { ...balance.values, balance: { ...value, options: { ...value.options, [key]: option } } } })} />;
+            })}
+          </Fields>}
+        </section>}
         {!Object.keys(schemas).length && <p className="settings-channel-note">当前服务尚未提供运行设置，请更新服务后刷新。</p>}
       </div>
       <SaveBar busy={saving} dirty={dirty} status={status} previous={previous} next={next} />

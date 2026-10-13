@@ -114,11 +114,16 @@ class DeepSeekBalanceProvider:
 
 class DeepSeekAccounting(UsageAccounting):
     def token_rates(self, model: str, timestamp: float) -> tuple[float, float, float]:
+        # Unknown provider aliases use a fixed local estimate, not an asserted tariff.
+        if model not in {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro"}:
+            return _RATES["peak"]
         when = datetime.fromtimestamp(timestamp, DEEPSEEK_BILLING_TIMEZONE)
         minutes = when.hour * 60 + when.minute
         peak = when.weekday() < 5 and (
             9 * 60 <= minutes < 12 * 60 or 14 * 60 <= minutes < 18 * 60
         )
+        if model == "deepseek-v4-pro":
+            return (0.30, 9.0, 27.0) if peak else (0.15, 4.5, 13.5)
         return _RATES["peak"] if peak else _RATES["offpeak"]
 
     def parse_usage(self, data: dict[str, Any]) -> dict[str, float | int | bool] | None:

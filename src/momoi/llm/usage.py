@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 DEFAULT_MODEL = "deepseek-v4-flash"
 CURRENCY = "CNY"
-PRICING_NOTE = "只统计接入后的新调用。估算金额由当前用量扩展按官方单价计算。"
+PRICING_NOTE = "只统计接入后的调用。金额按本地价格估算，实际费用以服务商账单为准。"
 TOKEN_ONLY_NOTE = "只统计接入后的新调用。金额统计已关闭。"
 
 EstimateCost = Callable[..., float]

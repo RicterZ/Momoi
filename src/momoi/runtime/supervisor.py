@@ -94,7 +94,8 @@ class RuntimeSupervisor:
     @property
     def accounting(self):
         provider = self.daemon.services.balance if self.daemon is not None else None
-        return provider.accounting if provider is not None else (self.budget_guard.accounting if self.budget_guard else None)
+        guard = getattr(self.daemon, "budget_guard", None) or self.budget_guard
+        return provider.accounting if provider is not None and provider.accounting is not None else (guard.accounting if guard else None)
 
     async def _retire(self):
         if self.task is not None:

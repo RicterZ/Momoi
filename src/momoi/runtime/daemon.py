@@ -104,7 +104,8 @@ class MomoiDaemon(
         self.semantic_recall.start()
         self.memory = self.store.memories
         balance = self.services.balance
-        accounting = balance.accounting if balance is not None else None
+        from ..integrations.adapters.deepseek import DeepSeekAccounting
+        accounting = (balance.accounting if balance is not None else None) or DeepSeekAccounting()
         if accounting is not None:
             self.store.set_usage_accounting(accounting)
         self.store.recover_task_plans()

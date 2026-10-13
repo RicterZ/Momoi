@@ -32,8 +32,11 @@ def test_calendar_budget_and_missing_pricing(tmp_path):
     monthly = BudgetGuard(replace(config, budget=BudgetConfig(True, monthly_amount=1)), Pricing())
     assert monthly.status(stamp + 86400)['blocked']
     assert not monthly.status(datetime(2026, 11, 1, tzinfo=ZoneInfo(config.timezone)).timestamp())['blocked']
-    with pytest.raises(BudgetExceeded):
-        BudgetGuard(config, None).check()
+    fallback = BudgetGuard(config, None)
+    assert fallback.status(stamp)["available"]
+    assert not fallback.status(stamp)["blocked"]
+    assert fallback.status(stamp)["spent"] > 0
+    fallback.check()
 
 
 def test_budget_configuration_validation(tmp_path):
@@ -89,3 +92,24 @@ def test_existing_single_period_budget_is_preserved_and_editable(tmp_path):
     assert 'period' not in manager.read_app()['budget']
     manager.save_runtime({'budget': {'monthly_amount': 0}}, manager.revision())
     assert manager.validate().budget == BudgetConfig(True, daily_amount=2)
+
+
+def test_daemon_estimates_usage_with_balance_disabled(tmp_path):
+    from momoi.runtime.daemon import MomoiDaemon
+    from tests.test_episode_annealing import config as runtime_config
+    path = tmp_path / 'config.json'
+    bootstrap(path)
+    config = runtime_config(str(tmp_path))
+    catalog = config.providers
+    bindings = {**catalog.bindings}
+    if 'balance' in bindings:
+        bindings['balance'] = replace(bindings['balance'], enabled=False)
+    config = replace(config, providers=replace(catalog, bindings=bindings))
+    daemon = MomoiDaemon(config)
+    try:
+        assert daemon.services.balance is None
+        assert daemon.budget_guard.status()['available']
+        assert daemon.store.dashboard_usage()['cost_available']
+        assert daemon.provider.usage_parser is not None
+    finally:
+        daemon.store.close()
