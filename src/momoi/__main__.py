@@ -48,7 +48,7 @@ async def run(
         getattr(logging, config.log_level, logging.INFO),
         ZoneInfo(config.timezone),
     )
-    for noisy_logger in ("httpx", "httpcore", "mcp"):
+    for noisy_logger in ("httpx", "httpcore", "httpx2", "httpcore2", "mcp"):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
     stop = stop if stop is not None else asyncio.Event()
     with shutdown_signals(stop):
