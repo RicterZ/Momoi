@@ -6,12 +6,29 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 import httpx2
 from aiohttp import web
-from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.auth import AuthorizationCodeResult
 
 from ..mcp.config import expand_mcp_value, load_mcp_servers
 from ..mcp.oauth import oauth_provider
+
+
+async def obtain_tokens(provider, url, client):
+    """Drive SDK discovery/PKCE without relying on a public MCP handshake's 401."""
+    request = httpx2.Request("POST", url)
+    flow = provider.async_auth_flow(request)
+    try:
+        await anext(flow)
+        response = httpx2.Response(401, request=request)
+        while True:
+            outgoing = await flow.asend(response)
+            if outgoing is request:
+                if not await provider.context.storage.get_tokens():
+                    raise ValueError("OAuth completed without tokens")
+                break
+            response = await client.send(outgoing)
+            await response.aread()
+    finally:
+        await flow.aclose()
 
 
 def register_mcp_oauth_routes(app, configuration, runtime):
@@ -48,12 +65,10 @@ def register_mcp_oauth_routes(app, configuration, runtime):
             try:
                 async with asyncio.timeout(300):
                     provider = oauth_provider(path, name, config, redirect_handler=redirect, callback_handler=callback)
-                    headers = {str(key): expand_mcp_value(str(value)) for key, value in config.get("headers", {}).items()}
                     url = expand_mcp_value(config.get("url") or config.get("baseUrl") or config["serverUrl"])
-                    async with httpx2.AsyncClient(auth=provider, headers=headers, timeout=60) as client:
-                        async with streamable_http_client(url, http_client=client) as (read, write):
-                            async with ClientSession(read, write, read_timeout_seconds=60) as session:
-                                await session.initialize()
+                    # Do not recursively apply OAuth to discovery requests.
+                    async with httpx2.AsyncClient(timeout=60) as discovery_client:
+                        await obtain_tokens(provider, url, discovery_client)
                 flow.update(status="starting", url=None)
                 async with runtime.lock:
                     manager = getattr(runtime.daemon, "mcp", None)

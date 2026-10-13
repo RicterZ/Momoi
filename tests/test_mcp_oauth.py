@@ -16,7 +16,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from mcp.shared.auth import AuthorizationCodeResult, OAuthMetadata, OAuthToken
 
 from momoi.dashboard.auth import DASHBOARD_TOKEN, _auth, issue_dashboard_jwt
-from momoi.dashboard.mcp_oauth import register_mcp_oauth_routes
+from momoi.dashboard.mcp_oauth import obtain_tokens, register_mcp_oauth_routes
 from momoi.mcp.config import parse_mcp_servers
 from momoi.mcp.oauth import oauth_provider, validate_oauth
 from momoi.mcp.manager import MCPManager
@@ -121,6 +121,10 @@ class OAuthTest(unittest.IsolatedAsyncioTestCase):
         provider = oauth_provider(self.path, "mail", SERVER, redirect_handler=redirect, callback_handler=callback)
         async with httpx2.AsyncClient(auth=provider, transport=httpx2.MockTransport(respond)) as client:
             self.assertEqual((await client.get(SERVER["serverUrl"])).status_code, 200)
+        consent = oauth_provider(self.path, "public-handshake", SERVER, redirect_handler=redirect, callback_handler=callback)
+        async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+            await obtain_tokens(consent, SERVER["serverUrl"], client)
+        self.assertIsNotNone(await consent.context.storage.get_tokens())
         unattended = oauth_provider(self.path, "unauthorized", SERVER)
         with self.assertLogs("mcp.client.auth.oauth2", level=logging.ERROR) as logs:
             async with httpx2.AsyncClient(auth=unattended, transport=httpx2.MockTransport(respond)) as client:
@@ -176,24 +180,9 @@ class DashboardOAuthTest(unittest.IsolatedAsyncioTestCase):
             provider = SimpleNamespace(**kwargs)
             return None
 
-        class Transport:
-            async def __aenter__(self):
-                return None, None
-
-            async def __aexit__(self, *args):
-                pass
-
-        class Session(Transport):
-            def __init__(self, *args, **kwargs):
-                pass
-
-            async def __aenter__(self):
-                return self
-
-            async def initialize(self):
-                await provider.redirect_handler("https://accounts.google.com/o/oauth2/auth?state=test-state")
-                result = await provider.callback_handler()
-                self_result.append(result)
+        async def obtain(*args):
+            await provider.redirect_handler("https://accounts.google.com/o/oauth2/auth?state=test-state")
+            self_result.append(await provider.callback_handler())
 
         self_result = []
         app = web.Application(middlewares=[_auth])
@@ -205,7 +194,7 @@ class DashboardOAuthTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await client.post(endpoint)).status, 401)
             self.assertEqual((await client.get(endpoint)).status, 401)
             self.assertEqual((await client.get("/api/tools/mcp/oauth/callback?state=wrong&code=code")).status, 400)
-            with patch("momoi.dashboard.mcp_oauth.oauth_provider", make_provider), patch("momoi.dashboard.mcp_oauth.streamable_http_client", return_value=Transport()), patch("momoi.dashboard.mcp_oauth.ClientSession", Session):
+            with patch("momoi.dashboard.mcp_oauth.oauth_provider", make_provider), patch("momoi.dashboard.mcp_oauth.obtain_tokens", obtain):
                 response = await client.post(endpoint, headers=headers)
                 flow = await response.json()
                 self.assertEqual(flow["status"], "pending")
