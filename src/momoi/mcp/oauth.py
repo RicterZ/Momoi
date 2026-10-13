@@ -29,6 +29,13 @@ class _SafeOAuthErrors(logging.Filter):
 logging.getLogger("mcp.client.auth.oauth2").addFilter(_SafeOAuthErrors())
 
 
+class MCPOAuthProvider(OAuthClientProvider):
+    def _select_authorization_server(self, advertised):
+        issuer = super()._select_authorization_server(advertised)
+        # Google PRM advertises a slash that its RFC 8414 issuer omits.
+        return "https://accounts.google.com" if issuer == "https://accounts.google.com/" else issuer
+
+
 def validate_oauth(config):
     oauth = config.get("oauth")
     if oauth is None:
@@ -123,7 +130,7 @@ def oauth_provider(path, name, config, *, redirect_handler=None, callback_handle
     async def authentication_required(_=None):
         raise ValueError("OAuth authorization required; authenticate this server in Dashboard")
 
-    provider = OAuthClientProvider(
+    provider = MCPOAuthProvider(
         server_url=url, client_metadata=metadata, storage=storage,
         redirect_handler=redirect_handler or authentication_required,
         callback_handler=callback_handler or authentication_required,

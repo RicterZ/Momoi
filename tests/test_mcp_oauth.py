@@ -18,7 +18,7 @@ from mcp.shared.auth import AuthorizationCodeResult, OAuthMetadata, OAuthToken
 from momoi.dashboard.auth import DASHBOARD_TOKEN, _auth, issue_dashboard_jwt
 from momoi.dashboard.mcp_oauth import obtain_tokens, register_mcp_oauth_routes
 from momoi.mcp.config import parse_mcp_servers
-from momoi.mcp.oauth import oauth_provider, validate_oauth
+from momoi.mcp.oauth import MCPOAuthProvider, oauth_provider, validate_oauth
 from momoi.mcp.manager import MCPManager
 
 
@@ -42,6 +42,9 @@ class OAuthTest(unittest.IsolatedAsyncioTestCase):
         self.path = Path(self.directory.name) / "mcp.json"
 
     def test_config_alias_and_validation(self):
+        provider = oauth_provider(self.path, "mail", SERVER)
+        self.assertEqual(provider._select_authorization_server(["https://accounts.google.com/"]), "https://accounts.google.com")
+        self.assertEqual(provider._select_authorization_server(["https://other.example/path/"]), "https://other.example/path/")
         self.assertEqual(parse_mcp_servers(json.dumps({"mcpServers": {"mail": SERVER}}))["mail"], SERVER)
         for change in ({"clientId": ""}, {"redirectUri": "http://remote.example/api/tools/mcp/oauth/callback"},
                        {"redirectUri": "https://dashboard.example/other"}, {"clientSecret": 1},
