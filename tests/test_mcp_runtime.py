@@ -76,19 +76,19 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
             async def initialize(self):
                 pass
 
-            async def list_tools(self, _):
+            async def list_tools(self, *, params=None):
                 return SimpleNamespace(tools=[SimpleNamespace(
-                    name="work", description="Do work", inputSchema={
+                    name="work", description="Do work", input_schema={
                         "type": "object", "properties": {"value": {"type": (
                             "integer" if self.parameters.args == ["v2"] else "string"
                         )}},
                     },
-                )], nextCursor=None)
+                )], next_cursor=None)
 
             async def call_tool(self, name, arguments):
                 test.assertIs(self.owner, asyncio.current_task())
                 return SimpleNamespace(
-                    isError=bool(arguments.get("fail")),
+                    is_error=bool(arguments.get("fail")),
                     model_dump=lambda **_: {"content": [{"type": "text", "text": "result"}]},
                 )
 
@@ -485,11 +485,11 @@ class MCPErrorEnvelopeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_protocol_error_preserves_code_and_local_timeout_stays_ambiguous(self):
         from unittest.mock import AsyncMock
-        from mcp.shared.exceptions import McpError
-        from mcp.types import ErrorData, CONNECTION_CLOSED
+        from mcp.shared.exceptions import MCPError
+        from mcp.types import CONNECTION_CLOSED
 
         manager = MCPManager(None, servers={})
-        call = AsyncMock(side_effect=McpError(ErrorData(code=-32602, message="Unknown tool")))
+        call = AsyncMock(side_effect=MCPError(code=-32602, message="Unknown tool"))
         manager._sessions["test"] = SimpleNamespace(call_tool=call)
         result = await manager._invoke("test", "missing", {})
         self.assertFalse(result["ok"])
@@ -497,6 +497,6 @@ class MCPErrorEnvelopeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["protocol_error"]["code"], -32602)
         self.assertEqual(result["message"], "Unknown tool")
         for code in (408, CONNECTION_CLOSED):
-            call.side_effect = McpError(ErrorData(code=code, message="Connection unavailable"))
-            with self.assertRaises(McpError):
+            call.side_effect = MCPError(code=code, message="Connection unavailable")
+            with self.assertRaises(MCPError):
                 await manager._invoke("test", "slow", {})

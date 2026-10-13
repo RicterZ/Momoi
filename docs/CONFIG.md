@@ -397,6 +397,7 @@ Unsupported binary types return `unsupported_content_type`. HTTP 4xx/5xx return 
 | `env` | `{}` | Environment values added for `command` |
 | `url` | — | Streamable HTTP endpoint; required when `command` is omitted |
 | `headers` | `{}` | Headers sent to `url` |
+| `oauth` | omitted | OAuth for remote servers; omit to retain unauthenticated or Header-based access |
 | `description` | required | What tools the server provides and what they can do; 1–500 characters, included in the tool index, required even when disabled |
 | `enabled_tools` | `["*"]` | Raw or fully qualified tool names to register; `[]` registers none |
 | `readOnlyTools` | `[]` | Raw names of tools that should be treated as read-only |
@@ -404,6 +405,52 @@ Unsupported binary types return `unsupported_content_type`. HTTP 4xx/5xx return 
 
 Unlike `config.json`, MCP environment values, URLs, and headers expand
 `${VARIABLE}` from the Momoi process environment.
+
+### MCP OAuth
+
+Remote MCP forms offer authentication modes **None** and **OAuth**. OAuth shows
+client ID, client secret, redirect URI and scope fields; None hides them without
+changing the independent Header editor. Do not combine OAuth with an
+`Authorization` Header.
+
+```json
+{
+  "mcpServers": {
+    "gmail": {
+      "description": "Search and read Gmail messages",
+      "url": "https://gmailmcp.googleapis.com/mcp/v1",
+      "oauth": {
+        "clientId": "${GOOGLE_OAUTH_CLIENT_ID}",
+        "clientSecret": "${GOOGLE_OAUTH_CLIENT_SECRET}",
+        "redirectUri": "https://momoi.example.com/api/tools/mcp/oauth/callback",
+        "scope": "https://www.googleapis.com/auth/gmail.readonly"
+      }
+    }
+  }
+}
+```
+
+Register the exact redirect URI with the provider. Remote Dashboards require
+HTTPS; localhost may use `http://localhost:8788/api/tools/mcp/oauth/callback`.
+Save the server, start OAuth authorization and open the authorization link.
+After browser consent, Dashboard receives the callback, saves tokens and reloads
+MCP. Subsequent background operation and token refresh require no terminal input,
+including after restart. Revocation, failed refresh or additional scopes require
+new consent. Google Workspace also requires its preview program, enabled APIs/MCP
+services and a configured consent screen, as described in Google's setup guide.
+
+Initial user consent cannot be skipped: this is not a client-credentials grant.
+Public clients may omit `clientSecret`; Google Web applications require it.
+Omit `scope` to use server discovery. OAuth strings support `${VARIABLE}`.
+`baseUrl` and Google's `serverUrl` are accepted aliases for `url`; Momoi still
+requires `description`.
+
+Tokens and discovered metadata are atomically stored in `var/mcp-oauth/` beside
+the MCP configuration, with POSIX file permissions `0600`. They are excluded
+from Git and Dashboard relationship backups. Storage is not encrypted; protect
+the workspace and use directory ACLs on Windows. Changing the client, endpoint
+or OAuth configuration does not reuse the old tokens. Prefer environment
+references for client secrets.
 
 `mcp_reload` is deferred: find it with `tool_search`, load it with `tool_enable`, then call it with `{}`. It reloads only MCP connections and refreshes the current conversation catalog. Invalid configuration preserves existing connections; connection failures are returned per server. See the [installation workflow](./MCP-INSTALL.zh-CN.md).
 

@@ -63,8 +63,8 @@ def parse_mcp_servers(content: str) -> dict[str, dict[str, Any]]:
         if not isinstance(optional, bool):
             raise ValueError(f"MCP server {name} optional must be boolean")
         command = config.get("command")
-        url = config.get("url") or config.get("baseUrl")
-        for key in ("command", "url", "baseUrl", "cwd"):
+        url = config.get("url") or config.get("baseUrl") or config.get("serverUrl")
+        for key in ("command", "url", "baseUrl", "serverUrl", "cwd"):
             if key in config and (
                 not isinstance(config[key], str) or not config[key].strip()
             ):
@@ -80,6 +80,9 @@ def parse_mcp_servers(content: str) -> dict[str, dict[str, Any]]:
         for key in ("env", "headers"):
             if key in config and not isinstance(config[key], dict):
                 raise ValueError(f"MCP server {name} {key} must be an object")
+        if "oauth" in config:
+            from .oauth import validate_oauth
+            validate_oauth(config)
         for key in ("enabled_tools", "enabledTools", "readOnlyTools"):
             if any(not value.strip() for value in config.get(key, [])):
                 raise ValueError(f"MCP server {name} {key} names must not be empty")

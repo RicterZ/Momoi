@@ -38,6 +38,7 @@ export default function Tools({ token, request, confirm, refreshKey }) {
   const [install, setInstall] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [oauthFlow, setOauthFlow] = useState(null);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
   const lock = useRef(false);
@@ -74,6 +75,31 @@ export default function Tools({ token, request, confirm, refreshKey }) {
   useEffect(() => {
     if (window.matchMedia("(max-width: 760px)").matches) window.scrollTo(0, 0);
   }, [mobileDetail]);
+  useEffect(() => { setOauthFlow(null); }, [selected]);
+  useEffect(() => {
+    if (!selected || !editing?.config.oauth) return;
+    let cancelled = false;
+    let timer;
+    const poll = async () => {
+      try {
+        const result = await call(`/api/tools/mcp/${encodeURIComponent(selected)}/oauth`);
+        if (cancelled) return;
+        setOauthFlow(result);
+        if (result.status === "complete") await refresh();
+        if (["pending", "starting"].includes(result.status)) timer = setTimeout(poll, 1500);
+      } catch (problem) { if (!cancelled) setError(problem.message); }
+    };
+    poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [selected, oauthFlow?.status === "pending" || oauthFlow?.status === "starting"]);
+  async function authenticate() {
+    await mutate(async () => {
+      if (dirty || selected === null) throw new Error("请先保存服务配置，再进行授权。");
+      const result = await call(`/api/tools/mcp/${encodeURIComponent(selected)}/oauth`, { method: "POST", body: {} });
+      setOauthFlow(result);
+      if (result.status === "complete") await refresh();
+    });
+  }
   async function backToList() {
     if (busy || !await leave()) return;
     setMobileDetail(false); setEditing(null); setSaved(null); setSkill(null);
@@ -145,9 +171,16 @@ export default function Tools({ token, request, confirm, refreshKey }) {
     </section>
     <section className="tool-detail" aria-label="工具详情">
       {execSelected && tab === "mcp" ? <><header className="tool-detail-header"><div><span className="panel-label">BUILTIN // COMMAND</span><h2>命令执行</h2></div><Toggle checked={Boolean(data.app.tools?.exec_enabled)} disabled={busy} onChange={async value => { if (!await leave()) return; await mutate(async () => { setEditing(null); setSaved(null); const result = await call("/api/settings/configuration/app", { method: "PATCH", body: { revision: data.revision, document: { tools: { exec_enabled: value } } } }); setData(result); const outcome = await waitForConfiguration(call, result.revision); if (["error", "timeout"].includes(outcome.state)) throw new Error(outcome.message || outcome.title); await refresh(); }); }}>启用命令执行</Toggle></header><div className="tool-fields"><p className="tool-skill-description">允许 Momoi 安装依赖与执行系统命令，可用于安装 MCP 工具。</p><p className="tool-note">默认关闭。开启后拥有服务进程权限，无沙箱隔离。</p></div></> : editing ? <form className="tool-mcp-form" onSubmit={saveServer}><header className="tool-detail-header"><div><span className="panel-label">MCP //</span><h2>{selected === null ? "添加 MCP 服务" : selected}</h2></div><div className="tool-header-actions"><Toggle checked={!config.disabled} disabled={busy} onChange={value => change({ disabled: !value })}>启用</Toggle></div></header><fieldset disabled={busy} className="tool-fields">
-        <div className="tool-field-grid"><Field label="服务名称"><input className="dash-input" value={editing.name || ""} required onChange={event => setEditing({ ...editing, name: event.target.value })} placeholder="例如 brave-search" /></Field><SelectField label="连接方式" value={config.command !== undefined ? "local" : "remote"} options={[{ value: "local", label: "本地进程 · STDIO" }, { value: "remote", label: "远程接口 · HTTP" }]} onChange={value => { const next = { ...config }; delete next.command; delete next.url; delete next.baseUrl; if (value === "local") next.command = ""; else next.url = ""; setEditing({ ...editing, config: next }); }} /></div>
+        <div className="tool-field-grid"><Field label="服务名称"><input className="dash-input" value={editing.name || ""} required onChange={event => setEditing({ ...editing, name: event.target.value })} placeholder="例如 brave-search" /></Field><SelectField label="连接方式" value={config.command !== undefined ? "local" : "remote"} options={[{ value: "local", label: "本地进程 · STDIO" }, { value: "remote", label: "远程接口 · HTTP" }]} onChange={value => { const next = { ...config }; delete next.command; delete next.url; delete next.baseUrl; delete next.serverUrl; if (value === "local") { next.command = ""; delete next.oauth; } else next.url = ""; setEditing({ ...editing, config: next }); }} /></div>
         <Field label="能力描述" hint="说明提供什么工具、能做什么。Momoi 会通过这段描述发现能力。"><textarea className="dash-input" rows={3} required maxLength={500} value={config.description || ""} onChange={event => change({ description: event.target.value })} placeholder="例如：搜索公开网页与本地商家，获取实时信息。" /></Field>
-        {config.command !== undefined ? <><Field label="启动命令"><input className="dash-input" required value={config.command} onChange={event => change({ command: event.target.value })} placeholder="uvx、node 或可执行文件的绝对路径" /></Field><Field label="启动参数" hint="每行一个参数，保留参数内的空格。"><textarea className="dash-input tool-mono" rows={3} value={(config.args || []).join("\n")} onChange={event => change({ args: event.target.value ? event.target.value.split("\n") : [] })} placeholder="-y&#10;@modelcontextprotocol/server-brave-search" /></Field><Field label="工作目录"><input className="dash-input" value={config.cwd || ""} onChange={event => { const next = { ...config }; if (event.target.value) next.cwd = event.target.value; else delete next.cwd; setEditing({ ...editing, config: next }); }} placeholder="可选，建议使用服务安装目录" /></Field><KeyValues label="环境变量" value={config.env} onChange={env => change({ env })} /></> : <><Field label="服务地址"><input className="dash-input" type="url" required value={config.url || config.baseUrl || ""} onChange={event => change({ url: event.target.value })} placeholder="https://example.com/mcp" /></Field><KeyValues label="请求 Header" value={config.headers} onChange={headers => change({ headers })} /></>}
+        {config.command !== undefined ? <><Field label="启动命令"><input className="dash-input" required value={config.command} onChange={event => change({ command: event.target.value })} placeholder="uvx、node 或可执行文件的绝对路径" /></Field><Field label="启动参数" hint="每行一个参数，保留参数内的空格。"><textarea className="dash-input tool-mono" rows={3} value={(config.args || []).join("\n")} onChange={event => change({ args: event.target.value ? event.target.value.split("\n") : [] })} placeholder="-y&#10;@modelcontextprotocol/server-brave-search" /></Field><Field label="工作目录"><input className="dash-input" value={config.cwd || ""} onChange={event => { const next = { ...config }; if (event.target.value) next.cwd = event.target.value; else delete next.cwd; setEditing({ ...editing, config: next }); }} placeholder="可选，建议使用服务安装目录" /></Field><KeyValues label="环境变量" value={config.env} onChange={env => change({ env })} /></> : <><Field label="服务地址"><input className="dash-input" type="url" required value={config.url || config.baseUrl || config.serverUrl || ""} onChange={event => change({ url: event.target.value })} placeholder="https://example.com/mcp" /></Field><SelectField label="认证方式" value={config.oauth ? "oauth" : "none"} options={[{ value: "none", label: "无" }, { value: "oauth", label: "OAuth" }]} onChange={value => { const next = { ...config }; if (value === "oauth") next.oauth = { clientId: "", clientSecret: "", redirectUri: `${window.location.origin}/api/tools/mcp/oauth/callback`, scope: "" }; else delete next.oauth; setEditing({ ...editing, config: next }); setOauthFlow(null); }} />
+        {config.oauth && <><div className="tool-field-grid"><Field label="OAuth 客户端 ID"><input className="dash-input" required value={config.oauth.clientId || ""} onChange={event => change({ oauth: { ...config.oauth, clientId: event.target.value } })} /></Field><Field label="OAuth 客户端密钥" hint="公开客户端可留空；Google Web 应用需要填写。支持环境变量引用。"><input className="dash-input" type="password" autoComplete="new-password" value={config.oauth.clientSecret || ""} onChange={event => change({ oauth: { ...config.oauth, clientSecret: event.target.value } })} /></Field></div>
+          <Field label="OAuth 回调地址" hint="在 OAuth 提供方登记同一地址。远程部署需填写浏览器可访问的 HTTPS Dashboard 地址。"><input className="dash-input" type="url" required value={config.oauth.redirectUri || ""} onChange={event => change({ oauth: { ...config.oauth, redirectUri: event.target.value } })} /></Field>
+          <Field label="OAuth 权限范围" hint="多个 scope 用空格分隔；留空时由服务器发现。"><textarea className="dash-input" rows={2} value={config.oauth.scope || ""} onChange={event => change({ oauth: { ...config.oauth, scope: event.target.value } })} /></Field>
+          <div className="tool-detail-heading"><button className="quiet-button" type="button" disabled={dirty || selected === null || ["pending", "starting"].includes(oauthFlow?.status)} onClick={authenticate}>进行 OAuth 授权</button>{oauthFlow?.url && <a className="quiet-button" href={oauthFlow.url} target="_blank" rel="noopener noreferrer">打开授权页面</a>}</div>
+          <p className="tool-note" role="status">{oauthFlow?.status === "complete" ? "OAuth 认证成功，已重载 MCP 连接。" : oauthFlow?.status === "error" ? "OAuth 认证失败或已超时，请检查配置后重试。" : ["starting", "pending"].includes(oauthFlow?.status) ? "等待浏览器授权，完成后后台自动更新。" : "先保存配置，再在浏览器中完成首次授权。后台自动使用和刷新令牌，无需终端输入。"}</p>
+        </>}
+        <KeyValues label="请求 Header" value={config.headers} onChange={headers => change({ headers })} /></>}
         <details className="tool-advanced"><summary>高级工具设置</summary><Field label="启用的工具" hint="每行一个工具名。* 表示全部；留空则不注册任何工具。"><textarea className="dash-input" rows={2} value={(config.enabled_tools || config.enabledTools || ["*"]).join("\n")} onChange={event => change({ enabled_tools: event.target.value ? event.target.value.split("\n") : [] })} /></Field><Field label="只读工具" hint="仅填写确认没有写入或外部副作用的工具名，每行一个。"><textarea className="dash-input" rows={2} value={(config.readOnlyTools || []).join("\n")} onChange={event => change({ readOnlyTools: event.target.value ? event.target.value.split("\n") : [] })} /></Field></details>
         {status && <div className="tool-discovered"><div className="tool-detail-heading"><h4>可用工具</h4><span className="panel-label">{status.tools.length} TOOLS</span></div>{status.error && <p className="is-error">{status.error}</p>}{status.tools.map(tool => <div key={tool.name}><strong>{tool.name}</strong><p>{tool.description}</p></div>)}{!status.tools.length && <p className="tool-note">连接成功后，工具会显示在这里。</p>}</div>}
       </fieldset><footer className="tool-mcp-actions">{selected !== null && <button className="quiet-button pink" type="button" disabled={busy} onClick={async () => { if (!await confirm({ title: `删除 ${selected}？`, message: "移除服务配置并关闭连接，安装目录与依赖保留。", confirmLabel: "删除" })) return; await mutate(async () => { const next = { ...document.mcpServers }; delete next[selected]; await saveDocument({ ...document, mcpServers: next }); setEditing(null); setSaved(null); setSelected(null); setMobileDetail(false); }); }}>删除</button>}<SaveBar busy={busy} dirty={dirty} hint="保存后自动应用 MCP 配置。" /></footer></form>

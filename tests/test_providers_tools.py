@@ -485,7 +485,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_mcp_result_reaches_normalization_without_pretruncation(self) -> None:
         class Result:
-            isError = False
+            is_error = False
 
             def model_dump(self, **_: object) -> dict[str, object]:
                 return {"content": [{"type": "text", "text": "x" * 40_000}]}
@@ -802,7 +802,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             async def initialize(self) -> None:
                 return None
 
-            async def list_tools(self, cursor: str | None) -> SimpleNamespace:
+            async def list_tools(self, *, params=None) -> SimpleNamespace:
+                cursor = params.cursor if params else None
                 cursors.append(cursor)
                 name = "zeta" if cursor is None else "alpha"
                 return SimpleNamespace(
@@ -810,10 +811,10 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         SimpleNamespace(
                             name=name,
                             description=f"{name} tool",
-                            inputSchema={"type": "object"},
+                            input_schema={"type": "object"},
                         )
                     ],
-                    nextCursor="page-2" if cursor is None else None,
+                    next_cursor="page-2" if cursor is None else None,
                 )
 
         manager = MCPManager(None)
@@ -853,17 +854,17 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             async def initialize(self) -> None:
                 return None
 
-            async def list_tools(self, _: str | None) -> SimpleNamespace:
+            async def list_tools(self, *, params=None) -> SimpleNamespace:
                 return SimpleNamespace(
                     tools=[
                         SimpleNamespace(
                             name=name,
                             description=f"{name} tool",
-                            inputSchema={"type": "object"},
+                            input_schema={"type": "object"},
                         )
                         for name in ("first", "second", "third")
                     ],
-                    nextCursor=None,
+                    next_cursor=None,
                 )
 
         for enabled, expected in (
@@ -897,10 +898,10 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
         class Result:
             def __init__(self, is_error: bool = False) -> None:
-                self.isError = is_error
+                self.is_error = is_error
 
             def model_dump(self, **_: object) -> dict[str, object]:
-                return {"isError": self.isError, "content": [{"text": "ok"}]}
+                return {"isError": self.is_error, "content": [{"text": "ok"}]}
 
         class Transport:
             def __init__(self, server: str, generation: int) -> None:
@@ -933,16 +934,16 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             async def initialize(self) -> None:
                 return None
 
-            async def list_tools(self, _: str | None) -> SimpleNamespace:
+            async def list_tools(self, *, params=None) -> SimpleNamespace:
                 return SimpleNamespace(
                     tools=[
                         SimpleNamespace(
                             name="work",
                             description="work",
-                            inputSchema={"type": "object"},
+                            input_schema={"type": "object"},
                         )
                     ],
-                    nextCursor=None,
+                    next_cursor=None,
                 )
 
             async def call_tool(self, *_: object) -> Result:

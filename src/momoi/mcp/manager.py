@@ -4,14 +4,14 @@ import logging
 import os
 import re
 from contextlib import AsyncExitStack
-from datetime import timedelta
 from pathlib import Path
 from time import monotonic
 from typing import Any
 
-import httpx
+import httpx2
 from mcp import ClientSession, StdioServerParameters
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
+from mcp.types import PaginatedRequestParams
 from mcp.types import CONNECTION_CLOSED
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
@@ -24,6 +24,7 @@ from ..observability.context import (
 from ..observability.events import TRACE, log_event
 from ..observability.values import safe_preview
 from .config import expand_mcp_value, load_mcp_servers
+from .oauth import oauth_provider
 
 logger = logging.getLogger(__name__)
 MCPRequest = tuple[
@@ -313,9 +314,9 @@ class MCPManager:
     ) -> dict[str, Any]:
         try:
             result = await self._sessions[server].call_tool(tool, arguments)
-        except McpError as error:
-            # The SDK also uses McpError for local timeouts/closed connections.
-            if error.error.code in {httpx.codes.REQUEST_TIMEOUT, CONNECTION_CLOSED}:
+        except MCPError as error:
+            # The SDK also uses MCPError for local timeouts/closed connections.
+            if error.error.code in {httpx2.codes.REQUEST_TIMEOUT, CONNECTION_CLOSED}:
                 raise
             return {
                 "ok": False,
@@ -324,7 +325,7 @@ class MCPManager:
                 "protocol_error": error.error.model_dump(mode="json", exclude_none=True),
             }
         payload = result.model_dump(mode="json", by_alias=True, exclude_none=True)
-        is_error = bool(result.isError)
+        is_error = bool(result.is_error)
         message = _mcp_error_message(payload) if is_error else None
         response = {
             "ok": not is_error,
@@ -364,15 +365,18 @@ class MCPManager:
                     )
                 )
                 read, write = transport
-            elif url := config.get("url") or config.get("baseUrl"):
+            elif url := config.get("url") or config.get("baseUrl") or config.get("serverUrl"):
                 headers = {
                     str(key): expand_mcp_value(str(value))
                     for key, value in (config.get("headers") or {}).items()
                 }
                 client = await stack.enter_async_context(
-                    httpx.AsyncClient(headers=headers, timeout=60)
+                    httpx2.AsyncClient(
+                        headers=headers, timeout=60,
+                        auth=oauth_provider(self.path, name, config) if config.get("oauth") is not None else None,
+                    )
                 )
-                read, write, _ = await stack.enter_async_context(
+                read, write = await stack.enter_async_context(
                     streamable_http_client(
                         expand_mcp_value(str(url)), http_client=client
                     )
@@ -381,15 +385,15 @@ class MCPManager:
                 raise ValueError("server requires command or url")
 
             session = await stack.enter_async_context(
-                ClientSession(read, write, read_timeout_seconds=timedelta(seconds=60))
+                ClientSession(read, write, read_timeout_seconds=60)
             )
             await session.initialize()
             tools = []
             cursor = None
             while True:
-                page = await session.list_tools(cursor)
+                page = await session.list_tools(params=PaginatedRequestParams(cursor=cursor) if cursor else None)
                 tools.extend(page.tools)
-                cursor = page.nextCursor
+                cursor = page.next_cursor
                 if not cursor:
                     break
             configured_tools = config.get(
@@ -432,7 +436,7 @@ class MCPManager:
                         "name": wire_name,
                         OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
                         "description": f"[MCP:{name}] {tool.description or tool.name}",
-                        "input_schema": tool.inputSchema,
+                        "input_schema": tool.input_schema,
                     },
                 )
                 annotations = getattr(tool, "annotations", None)

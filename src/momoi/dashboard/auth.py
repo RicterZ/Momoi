@@ -108,6 +108,8 @@ def _require_token(request: web.Request) -> None:
 
 def _is_public_api(request: web.Request) -> bool:
     path = request.path
+    if request.method == "GET" and path == "/api/tools/mcp/oauth/callback":
+        return True
     if _PUBLIC_ASSET_PATH.fullmatch(path):
         return True
     return request.method == "POST" and path == _AUTH_TOKEN_PATH

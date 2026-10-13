@@ -82,6 +82,8 @@ class ChannelLogin:
 
 
 def register_configuration_routes(app, configuration, runtime):
+    from .mcp_oauth import register_mcp_oauth_routes
+    register_mcp_oauth_routes(app, configuration, runtime)
     channel_login = ChannelLogin(configuration, runtime)
     test_lock = asyncio.Lock()
 

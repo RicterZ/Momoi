@@ -367,6 +367,7 @@ Bash 命令遵循系统命令本身的语义，不自动继承文件工具的哈
 | `env` | `{}` | 为 `command` 增加的环境变量 |
 | `url` | — | Streamable HTTP 接口；未设置 `command` 时必填 |
 | `headers` | `{}` | 发送给 `url` 的 Header |
+| `oauth` | 未配置 | 远程服务的 OAuth 配置；省略时不启用 OAuth，仍可使用 Header |
 | `description` | 必填 | 描述提供什么工具、能做什么；1–500 个字符，进入 tool index；禁用服务也须填写 |
 | `enabled_tools` | `["*"]` | 要注册的原始或完整限定工具名；`[]` 表示不注册工具 |
 | `readOnlyTools` | `[]` | 应视为只读工具的原始名称 |
@@ -374,6 +375,35 @@ Bash 命令遵循系统命令本身的语义，不自动继承文件工具的哈
 
 与 `config.json` 不同，MCP 的环境变量值、URL 和 Header 会从 Momoi 进程
 环境中展开 `${VARIABLE}`。
+
+### MCP OAuth 认证
+
+Dashboard 的 MCP 远程服务表单提供「认证方式：无 / OAuth」。选择 OAuth 时填写客户端 ID、客户端密钥、回调地址和权限范围；选择「无」时隐藏这些字段，HTTP Header 配置仍独立保留。OAuth 不能与 `Authorization` Header 同时使用。
+
+```json
+{
+  "mcpServers": {
+    "gmail": {
+      "description": "搜索和读取 Gmail 邮件",
+      "url": "https://gmailmcp.googleapis.com/mcp/v1",
+      "oauth": {
+        "clientId": "${GOOGLE_OAUTH_CLIENT_ID}",
+        "clientSecret": "${GOOGLE_OAUTH_CLIENT_SECRET}",
+        "redirectUri": "https://momoi.example.com/api/tools/mcp/oauth/callback",
+        "scope": "https://www.googleapis.com/auth/gmail.readonly"
+      }
+    }
+  }
+}
+```
+
+1. 在 OAuth 提供方创建 Web 应用，将 `redirectUri` 原样登记为授权重定向 URI。远程 Dashboard 必须使用 HTTPS；本地可使用 `http://localhost:8788/api/tools/mcp/oauth/callback`。
+2. 保存 MCP 配置，点击「进行 OAuth 授权」，再点击「打开授权页面」，在浏览器完成登录和同意。Google Workspace 还需按其官方指南加入预览计划、启用 API/MCP 服务并配置同意屏幕和 scope。
+3. Dashboard 自动接收回调、保存令牌并重载连接。之后后台无终端交互地使用和刷新令牌，包括重启后；授权被撤销、刷新失败或需要新增权限时，需重新授权。
+
+首次用户同意不能跳过；这不是只凭客户端 ID/密钥即可访问用户数据的 client-credentials 模式。公开客户端可省略 `clientSecret`，Google Web 应用需提供；`scope` 可省略以使用服务器发现的范围。`url` 兼容 `baseUrl` 和 Google 示例的 `serverUrl`，但仍须填写 Momoi 的 `description`。
+
+令牌和授权服务器元数据保存在 MCP 配置文件所在目录的 `var/mcp-oauth/`，使用原子写入；POSIX 文件权限为 `0600`。文件不进入 Git 或 Dashboard 关系备份；本地存储不是加密保险库，请保护工作区，Windows 使用目录 ACL。客户端、服务地址或 OAuth 配置变更后不复用旧令牌。客户端密钥建议通过环境变量提供，OAuth 配置字符串也支持 `${VARIABLE}`。
 
 `mcp_reload` 默认按需加载：通过 `tool_search` 查找、`tool_enable` 加载，再以 `{}` 调用。
 只重载 MCP 连接并更新当前对话工具目录；配置无效保留旧连接，连接失败返回逐服务结果。
