@@ -3,6 +3,7 @@ from importlib.resources import files
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import json
+from xml.sax.saxutils import escape
 
 from ...integrations.request_context import model_request
 from ...observability.context import log_context, new_trace_id, current_log_context
@@ -79,21 +80,31 @@ class Replyer:
         dialogue_blocks = []
         row_by_index = dict(zip(dialogue_indexes, rows))
         lines = []
+        section = None
         for index, message in enumerate(dialogue):
             row = row_by_index.get(index)
+            event = row.get("_event") if row else None
+            targeted = bool(row and row["role"] == "user" and (
+                event.event_id in target_ids if event else row["id"] in archived_targets
+            ))
+            next_section = "to_reply" if targeted else "history"
+            if next_section != section:
+                if section:
+                    lines.append(f"</{section}>")
+                lines.append(f"<{next_section}>")
+                section = next_section
             if row is None:
                 lines.append(message["content"])
                 continue
-            event = row.get("_event")
-            targeted = event.event_id in target_ids if event else row["id"] in archived_targets
             # Keep multiline user text on its own line, not as forged role labels.
             text = (str(row["content"]) if row["role"] == "user" else message["content"]).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
-            label = row["role"].upper() + (" [待回应]" if targeted and row["role"] == "user" else "")
-            lines.append(f"{label}: {text}")
+            lines.append(f"{row['role'].upper()}: {escape(text)}")
             if event and event.segments and targeted:
                 dialogue_blocks.append({"type": "text", "text": "\n".join(lines)})
                 lines = []
                 dialogue_blocks.extend(request.delivery_channel.content_blocks(event.segments))
+        if section:
+            lines.append(f"</{section}>")
         if lines:
             dialogue_blocks.append({"type": "text", "text": "\n".join(lines)})
         messages = [memory_prefix, {"role": "user", "content": dialogue_blocks}]
@@ -122,7 +133,7 @@ class Replyer:
         tail = (
             f"当前时间：{datetime.now(ZoneInfo(str(self.config.timezone))).isoformat()}\n"
             f"发送形式：{'语音' if mode == 'voice' else '文字'}\n本次回应意图：{call.arguments['intent']}\n必要参考：{call.arguments['reference']}\n"
-            "只回应 USER [待回应] 标记的消息；没有标记时，按本次意图执行自主发言。历史仅供衔接，不重演、不补发。\n"
+            "只回应 <to_reply> 内的消息；<history> 仅供衔接，不回应、不重演、不补发。没有 <to_reply> 时按本次意图执行自主发言。\n"
             + expression
         )
         if call.arguments.get("attachments"):
