@@ -109,13 +109,12 @@ def test_replyer_replays_shared_memory_changes_without_compacting(tmp_path, oper
 
     async def complete(system, messages, tools):
         assert 'OLD_STYLE' in str(messages[0]['content'])
-        changes = [i for i, message in enumerate(messages) if '_memory_change' in message]
-        assert changes == [2]
+        assert '<memory_changes' in str(messages[1]['content'])
         assert 'Update preference' in str(messages[1]['content'])
-        assert f'<{operation} ' in messages[2]['content']
-        assert ('NEW_STYLE' in messages[2]['content']) == (operation != 'delete')
+        assert f'<{operation} ' in str(messages[1]['content'])
+        assert ('NEW_STYLE' in str(messages[1]['content'])) == (operation != 'delete')
         if operation == 'delete':
-            assert '此记忆已撤销' in messages[2]['content']
+            assert '此记忆已撤销' in str(messages[1]['content'])
         assert 'goal_directory' not in str(messages)
         assert 'memory_operation' not in str(messages)
         return ProviderResponse([{'type': 'text', 'text': 'Acknowledged'}], [])
@@ -561,13 +560,22 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path):
 
     async def complete(system, messages, tools):
         text = str(messages)
+        assert len(messages) == 3  # Memory, one dialogue block, expression task.
+        dialogue = messages[1]['content'][0]['text']
+        assert dialogue.splitlines() == [
+            'USER: OLD_IMAGE_INPUT',
+            'ASSISTANT: DELIVERED_REPLY',
+            'USER [待回应]: LATEST_INPUT',
+        ]
         assert text.count('OLD_IMAGE_INPUT') == 1
         assert text.count('LATEST_INPUT') == 1
         assert text.count('DELIVERED_REPLY') == 1
         assert 'CANCELLED_REPLY' not in text and 'PENDING_REPLY' not in text
         assert text.index('OLD_IMAGE_INPUT') < text.index('DELIVERED_REPLY') < text.index('LATEST_INPUT')
-        assert '[本次最新目标 event_id=new-event]' in text
-        assert '只处理本次最新目标' in text
+        assert 'USER [待回应]: LATEST_INPUT' in text
+        assert 'event_id=' not in text
+        assert 'image-event' not in text and 'new-event' not in text
+        assert '只回应 USER [待回应]' in text
         assert '不重新回应旧消息或旧图片' in system
         channel.content_blocks.assert_not_called()
         return ProviderResponse([{'type': 'text', 'text': 'Continue latest'}], [])

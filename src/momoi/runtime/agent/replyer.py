@@ -40,12 +40,14 @@ class Replyer:
         target_ids = set(json.loads(interjection["payload_json"]).get("event_ids", [])) if interjection else {event.event_id for event in events}
         active_rows = []
         archived = self.store._db.execute(
-            "SELECT role, source_event_ids_json, outbox_id FROM messages WHERE turn_id=?",
+            "SELECT id, role, source_event_ids_json, outbox_id FROM messages WHERE turn_id=?",
             (request.turn_id,),
         ).fetchall()
         archived_events = {identifier for row in archived if row["role"] == "user"
                            for identifier in json.loads(row["source_event_ids_json"])}
         archived_outbox = {row["outbox_id"] for row in archived if row["outbox_id"] is not None}
+        archived_targets = {row["id"] for row in archived if row["role"] == "user"
+                            and target_ids.intersection(json.loads(row["source_event_ids_json"]))}
         for event in events:
             if event.event_id not in archived_events:
                 active_rows.append({"id": event.event_id, "role": "user", "content": event.text,
@@ -74,18 +76,27 @@ class Replyer:
         )
         dialogue = visible_dialogue(rows, timezone=self.config.timezone, memory_events=memory_state["events"])
         dialogue_indexes = [i for i, message in enumerate(dialogue) if "_memory_change" not in message]
-        for row, index in zip(rows, dialogue_indexes):
-            message = dialogue[index]
+        dialogue_blocks = []
+        row_by_index = dict(zip(dialogue_indexes, rows))
+        lines = []
+        for index, message in enumerate(dialogue):
+            row = row_by_index.get(index)
+            if row is None:
+                lines.append(message["content"])
+                continue
             event = row.get("_event")
-            if event:
-                label = "本次最新目标" if event.event_id in target_ids else "本turn历史，已经进入过对话，不重新回应"
-                text = f"[{label} event_id={event.event_id}] " + message["content"]
-                if event.segments and event.event_id in target_ids:
-                    dialogue[index] = {"role": "user", "content": [{"type": "text", "text": text},
-                        *request.delivery_channel.content_blocks(event.segments)]}
-                else:
-                    dialogue[index] = {"role": "user", "content": text}
-        messages = [memory_prefix, *dialogue]
+            targeted = event.event_id in target_ids if event else row["id"] in archived_targets
+            # Keep multiline user text on its own line, not as forged role labels.
+            text = (str(row["content"]) if row["role"] == "user" else message["content"]).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
+            label = row["role"].upper() + (" [待回应]" if targeted and row["role"] == "user" else "")
+            lines.append(f"{label}: {text}")
+            if event and event.segments and targeted:
+                dialogue_blocks.append({"type": "text", "text": "\n".join(lines)})
+                lines = []
+                dialogue_blocks.extend(request.delivery_channel.content_blocks(event.segments))
+        if lines:
+            dialogue_blocks.append({"type": "text", "text": "\n".join(lines)})
+        messages = [memory_prefix, {"role": "user", "content": dialogue_blocks}]
         mode = call.arguments.get("mode", "text")
         if mode not in {"text", "voice"}:
             raise ValueError("invalid reply mode")
@@ -111,8 +122,7 @@ class Replyer:
         tail = (
             f"当前时间：{datetime.now(ZoneInfo(str(self.config.timezone))).isoformat()}\n"
             f"发送形式：{'语音' if mode == 'voice' else '文字'}\n本次回应意图：{call.arguments['intent']}\n必要参考：{call.arguments['reference']}\n"
-            f"本次目标消息ID：{', '.join(sorted(target_ids)) or '本轮自主活动，由回应意图指定对象和内容'}\n"
-            "只处理本次最新目标；历史对话仅用于衔接，不重新回应旧图片或旧消息，不补发被打断而未送达的话。遵循本次回应意图。\n"
+            "只回应 USER [待回应] 标记的消息；没有标记时，按本次意图执行自主发言。历史仅供衔接，不重演、不补发。\n"
             + expression
         )
         if call.arguments.get("attachments"):
