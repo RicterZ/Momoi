@@ -178,14 +178,11 @@ class HeartbeatWorkflow:
         ]
         tools = self.tool_surface.conversation_specs()
         draft = TurnDraft(memory_context=injected_memories, memory_conversation=transcript_messages)
-        memory_events = self.store.recent_owner_events(
-            max(20, self.config.transcript_turns_max)
-        )
         reply = await self._run_tool_loop(
             system,
             messages,
             tools,
-            memory_events,
+            [],
             draft,
             resume_input=build_input,
             execution=TurnExecutionSpec(
@@ -221,7 +218,6 @@ class HeartbeatWorkflow:
             messages=decision["messages"],
             reason=decision["reason"],
             draft=draft,
-            memory_events=memory_events,
             notification_channel=delivery_channel.name,
         )
         self.agenda_changed.set()

@@ -4,6 +4,7 @@ import copy
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig
@@ -251,6 +252,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
 
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]
+            daemon._run_tool_loop = AsyncMock(wraps=daemon._run_tool_loop)
             turn_id = daemon._turn_id("heartbeat-native")
             daemon.store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
             await daemon._complete_heartbeat(
@@ -263,6 +265,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             )
 
             rendered = str(provider.first_messages)
+            self.assertEqual(daemon._run_tool_loop.await_args.args[3], [])
             self.assertNotIn("<workflow_contract>", str(provider.first_system))
             self.assertIn("<workflow_contract>", rendered)
             self.assertNotIn("<recent_turn_base>", rendered)
