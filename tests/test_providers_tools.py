@@ -32,6 +32,7 @@ from momoi.integrations.adapters.anthropic import AnthropicProvider, merge_adjac
 from momoi.llm.dumps import redact_dump_media
 from momoi.llm.errors import ProviderError
 from momoi.integrations.adapters.openai import OpenAIProvider, openai_messages
+from momoi.integrations.adapters.openai_responses import OpenAIResponsesProvider
 from momoi.llm.telemetry import usage_metrics
 from momoi.runtime import (
     MomoiDaemon,
@@ -1678,6 +1679,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
 
 @pytest.mark.parametrize("api_format,path,provider_type,success", [
+    ("openai_responses", "/v1/responses", OpenAIResponsesProvider,
+     {"status": "completed", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}),
     ("openai", "/v1/chat/completions", OpenAIProvider,
      {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}),
     ("anthropic", "/v1/messages", AnthropicProvider,

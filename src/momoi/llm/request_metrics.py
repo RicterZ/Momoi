@@ -20,12 +20,14 @@ def fingerprint(value) -> PromptFingerprint:
 
 
 def request_shape(payload) -> RequestShape:
-    messages = payload.get("messages", [])
-    system = payload.get("system", [])
+    messages = payload.get("messages", payload.get("input", []))
+    if isinstance(messages, str):
+        messages = [{"role": "user", "content": messages}]
+    system = payload.get("system", payload.get("instructions", []))
     if messages and messages[0].get("role") == "system":
         system = messages[0]
         messages = messages[1:]
-    settings = {k: v for k, v in payload.items() if k not in {"messages", "system", "tools"}}
+    settings = {k: v for k, v in payload.items() if k not in {"messages", "system", "tools", "input", "instructions"}}
     parts = [fingerprint(payload.get("tools", [])), fingerprint(system)]
     parts.extend(fingerprint(message) for message in messages)
     return {"settings_hash": fingerprint(settings)["hash"],

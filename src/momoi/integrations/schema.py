@@ -36,6 +36,11 @@ LLM = {
     },
 }
 SCHEMAS = {
+    ("openai_responses", "llm"): {
+        **LLM,
+        "base_url": field(default="https://api.deepseek.com"),
+        "model": field(default="deepseek-flash"),
+    },
     ("openai", "llm"): {
         **LLM,
         "base_url": field(default="https://api.deepseek.com/v1"),

@@ -1,10 +1,9 @@
 from ...llm.request_metrics import RequestMetric, response_headers
 import json
 import logging
-from pathlib import Path
 from time import time
 from urllib.parse import urlsplit
-from typing import Any, Callable
+from typing import Any
 
 import aiohttp
 from ..media import text_only_messages
@@ -19,11 +18,12 @@ from ...llm.telemetry import (
     record_response,
     thinking_effort,
 )
-from ...llm.transport import ProviderCircuit, http_error, openai_url, retry_request
+from ...llm.transport import http_error, openai_url, retry_request
 from ...integrations.models import LLMConfig
 from ...observability.events import log_event
 from ...observability.values import safe_preview
 from ...models import ProviderResponse, ToolCall
+from .openai_base import OpenAIProtocolProvider
 
 logger = logging.getLogger(__name__)
 
@@ -166,28 +166,8 @@ def _log_unusable_response(
     )
 
 
-class OpenAIProvider:
-    def __init__(self, config: LLMConfig, dump_dir: Path | None = None) -> None:
-        self.config = config
-        self._circuit = ProviderCircuit()
-        self.dump_dir = dump_dir
-        self.request_metrics_sink = None
-        self.usage_sink: Callable[..., None] | None = None
-        self.usage_parser: (
-            Callable[[dict[str, Any]], dict[str, float | int | bool] | None] | None
-        ) = None
-        self.thinking_sink: Callable[..., None] | None = None
-        self._session: aiohttp.ClientSession | None = None
-
-    async def __aenter__(self) -> "OpenAIProvider":
-        self._session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds)
-        )
-        return self
-
-    async def __aexit__(self, *_: object) -> None:
-        if self._session:
-            await self._session.close()
+class OpenAIProvider(OpenAIProtocolProvider):
+    """OpenAI Chat Completions protocol adapter."""
 
     async def complete(
         self,

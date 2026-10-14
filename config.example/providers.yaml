@@ -11,6 +11,9 @@ credentials:
       env: DEEPSEEK_API_KEY
 services:
   chat:
+    # Protocol adapters: anthropic (Messages), openai (Chat Completions),
+    # openai_responses (Responses). For DeepSeek Responses use
+    # base_url: https://api.deepseek.com and model: deepseek-flash below.
     adapter: anthropic
     base_url: https://api.example.com
     credentials: model

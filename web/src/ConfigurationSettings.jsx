@@ -22,7 +22,7 @@ const modules = [
     label: "语言模型",
     icon: "spark",
     names: ["llm"],
-    tip: "兼容 OpenAI 协议的服务可选择 OpenAI。服务地址和模型名称请以服务商提供的信息为准。",
+    tip: "兼容 OpenAI Chat Completions 协议的服务可选择 OpenAI Chat Completions。服务地址和模型名称请以服务商提供的信息为准。",
   },
   { id: "prompts", label: "提示词" },
   {
@@ -52,7 +52,8 @@ const modules = [
   { id: "backup", label: "备份与恢复" },
 ];
 const adapterLabels = {
-  openai: "OpenAI",
+  openai: "OpenAI Chat Completions",
+  openai_responses: "OpenAI Responses",
   local: "内置 BGE",
   deepseek: "DeepSeek",
   anthropic: "Anthropic",
@@ -1072,7 +1073,9 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
                         options={adapters.map((adapter) => ({
                           value: adapter.adapter,
                           label:
-                            adapterLabels[adapter.adapter] || adapter.adapter,
+                            adapter.adapter === "openai" && name === "embedding"
+                              ? "OpenAI Embeddings"
+                              : adapterLabels[adapter.adapter] || adapter.adapter,
                         }))}
                       />
                     </div>

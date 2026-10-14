@@ -58,6 +58,14 @@ def parse_protocol_usage(
             usage.get("output_tokens")
         )
         cache_reported = "cached_tokens" in details or "cache_write_tokens" in details
+    elif "input_tokens_details" in usage:
+        details = usage_mapping(usage.get("input_tokens_details"))
+        input_tokens = usage_int(usage.get("input_tokens"))
+        cache_read = usage_int(details.get("cached_tokens"))
+        cache_write = 0
+        uncached = max(0, input_tokens - cache_read)
+        output = usage_int(usage.get("output_tokens"))
+        cache_reported = "cached_tokens" in details
     else:
         uncached = usage_int(usage.get("input_tokens"))
         cache_read = usage_int(usage.get("cache_read_input_tokens"))

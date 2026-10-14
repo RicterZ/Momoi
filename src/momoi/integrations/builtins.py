@@ -13,10 +13,12 @@ def register_builtins():
     from .adapters.embedding import EmbeddingClient
     from .adapters.deepseek import DeepSeekBalanceProvider
     from .adapters.openai import OpenAIProvider
+    from .adapters.openai_responses import OpenAIResponsesProvider
     from .adapters.anthropic import AnthropicProvider
 
     for name, cls in [
         ("openai", OpenAIProvider),
+        ("openai_responses", OpenAIResponsesProvider),
         ("anthropic", AnthropicProvider),
     ]:
         register_adapter(

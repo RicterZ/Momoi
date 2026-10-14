@@ -98,7 +98,7 @@ def llm_config(options, api_format):
         temperature=number(options, "temperature", 0.6, inclusive=True),
         timeout_seconds=number(options, "timeout_seconds", 300),
         max_retries=number(options, "max_retries", 3, integer=True, inclusive=True),
-        api_format="anthropic" if api_format == "anthropic" else "openai",
+        api_format=api_format,
         tool_choice=choice,
         thinking=ThinkingConfig(effort),
         multimodal=multimodal,

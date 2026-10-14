@@ -48,6 +48,12 @@ def openai_url(base_url: str) -> str:
     return f"{base}{prefix}/chat/completions"
 
 
+def responses_url(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    prefix = "" if urlsplit(base).path.rstrip("/") else "/v1"
+    return f"{base}{prefix}/responses"
+
+
 def should_retry(error: Exception) -> bool:
     return getattr(error, "_http_status", 0) >= 500 or isinstance(
         error,
@@ -147,7 +153,7 @@ async def retry_request(
             if isinstance(error, ProviderError):
                 raise
             break
-    name = "OpenAI" if protocol == "openai" else "Anthropic"
+    name = {"openai": "OpenAI Chat Completions", "openai_responses": "OpenAI Responses"}.get(protocol, "Anthropic")
     raise ProviderError(
         f"{name}-compatible request failed: {type(last_error).__name__}",
         category=error_category(last_error),
