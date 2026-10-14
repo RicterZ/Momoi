@@ -13,6 +13,151 @@ from momoi.integrations.request_context import requested_thinking_effort
 from momoi.observability.context import current_log_context
 
 
+def empty_memory_state():
+    return {'snapshot': {}, 'snapshot_overrides': {}, 'events': []}
+
+
+@pytest.mark.parametrize('with_memory', [False, True])
+def test_replyer_global_memory_prefix_without_goals(tmp_path, with_memory):
+    from tests.support import seed_memory
+    from momoi.runtime.turn_support import context_data_message
+
+    store = Store(tmp_path / 'db')
+    event = IncomingMessage('prefix-event', 'prefix-event', 'Hello', 1, 1, channel='dashboard')
+    store.add_event(event)
+    store.begin_turn('prefix-turn', 'owner', [event.event_id])
+    store.commit_turn([event], event.text, AgentReply([]), turn_id='prefix-turn')
+    if with_memory:
+        seed_memory(store, event, key='reply.style', content='GLOBAL_STYLE_SENTINEL', activation='always')
+    seed_memory(store, event, key='recall.only', content='RECALL_ONLY_SENTINEL', activation='recall')
+    scoped = seed_memory(store, event, key='heartbeat.only', content='SCOPED_ONLY_SENTINEL', activation='scoped')
+    with store._db:
+        store._db.execute("UPDATE memories SET scope_key='heartbeat' WHERE id=?", (scoped,))
+        store._db.execute(
+            """INSERT INTO goals
+               (id, title, success_criteria, source_event_id, status, plan_json,
+                next_action, waiting_for, blocked_reason, latest_result, schedule_json,
+                next_review_at, created_at, updated_at)
+               VALUES ('prefix-goal', 'GOAL_SENTINEL', 'done', 'prefix-event', 'active',
+                       '[]', '', '', '', '', '', 1, 1, 1)"""
+        )
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt='Test soul', timezone='UTC', thinking_stages={})
+    channel = SimpleNamespace(name='dashboard', content_blocks=lambda _: [])
+    request = SimpleNamespace(turn_id='prefix-turn', round_number=1, delivery_channel=channel,
+                              current_events=[event])
+
+    async def complete(system, messages, tools):
+        assert messages[0] == context_data_message(
+            ('long_term_memories', store._memory_context(
+                store.transcript_memory_context(['prefix-turn'], track_boundary=False)['snapshot'].values())),
+            ('memory_overrides', ''), required=True,
+        )
+        assert messages[0]['role'] == 'user'
+        assert messages[1]['role'] == 'user'
+        assert 'Hello' in str(messages[1]['content'])
+        assert '本次回应意图' in str(messages[-1]['content'])
+        text = str(messages)
+        assert ('GLOBAL_STYLE_SENTINEL' in text) == with_memory
+        assert 'RECALL_ONLY_SENTINEL' not in text
+        assert 'SCOPED_ONLY_SENTINEL' not in text
+        assert 'GOAL_SENTINEL' not in text
+        assert '<goal_directory>' not in text
+        assert 'GLOBAL_STYLE_SENTINEL' not in system
+        return ProviderResponse([{'type': 'text', 'text': 'Hello back'}], [])
+
+    try:
+        replyer = Replyer(config, store, SimpleNamespace(complete=complete))
+        call = ToolCall('prefix-reply', 'reply', {'intent': 'Respond', 'reference': ''})
+        assert asyncio.run(replyer.generate(call, request)) == ['Hello back']
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize('operation', ['replace', 'delete', 'add'])
+def test_replyer_replays_shared_memory_changes_without_compacting(tmp_path, operation):
+    from tests.support import seed_memory
+
+    store = Store(tmp_path / 'db')
+    event = IncomingMessage('change-event', 'change-event', 'Update preference', 1, 1, channel='dashboard')
+    store.add_event(event)
+    store.begin_turn('change-turn', 'owner', [event.event_id])
+    store.commit_turn([event], event.text, AgentReply([]), turn_id='change-turn')
+    identifier = seed_memory(store, event, key='style', content='OLD_STYLE', activation='always')
+    # Planner's retained boundary differs from Replyer's channel-only history.
+    original = store.transcript_memory_context(['planner-boundary', 'change-turn'])
+    if operation == 'add':
+        seed_memory(store, event, key='new.style', content='NEW_STYLE', activation='always')
+    else:
+        with store._db:
+            store._db.execute(
+                'UPDATE memories SET content=? WHERE id=?' if operation == 'replace'
+                else 'UPDATE memories SET expires_at=? WHERE id=?',
+                ('NEW_STYLE' if operation == 'replace' else 1, identifier),
+            )
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt='Soul', timezone='UTC', thinking_stages={})
+    channel = SimpleNamespace(name='dashboard', content_blocks=lambda _: [])
+    request = SimpleNamespace(turn_id='change-turn', round_number=1, delivery_channel=channel,
+                              current_events=[event])
+
+    async def complete(system, messages, tools):
+        assert 'OLD_STYLE' in str(messages[0]['content'])
+        changes = [i for i, message in enumerate(messages) if '_memory_change' in message]
+        assert changes == [2]
+        assert 'Update preference' in str(messages[1]['content'])
+        assert f'<{operation} ' in messages[2]['content']
+        assert ('NEW_STYLE' in messages[2]['content']) == (operation != 'delete')
+        if operation == 'delete':
+            assert '此记忆已撤销' in messages[2]['content']
+        assert 'goal_directory' not in str(messages)
+        assert 'memory_operation' not in str(messages)
+        return ProviderResponse([{'type': 'text', 'text': 'Acknowledged'}], [])
+
+    try:
+        replyer = Replyer(config, store, SimpleNamespace(complete=complete))
+        call = ToolCall('change-reply', 'reply', {'intent': 'Respond', 'reference': ''})
+        assert asyncio.run(replyer.generate(call, request)) == ['Acknowledged']
+        state = store.transcript_memory_context(['planner-boundary', 'change-turn'])
+        assert state['snapshot'] == original['snapshot']
+        assert state['snapshot_revision'] == original['snapshot_revision']
+        assert state['boundary'] == 'planner-boundary'
+        assert len(state['events']) == 1
+        assert asyncio.run(replyer.generate(call, request)) == ['Acknowledged']
+        store.fold_transcript_memory(state['revision'])
+        folded = store.transcript_memory_context(['planner-boundary', 'change-turn'])
+        assert not folded['events']
+        assert ('NEW_STYLE' in store._memory_context(folded['snapshot'].values())) == (operation != 'delete')
+
+        async def complete_folded(system, messages, tools):
+            assert not any('_memory_change' in message for message in messages)
+            assert ('NEW_STYLE' in str(messages[0]['content'])) == (operation != 'delete')
+            assert ('OLD_STYLE' in str(messages[0]['content'])) == (operation == 'add')
+            return ProviderResponse([{'type': 'text', 'text': 'Acknowledged'}], [])
+
+        replyer.provider.complete = complete_folded
+        assert asyncio.run(replyer.generate(call, request)) == ['Acknowledged']
+    finally:
+        store.close()
+
+
+def test_replyer_memory_changes_with_missing_and_shared_anchors():
+    from momoi.runtime.transcript.replyer import visible_dialogue
+
+    rows = [
+        {'role': 'user', 'content': 'Question', 'created_at': 1, 'turn_id': 'a'},
+        {'role': 'assistant', 'content': 'Answer', 'delivery_state': 'delivered', 'turn_id': 'a'},
+        {'role': 'assistant', 'content': 'Unsent', 'delivery_state': 'pending', 'turn_id': 'b'},
+    ]
+    events = [
+        {'anchor': 'missing', 'revision': 1, 'content': '<memory_changes>first</memory_changes>'},
+        {'anchor': 'a', 'revision': 2, 'content': '<memory_changes>second</memory_changes>'},
+        {'anchor': 'a', 'revision': 3, 'content': '<memory_changes>third</memory_changes>'},
+    ]
+    messages = visible_dialogue(rows, memory_events=events)
+    assert [message.get('_memory_change') for message in messages] == [1, None, None, 2, 3]
+    assert messages[2]['content'] == 'Answer'
+    assert 'Unsent' not in str(messages)
+
+
 def test_replyer_channel_history_uses_actual_delivery(tmp_path):
     store = Store(tmp_path / 'db')
     try:
@@ -66,7 +211,7 @@ def test_replyer_isolated_request_and_actual_speech(tmp_path):
     (tmp_path / 'REPLYER.md').write_text('测试表达')
     config = SimpleNamespace(soul_prompt_path=tmp_path / 'SOUL.md', soul_prompt='fallback',
                              timezone='UTC', thinking_stages={'replyer': 'low'})
-    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), emotion_context=lambda: "")
+    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
     channel = SimpleNamespace(name='test', content_blocks=lambda segments: [{'type': 'image', 'source': {'type': 'url', 'url': 'https://example.invalid/image'}}])
     request = SimpleNamespace(turn_id='turn', round_number=2, delivery_channel=channel,
                              current_events=[IncomingMessage('e', 'e', '测试图片', 1, 1, ({'type': 'image'},))])
@@ -207,7 +352,7 @@ def test_replyer_window_migrates_existing_database(tmp_path):
 @pytest.mark.parametrize("mode", ["text", "voice"])
 def test_replyer_receives_mode_and_splits_bubbles(mode):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
-    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), emotion_context=lambda: "")
+    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[],
                               turn_id="turn", round_number=1)
 
@@ -297,7 +442,7 @@ def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
 def test_emotion_catalog_stays_in_shared_replyer_prefix(mode):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
     store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
-                            emotion_context=lambda: "emotion://happy 开心时使用")
+                            transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "emotion://happy 开心时使用")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[], turn_id="t", round_number=1)
     async def complete(system, messages, tools):
         assert "<emotion_catalog>" in system
@@ -310,7 +455,7 @@ def test_emotion_catalog_stays_in_shared_replyer_prefix(mode):
 def test_replyer_text_and_voice_have_identical_system_and_history():
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
     store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
-                            emotion_context=lambda: "emotion://happy 开心时使用")
+                            transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "emotion://happy 开心时使用")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[], turn_id="t", round_number=1)
     requests = []
     async def complete(system, messages, tools):
@@ -339,14 +484,13 @@ def test_replyer_text_and_voice_have_identical_system_and_history():
 def test_replyer_poke_is_an_action_not_spoken_or_literal_text(channel_name, mode, output, accepted):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt='test', timezone='UTC', thinking_stages={})
     store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
-                            emotion_context=lambda: '')
+                            transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: '')
     channel = SimpleNamespace(name=channel_name, content_blocks=lambda _: [])
     if channel_name == 'napcat':
         channel.poke_owner = Mock()
     request = SimpleNamespace(turn_id='turn', round_number=1, delivery_channel=channel, current_events=[])
     async def complete(system, messages, tools):
         assert tools == []
-        assert ('<qq_expression>' in system) == (channel_name == 'napcat')
         return ProviderResponse([{'type': 'text', 'text': output}], [])
     replyer = Replyer(config, store, SimpleNamespace(complete=complete))
     call = ToolCall('reply', 'reply', {'intent': 'test', 'reference': '', 'mode': mode})
@@ -357,28 +501,12 @@ def test_replyer_poke_is_an_action_not_spoken_or_literal_text(channel_name, mode
             asyncio.run(replyer.generate(call, request))
 
 
-def test_qq_replyer_poke_capability_prefix_is_identical_for_text_and_phone():
-    config = SimpleNamespace(soul_prompt_path=None, soul_prompt='test', timezone='UTC', thinking_stages={})
-    store = SimpleNamespace(replyer_history_rows=lambda _: [], record_turn_usage=Mock(), emotion_context=lambda: '')
-    prefixes = []
-    async def complete(system, messages, tools):
-        prefixes.append(system)
-        return ProviderResponse([{'type': 'text', 'text': 'test'}], [])
-    replyer = Replyer(config, store, SimpleNamespace(complete=complete))
-    for channel, mode in [(SimpleNamespace(name='napcat', poke_owner=Mock()), 'text'),
-                          (SimpleNamespace(name='qq_call', dialogue_channel='napcat'), 'voice')]:
-        request = SimpleNamespace(turn_id='turn', round_number=1, delivery_channel=channel, current_events=[])
-        asyncio.run(replyer.generate(ToolCall('reply', 'reply', {'intent': 'test', 'reference': '', 'mode': mode}), request))
-    assert prefixes[0] == prefixes[1]
-    assert '<qq_expression>' in prefixes[0]
-
-
 def test_optional_qq_quote_targets_selected_message_and_keeps_other_bubbles_plain():
     from momoi.channel.napcat import NapCatChannel, NapCatConfig
     from momoi.runtime.tool_contracts.reply import REPLY_TOOL_SPEC
     from momoi.tools.validation import validate_tool_arguments
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt='测试', timezone='UTC', thinking_stages={})
-    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), emotion_context=lambda: '')
+    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: '')
     channel = NapCatChannel(NapCatConfig('ws://localhost', '20000', 1, 60, 30, 30, 20))
     events = [IncomingMessage('one', '101', '第一条', 1, 1, channel='napcat'),
               IncomingMessage('two', '102', '第二条', 2, 2, channel='napcat')]

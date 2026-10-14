@@ -5,8 +5,9 @@ from xml.sax.saxutils import escape
 from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_DESCRIPTION
 
 
-def visible_dialogue(rows, *, timezone="UTC"):
+def visible_dialogue(rows, *, timezone="UTC", memory_events=()):
     selected = []
+    turn_ids = []
     for row in rows:
         role = row.get("role")
         if role not in {"user", "assistant"}:
@@ -22,4 +23,12 @@ def visible_dialogue(rows, *, timezone="UTC"):
             timestamp = datetime.fromtimestamp(float(row["created_at"]), ZoneInfo(str(timezone))).isoformat()
             text = f'[message][{timestamp}][user] {escape(text)}'
         selected.append({"role": role, "content": text})
+        turn_ids.append(str(row.get("turn_id") or ""))
+    # Match Planner: changes follow the last visible message of their anchor turn.
+    for event in reversed(memory_events):
+        indexes = [i for i, turn_id in enumerate(turn_ids) if turn_id == event["anchor"]]
+        index = max(indexes) + 1 if indexes else 0
+        selected.insert(index, {"role": "user", "content": event["content"],
+                                "_memory_change": event["revision"], "_context_prefix": True})
+        turn_ids.insert(index, None)
     return selected

@@ -7,8 +7,9 @@ from ...integrations.request_context import model_request
 from ...observability.context import log_context, new_trace_id, current_log_context
 from ...memory.text import estimate_tokens
 from ...storage.delivery.emotions import EMOTION_REACTION_POLICY
-from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_DESCRIPTION, QQ_POKE_POLICY
+from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_DESCRIPTION
 from ..transcript.replyer import visible_dialogue
+from ..turn_support import context_data_message
 
 
 def prompt_text(config, name, fallback):
@@ -25,7 +26,17 @@ class Replyer:
         guide = prompt_text(self.config, "REPLYER.md", files("momoi").joinpath("prompts/replyer.md").read_text(encoding="utf-8"))
         system = soul + "\n\n" + guide
         rows = self.store.replyer_history_rows(getattr(request.delivery_channel, "dialogue_channel", request.delivery_channel.name))
-        messages = visible_dialogue(rows, timezone=self.config.timezone)
+        turn_ids = list(dict.fromkeys(str(row["turn_id"]) for row in rows))
+        # Read the shared snapshot/deltas without moving Planner's compaction boundary.
+        memory_state = self.store.transcript_memory_context(turn_ids, track_boundary=False)
+        messages = [
+            context_data_message(
+                ("long_term_memories", self.store._memory_context(memory_state["snapshot"].values())),
+                ("memory_overrides", "\n".join(memory_state["snapshot_overrides"].values())),
+                required=True,
+            ),
+            *visible_dialogue(rows, timezone=self.config.timezone, memory_events=memory_state["events"]),
+        ]
         target = "\n".join(event.text for event in request.current_events
                            if not event.delivery_context.get("channel_notice")
                            and (not callable(getattr(request.delivery_channel, "message_current", None))
@@ -48,8 +59,6 @@ class Replyer:
         if emotions.strip():
             system += "\n\n<emotion_catalog>\n" + emotions + "\n</emotion_catalog>\n" + EMOTION_REACTION_POLICY
             system += "\n文字模式选用表情时，将 emotion:// 标识单独作为一个气泡，用空行与文字分隔；只能使用目录中的标识。语音模式只生成朗读文本，不输出表情。"
-        if getattr(request.delivery_channel, "dialogue_channel", request.delivery_channel.name) == "napcat":
-            system += "\n\n" + QQ_POKE_POLICY
         expression = (
             "只输出适合朗读的实际发言，用空行分隔气泡；使用自然口语，不包含 Markdown、颜文字、表情标记、动作标记或媒体路径。"
             if mode == "voice" else "只输出实际发言，用空行分隔气泡。"
