@@ -762,14 +762,14 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
   const [callSaved, setCallSaved] = useState(callDraft);
   const callDirty = module.id === "voice" && !equal(callDraft, callSaved);
   const { names, optional } = module;
+  const isModel = module.id === "model";
   const [draft, setDraft] = useState(() =>
-    providerDraft(names, data, optional),
+    providerDraft(names, isModel ? { ...data, capabilities: {} } : data, optional),
   );
   const [saved, setSaved] = useState(draft);
-  const isModel = module.id === "model";
   const [modelProviders, setModelProviders] = useState(data.model_providers || []);
-  const [editingProvider, setEditingProvider] = useState(data.active_model_provider || null);
-  const [providerName, setProviderName] = useState((data.model_providers || []).find(item => item.id === data.active_model_provider)?.name || "");
+  const [editingProvider, setEditingProvider] = useState(null);
+  const [providerName, setProviderName] = useState("");
   const [savedName, setSavedName] = useState(providerName);
   const [activeProvider, setActiveProvider] = useState(data.active_model_provider || "");
   const [selectedProvider, setSelectedProvider] = useState(activeProvider);
