@@ -50,3 +50,7 @@ desktop/Momoi.Desktop/keys/*.pem
 # Local architecture plans and design reviews.
 /docs/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.md
 /docs/architecture/
+
+# Local agent instructions and publishing helper.
+/AGENTS.md
+/packaging/windows/publish_cos.py
