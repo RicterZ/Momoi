@@ -158,7 +158,9 @@ class DeliveryStore:
     def mark_sent(self, outbox_id: int) -> None:
         with self._db:
             self._db.execute(
-                "UPDATE outbox SET state='sent', last_error=NULL WHERE id=?",
-                (outbox_id,),
+                """UPDATE outbox SET state='sent', last_error=NULL,
+                   payload_json=json_set(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,
+                                         '$._sent_at', ?) WHERE id=?""",
+                (time.time(), outbox_id),
             )
             self._sync_outbox_message(outbox_id, "sent")

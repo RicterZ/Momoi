@@ -13,6 +13,14 @@ from momoi.integrations.request_context import requested_thinking_effort
 from momoi.observability.context import current_log_context
 
 
+def empty_replyer_db():
+    cursor = Mock()
+    cursor.fetchone.return_value = None
+    cursor.fetchall.return_value = []
+    cursor.__iter__ = Mock(return_value=iter([]))
+    return SimpleNamespace(execute=lambda *args: cursor)
+
+
 def empty_memory_state():
     return {'snapshot': {}, 'snapshot_overrides': {}, 'events': []}
 
@@ -211,7 +219,7 @@ def test_replyer_isolated_request_and_actual_speech(tmp_path):
     (tmp_path / 'REPLYER.md').write_text('测试表达')
     config = SimpleNamespace(soul_prompt_path=tmp_path / 'SOUL.md', soul_prompt='fallback',
                              timezone='UTC', thinking_stages={'replyer': 'low'})
-    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
+    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
     channel = SimpleNamespace(name='test', content_blocks=lambda segments: [{'type': 'image', 'source': {'type': 'url', 'url': 'https://example.invalid/image'}}])
     request = SimpleNamespace(turn_id='turn', round_number=2, delivery_channel=channel,
                              current_events=[IncomingMessage('e', 'e', '测试图片', 1, 1, ({'type': 'image'},))])
@@ -222,7 +230,7 @@ def test_replyer_isolated_request_and_actual_speech(tmp_path):
         assert requested_thinking_effort() == 'low'
         assert current_log_context()['stage'] == 'replyer'
         assert current_log_context()['tool_call_id'] == 'c'
-        assert any(b['type'] == 'image' for b in messages[-1]['content'])
+        assert any(b['type'] == 'image' for message in messages if isinstance(message['content'], list) for b in message['content'])
         assert 'memory' not in str(messages)
         return ProviderResponse([{'type': 'text', 'text': '自己的反应\n\n另一句'}], [], usage={'input': 10, 'output': 4})
 
@@ -352,7 +360,7 @@ def test_replyer_window_migrates_existing_database(tmp_path):
 @pytest.mark.parametrize("mode", ["text", "voice"])
 def test_replyer_receives_mode_and_splits_bubbles(mode):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
-    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
+    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[],
                               turn_id="turn", round_number=1)
 
@@ -441,7 +449,7 @@ def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
 @pytest.mark.parametrize("mode", ["text", "voice"])
 def test_emotion_catalog_stays_in_shared_replyer_prefix(mode):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
-    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
+    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
                             transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "emotion://happy 开心时使用")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[], turn_id="t", round_number=1)
     async def complete(system, messages, tools):
@@ -454,7 +462,7 @@ def test_emotion_catalog_stays_in_shared_replyer_prefix(mode):
 
 def test_replyer_text_and_voice_have_identical_system_and_history():
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
-    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
+    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
                             transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "emotion://happy 开心时使用")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[], turn_id="t", round_number=1)
     requests = []
@@ -483,7 +491,7 @@ def test_replyer_text_and_voice_have_identical_system_and_history():
 ])
 def test_replyer_poke_is_an_action_not_spoken_or_literal_text(channel_name, mode, output, accepted):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt='test', timezone='UTC', thinking_stages={})
-    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
+    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
                             transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: '')
     channel = SimpleNamespace(name=channel_name, content_blocks=lambda _: [])
     if channel_name == 'napcat':
@@ -506,7 +514,7 @@ def test_optional_qq_quote_targets_selected_message_and_keeps_other_bubbles_plai
     from momoi.runtime.tool_contracts.reply import REPLY_TOOL_SPEC
     from momoi.tools.validation import validate_tool_arguments
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt='测试', timezone='UTC', thinking_stages={})
-    store = SimpleNamespace(replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: '')
+    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: '')
     channel = NapCatChannel(NapCatConfig('ws://localhost', '20000', 1, 60, 30, 30, 20))
     events = [IncomingMessage('one', '101', '第一条', 1, 1, channel='napcat'),
               IncomingMessage('two', '102', '第二条', 2, 2, channel='napcat')]
@@ -528,3 +536,45 @@ def test_optional_qq_quote_targets_selected_message_and_keeps_other_bubbles_plai
     channel.is_message_recalled = lambda channel, message_id: message_id == '101'
     with pytest.raises(ValueError, match='quote target'):
         asyncio.run(replyer.generate(ToolCall('recalled', 'reply', args), request))
+
+
+def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path):
+    store = Store(tmp_path / 'db')
+    old = IncomingMessage('image-event', 'image-event', 'OLD_IMAGE_INPUT', 10, 10,
+                          ({'type': 'image'},), channel='test')
+    latest = IncomingMessage('new-event', 'new-event', 'LATEST_INPUT', 30, 30, channel='test')
+    for event in (old, latest):
+        store.add_event(event)
+    store.begin_turn('active-turn', 'owner', [old.event_id])
+    store.queue_progress('active-turn', 'first-reply', ['DELIVERED_REPLY', 'CANCELLED_REPLY', 'PENDING_REPLY'], 'test')
+    outboxes = store._db.execute('SELECT id FROM outbox ORDER BY id').fetchall()
+    store.mark_sent(outboxes[0]['id'])
+    with store._db:
+        store._db.execute("UPDATE outbox SET payload_json=json_set(payload_json, '$._sent_at', 20) WHERE id=?", (outboxes[0]['id'],))
+        store._db.execute("UPDATE outbox SET state='superseded' WHERE id=?", (outboxes[1]['id'],))
+    store.append_turn_journal('active-turn', 'owner_interjection', {'event_ids': [latest.event_id], 'before_round': 2})
+    assert store.replyer_dialogue_rows('test') == []
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt='Soul', timezone='UTC', thinking_stages={})
+    channel = SimpleNamespace(name='test', content_blocks=Mock(return_value=[{'type': 'image'}]))
+    request = SimpleNamespace(turn_id='active-turn', round_number=2, delivery_channel=channel,
+                              current_events=[old, latest], state=SimpleNamespace(last_sent_bubbles=['DELIVERED_REPLY']))
+
+    async def complete(system, messages, tools):
+        text = str(messages)
+        assert text.count('OLD_IMAGE_INPUT') == 1
+        assert text.count('LATEST_INPUT') == 1
+        assert text.count('DELIVERED_REPLY') == 1
+        assert 'CANCELLED_REPLY' not in text and 'PENDING_REPLY' not in text
+        assert text.index('OLD_IMAGE_INPUT') < text.index('DELIVERED_REPLY') < text.index('LATEST_INPUT')
+        assert '[本次最新目标 event_id=new-event]' in text
+        assert '只处理本次最新目标' in text
+        assert '不重新回应旧消息或旧图片' in system
+        channel.content_blocks.assert_not_called()
+        return ProviderResponse([{'type': 'text', 'text': 'Continue latest'}], [])
+
+    try:
+        assert asyncio.run(Replyer(config, store, SimpleNamespace(complete=complete)).generate(
+            ToolCall('next', 'reply', {'intent': 'Continue', 'reference': ''}), request)) == ['Continue latest']
+        assert store.replyer_dialogue_rows('test') == []  # Projection does not prematurely archive.
+    finally:
+        store.close()
