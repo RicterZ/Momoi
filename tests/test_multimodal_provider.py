@@ -1,6 +1,7 @@
 import copy
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -19,6 +20,8 @@ from momoi.integrations.registry import ServiceRegistry
 from momoi.integrations.image_routing import ImageRoutingModel
 from momoi.models import ProviderResponse
 from momoi.llm.errors import ProviderResponseError
+from momoi.observability.context import log_context, current_log_context
+from momoi.observability.events import TRACE
 
 
 def test_multimodal_defaults_and_validation():
@@ -162,14 +165,17 @@ def test_image_routing_preserves_tools_reuses_evidence_and_propagates_errors():
 
 
 @pytest.mark.parametrize("multimodal", [True, False])
-def test_registry_owns_both_models_and_bypasses_recognition_for_multimodal(multimodal):
+def test_registry_owns_both_models_and_bypasses_recognition_for_multimodal(multimodal, tmp_path, caplog):
+    caplog.set_level(TRACE, logger="momoi.llm.dumps")
     async def run():
         requests = []
+        thinking, usage = [], []
 
         async def respond(request):
             body = await request.json()
             requests.append(body)
-            return web.json_response({"choices": [{"message": {"role": "assistant", "content": "Visible cat"}, "finish_reason": "stop"}]})
+            return web.json_response({"choices": [{"message": {"role": "assistant", "content": "Visible cat"}, "finish_reason": "stop"}],
+                                      "usage": {"prompt_tokens": 10, "completion_tokens": 3}})
 
         app = web.Application()
         app.router.add_post("/{path:.*}", respond)
@@ -178,16 +184,34 @@ def test_registry_owns_both_models_and_bypasses_recognition_for_multimodal(multi
                 "primary": {"adapter": "openai", "settings": {"base_url": str(server.make_url("/v1")), "model": "primary", "multimodal": multimodal}},
                 "vision": {"adapter": "openai", "settings": {"base_url": str(server.make_url("/v1")), "model": "vision"}},
             }, "bindings": {"llm": {"service": "primary"}, "vision": {"service": "vision"}}}
-            registry = ServiceRegistry(parse_provider_catalog(raw, Path("/tmp/providers.yaml")))
+            registry = ServiceRegistry(parse_provider_catalog(raw, tmp_path / "providers.yaml"), dump_dir=tmp_path / "dumps")
             model = registry.llm
+            model.thinking_sink = lambda **record: thinking.append(record)
+            model.usage_sink = lambda **record: usage.append(record)
             assert isinstance(model, ImageRoutingModel) is not multimodal
             async with registry:
-                await model.complete("System", [{"role": "user", "content": [{"type": "image", "source": {
-                    "type": "base64", "media_type": "image/png", "data": "AAAA"}}]}])
+                with log_context(stage="owner", turn_id="test-turn", call_id="primary-call", round=1, channel="test"):
+                    await model.complete("System", [{"role": "user", "content": [{"type": "image", "source": {
+                        "type": "base64", "media_type": "image/png", "data": "AAAA"}}]}])
+                    assert current_log_context()["call_id"] == "primary-call"
             assert [item["model"] for item in requests] == (["primary"] if multimodal else ["vision", "primary"])
             assert ("AAAA" in str(requests[-1])) is multimodal
             if not multimodal:
                 assert "Visible cat" in str(requests[-1])
+                assert thinking[0]["stage"] == "image_recognition"
+                assert thinking[0]["call_id"] != "primary-call"
+                assert thinking[0]["trace"]["parent_call_id"] == "primary-call"
+                assert thinking[0]["turn_id"] == "test-turn"
+                assert usage[0]["stage"] == "image_recognition"
+                assert usage[0]["model"] == "vision"
+                dump = json.loads((tmp_path / "dumps" / thinking[0]["trace"]["dump_file"]).read_text())
+                assert dump["context"]["stage"] == "image_recognition"
+                assert dump["context"]["parent_call_id"] == "primary-call"
+                assert "response" in dump
+                assert "omitted 4 base64 chars" in str(dump)
+            assert thinking[-1]["stage"] == "owner"
+            assert thinking[-1]["call_id"] == "primary-call"
+            assert usage[-1]["model"] == "primary"
             assert registry._stack is None
 
     asyncio.run(run())

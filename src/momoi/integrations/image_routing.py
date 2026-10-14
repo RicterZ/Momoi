@@ -7,6 +7,7 @@ from collections import OrderedDict
 from importlib.resources import files
 
 from ..llm.errors import ProviderResponseError
+from ..observability.context import current_log_context, log_context, new_trace_id
 
 
 class ImageRoutingModel:
@@ -41,10 +42,13 @@ class ImageRoutingModel:
             if key in self._summaries:
                 self._summaries.move_to_end(key)
                 return self._summaries[key]
-            response = await self.vision.complete(
-                prompt,
-                [{"role": "user", "content": [image]}], [],
-            )
+            parent = current_log_context()
+            with log_context(stage="image_recognition", call_id=new_trace_id(),
+                             parent_call_id=parent.get("call_id")):
+                response = await self.vision.complete(
+                    prompt,
+                    [{"role": "user", "content": [image]}], [],
+                )
             text = "\n".join(block.get("text", "") for block in response.content if block.get("type") == "text").strip()
             if not text:
                 raise ProviderResponseError("图片识别模型未返回识别结果")

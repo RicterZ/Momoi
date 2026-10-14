@@ -57,6 +57,7 @@ const thinkingStageLabels = {
   episode_anneal: "CHAT // 话题摘要",
   episode_relation: "CHAT // 话题关联",
   topic_selection: "CUES // 话题筛选",
+  image_recognition: "VISION // 图片识别",
   episode_cue_admit: "CUES // 线索准入",
   episode_consolidate: "CHAT // 话题归并",
   reply_followup: "CHAT // 回复跟进",
@@ -2040,7 +2041,7 @@ function olderMonths(available, month) {
 function thinkingFlowTitle(item) {
   if (item?.plan_id || item?.plan) return thinkingStageLabel("plan_step");
   const stages = (item.stages || [item.stage]).filter((stage) => stage !== undefined);
-  const auxiliaryStages = new Set(["topic_selection", "episode_cue_admit"]);
+  const auxiliaryStages = new Set(["topic_selection", "episode_cue_admit", "image_recognition"]);
   // CUES is an internal retrieval phase of its enclosing business Turn, not a
   // second workflow identity. Show it in the timeline, but never promote it
   // into the record or detail title when a primary stage exists.
@@ -2065,6 +2066,7 @@ function thinkingStageCode(stage) {
       episode_anneal: "MEM",
       episode_relation: "LINK",
       topic_selection: "CUES",
+      image_recognition: "VISION",
       episode_cue_admit: "CUES",
       episode_consolidate: "MERGE",
       reply_followup: "FOLLOW",
