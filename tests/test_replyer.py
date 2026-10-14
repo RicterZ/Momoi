@@ -571,7 +571,7 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
             'ASSISTANT: DELIVERED_REPLY',
             '</history>',
             '<to_reply>',
-            'USER: ' + escape(latest.text.replace('\n', '\\n')),
+            escape(latest.text.replace('\n', '\\n')),
             '</to_reply>',
         ]
         parsed = ElementTree.fromstring('<dialogue>' + dialogue + '</dialogue>')
@@ -582,7 +582,7 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
         assert text.count('DELIVERED_REPLY') == 1
         assert 'CANCELLED_REPLY' not in text and 'PENDING_REPLY' not in text
         assert text.index('OLD_IMAGE_INPUT') < text.index('DELIVERED_REPLY') < text.index('LATEST_INPUT')
-        assert 'USER: LATEST_INPUT' in text
+        assert 'USER: LATEST_INPUT' not in text
         assert 'event_id=' not in text
         assert 'image-event' not in text and 'new-event' not in text
         assert '只回应 <to_reply>' in text

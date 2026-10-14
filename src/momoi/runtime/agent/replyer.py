@@ -98,7 +98,12 @@ class Replyer:
                 continue
             # Keep multiline user text on its own line, not as forged role labels.
             text = (str(row["content"]) if row["role"] == "user" else message["content"]).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
-            lines.append(f"{row['role'].upper()}: {escape(text)}")
+            if targeted:
+                if lines and lines[-1] != "<to_reply>":
+                    lines.append("")
+                lines.append(escape(text))
+            else:
+                lines.append(f"{row['role'].upper()}: {escape(text)}")
             if event and event.segments and targeted:
                 dialogue_blocks.append({"type": "text", "text": "\n".join(lines)})
                 lines = []
