@@ -12,6 +12,7 @@ from ..errors import IntegrationError, ErrorCategory, http_category, error_categ
 from ...llm.accounting import (
     UsageAccounting,
     billed_usage,
+    parse_protocol_usage,
     usage_int,
     usage_mapping,
 )
@@ -134,6 +135,9 @@ class DeepSeekAccounting(UsageAccounting):
 
 
 def _parse_deepseek_usage(usage: dict[str, Any]) -> dict[str, float | int | bool]:
+    if "input_tokens_details" in usage:
+        # Responses input_tokens includes cached tokens, unlike Anthropic input.
+        return parse_protocol_usage({"usage": usage})
     prompt_details = usage_mapping(usage.get("prompt_tokens_details"))
     completion_details = usage_mapping(usage.get("completion_tokens_details"))
     cache_read = usage_int(usage.get("prompt_cache_hit_tokens"))

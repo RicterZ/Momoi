@@ -323,3 +323,26 @@ class StoreUsageTest(unittest.TestCase):
             self.assertTrue(usage["cost_available"])
             self.assertEqual(store.dashboard_overview()["usage"]["today"]["requests"], 1)
             store.close()
+
+
+def test_deepseek_responses_cached_usage():
+    usage = DeepSeekAccounting().parse_usage({"usage": {
+        "input_tokens": 4188, "input_tokens_details": {"cached_tokens": 3456},
+        "output_tokens": 297, "output_tokens_details": {"reasoning_tokens": 211},
+        "total_tokens": 4485,
+    }})
+    assert usage["input"] == 4188
+    assert usage["cache_read"] == 3456
+    assert usage["uncached"] == 732
+    assert usage["output"] == 297  # Reasoning is already included, not added twice.
+    assert usage["total"] == 4485
+    assert usage["cache_reported"] is True
+
+
+def test_deepseek_responses_explicit_zero_cache():
+    usage = DeepSeekAccounting().parse_usage({"usage": {
+        "input_tokens": 100, "input_tokens_details": {"cached_tokens": 0}, "output_tokens": 2,
+    }})
+    assert usage["cache_reported"] is True
+    assert usage["uncached"] == 100
+    assert usage["cache_read"] == 0

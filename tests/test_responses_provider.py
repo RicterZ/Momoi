@@ -7,6 +7,7 @@ from aiohttp.test_utils import TestServer
 
 from momoi.integrations.adapters.openai_responses import OpenAIResponsesProvider, parse_output, responses_input
 from momoi.integrations.models import LLMConfig
+from momoi.integrations.adapters.deepseek import DeepSeekAccounting
 from momoi.integrations.registry import adapter_definition
 from momoi.llm.accounting import parse_protocol_usage
 from momoi.llm.errors import ProviderResponseError
@@ -75,6 +76,7 @@ def test_http_tool_loop():
         async with TestServer(app) as server:
             config = LLMConfig(str(server.make_url('/')).rstrip('/'), "secret", "test", 100, 0.6, 10, 0, "openai_responses", True)
             async with OpenAIResponsesProvider(config) as provider:
+                provider.usage_parser = DeepSeekAccounting().parse_usage
                 messages = [{"role": "user", "content": "hi"}]
                 tools = [{"name": "read", "input_schema": {"type": "object", "properties": {}}}]
                 first = await provider.complete("system", messages, tools, required_tool="read")
@@ -82,6 +84,8 @@ def test_http_tool_loop():
                 final = await provider.complete("system", messages)
                 assert final.content == [{"type": "text", "text": "done"}]
                 assert final.usage["cache_read"] == 10
+                assert final.usage["uncached"] == 10
+                assert final.usage["cache_reported"] is True
         assert payloads[0]["reasoning"] == {"effort": "low"}
         assert payloads[0]["tool_choice"] == {"type": "function", "name": "read"}
         assert payloads[0]["tools"][0]["strict"] is False
