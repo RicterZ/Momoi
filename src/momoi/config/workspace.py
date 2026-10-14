@@ -61,6 +61,11 @@ def _create(path: Path, content: str) -> bool:
     return True
 
 
+def seed_image_recognition_prompt(directory: Path) -> None:
+    _create(directory / "IMAGE_RECOGNITION.md",
+            files("momoi").joinpath("prompts/image_recognition.md").read_text(encoding="utf-8"))
+
+
 def bootstrap(config_path: Path) -> bool:
     """Initialize a new workspace. Return whether a new dashboard secret was created."""
     if config_path.exists():
@@ -80,6 +85,7 @@ def bootstrap(config_path: Path) -> bool:
         "你是 Momoi，是主人的个人助手。请用自然、清晰的语言交流。\n",
     )
     _create(root / "prompts/HEARTBEAT.md", "")
+    seed_image_recognition_prompt(root / "prompts")
     for name in ("planner", "replyer", "affinity"):
         _create(root / f"prompts/{name.upper()}.md",
                 files("momoi").joinpath(f"prompts/{name}.md").read_text(encoding="utf-8"))

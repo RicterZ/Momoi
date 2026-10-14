@@ -18,12 +18,13 @@ def prepare_workspace(workspace: Path) -> None:
         ("SOUL", soul_path),
         ("PLANNER", soul_path.parent / "PLANNER.md"),
         ("AFFINITY", soul_path.parent / "AFFINITY.md"),
+        ("IMAGE_RECOGNITION", soul_path.parent / "IMAGE_RECOGNITION.md"),
         ("REPLYER", soul_path.parent / "REPLYER.md"),
     ):
-        if not path.exists() or (name != "AFFINITY" and not path.read_text(encoding="utf-8-sig").strip()):
-            resource = (files("momoi").joinpath("prompts/affinity.md") if name == "AFFINITY"
+        if not path.exists() or (name not in {"AFFINITY", "IMAGE_RECOGNITION"} and not path.read_text(encoding="utf-8-sig").strip()):
+            resource = (files("momoi").joinpath(f"prompts/{name.lower()}.md") if name in {"AFFINITY", "IMAGE_RECOGNITION"}
                         else files("momoi_desktop").joinpath(f"default_prompts/{name}.md"))
-            if name != "AFFINITY" and not resource.is_file():
+            if name not in {"AFFINITY", "IMAGE_RECOGNITION"} and not resource.is_file():
                 # Source checkouts use the same examples copied into release packages.
                 resource = Path(__file__).resolve().parents[3] / f"config.example/prompts/{name}.md"
             content = resource.read_text(encoding="utf-8")

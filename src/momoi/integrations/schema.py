@@ -22,6 +22,7 @@ LLM = {
     "timeout_seconds": field("number", 300),
     "max_retries": field("integer", 3),
     "tool_choice": field("boolean", False),
+    "multimodal": field("boolean", True),
     "thinking": {
         **field("object", {}),
         "properties": {
@@ -110,6 +111,7 @@ def builtin_schema(name, capability):
         "timeout_seconds": "请求超时（秒）",
         "max_retries": "最大重试次数",
         "tool_choice": "工具选择（Tool Choice）",
+        "multimodal": "支持多模态（图片输入）",
         "thinking": "模型思考设置",
         "accounting": "费用估算",
         "max_audio_bytes": "音频大小上限（字节）",

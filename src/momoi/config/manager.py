@@ -279,7 +279,127 @@ class ConfigurationManager:
                 }
                 for capability, binding in providers.get("bindings", {}).items()
             },
+            "model_providers": redact(self.model_providers(providers)),
+            "active_model_provider": providers.get("bindings", {}).get("llm", {}).get("service", ""),
+            "image_model_provider": providers.get("bindings", {}).get("vision", {}).get("service", ""),
         }
+
+    def model_providers(self, raw):
+        active = raw.get("bindings", {}).get("llm", {}).get("service")
+        models = []
+        for identifier, service in raw.get("services", {}).items():
+            try:
+                adapter_definition(service.get("adapter"), "llm")
+            except ValueError:
+                continue
+            if identifier != active and any(
+                binding.get("service") == identifier
+                for capability, binding in raw.get("bindings", {}).items() if capability not in {"llm", "vision"}
+            ):
+                continue
+            if identifier != active and not service.get("name") and not service.get("settings", {}).get("model"):
+                continue
+            candidate = copy.deepcopy(raw)
+            candidate.setdefault("bindings", {})["llm"] = (
+                raw["bindings"]["llm"] if identifier == active else {"service": identifier}
+            )
+            models.append({"id": identifier, "name": service.get("name", ""),
+                           "adapter": service["adapter"], "enabled": True,
+                           "options": binding_options(candidate, "llm")})
+        return models
+
+    def save_model_providers(self, document, revision):
+        if revision != self.revision():
+            raise RevisionConflict("configuration changed; reload before saving")
+        if not isinstance(document, dict) or set(document) - {"action", "id", "name", "adapter", "options", "vision"}:
+            raise ConfigError("invalid model provider request")
+        raw = self.read_providers()
+        models = {item["id"]: item for item in self.model_providers(raw)}
+        identifier = document.get("id")
+        action = document.get("action")
+        active = raw.get("bindings", {}).get("llm", {}).get("service")
+        if action in {"delete", "activate"}:
+            if identifier not in models:
+                raise ConfigError("model provider not found")
+            if action == "delete":
+                if any(b.get("service") == identifier for b in raw.get("bindings", {}).values()):
+                    raise ConfigError("正在使用的 Provider 不能删除，请先切换模型")
+                service = raw["services"].pop(identifier)
+                credential = service.get("credentials")
+                if credential and not any(s.get("credentials") == credential for s in raw["services"].values()):
+                    raw.get("credentials", {}).pop(credential, None)
+            elif identifier != active:
+                previous = raw.get("bindings", {}).get("llm", {})
+                # Preserve legacy model overrides before replacing its active binding.
+                if previous.get("options"):
+                    preserved = active
+                    if any(b.get("service") == active for cap, b in raw["bindings"].items() if cap not in {"llm", "vision"}):
+                        preserved = f"{active}_model"
+                        while preserved in raw["services"]:
+                            preserved += "_new"
+                        raw["services"][preserved] = copy.deepcopy(raw["services"][active])
+                    raw["services"][preserved].setdefault("settings", {}).update(previous["options"])
+                    if document.get("vision") == active:
+                        document = {**document, "vision": preserved}
+                        models[preserved] = models[active]
+                raw.setdefault("bindings", {})["llm"] = {"service": identifier, "enabled": True}
+            if action == "activate" and "vision" in document:
+                if models[identifier]["options"].get("multimodal", True):
+                    raw["bindings"].pop("vision", None)
+                else:
+                    vision = document["vision"]
+                    if not isinstance(vision, str) or vision not in models or not models[vision]["options"].get("multimodal", True):
+                        raise ConfigError("请选择支持多模态的图片识别 Provider")
+                    raw["bindings"]["vision"] = {"service": vision, "enabled": True}
+        elif action == "save":
+            name = document.get("name")
+            if not isinstance(name, str) or not name.strip() or len(name) > 80:
+                raise ConfigError("请填写 Provider 名称（最多 80 个字符）")
+            if identifier is not None and identifier not in models:
+                raise ConfigError("model provider not found")
+            if any(item["name"] == name.strip() and key != identifier for key, item in models.items()):
+                raise ConfigError("Provider 名称已存在")
+            definition = adapter_definition(document.get("adapter"), "llm")
+            options = restore_secrets(document.get("options", {}), models.get(identifier, {}).get("options", {}))
+            if not isinstance(options, dict):
+                raise ConfigError("options must be an object")
+            # Validate inactive profiles too, using the normal Agent configuration path.
+            candidate = copy.deepcopy(raw)
+            self._set_binding(candidate, "llm", {"adapter": document["adapter"], "enabled": True, "options": options})
+            self.validate(providers=candidate)
+            previous = raw.get("bindings", {}).get("llm")
+            if identifier is None:
+                identifier = "model_provider"
+                while identifier in raw.get("services", {}) or identifier in raw.get("credentials", {}):
+                    identifier += "_new"
+            updating_active = identifier == active
+            shared = any(b.get("service") == identifier for cap, b in raw.get("bindings", {}).items() if cap not in {"llm", "vision"})
+            if shared:
+                identifier += "_model"
+                while identifier in raw.get("services", {}) or identifier in raw.get("credentials", {}):
+                    identifier += "_new"
+            old_credential = raw.get("services", {}).get(identifier, {}).get("credentials")
+            credential = f"{identifier}_model_key"
+            while credential in raw.get("credentials", {}) and any(
+                key != identifier and s.get("credentials") == credential for key, s in raw.get("services", {}).items()
+            ):
+                credential += "_new"
+            secrets = {k: v for k, v in options.items() if definition.schema.get(k, {}).get("secret")}
+            service = {"name": name.strip(), "adapter": document["adapter"],
+                       "settings": {k: v for k, v in options.items() if k not in secrets}}
+            if secrets:
+                raw.setdefault("credentials", {})[credential] = secrets
+                service["credentials"] = credential
+            raw.setdefault("services", {})[identifier] = service
+            if old_credential and old_credential != service.get("credentials") and not any(
+                s.get("credentials") == old_credential for s in raw["services"].values()
+            ):
+                raw.get("credentials", {}).pop(old_credential, None)
+            if previous is None or updating_active:
+                raw.setdefault("bindings", {})["llm"] = {"service": identifier, "enabled": True}
+        else:
+            raise ConfigError("invalid model provider action")
+        return self.save("providers", raw, revision)
 
     def save_binding(self, capability, document, revision):
         return self.save_bindings({capability: document}, revision)
@@ -330,7 +450,7 @@ class ConfigurationManager:
         if set(document) - {"adapter", "enabled", "options"}:
             raise ConfigError("unknown capability field")
         try:
-            definition = adapter_definition(document.get("adapter"), capability)
+            definition = adapter_definition(document.get("adapter"), "llm" if capability == "vision" else capability)
         except ValueError as error:
             raise ConfigError(str(error)) from None
         options = copy.deepcopy(document.get("options", {}))

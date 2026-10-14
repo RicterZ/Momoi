@@ -71,6 +71,7 @@ def llm_config(options, api_format):
             "timeout_seconds",
             "max_retries",
             "tool_choice",
+            "multimodal",
             "thinking",
         },
     )
@@ -86,6 +87,9 @@ def llm_config(options, api_format):
     choice = options.get("tool_choice", False)
     if type(choice) is not bool:
         raise ConfigError("tool_choice must be boolean")
+    multimodal = options.get("multimodal", True)
+    if type(multimodal) is not bool:
+        raise ConfigError("multimodal must be boolean")
     return LLMConfig(
         base_url=url(options, "base_url"),
         api_key=text(options, "api_key", "", empty=True),
@@ -97,6 +101,7 @@ def llm_config(options, api_format):
         api_format="anthropic" if api_format == "anthropic" else "openai",
         tool_choice=choice,
         thinking=ThinkingConfig(effort),
+        multimodal=multimodal,
     )
 
 

@@ -96,6 +96,7 @@ class ServiceRegistry:
         dump_dir: Path | None = None,
         semantic_policy: SemanticPolicy = SemanticPolicy(),
         overrides: dict[str, Any] | None = None,
+        image_prompt_path: Path | None = None,
     ):
         self.catalog = catalog
         self.transport = HTTPTransport()
@@ -103,6 +104,7 @@ class ServiceRegistry:
         self._instances = dict(overrides or {})
         self._owned: list[Any] = []
         self._stack: AsyncExitStack | None = None
+        self.image_prompt_path = image_prompt_path
 
     @property
     def embedding_config(self) -> EmbeddingSpaceConfig:
@@ -117,7 +119,8 @@ class ServiceRegistry:
         if self._stack is not None:
             raise RuntimeError("Resolve services before entering the registry")
         binding = self.catalog.bindings[capability]
-        adapter = adapter_definition(binding.adapter, capability)
+        adapter_capability = "llm" if capability == "vision" else capability
+        adapter = adapter_definition(binding.adapter, adapter_capability)
         options = normalize_fields(adapter.schema, self.catalog.options_for(capability))
         adapter.validate(options)
         instance = adapter.factory(options, self.context)
@@ -127,12 +130,12 @@ class ServiceRegistry:
             "asr": ("transcribe",),
             "embedding": ("encode", "health", "close"),
             "balance": ("balance",),
-        }[capability]
+        }[adapter_capability]
         if any(not callable(getattr(instance, method, None)) for method in methods):
             raise TypeError(
                 f"{binding.adapter}/{capability} must implement {', '.join(methods)}"
             )
-        if capability == "llm":
+        if adapter_capability == "llm":
             attributes = (
                 "usage_sink",
                 "thinking_sink",
@@ -164,6 +167,10 @@ class ServiceRegistry:
             )
         self._instances[capability] = instance
         self._owned.append(instance)
+        if capability == "llm" and not options.get("multimodal", True) and self.catalog.enabled("vision"):
+            from .image_routing import ImageRoutingModel
+            instance = ImageRoutingModel(instance, self.get("vision"), prompt_path=self.image_prompt_path)
+            self._instances[capability] = instance
         return instance
 
     @property

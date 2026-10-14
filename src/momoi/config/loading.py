@@ -124,6 +124,8 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         config_path.parent
         / str(context_raw.get("heartbeat_prompt", "prompts/HEARTBEAT.md"))
     ).resolve()
+    from .workspace import seed_image_recognition_prompt
+    seed_image_recognition_prompt(soul_path.parent)
     system_prompt = (
         files("momoi").joinpath("prompts/system.md").read_text(encoding="utf-8").strip()
     )

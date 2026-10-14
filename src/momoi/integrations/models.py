@@ -18,6 +18,7 @@ class LLMConfig:
     api_format: str = "anthropic"
     tool_choice: bool = False
     thinking: ThinkingConfig = ThinkingConfig()
+    multimodal: bool = True
 
 
 @dataclass(frozen=True)

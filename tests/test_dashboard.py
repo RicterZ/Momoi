@@ -206,6 +206,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 PromptFile("heartbeat", self.heartbeat_prompt, False),
                 PromptFile("planner", prompt_root / "PLANNER.md", True),
                 PromptFile("replyer", prompt_root / "REPLYER.md", True),
+                PromptFile("image_recognition", prompt_root / "IMAGE_RECOGNITION.md", True),
             ),
         )
 
@@ -384,7 +385,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(items["soul"]["content"], "原来的人格")
         self.assertEqual(items["soul"]["filename"], "SOUL.md")
         self.assertNotIn("required", items["soul"])
-        for prompt_id in ("planner", "replyer"):
+        for prompt_id in ("planner", "replyer", "image_recognition"):
             self.assertEqual(items[prompt_id]["filename"], prompt_id.upper() + ".md")
             self.assertTrue(items[prompt_id]["content"].strip())
             saved = await self.client.put(

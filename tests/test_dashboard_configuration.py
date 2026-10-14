@@ -41,6 +41,99 @@ class ConfigurationManagerTest(unittest.TestCase):
         bootstrap(self.path)
         self.manager = ConfigurationManager(self.path)
 
+    def test_model_profiles_keep_legacy_config_and_switch_agent_binding(self):
+        initial = self.manager.save_binding("llm", LLM, self.manager.revision())
+        original = self.manager.validate().providers.options_for("llm")
+        identifier = initial["active_model_provider"]
+        self.assertEqual(len(initial["model_providers"]), 1)
+        self.assertEqual(initial["model_providers"][0]["name"], "")
+        profile = initial["model_providers"][0]
+        named = self.manager.save_model_providers(
+            {"action": "save", "id": identifier, "name": "Primary",
+             "adapter": profile["adapter"], "options": profile["options"]}, initial["revision"])
+        self.assertEqual(named["active_model_provider"], identifier)
+        self.assertEqual(self.manager.validate().providers.options_for("llm"), original)
+        self.assertEqual(named["model_providers"][0]["options"]["api_key"], {"$secret": "keep"})
+        alternate = {**LLM["options"], "model": "alternate-model", "api_key": "alternate-secret"}
+        added = self.manager.save_model_providers(
+            {"action": "save", "name": "Alternate", "adapter": "openai", "options": alternate}, named["revision"])
+        self.assertEqual(self.manager.validate().providers.options_for("llm"), original)
+        other = next(p for p in added["model_providers"] if p["name"] == "Alternate")
+        switched = self.manager.save_model_providers(
+            {"action": "activate", "id": other["id"]}, added["revision"])
+        self.assertEqual(self.manager.validate().providers.options_for("llm")["model"], "alternate-model")
+        self.assertEqual(self.manager.validate().providers.options_for("llm")["api_key"], "alternate-secret")
+        with self.assertRaises(ConfigError):
+            self.manager.save_model_providers({"action": "delete", "id": other["id"]}, switched["revision"])
+        self.manager.save_model_providers({"action": "activate", "id": identifier}, switched["revision"])
+        self.assertEqual(self.manager.validate().providers.options_for("llm"), original)
+        self.manager.save_model_providers({"action": "delete", "id": other["id"]}, self.manager.revision())
+        self.assertEqual(len(self.manager.snapshot()["model_providers"]), 1)
+
+    def test_model_profile_invalid_changes_are_atomic(self):
+        self.manager.save_binding("llm", LLM, self.manager.revision())
+        revision = self.manager.revision()
+        for document in (
+            {"action": "save", "name": "", "adapter": "openai", "options": LLM["options"]},
+            {"action": "save", "name": "Bad", "adapter": "unknown", "options": LLM["options"]},
+            {"action": "save", "name": "Bad", "adapter": "openai", "options": {"model": "x", "api_key": {"$secret": "keep"}}},
+            {"action": "activate", "id": "missing"},
+            {"action": "delete", "id": "missing"},
+        ):
+            with self.assertRaises((ValueError, ConfigError)):
+                self.manager.save_model_providers(document, revision)
+            self.assertEqual(self.manager.revision(), revision)
+        with self.assertRaises(RevisionConflict):
+            self.manager.save_model_providers({"action": "activate", "id": "x"}, "stale")
+
+    def test_separate_image_model_selection_and_validation(self):
+        initial = self.manager.save_binding("llm", LLM, self.manager.revision())
+        vision = initial["active_model_provider"]
+        added = self.manager.save_model_providers({"action": "save", "name": "Text", "adapter": "openai",
+            "options": {**LLM["options"], "model": "text", "multimodal": False}}, initial["revision"])
+        primary = next(item["id"] for item in added["model_providers"] if item["name"] == "Text")
+        for invalid in ("", "missing", primary):
+            with self.assertRaises(ConfigError):
+                self.manager.save_model_providers({"action": "activate", "id": primary, "vision": invalid}, added["revision"])
+            self.assertEqual(self.manager.revision(), added["revision"])
+        selected = self.manager.save_model_providers({"action": "activate", "id": primary, "vision": vision}, added["revision"])
+        self.assertEqual(selected["image_model_provider"], vision)
+        self.assertEqual(len(selected["model_providers"]), 2)
+        catalog = self.manager.validate().providers
+        self.assertFalse(catalog.options_for("llm")["multimodal"])
+        self.assertTrue(catalog.options_for("vision")["multimodal"])
+        with self.assertRaises(ConfigError):
+            self.manager.save_model_providers({"action": "delete", "id": vision}, selected["revision"])
+        restored = self.manager.save_model_providers({"action": "activate", "id": vision, "vision": ""}, selected["revision"])
+        self.assertEqual(restored["image_model_provider"], "")
+        self.assertFalse(self.manager.validate().providers.enabled("vision"))
+
+    def test_switch_preserves_legacy_binding_model_overrides(self):
+        initial = self.manager.save_binding("llm", LLM, self.manager.revision())
+        original = initial["active_model_provider"]
+        raw = self.manager.read_providers()
+        raw["bindings"]["llm"]["options"] = {"model": raw["services"][original]["settings"].pop("model")}
+        self.manager.save("providers", raw, initial["revision"])
+        added = self.manager.save_model_providers({"action": "save", "name": "Text", "adapter": "openai",
+            "options": {**LLM["options"], "model": "text", "multimodal": False}}, self.manager.revision())
+        text = next(item["id"] for item in added["model_providers"] if item["name"] == "Text")
+        selected = self.manager.save_model_providers({"action": "activate", "id": text, "vision": original}, added["revision"])
+        self.assertEqual(self.manager.validate().providers.options_for("vision")["model"], "test-model")
+        self.assertEqual(len(selected["model_providers"]), 2)
+        self.manager.save_model_providers({"action": "activate", "id": original, "vision": ""}, selected["revision"])
+        self.assertEqual(self.manager.validate().providers.options_for("llm")["model"], "test-model")
+
+    def test_first_model_profile_and_env_secret_preservation(self):
+        with patch.dict(os.environ, {"PROFILE_TEST_KEY": "env-private-key"}):
+            first = self.manager.save_model_providers(
+                {"action": "save", "name": "First", "adapter": "openai",
+                 "options": {**LLM["options"], "api_key": {"env": "PROFILE_TEST_KEY"}}}, self.manager.revision())
+            profile = first["model_providers"][0]
+            self.manager.save_model_providers(
+                {"action": "save", "id": profile["id"], "name": "Renamed", "adapter": "openai", "options": profile["options"]}, first["revision"])
+            self.assertEqual(self.manager.validate().providers.options_for("llm")["api_key"], "env-private-key")
+            self.assertEqual(self.manager.snapshot()["model_providers"][0]["options"]["api_key"], {"env": "PROFILE_TEST_KEY"})
+
     def test_continuation_setting_defaults_saves_and_validates(self):
         self.assertEqual(self.manager.validate().owner_continuation_seconds, 5)
         for seconds in (0, 2.5, 5):
@@ -363,6 +456,37 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         await self.client.start_server()
         self.addAsyncCleanup(self.client.close)
         self.auth = "Bearer " + issue_dashboard_jwt(config.dashboard.token)
+
+    async def test_model_profile_api_switches_runtime_and_preserves_legacy_secrets(self):
+        self.manager.save_binding("llm", LLM, self.manager.revision())
+        await self.runtime.apply()
+        first = self.runtime.daemon
+        path = "/api/settings/model-providers"
+        self.assertEqual((await self.client.put(path, json={})).status, 401)
+        self.client.session.headers["Authorization"] = self.auth
+        profile = self.manager.snapshot()["model_providers"][0]
+        self.assertTrue(first.config.providers.options_for("llm")["multimodal"])
+        response = await self.client.put(path, json={"revision": self.manager.revision(), "document": {
+            "action": "save", "id": profile["id"], "name": "Existing", "adapter": profile["adapter"], "options": profile["options"],
+        }})
+        self.assertEqual(response.status, 200, await response.text())
+        await self.runtime.apply()
+        response = await self.client.put(path, json={"revision": self.manager.revision(), "document": {
+            "action": "save", "name": "Text only", "adapter": "openai",
+            "options": {**LLM["options"], "model": "alternate", "multimodal": False},
+        }})
+        self.assertEqual(response.status, 200, await response.text())
+        data = await response.json()
+        alternate = next(p for p in data["model_providers"] if p["name"] == "Text only")
+        await self.runtime.apply()
+        self.assertEqual(self.runtime.daemon.config.providers.options_for("llm")["model"], "test-model")
+        response = await self.client.put(path, json={"revision": data["revision"], "document": {"action": "activate", "id": alternate["id"]}})
+        self.assertEqual(response.status, 200, await response.text())
+        await self.runtime.apply()
+        self.assertEqual(self.runtime.daemon.config.providers.options_for("llm")["model"], "alternate")
+        self.assertFalse(self.runtime.daemon.config.providers.options_for("llm")["multimodal"])
+        self.assertEqual((await self.client.put(path, json={"revision": "stale", "document": {"action": "activate", "id": profile["id"]}})).status, 409)
+        self.assertEqual((await self.client.put(path, json={"revision": self.manager.revision(), "document": {"action": "delete", "id": alternate["id"]}})).status, 400)
 
     async def test_model_only_runtime_can_add_and_remove_external_channels(self):
         self.manager.save_binding("llm", LLM, self.manager.revision())

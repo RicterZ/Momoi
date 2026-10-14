@@ -94,6 +94,7 @@ class MomoiDaemon(
             dump_dir=config.workspace / "llm-dumps" if config.workspace else None,
             semantic_policy=config.policies.semantic,
             overrides={"tts": tts_provider} if tts_provider is not None else {},
+            image_prompt_path=config.soul_prompt_path.parent / "IMAGE_RECOGNITION.md" if config.soul_prompt_path else None,
         )
         self.semantic_recall = SemanticRecallService(
             self.store,

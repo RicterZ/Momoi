@@ -201,3 +201,19 @@ def test_desktop_affinity_defaults_seed_missing_and_preserve_existing(tmp_path):
     path.write_text("", encoding="utf-8")
     prepare_workspace(tmp_path)
     assert path.read_text() == ""
+
+
+def test_desktop_image_prompt_seeds_only_missing_file(tmp_path):
+    from importlib.resources import files
+
+    prepare_workspace(tmp_path)
+    path = tmp_path / "prompts/IMAGE_RECOGNITION.md"
+    expected = files("momoi").joinpath("prompts/image_recognition.md").read_text(encoding="utf-8")
+    assert path.read_text() == expected
+    path.unlink()
+    prepare_workspace(tmp_path)
+    assert path.read_text() == expected
+    for content in ("自定义图片识别", ""):
+        path.write_text(content)
+        prepare_workspace(tmp_path)
+        assert path.read_text() == content

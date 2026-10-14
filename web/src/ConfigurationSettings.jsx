@@ -62,7 +62,7 @@ const adapterLabels = {
   sherpa: "本地 Sherpa ASR",
 };
 const primaryFields = {
-  llm: ["base_url", "api_key", "model", "thinking"],
+  llm: ["base_url", "api_key", "model", "thinking", "multimodal"],
   asr: ["secret_id", "secret_key", "endpoint"],
   tts: ["api_key", "reference_id", "voice_id", "model"],
   embedding: ["endpoint", "api_key", "model", "dimensions"],
@@ -174,13 +174,14 @@ function Icon({ name, ...props }) {
 }
 
 // Keep native form semantics, but render a keyboard-operable menu instead of the OS select popup.
-function SelectField({ label, value, onChange, options, hint, labelAction }) {
+function SelectField({ label, value, onChange, options, hint, labelAction, disabled = false }) {
   const id = useId();
   const root = useRef(null);
   const trigger = useRef(null);
   const [open, setOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
   const selected = options.find((option) => option.value === value);
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   useEffect(() => {
     if (!open) return;
     const outside = (event) => {
@@ -196,11 +197,13 @@ function SelectField({ label, value, onChange, options, hint, labelAction }) {
         ?.scrollIntoView({ block: "nearest" });
   }, [cursor, open, id]);
   function choose(index) {
+    if (disabled) return;
     if (options[index]) onChange(options[index].value);
     setOpen(false);
     trigger.current?.focus();
   }
   function keyboard(event) {
+    if (disabled) return;
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
       event.preventDefault();
       if (!open) {
@@ -258,6 +261,7 @@ function SelectField({ label, value, onChange, options, hint, labelAction }) {
         <button
           ref={trigger}
           type="button"
+          disabled={disabled}
           className="dash-input"
           role="combobox"
           aria-labelledby={`${id}-label`}
@@ -459,9 +463,14 @@ function OptionField({ name, spec, value, onChange, disabled = false }) {
   if (spec.type === "boolean")
     return (
       <div className="settings-boolean">
-        <Toggle checked={value ?? spec.default ?? false} onChange={onChange}>
+        {name === "multimodal" ? <label className="settings-toggle settings-checkbox">
+          <input type="checkbox" checked={value ?? spec.default ?? true}
+            onChange={event => onChange(event.target.checked)} disabled={disabled} />
+          <span className="settings-checkbox-box" aria-hidden="true" />
+          <span>{label}</span>
+        </label> : <Toggle checked={value ?? spec.default ?? false} onChange={onChange}>
           {label}
-        </Toggle>
+        </Toggle>}
       </div>
     );
   if (spec.enum)
@@ -757,6 +766,17 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
     providerDraft(names, data, optional),
   );
   const [saved, setSaved] = useState(draft);
+  const isModel = module.id === "model";
+  const [modelProviders, setModelProviders] = useState(data.model_providers || []);
+  const [editingProvider, setEditingProvider] = useState(data.active_model_provider || null);
+  const [providerName, setProviderName] = useState((data.model_providers || []).find(item => item.id === data.active_model_provider)?.name || "");
+  const [savedName, setSavedName] = useState(providerName);
+  const [activeProvider, setActiveProvider] = useState(data.active_model_provider || "");
+  const [selectedProvider, setSelectedProvider] = useState(activeProvider);
+  const [imageProvider, setImageProvider] = useState(data.image_model_provider || "");
+  const [savedImageProvider, setSavedImageProvider] = useState(imageProvider);
+  const selectedMultimodal = modelProviders.find(item => item.id === selectedProvider)?.options.multimodal !== false;
+  const selectionDirty = selectedProvider !== activeProvider || (!selectedMultimodal && imageProvider !== savedImageProvider);
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showDisabled, setShowDisabled] = useState(false);
@@ -769,7 +789,51 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
     adapter.capability === name && adapter.adapter === draft.values[name].adapter && adapter.test_supported === true,
   ));
   useEffect(() => () => { testVersion.current += 1; }, []);
-  const dirty = !equal(draft, saved) || callDirty;
+  const editorDirty = !equal(draft, saved) || providerName !== savedName;
+  const dirty = isModel ? editorDirty || selectionDirty : !equal(draft, saved) || callDirty;
+  function editModel(provider) {
+    if (editorDirty && !window.confirm("放弃尚未保存的 Provider 修改？")) return;
+    const next = provider ? { enabled: true, values: { llm: { adapter: provider.adapter, enabled: true, options: provider.options } } }
+      : providerDraft(["llm"], { ...data, capabilities: {} }, false);
+    change(next);
+    setSaved(next);
+    setEditingProvider(provider?.id || null);
+    setProviderName(provider?.name || "");
+    setSavedName(provider?.name || "");
+  }
+  async function modelAction(document) {
+    if (saving || busy || testing) return;
+    setBusy(true);
+    setStatus(null);
+    try {
+      const result = await save("/api/settings/model-providers", document);
+      setModelProviders(result.model_providers || []);
+      setActiveProvider(result.active_model_provider || "");
+      setSavedImageProvider(result.image_model_provider || "");
+      if (document.action === "activate") setImageProvider(result.image_model_provider || "");
+      if (document.action === "activate" || !activeProvider || selectedProvider === activeProvider
+          || !result.model_providers.some(item => item.id === selectedProvider)) setSelectedProvider(result.active_model_provider || "");
+      if (document.action === "save") {
+        const provider = result.model_providers.find(item => item.name === document.name.trim());
+        const next = { enabled: true, values: { llm: { adapter: provider.adapter, enabled: true, options: provider.options } } };
+        setDraft(next); setSaved(next); setEditingProvider(provider.id);
+        setProviderName(provider.name); setSavedName(provider.name);
+      } else if (document.action === "delete" && document.id === editingProvider) {
+        const next = providerDraft(["llm"], { ...result, capabilities: {} }, false);
+        setDraft(next); setSaved(next); setEditingProvider(null); setProviderName(""); setSavedName("");
+      }
+      setStatus(result.applyStatus);
+    } catch (error) {
+      setStatus({ text: error.message, error: true });
+    } finally { setBusy(false); }
+  }
+  function saveModel() {
+    try {
+      const provider = normalizeProvider("llm", draft.values.llm, data.adapters);
+      return modelAction({ action: "save", ...(editingProvider ? { id: editingProvider } : {}),
+        name: providerName, adapter: provider.adapter, options: provider.options });
+    } catch (error) { setStatus({ text: error.message, error: true }); }
+  }
   function change(next) {
     testVersion.current += 1;
     setTestResult(null);
@@ -800,6 +864,11 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
   }
   async function submit(event) {
     event.preventDefault();
+    if (isModel) {
+      if (editorDirty) { setStatus({ text: "请先保存或取消上方 Provider 的修改，再切换模型。", error: true }); return; }
+      if (selectedProvider && selectionDirty) await modelAction({ action: "activate", id: selectedProvider, vision: selectedMultimodal ? "" : imageProvider });
+      return;
+    }
     if (saving || busy || !dirty) return;
     setBusy(true);
     testVersion.current += 1;
@@ -1010,8 +1079,11 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
                       .filter(([name]) => name === "model")
                       .map(renderField)}
                     {basic
-                      .filter(([name]) => name !== "model")
+                      .filter(([name]) => name !== "model" && name !== "multimodal")
                       .map(renderField)}
+                    {isModel && <OptionField name="provider_name" spec={{ type: "string", label: "Provider 名称", maxLength: 80 }}
+                      value={providerName} onChange={value => { setProviderName(value); setStatus(null); }} />}
+                    {basic.filter(([name]) => name === "multimodal").map(renderField)}
                     {advanced.length > 0 && (
                       <Disclosure
                         title="高级参数"
@@ -1020,11 +1092,45 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
                         <Fields as="div">{advanced.map(renderField)}</Fields>
                       </Disclosure>
                     )}
+                    {isModel && <div className="settings-field-wide settings-model-editor-actions">
+                      {editingProvider && <button type="button" className="quiet-button settings-button" disabled={saving || busy}
+                        onClick={() => editModel(null)}>新增 Provider</button>}
+                      {editorDirty && editingProvider && <button type="button" className="settings-text-button" disabled={saving || busy}
+                        onClick={() => editModel(modelProviders.find(item => item.id === editingProvider))}>取消修改</button>}
+                      <button type="button" className="quiet-button settings-button" disabled={saving || busy || testing || !providerName.trim() || (!!editingProvider && !editorDirty)}
+                        onClick={saveModel}>{editingProvider ? "保存修改" : "＋ 添加 Provider"}</button>
+                    </div>}
                   </Fields>
                 </div>
               );
             })}
           </div>
+          {isModel && <>
+            <div className="settings-model-providers">
+              <div className="settings-model-list-heading"><strong>已添加的 Provider</strong><span>{modelProviders.length} 个配置</span></div>
+              <div className="settings-model-table"><table><thead><tr><th>Provider 名称</th><th>服务协议</th><th>模型名称</th><th>操作</th></tr></thead>
+                <tbody>{modelProviders.map(provider => <tr key={provider.id} className={provider.id === activeProvider ? "is-active" : ""}>
+                  <td><strong>{provider.name || "未命名 Provider"}</strong>{provider.id === activeProvider && <small>使用中</small>}</td>
+                  <td>{adapterLabels[provider.adapter] || provider.adapter}</td><td>{provider.options.model || "—"}</td>
+                  <td><button type="button" className="settings-text-button" disabled={saving || busy} onClick={() => editModel(provider)}>编辑</button>
+                    <button type="button" className="settings-text-button is-error" disabled={saving || busy || provider.id === activeProvider || provider.id === savedImageProvider}
+                      title={provider.id === activeProvider ? "先切换模型，再删除当前 Provider" : undefined}
+                      onClick={() => { if (window.confirm(`删除 ${provider.name || "未命名 Provider"}？`)) modelAction({ action: "delete", id: provider.id }); }}>删除</button></td>
+                </tr>)}</tbody></table>
+                {!modelProviders.length && <p className="settings-model-empty">尚未添加 Provider，请先填写上方表单。</p>}
+              </div>
+            </div>
+            <div className="settings-model-selection"><SelectField label="主模型" value={selectedProvider} disabled={saving || busy}
+              onChange={value => { setSelectedProvider(value); setStatus(null); }}
+              options={modelProviders.map(provider => ({ value: provider.id, label: `${provider.name || "未命名 Provider"} / ${provider.options.model || provider.adapter}` }))} />
+              <SelectField label="图片识别" value={selectedMultimodal ? selectedProvider : imageProvider}
+                disabled={selectedMultimodal || saving || busy} onChange={value => { setImageProvider(value); setStatus(null); }}
+                options={[...(!selectedMultimodal ? [{ value: "", label: "请选择图片识别模型" }] : []),
+                  ...modelProviders.filter(provider => provider.options.multimodal !== false).map(provider => ({ value: provider.id,
+                    label: `${provider.name || "未命名 Provider"} / ${provider.options.model || provider.adapter}` }))]} />
+              <p>{selectedMultimodal ? "主模型支持多模态，图片识别自动跟随主模型。" : "图片由所选多模态模型识别，识别结果交给主模型处理。"} 修改选择后点击「保存」应用。</p>
+            </div>
+          </>}
           {module.id === "voice" && <div className="settings-voice-call-section">
             <QQCallSettings managed={data.desktop_qq_call_managed} value={callDraft}
               disabled={!napcat || saving || busy} status={qqCall} onTest={testCall}
@@ -1034,7 +1140,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
         </div>
         <SaveBar
           busy={saving || busy}
-          dirty={dirty}
+          dirty={isModel ? selectionDirty : dirty}
           status={status}
           saveDisabled={managed || testing}
           next={next}

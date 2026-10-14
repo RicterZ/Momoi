@@ -21,6 +21,7 @@ def test_backup_roundtrip_and_exclusions(tmp_path):
         soul = workspace / 'prompts/SOUL.md'
         soul.write_text('我始终是同一个人')
         (workspace / 'prompts/AFFINITY.md').write_text('慢慢积累信任')
+        (workspace / 'prompts/IMAGE_RECOGNITION.md').write_text('识别图片中的文字')
         with store._db:
             store._db.execute('UPDATE self_state SET affinity=37')
         (workspace / 'llm-dumps').mkdir()
@@ -40,6 +41,7 @@ def test_backup_roundtrip_and_exclusions(tmp_path):
         with zipfile.ZipFile(archive) as z:
             assert 'prompts/SOUL.md' in z.namelist()
             assert 'prompts/AFFINITY.md' in z.namelist()
+            assert 'prompts/IMAGE_RECOGNITION.md' in z.namelist()
             assert 'artifacts/故事草稿/chapter.bak.txt' in z.namelist()
             assert 'workflows/custom.yaml' in z.namelist()
             assert not any(name.startswith('channel/') for name in z.namelist())
@@ -47,6 +49,7 @@ def test_backup_roundtrip_and_exclusions(tmp_path):
             assert not any('llm-dumps' in name or 'thinking' in name for name in z.namelist())
         soul.write_text('后来修改的内容')
         (workspace / 'prompts/AFFINITY.md').write_text('后来修改的关系')
+        (workspace / 'prompts/IMAGE_RECOGNITION.md').write_text('后来修改的图片识别')
         with store._db:
             store._db.execute('UPDATE self_state SET affinity=1')
         creation.write_text('后来修改的创作')
@@ -56,6 +59,7 @@ def test_backup_roundtrip_and_exclusions(tmp_path):
         restore_archive(extracted, config, store)
         assert soul.read_text() == '我始终是同一个人'
         assert (workspace / 'prompts/AFFINITY.md').read_text() == '慢慢积累信任'
+        assert (workspace / 'prompts/IMAGE_RECOGNITION.md').read_text() == '识别图片中的文字'
         assert store.self_state()['affinity'] == 37
         assert creation.read_text() == 'Momoi 的创作'
         assert workflow.read_text() == 'name: custom-workflow\n'

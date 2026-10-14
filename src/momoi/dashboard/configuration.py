@@ -198,7 +198,9 @@ def register_configuration_routes(app, configuration, runtime):
     async def save(request):
         value = await body(request)
         try:
-            if request.path == "/api/settings/providers":
+            if request.path == "/api/settings/model-providers":
+                result = configuration.save_model_providers(value.get("document"), value.get("revision"))
+            elif request.path == "/api/settings/providers":
                 result = configuration.save_bindings(
                     value.get("document"), value.get("revision")
                 )
@@ -368,6 +370,7 @@ def register_configuration_routes(app, configuration, runtime):
     app.router.add_put("/api/settings/configuration/{section}", save)
     app.router.add_put("/api/settings/providers/{capability}", save)
     app.router.add_put("/api/settings/providers", save)
+    app.router.add_put("/api/settings/model-providers", save)
     app.router.add_patch("/api/settings/configuration/app", save)
     app.router.add_get("/api/settings/channels/napcat/voice-call/audio-configuration", qq_call_audio_configuration)
     app.router.add_get("/api/settings/channels/napcat/voice-call/devices", qq_call_devices)

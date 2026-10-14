@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from typing import Any, Callable
 
 import aiohttp
+from ..media import text_only_messages
 
 from ...llm.dumps import dump_request
 from ...llm.errors import ProviderResponseError
@@ -200,6 +201,8 @@ class OpenAIProvider:
         if self._session is None:
             raise RuntimeError("provider is not started")
         config = self.config
+        if not config.multimodal:
+            messages = text_only_messages(messages)
         payload: dict[str, Any] = {
             "model": config.model,
             "messages": openai_messages(system, messages),

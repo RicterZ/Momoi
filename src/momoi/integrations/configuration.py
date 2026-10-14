@@ -12,7 +12,7 @@ import yaml
 from ..config.models import ConfigError
 from .fields import normalize_fields
 
-CAPABILITIES = frozenset({"llm", "asr", "tts", "embedding", "balance"})
+CAPABILITIES = frozenset({"llm", "vision", "asr", "tts", "embedding", "balance"})
 
 
 class CatalogLoader(yaml.SafeLoader):
@@ -181,7 +181,7 @@ def parse_provider_catalog(raw: object, path: Path) -> ProviderCatalog:
         definition = table(definition, f"services.{name}")
         keys(
             definition,
-            {"adapter", "credentials", "base_url", "timeout_seconds", "settings"},
+            {"adapter", "credentials", "base_url", "timeout_seconds", "settings", "name"},
             f"services.{name}",
         )
         if (
@@ -190,6 +190,11 @@ def parse_provider_catalog(raw: object, path: Path) -> ProviderCatalog:
         ):
             raise ConfigError(f"services.{name}.adapter is required")
         table(definition.get("settings", {}), f"services.{name}.settings")
+        if "name" in definition and (
+            not isinstance(definition["name"], str)
+            or not definition["name"].strip() or len(definition["name"]) > 80
+        ):
+            raise ConfigError(f"services.{name}.name must be a nonempty string up to 80 characters")
         credential = definition.get("credentials")
         if credential is not None and (
             not isinstance(credential, str) or credential not in credentials
@@ -214,7 +219,7 @@ def parse_provider_catalog(raw: object, path: Path) -> ProviderCatalog:
         service = services[name]
         adapter = service["adapter"]
         try:
-            definition = adapter_definition(adapter, capability)
+            definition = adapter_definition(adapter, "llm" if capability == "vision" else capability)
         except ValueError as error:
             raise ConfigError(str(error)) from None
         options = dict(service.get("settings", {}))
@@ -256,6 +261,8 @@ def parse_provider_catalog(raw: object, path: Path) -> ProviderCatalog:
         if capability == "tts" and "base_url" not in definition.schema:
             options.pop("base_url", None)
         options = normalize_fields(definition.schema, options, enabled=enabled)
+        if capability == "vision" and enabled and not options.get("multimodal", True):
+            raise ConfigError("图片识别必须选择支持多模态的 Provider")
         if enabled:
             try:
                 definition.validate(options)

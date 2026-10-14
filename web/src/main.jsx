@@ -2701,6 +2701,7 @@ function ThinkingDetail({ item, calls, recall, flowData = {} }) {
 }
 
 const promptDetails = {
+  image_recognition: { code: "06 / IMAGE RECOGNITION", title: "图片识别", description: "分离图片识别时，辅助模型如何描述图片并提取文字。" },
   affinity: { code: "05 / AFFINITY", title: "好感度", description: "长期相处中的亲近、信任与关系变化。" },
   planner: { code: "03 / PLANNER", title: "行为规划", description: "主 agent 如何理解、取证、行动及派发回应。" },
   replyer: { code: "04 / REPLYER", title: "发言生成", description: "Replyer 如何结合人格、真实对话及回应意图生成发言。" },
@@ -2739,7 +2740,7 @@ function PromptEditor({ item, value, onChange, disabled }) {
 }
 
 function PromptSettings({ items, token, navigation }) {
-  const orderedItems = [...items].sort((a, b) => ["soul", "replyer", "planner", "affinity", "heartbeat"].indexOf(a.id) - ["soul", "replyer", "planner", "affinity", "heartbeat"].indexOf(b.id));
+  const orderedItems = [...items].sort((a, b) => ["soul", "replyer", "planner", "affinity", "image_recognition", "heartbeat"].indexOf(a.id) - ["soul", "replyer", "planner", "affinity", "image_recognition", "heartbeat"].indexOf(b.id));
   const [selectedId, setSelectedId] = useState(orderedItems[0]?.id);
   const [mobileDetail, setMobileDetail] = useState(false);
   const selected = orderedItems.find(item => item.id === selectedId) || orderedItems[0];
