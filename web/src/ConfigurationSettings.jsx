@@ -724,7 +724,8 @@ function normalizeProvider(name, value, adapters) {
   );
   for (const [key, spec] of Object.entries(fields)) {
     if (options[key] === "" || options[key] === undefined) {
-      delete options[key];
+      if (Object.hasOwn(spec, "default")) options[key] = structuredClone(spec.default);
+      else delete options[key];
       continue;
     }
     if (spec.type === "object" && typeof options[key] === "string") {

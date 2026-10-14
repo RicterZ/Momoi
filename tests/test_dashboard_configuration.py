@@ -86,6 +86,27 @@ class ConfigurationManagerTest(unittest.TestCase):
         with self.assertRaises(RevisionConflict):
             self.manager.save_model_providers({"action": "activate", "id": "x"}, "stale")
 
+    def test_model_profile_defaults_are_persisted_and_legacy_defaults_displayed(self):
+        initial = self.manager.save_binding("llm", LLM, self.manager.revision())
+        identifier = initial["active_model_provider"]
+        raw = self.manager.read_providers()
+        raw["services"][identifier]["settings"].pop("model", None)
+        self.manager.save("providers", raw, initial["revision"])
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["model_providers"][0]["options"]["model"], "deepseek-flash")
+        for model in (None, ""):
+            options = {"api_key": "key", "multimodal": False}
+            if model is not None:
+                options["model"] = model
+            saved = self.manager.save_model_providers({"action": "save", "name": f"Defaults-{model}",
+                "adapter": "openai", "options": options}, self.manager.revision())
+            profile = next(item for item in saved["model_providers"] if item["name"] == f"Defaults-{model}")
+            settings = self.manager.read_providers()["services"][profile["id"]]["settings"]
+            self.assertEqual(settings["model"], "deepseek-flash")
+            self.assertEqual(settings["base_url"], "https://api.deepseek.com/v1")
+            self.assertFalse(settings["multimodal"])
+            self.assertEqual(profile["options"]["model"], settings["model"])
+
     def test_separate_image_model_selection_and_validation(self):
         initial = self.manager.save_binding("llm", LLM, self.manager.revision())
         vision = initial["active_model_provider"]

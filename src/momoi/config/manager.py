@@ -289,7 +289,7 @@ class ConfigurationManager:
         models = []
         for identifier, service in raw.get("services", {}).items():
             try:
-                adapter_definition(service.get("adapter"), "llm")
+                definition = adapter_definition(service.get("adapter"), "llm")
             except ValueError:
                 continue
             if identifier != active and any(
@@ -303,9 +303,13 @@ class ConfigurationManager:
             candidate.setdefault("bindings", {})["llm"] = (
                 raw["bindings"]["llm"] if identifier == active else {"service": identifier}
             )
+            options = binding_options(candidate, "llm")
+            for key, spec in definition.schema.items():
+                if "default" in spec and (key not in options or options[key] == ""):
+                    options[key] = copy.deepcopy(spec["default"])
             models.append({"id": identifier, "name": service.get("name", ""),
                            "adapter": service["adapter"], "enabled": True,
-                           "options": binding_options(candidate, "llm")})
+                           "options": options})
         return models
 
     def save_model_providers(self, document, revision):
@@ -363,6 +367,9 @@ class ConfigurationManager:
             options = restore_secrets(document.get("options", {}), models.get(identifier, {}).get("options", {}))
             if not isinstance(options, dict):
                 raise ConfigError("options must be an object")
+            for key, spec in definition.schema.items():
+                if "default" in spec and (key not in options or options[key] == ""):
+                    options[key] = copy.deepcopy(spec["default"])
             # Validate inactive profiles too, using the normal Agent configuration path.
             candidate = copy.deepcopy(raw)
             self._set_binding(candidate, "llm", {"adapter": document["adapter"], "enabled": True, "options": options})
