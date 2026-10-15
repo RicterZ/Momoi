@@ -1264,7 +1264,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
             <div className="settings-runtime-copy">
               <div className="settings-voice-title">
                 <h3 id={`runtime-${name}`}>{name === "episode_annealing" ? "话题归档" : name === "episode_relation" ? "话题关联" : schema.label}</h3>
-                <span className="panel-label">RUNTIME // {name === "episode_annealing" ? "ARCHIVE" : name === "episode_relation" ? "RELATIONS" : name.toUpperCase()}</span>
+                <span className="panel-label">RUNTIME // {name === "episode_annealing" ? "ARCHIVE" : name === "episode_relation" ? "RELATIONS" : name === "context" ? "COMPACT" : name.toUpperCase()}</span>
               </div>
               {runtimeDescriptions[name] && <p className="settings-runtime-description" id={`runtime-${name}-description`}>{runtimeDescriptions[name]}</p>}
             </div>
