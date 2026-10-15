@@ -11,6 +11,7 @@ from momoi.runtime.workflows.memory_operation.conversation import conversation_m
 from momoi.storage import Store
 from momoi.integrations.request_context import requested_thinking_effort
 from momoi.observability.context import current_log_context
+from momoi.runtime.tool_contracts.qq_message import QQ_POKE_SPEC
 
 
 def empty_replyer_db():
@@ -23,6 +24,45 @@ def empty_replyer_db():
 
 def empty_memory_state():
     return {'snapshot': {}, 'snapshot_overrides': {}, 'events': []}
+
+
+@pytest.mark.parametrize('channel_name, failed, paused', [
+    ('napcat', False, False), ('dashboard', False, False),
+    ('napcat', True, False), ('napcat', False, True),
+])
+@pytest.mark.parametrize('mode', ['text', 'voice'])
+def test_replyer_poke_tool_is_fixed_and_executes_only_on_qq(tmp_path, channel_name, failed, paused, mode):
+    from unittest.mock import AsyncMock
+    import json
+
+    store = Store(tmp_path / 'db')
+    store.begin_turn('poke-turn', 'owner', [])
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt='test', timezone='UTC', thinking_stages={})
+    poke = AsyncMock(side_effect=RuntimeError('poke unavailable') if failed else None)
+    channel = SimpleNamespace(name=channel_name, content_blocks=lambda _: [], poke_owner=poke)
+    request = SimpleNamespace(turn_id='poke-turn', round_number=1, delivery_channel=channel,
+                              current_events=[], pause_requested=lambda: paused)
+    calls = []
+
+    async def complete(system, messages, tools):
+        assert tools == [QQ_POKE_SPEC]
+        calls.append(True)
+        if len(calls) <= 2:
+            identifier = f'poke-action-{len(calls)}'
+            return ProviderResponse([{'type': 'tool_use', 'id': identifier, 'name': 'qq_poke', 'input': {}}],
+                                    [ToolCall(identifier, 'qq_poke', {})])
+        result = json.loads(messages[-1]['content'][0]['content'])
+        assert result['ok'] is (not failed and not paused)
+        return ProviderResponse([{'type': 'text', 'text': '你好'}], [])
+
+    try:
+        replyer = Replyer(config, store, SimpleNamespace(complete=complete))
+        assert asyncio.run(replyer.generate(ToolCall('reply', 'reply', {'intent': 'test', 'reference': '', 'mode': mode}), request)) == ['你好']
+        assert poke.await_count == 2 * int(channel_name == 'napcat' and not paused)
+        if channel_name == 'napcat' and not paused:
+            assert store.begin_tool_call('poke-turn', 'reply:poke-action-1', 'qq_poke', {})['ok'] is (not failed)
+    finally:
+        store.close()
 
 
 @pytest.mark.parametrize('with_memory', [False, True])
@@ -224,7 +264,7 @@ def test_replyer_isolated_request_and_actual_speech(tmp_path):
                              current_events=[IncomingMessage('e', 'e', '测试图片', 1, 1, ({'type': 'image'},))])
 
     async def complete(system, messages, tools):
-        assert tools == []
+        assert [tool['name'] for tool in tools] == ['qq_poke']
         assert system == '测试人格\n\n测试表达'
         assert requested_thinking_effort() == 'low'
         assert current_log_context()['stage'] == 'replyer'
@@ -281,7 +321,7 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_contex
 
     async def complete(system, history, tools, **kwargs):
         nonlocal rounds
-        if not tools:
+        if [tool['name'] for tool in tools] == ['qq_poke']:
             assert current_log_context()['stage'] == 'replyer'
             return ProviderResponse([{'type': 'text', 'text': expression}], [], usage={'input': 8, 'output': 2})
         rounds += 1
@@ -368,7 +408,7 @@ def test_replyer_receives_mode_and_splits_bubbles(mode):
         assert f"发送形式：{'语音' if mode == 'voice' else '文字'}" in tail
         assert ("只输出适合朗读的实际发言" in tail) == (mode == "voice")
         assert ("只输出实际发言，用空行分隔气泡" in tail) == (mode == "text")
-        assert tools == []
+        assert [tool['name'] for tool in tools] == ['qq_poke']
         return ProviderResponse([{"type": "text", "text": "第一句\n\n第二句"}], [])
 
     replyer = Replyer(config, store, SimpleNamespace(complete=complete))
@@ -414,7 +454,7 @@ def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
 
     async def complete(system, history, tools, **kwargs):
         nonlocal rounds
-        if not tools:
+        if [tool['name'] for tool in tools] == ['qq_poke']:
             assert '发送形式：语音' in str(history[-1])
             return ProviderResponse([{'type': 'text', 'text': '生成的语音第一句。\n\n生成的第二句。'}], [])
         assert not {'send_bubbles', 'send_voice'} & {tool['name'] for tool in tools}
@@ -473,7 +513,8 @@ def test_replyer_text_and_voice_have_identical_system_and_history():
         asyncio.run(replyer.generate(ToolCall("c", "reply", {"intent": "回应", "reference": "", "mode": mode}), request))
     assert requests[0][0] == requests[1][0]
     assert requests[0][1][:-1] == requests[1][1][:-1]
-    assert requests[0][2] == requests[1][2] == []
+    assert requests[0][2] == requests[1][2]
+    assert [tool['name'] for tool in requests[0][2]] == ['qq_poke']
     assert requests[0][1][-1] != requests[1][1][-1]
 
 
@@ -497,7 +538,7 @@ def test_replyer_poke_is_an_action_not_spoken_or_literal_text(channel_name, mode
         channel.poke_owner = Mock()
     request = SimpleNamespace(turn_id='turn', round_number=1, delivery_channel=channel, current_events=[])
     async def complete(system, messages, tools):
-        assert tools == []
+        assert [tool['name'] for tool in tools] == ['qq_poke']
         return ProviderResponse([{'type': 'text', 'text': output}], [])
     replyer = Replyer(config, store, SimpleNamespace(complete=complete))
     call = ToolCall('reply', 'reply', {'intent': 'test', 'reference': '', 'mode': mode})

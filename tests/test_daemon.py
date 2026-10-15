@@ -1989,7 +1989,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
         async def llm(request: web.Request) -> web.Response:
             payload = await request.json()
-            if not payload.get("tools"):
+            if [tool["name"] for tool in payload.get("tools", [])] == ["qq_poke"]:
                 replyer_requests.append(payload)
                 self.assertIn("发送形式：文字", str(payload["messages"][-1]))
                 speech = "我先处理一下" if len(replyer_requests) == 1 else "测试回复一\n\n测试回复二"

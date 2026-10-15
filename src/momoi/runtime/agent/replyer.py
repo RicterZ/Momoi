@@ -1,4 +1,4 @@
-"""One bounded expression request, accounted under the parent turn."""
+"""Bounded expression and interaction tools, accounted under the parent turn."""
 from importlib.resources import files
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -11,7 +11,9 @@ from ...memory.text import estimate_tokens
 from ...storage.delivery.emotions import EMOTION_REACTION_POLICY
 from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_DESCRIPTION
 from ..transcript.replyer import visible_dialogue
-from ..turn_support import context_data_message
+from ..turn_support import context_data_message, tool_result_block
+from ..tool_contracts.qq_message import QQ_POKE_SPEC
+from .protocol import assistant_history_message
 
 
 def prompt_text(config, name, fallback):
@@ -146,15 +148,42 @@ class Replyer:
         blocks = [{"type": "text", "text": tail}]
         messages.append({"role": "user", "content": blocks})
         parent_call_id = current_log_context().get("call_id", request.call_id if hasattr(request, "call_id") else "")
+        owner_revision = getattr(self.store, "owner_channel_revision", lambda _: None)(request.delivery_channel.name)
         with log_context(parent_call_id=parent_call_id, stage="replyer", turn_id=request.turn_id, call_id=new_trace_id(),
                          round=request.round_number, channel=request.delivery_channel.name,
                          tool_call_id=call.id), model_request(thinking_effort=self.config.thinking_stages.get("replyer") or "low"):
-            response = await self.provider.complete(system, messages, [])
-        usage = response.usage or {}
-        self.store.record_turn_usage(request.turn_id, int(usage.get("input", estimate_tokens(system + str(messages)))),
-                                     int(usage.get("output", estimate_tokens(str(response.content)))))
-        if response.tool_calls:
-            raise ValueError("Replyer must produce text, not tool calls")
+            for _ in range(4):
+                response = await self.provider.complete(system, messages, [QQ_POKE_SPEC])
+                usage = response.usage or {}
+                self.store.record_turn_usage(request.turn_id, int(usage.get("input", estimate_tokens(system + str(messages)))),
+                                             int(usage.get("output", estimate_tokens(str(response.content)))))
+                if not response.tool_calls:
+                    break
+                messages.append(assistant_history_message(response.content, response.continuation))
+                results = []
+                for action in response.tool_calls:
+                    if action.name != "qq_poke" or action.argument_error or action.arguments:
+                        result = {"ok": False, "error": "invalid_poke_call"}
+                    elif request.delivery_channel.name != "napcat":
+                        result = {"ok": True}
+                    elif ((getattr(request, "pause_requested", None) and request.pause_requested())
+                          or self.store.owner_channel_revision(request.delivery_channel.name) != owner_revision):
+                        result = {"ok": False, "error": "paused_for_owner"}
+                    else:
+                        action_id = f"{call.id}:{action.id}"
+                        result = self.store.begin_tool_call(request.turn_id, action_id, action.name,
+                                                            action.arguments, "external_effect")
+                        if result is None:
+                            try:
+                                await request.delivery_channel.poke_owner()
+                                result = {"ok": True}
+                            except Exception as error:
+                                result = {"ok": False, "error": "qq_poke_failed", "message": str(error)}
+                            self.store.complete_tool_call(request.turn_id, action_id, result)
+                    results.append(tool_result_block(action.id, result))
+                messages.append({"role": "user", "content": results})
+            else:
+                raise ValueError("Replyer exceeded tool call limit")
         text = "\n".join(str(block.get("text", "")) for block in response.content if block.get("type") == "text").strip()
         if not text:
             raise ValueError("Replyer returned empty text")
