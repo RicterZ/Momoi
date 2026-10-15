@@ -189,9 +189,10 @@ class TranscriptStore:
     ) -> int:
         minimum_turns = max(1, minimum_turns)
         maximum_turns = max(minimum_turns, maximum_turns)
+        # Spell out the existing partial-index predicate so SQLite can use it.
         latest = self._db.execute(
             f"""SELECT t.id, t.updated_at FROM turns AS t
-               WHERE t.state='completed' AND EXISTS (
+               WHERE t.state='completed' AND t.state<>'running' AND EXISTS (
                    SELECT 1 FROM messages AS m
                    WHERE m.turn_id=t.id
                      AND (
@@ -312,7 +313,7 @@ class TranscriptStore:
             return []
         turns = self._db.execute(
             f"""SELECT t.id, t.updated_at FROM turns AS t
-               WHERE t.state='completed' AND EXISTS (
+               WHERE t.state='completed' AND t.state<>'running' AND EXISTS (
                    SELECT 1 FROM messages AS m
                    WHERE m.turn_id=t.id
                      AND (
@@ -361,8 +362,14 @@ class TranscriptStore:
         if window is not None:
             scope += f" AND ({_MESSAGE_TIME_SQL})>=? AND ({_MESSAGE_TIME_SQL})<?"
             parameters.extend(window)
+        # Materialize the computed key once instead of scanning every webhook
+        # step for each historical message (including ordinary chat messages).
         rows = self._db.execute(
-            f"""SELECT m.id, m.turn_id,
+            f"""WITH webhook_turns AS MATERIALIZED (
+                    SELECT 'webhook:' || run_id || ':' || step_index AS turn_id, run_id
+                    FROM webhook_steps
+                )
+                SELECT m.id, m.turn_id,
                        CASE WHEN {_GOAL_RECORD_SQL} THEN 'goal'
                             WHEN {_HEARTBEAT_RECORD_SQL} THEN 'heartbeat' WHEN {_PLAN_RECORD_SQL} THEN 'plan_step' ELSE m.role END AS role,
                        m.content,
@@ -381,8 +388,7 @@ class TranscriptStore:
                             ELSE '' END AS event_source
                 FROM messages AS m
                 LEFT JOIN turns AS t ON t.id=m.turn_id
-                LEFT JOIN webhook_steps AS ws
-                  ON m.turn_id=('webhook:' || ws.run_id || ':' || ws.step_index)
+                LEFT JOIN webhook_turns AS ws ON m.turn_id=ws.turn_id
                 LEFT JOIN webhook_runs AS wr ON wr.id=ws.run_id
                 WHERE {scope}
                   AND ({_GOAL_RECORD_SQL} OR {_HEARTBEAT_RECORD_SQL} OR {_PLAN_RECORD_SQL} OR m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain', 'queued'))

@@ -425,6 +425,26 @@ class TranscriptWindowTest(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_recent_turn_selection_uses_existing_partial_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "store.sqlite3")
+            try:
+                for index in range(1, 5):
+                    self._add_visible_turn(store, index)
+                queries = []
+                store._db.set_trace_callback(queries.append)
+                store.transcript_window_turn_limit(2, 4)
+                rows = store.recent_conversation_messages(2, 10000, before_timestamp=4)
+                store._db.set_trace_callback(None)
+                self.assertEqual([row["content"] for row in rows], ["message 2", "message 3"])
+                selectors = [q for q in queries if "SELECT t.id, t.updated_at FROM turns" in q]
+                self.assertEqual(len(selectors), 2)
+                for query in selectors:
+                    plan = [row[3] for row in store._db.execute("EXPLAIN QUERY PLAN " + query)]
+                    self.assertTrue(any("turns_context_recent" in step for step in plan), plan)
+            finally:
+                store.close()
+
     def test_review_window_replays_only_wholly_contained_completed_turns(self):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / 'store.sqlite3')

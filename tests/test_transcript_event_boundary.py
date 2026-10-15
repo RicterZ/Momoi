@@ -117,3 +117,29 @@ def test_failed_turn_without_exchange_preserves_recent_dialogue(tmp_path):
                 add_turn(daemon.store, 'clarification', '没，是你报错了', 3)
     finally:
         daemon.store.close()
+
+
+def test_webhook_projection_preserves_run_timestamp_and_window(tmp_path):
+    store = Store(tmp_path / 'store.sqlite3')
+    try:
+        add_turn(store, 'chat', 'ordinary chat', 30)
+        add_turn(store, 'webhook:run:2', 'webhook notice', 40, event=True)
+        with store._db:
+            store._db.execute("""INSERT INTO webhook_runs
+                (id,workflow_id,plan_json,state,created_at,updated_at)
+                VALUES('run','workflow','{}','succeeded',10,40)""")
+            store._db.execute("""INSERT INTO webhook_steps
+                (run_id,step_index,step_id,kind,state)
+                VALUES('run',2,'notice','message','succeeded')""")
+        rows = store.conversation_messages_for_turns(['chat', 'webhook:run:2'])
+        event = next(row for row in rows if row['role'] == 'event')
+        assert event['created_at'] == 10
+        assert event['event_source'] == 'webhook:workflow'
+        assert any(row['content'] == 'ordinary chat' for row in rows)
+        before = store.conversation_messages_for_turns(None, window=(10, 30))
+        assert [row['content'] for row in before] == ['webhook notice']
+        after = store.conversation_messages_for_turns(None, window=(30, 41))
+        assert all(row['role'] != 'event' for row in after)
+        assert any(row['content'] == 'ordinary chat' for row in after)
+    finally:
+        store.close()
