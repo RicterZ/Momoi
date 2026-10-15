@@ -1,3 +1,4 @@
+from ...llm.streaming import response_data, stream_payload
 from ...llm.request_metrics import RequestMetric, response_headers
 import json
 import logging
@@ -222,6 +223,7 @@ class OpenAIProvider(OpenAIProtocolProvider):
             elif require_tool and config.tool_choice:
                 payload["tool_choice"] = "required"
         log_tool_schema("openai", payload.get("tools"))
+        stream_payload(payload, "openai")
         dump_path = dump_request(self.dump_dir, "openai", payload, require_tool)
         headers = {
             "authorization": f"Bearer {config.api_key}",
@@ -240,7 +242,7 @@ class OpenAIProvider(OpenAIProtocolProvider):
                 if response.status != 200:
                     raise await http_error(response, "OpenAI-compatible")
                 try:
-                    data = await response.json()
+                    data = await response_data(response, "openai")
                 except (aiohttp.ClientError, ValueError) as error:
                     body = await response.text()
                     _log_unusable_response(response, body, "invalid_json")

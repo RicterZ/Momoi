@@ -1,3 +1,4 @@
+from ...llm.streaming import response_data, stream_payload
 """Stateless OpenAI Responses protocol, including DeepSeek compatibility."""
 import copy
 import json
@@ -128,6 +129,7 @@ class OpenAIResponsesProvider(OpenAIProtocolProvider):
             elif config.tool_choice and require_tool:
                 payload["tool_choice"] = "required"
         log_tool_schema(self.protocol, payload.get("tools"))
+        stream_payload(payload, "openai_responses")
         dump_path = dump_request(self.dump_dir, self.protocol, payload, require_tool)
 
         async def request(attempt_started):
@@ -139,7 +141,7 @@ class OpenAIResponsesProvider(OpenAIProtocolProvider):
                 if response.status != 200:
                     raise await http_error(response, "OpenAI Responses-compatible")
                 try:
-                    data = await response.json()
+                    data = await response_data(response, "openai_responses")
                 except (ValueError, aiohttp.ClientError) as error:
                     raise ProviderResponseError("Responses endpoint returned invalid JSON") from error
                 if not isinstance(data, dict):

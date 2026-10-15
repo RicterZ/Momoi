@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 import aiohttp
 
 from .errors import ProviderError, ProviderResponseError
+from .streaming import _stream
 from ..integrations.errors import error_category
 from ..observability.events import log_event
 from ..observability.values import safe_preview
@@ -115,7 +116,7 @@ async def retry_request(
                 if isinstance(error, ProviderError)
                 else None
             )
-            if attempt < max_retries and retryable(error):
+            if attempt < max_retries and _stream.get() is None and retryable(error):
                 delay = min(2**attempt, 5)
                 log_event(
                     logger,

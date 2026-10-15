@@ -1,3 +1,4 @@
+from ...llm.streaming import StreamingProvider, response_data, stream_payload
 from ...llm.request_metrics import RequestMetric, response_headers
 import logging
 from pathlib import Path
@@ -54,7 +55,7 @@ def merge_adjacent_roles(
     return merged
 
 
-class AnthropicProvider:
+class AnthropicProvider(StreamingProvider):
     def __init__(self, config: LLMConfig, dump_dir: Path | None = None) -> None:
         self.config = config
         self._circuit = ProviderCircuit()
@@ -120,6 +121,7 @@ class AnthropicProvider:
             elif require_tool and config.tool_choice:
                 payload["tool_choice"] = {"type": "any"}
         log_tool_schema("anthropic", payload.get("tools"))
+        stream_payload(payload, "anthropic")
         dump_path = dump_request(self.dump_dir, "anthropic", payload, require_tool)
         headers = {
             "x-api-key": config.api_key,
@@ -139,7 +141,7 @@ class AnthropicProvider:
                 if response.status != 200:
                     raise await http_error(response, "Anthropic-compatible")
                 try:
-                    data = await response.json()
+                    data = await response_data(response, "anthropic")
                 except (aiohttp.ClientError, ValueError) as error:
                     raise ProviderResponseError(
                         "Anthropic-compatible endpoint returned invalid JSON"

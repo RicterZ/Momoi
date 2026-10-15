@@ -7,10 +7,11 @@ from collections import OrderedDict
 from importlib.resources import files
 
 from ..llm.errors import ProviderResponseError
+from ..llm.streaming import StreamingProvider, _stream
 from ..observability.context import current_log_context, log_context, new_trace_id
 
 
-class ImageRoutingModel:
+class ImageRoutingModel(StreamingProvider):
     def __init__(self, primary, vision, *, prompt_path=None):
         self.primary = primary
         self.vision = vision
@@ -45,10 +46,14 @@ class ImageRoutingModel:
             parent = current_log_context()
             with log_context(stage="image_recognition", call_id=new_trace_id(),
                              parent_call_id=parent.get("call_id")):
-                response = await self.vision.complete(
-                    prompt,
-                    [{"role": "user", "content": [image]}], [],
-                )
+                token = _stream.set(None)
+                try:
+                    response = await self.vision.complete(
+                        prompt,
+                        [{"role": "user", "content": [image]}], [],
+                    )
+                finally:
+                    _stream.reset(token)
             text = "\n".join(block.get("text", "") for block in response.content if block.get("type") == "text").strip()
             if not text:
                 raise ProviderResponseError("图片识别模型未返回识别结果")

@@ -11,10 +11,11 @@ import aiohttp
 
 from ...integrations.models import LLMConfig
 from ...models import ProviderResponse
+from ...llm.streaming import StreamingProvider
 from ...llm.transport import ProviderCircuit
 
 
-class OpenAIProtocolProvider:
+class OpenAIProtocolProvider(StreamingProvider):
     """Base class for OpenAI-compatible protocol implementations."""
 
     protocol = "openai"
