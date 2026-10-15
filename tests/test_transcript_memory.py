@@ -235,6 +235,37 @@ def test_episode_prefix_stays_frozen_until_compaction_and_survives_reopen(store,
     assert store.transcript_episode_snapshot("compacted summary") == "compacted summary"
 
 
+def test_context_fit_reuses_episode_prefix_until_history_is_dropped(store, monkeypatch):
+    calls = []
+
+    def directory(retained, limit, *, before_timestamp):
+        calls.append((retained, limit, before_timestamp))
+        return []
+
+    monkeypatch.setattr(store, "compacted_episode_directory", directory)
+    summary = context_data_message(("recent_episodes", "frozen summary"), required=True)
+    summary["_episode_summary_before"] = 123.0
+    original = summary["content"]
+    messages = [summary,
+                {"role": "user", "content": "old " * 1000, "_history_turn_ids": ["a"]},
+                {"role": "user", "content": "recent", "_history_turn_ids": ["b"]},
+                {"role": "user", "content": "current"}]
+    config = SimpleNamespace(max_input_tokens=100000, context_compaction_ratio=1,
+                             summary_results=8)
+    window = ContextWindow(config, store, None)
+    for _ in range(2):
+        assert window.fit([], messages, [], 3) == 3
+        assert summary["content"] == original
+        assert calls == []
+
+    config.max_input_tokens = 800
+    assert window.fit([], messages, [], 3) == 2
+    assert calls == [(["b"], 8, 123.0)]
+    assert "No episode summaries available." in summary["content"][0]["text"]
+    assert window.fit([], messages, [], 2) == 2
+    assert len(calls) == 1
+
+
 def test_request_compaction_does_not_restore_dropped_turns_in_next_context(store):
     store.transcript_memory_context(["a", "b"])
     state = store.transcript_memory_context(["a", "b"])

@@ -160,7 +160,7 @@ class ContextWindow:
 
         hard_limit = self.config.max_input_tokens
         compaction_limit = min(hard_limit, context_compaction_tokens(self.config))
-        refresh_episode_summary()
+        # Reuse the frozen episode prefix unless fitting actually drops history.
         estimated = size()
         dropped = 0
         truncated = 0
