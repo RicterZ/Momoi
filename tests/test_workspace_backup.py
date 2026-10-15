@@ -117,7 +117,9 @@ def test_cancelled_backup_waits_for_snapshot_writer():
 
 @pytest.mark.parametrize("newer", [False, True])
 def test_restore_database_versions(tmp_path, newer):
-    from momoi.storage.core.migrations import SCHEMA_VERSION
+    from momoi.storage.core.migrations import (
+        SCHEMA_VERSION, MIGRATIONS, _add_daily_reflection_triggers,
+    )
     path = tmp_path / "workspace/config.json"
     bootstrap(path)
     config = ConfigurationManager(path).validate()
@@ -129,7 +131,8 @@ def test_restore_database_versions(tmp_path, newer):
             store._db.execute("DROP TABLE trigger_message_window")
             store._db.execute("DROP TABLE trigger_warning_state")
             store._db.execute("ALTER TABLE self_state DROP COLUMN affinity")
-        store._db.execute(f"PRAGMA user_version={SCHEMA_VERSION + (1 if newer else -3)}")
+        version = SCHEMA_VERSION + 1 if newer else MIGRATIONS.index(_add_daily_reflection_triggers)
+        store._db.execute(f"PRAGMA user_version={version}")
         store._db.commit()
         out = tmp_path / "out"
         out.mkdir()

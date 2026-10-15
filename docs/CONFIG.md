@@ -267,6 +267,7 @@ All fields must be positive.
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
     "transcript_turns_min": 32,
     "transcript_turns_max": 80,
+    "transcript_idle_compaction_seconds": 1800,
     "episode_unsummarized_tail_turns": 6,
     "memory_results": 6,
     "max_input_tokens": 142222,
@@ -283,6 +284,7 @@ All fields must be positive.
 | `heartbeat_prompt` | `prompts/HEARTBEAT.md` | Optional heartbeat guidance file |
 | `transcript_turns_min` | `32` | Recent completed Turns retained after the transcript window slides; minimum `1` |
 | `transcript_turns_max` | `80` | High watermark at which the transcript window slides back to `transcript_turns_min`; cannot be lower than the minimum |
+| `transcript_idle_compaction_seconds` | `1800` | Shrink to the minimum window on the next shared context build after this idle interval; `0` disables. An idle heuristic, not a cache TTL; no extra model call. |
 | `episode_unsummarized_tail_turns` | `6` | Raw tail Turns retained outside the summary for an open Episode; its normal annealing threshold is twice this value; minimum `1` |
 | `memory_results` | `6` | Per-category top-k for confirmed recall memory and reflection memory; range `0`–`6`, and `0` disables both (combined maximum `12`) |
 | `max_input_tokens` | `142222` | Upper budget for the complete model input; minimum `1000` |

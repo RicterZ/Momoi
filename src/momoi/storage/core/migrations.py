@@ -807,6 +807,12 @@ def _add_affinity(database):
         database.execute("ALTER TABLE self_state ADD COLUMN affinity INTEGER NOT NULL DEFAULT 20 CHECK(affinity BETWEEN 0 AND 100)")
 
 
+def _add_transcript_context_activity(database):
+    database.execute("""CREATE TABLE IF NOT EXISTS transcript_context_activity (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        last_used_at REAL NOT NULL, turn_id TEXT NOT NULL)""")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -851,6 +857,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_daily_reflection_triggers,
     _add_trigger_injection_monitor,
     _add_affinity,
+    _add_transcript_context_activity,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

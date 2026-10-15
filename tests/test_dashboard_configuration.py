@@ -369,10 +369,34 @@ class ConfigurationManagerTest(unittest.TestCase):
         )
         self.assertTrue(self.manager.validate().episode_annealing.relations_enabled)
 
+    def test_idle_compaction_control_preserves_context_and_validates(self):
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["app"]["context"]["transcript_idle_compaction_seconds"], 1800)
+        self.assertEqual(snapshot["app_fields"]["context"]["label"], "闲时压缩")
+        self.manager.save_runtime(
+            {"context": {"transcript_turns_min": 12, "transcript_turns_max": 40}},
+            self.manager.revision(),
+        )
+        for seconds in (600, 0):
+            self.manager.save_runtime(
+                {"context": {"transcript_idle_compaction_seconds": seconds}},
+                self.manager.revision(),
+            )
+            config = self.manager.validate()
+            self.assertEqual(config.transcript_idle_compaction_seconds, seconds)
+            self.assertEqual(config.transcript_turns_min, 12)
+            self.assertEqual(config.transcript_turns_max, 40)
+        with self.assertRaises(ValueError):
+            self.manager.save_runtime(
+                {"context": {"transcript_idle_compaction_seconds": -1}},
+                self.manager.revision(),
+            )
+        self.assertEqual(self.manager.validate().transcript_idle_compaction_seconds, 0)
+
     def test_app_fields_expose_enum_types_defaults_and_are_isolated(self):
         snapshot = self.manager.snapshot()
         fields = snapshot["app_fields"]
-        self.assertEqual(set(fields), {"affinity", "budget", "heartbeat", "logging", "reflection", "episode_annealing", "thinking", "tools", "turn"})
+        self.assertEqual(set(fields), {"context", "affinity", "budget", "heartbeat", "logging", "reflection", "episode_annealing", "thinking", "tools", "turn"})
         self.assertEqual(fields["logging"]["fields"]["level"]["enum"], ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
         self.assertEqual(fields["reflection"]["fields"]["at"]["format"], "time")
         self.assertEqual(snapshot["app"]["reflection"]["at"], "03:00")

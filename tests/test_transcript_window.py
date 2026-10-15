@@ -270,6 +270,53 @@ class TranscriptWindowTest(unittest.TestCase):
             self.assertEqual(state[0], 7)
             reopened.close()
 
+    def test_idle_compaction_survives_restart_and_resumes_growth(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            for index in range(1, 5):
+                self._add_visible_turn(store, index)
+            store.transcript_window_turn_limit(4, 8)
+            for index in range(5, 7):
+                self._add_visible_turn(store, index)
+            store.prepare_transcript_context("first", 4, 8, 1800, now=100)
+            self.assertEqual(store.transcript_window_turn_limit(4, 8), 6)
+            store.close()
+            store = Store(path)
+            store.prepare_transcript_context("second", 4, 8, 1800, now=1900)
+            self.assertEqual(store.transcript_window_turn_limit(4, 8), 4)
+            self.assertEqual(len(store.recent_conversation_messages(8, 10000)), 6)
+            self._add_visible_turn(store, 7)
+            store.prepare_transcript_context("third", 4, 8, 1800, now=1901)
+            self.assertEqual(store.transcript_window_turn_limit(4, 8), 5)
+            store.close()
+
+    def test_idle_compaction_guards(self):
+        for mode in ("below_threshold", "disabled", "same_turn", "busy", "completion", "request"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                store = Store(Path(directory) / "momoi.sqlite3")
+                for index in range(1, 5):
+                    self._add_visible_turn(store, index)
+                store.transcript_window_turn_limit(4, 8)
+                for index in range(5, 7):
+                    self._add_visible_turn(store, index)
+                previous = "turn-0006" if mode == "completion" else "first"
+                store.prepare_transcript_context(previous, 4, 8, 1800, now=100)
+                if mode == "busy":
+                    store.begin_turn("busy", "owner", [])
+                if mode == "completion":
+                    with store._db:
+                        store._db.execute("UPDATE turns SET updated_at=1800 WHERE id=?", (previous,))
+                if mode == "request":
+                    store.touch_transcript_context(previous, now=1800)
+                store.prepare_transcript_context(
+                    previous if mode == "same_turn" else "next", 4, 8,
+                    0 if mode == "disabled" else 1800,
+                    now=1899 if mode == "below_threshold" else 1900,
+                )
+                self.assertEqual(store.transcript_window_turn_limit(4, 8), 6)
+                store.close()
+
     def test_manual_compaction_persists_and_resumes_growth(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "momoi.sqlite3"

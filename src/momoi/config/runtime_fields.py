@@ -22,6 +22,13 @@ THINKING_STAGES = {
 }
 
 _FIELDS = {
+    "context": {"label": "闲时压缩", "fields": {
+        "transcript_idle_compaction_seconds": {
+            "type": "integer", "label": "空闲时长（秒）", "default": 1800,
+            "minimum": 0,
+            "description": "默认 1800 秒（30 分钟），设为 0 关闭。",
+        },
+    }},
     "affinity": {"label": "好感度", "fields": {
         "enabled": {"type": "boolean", "label": "启用好感度", "default": False},
     }},

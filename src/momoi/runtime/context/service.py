@@ -121,6 +121,10 @@ class ContextService:
         from ..transcript.building import build_transcript
         from ..transcript.rendering import render_messages
 
+        self.store.prepare_transcript_context(
+            turn_id, self.config.transcript_turns_min, self.config.transcript_turns_max,
+            self.config.transcript_idle_compaction_seconds, now=time.time(),
+        )
         cutoff = time.time() if fresh else float(self.store.turn_usage(turn_id)["started_at"])
         rows = self.store.retained_transcript_rows(self._recent_conversation_rows(cutoff))
         rows = [row for row in rows if str(row["turn_id"]) != turn_id]

@@ -277,6 +277,10 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         system_prompt=system_prompt,
         transcript_turns_min=transcript_turns_min,
         transcript_turns_max=transcript_turns_max,
+        transcript_idle_compaction_seconds=integer(
+            context_raw.get("transcript_idle_compaction_seconds", 1800),
+            "context.transcript_idle_compaction_seconds", minimum=0,
+        ),
         episode_unsummarized_tail_turns=episode_unsummarized_tail_turns,
         memory_results=memory_results,
         database=database,

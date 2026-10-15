@@ -82,6 +82,7 @@ class AppConfig:
     owner_continuation_seconds: float = 5.0
     timezone: str = "UTC"
     max_input_tokens: int = 142222
+    transcript_idle_compaction_seconds: int = 1800
     context_compaction_ratio: float = 0.9
     summary_results: int = 8
     summary_tokens: int = 6000

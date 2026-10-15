@@ -849,3 +849,8 @@ CREATE TABLE IF NOT EXISTS reflection_candidates (
     memory_id INTEGER,
     updated_at REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS transcript_context_activity (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_used_at REAL NOT NULL, turn_id TEXT NOT NULL
+);

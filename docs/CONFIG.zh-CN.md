@@ -247,6 +247,7 @@ QQ 可能异步生成文字，接口拒绝或返回空文字时会分别等待 2
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
     "transcript_turns_min": 32,
     "transcript_turns_max": 80,
+    "transcript_idle_compaction_seconds": 1800,
     "episode_unsummarized_tail_turns": 6,
     "memory_results": 6,
     "max_input_tokens": 142222,
@@ -263,6 +264,7 @@ QQ 可能异步生成文字，接口拒绝或返回空文字时会分别等待 2
 | `heartbeat_prompt` | `prompts/HEARTBEAT.md` | 可选的心跳指导文件 |
 | `transcript_turns_min` | `32` | transcript 滑动后保留的最近已完成 Turn 数；最小值为 `1` |
 | `transcript_turns_max` | `80` | transcript 增长到此水位时滑回 `transcript_turns_min`；不得小于最小水位 |
+| `transcript_idle_compaction_seconds` | `1800` | 共享上下文空闲超过此秒数后，在下一次组装时收缩至最小窗口；`0` 禁用。它是空闲策略，不是缓存 TTL；不额外调用模型。 |
 | `episode_unsummarized_tail_turns` | `6` | 开放 Episode 在摘要之外保留的原始尾部 Turn 数；其常规退火阈值为该值的两倍；最小值为 `1` |
 | `memory_results` | `6` | 已确认召回记忆与复盘记忆各自的 top-k；范围为 `0`–`6`，设为 `0` 时关闭两者（合计最多 `12` 条） |
 | `max_input_tokens` | `142222` | 完整模型输入的上限预算；最小值为 `1000` |

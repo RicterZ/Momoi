@@ -149,6 +149,41 @@ class TranscriptStore:
                 }
         return exchanges
 
+    def prepare_transcript_context(self, turn_id, minimum_turns, maximum_turns,
+                                   idle_seconds, *, now):
+        activity = self._db.execute(
+            """SELECT a.*, t.updated_at FROM transcript_context_activity AS a
+               LEFT JOIN turns AS t ON t.id=a.turn_id WHERE a.id=1"""
+        ).fetchone()
+        if activity is not None and idle_seconds > 0 and activity["turn_id"] != turn_id:
+            # Completion/tool activity can be much later than context assembly.
+            last_used = max(activity["last_used_at"], activity["updated_at"] or 0)
+            busy = self._db.execute(
+                "SELECT 1 FROM turns WHERE state='running' AND id != ? LIMIT 1",
+                (turn_id,),
+            ).fetchone()
+            if now - last_used >= idle_seconds and not busy:
+                before = self.transcript_window_turn_limit(minimum_turns, maximum_turns)
+                if before > minimum_turns:
+                    retained = self.transcript_window_turn_limit(
+                        minimum_turns, maximum_turns, force_compact=True,
+                    )
+                    log_event(
+                        logger, logging.INFO, "transcript_idle_compacted",
+                        idle_seconds=now - last_used, previous_turns=before,
+                        retained_turns=retained,
+                    )
+        self.touch_transcript_context(turn_id, now=now)
+
+    def touch_transcript_context(self, turn_id, *, now):
+        with self._db:
+            self._db.execute(
+                """INSERT INTO transcript_context_activity(id,last_used_at,turn_id)
+                   VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET
+                   last_used_at=excluded.last_used_at, turn_id=excluded.turn_id""",
+                (now, turn_id),
+            )
+
     def transcript_window_turn_limit(
         self, minimum_turns: int, maximum_turns: int, *, force_compact: bool = False
     ) -> int:

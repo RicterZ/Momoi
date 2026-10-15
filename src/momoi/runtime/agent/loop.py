@@ -1,5 +1,6 @@
 import json
 import logging
+from time import time
 from dataclasses import replace
 from collections.abc import Callable
 from typing import Any
@@ -225,24 +226,28 @@ class AgentLoop:
                 required: bool,
                 selected_tool: str | None,
             ):
-                if accept_owner_updates:
-                    return await self.owner_updates.complete(
+                self.store.touch_transcript_context(turn_id, now=time())
+                try:
+                    if accept_owner_updates:
+                        return await self.owner_updates.complete(
+                            request_system,
+                            request_messages,
+                            projected_tools,
+                            require_tool=required,
+                            required_tool=selected_tool,
+                            current_events=current_events,
+                            channel_name=delivery_channel.name,
+                            provider=self.provider,
+                        )
+                    return await self.provider.complete(
                         request_system,
                         request_messages,
                         projected_tools,
                         require_tool=required,
                         required_tool=selected_tool,
-                        current_events=current_events,
-                        channel_name=delivery_channel.name,
-                        provider=self.provider,
                     )
-                return await self.provider.complete(
-                    request_system,
-                    request_messages,
-                    projected_tools,
-                    require_tool=required,
-                    required_tool=selected_tool,
-                )
+                finally:
+                    self.store.touch_transcript_context(turn_id, now=time())
 
             allowed = permitted_tools if permitted_tools is not None else harness.spec.permitted_tools
             callable_names = sorted(
