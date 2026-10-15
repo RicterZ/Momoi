@@ -1193,7 +1193,7 @@ function RuntimePropertyFields({ spec, value, onChange }) {
 
 const runtimeOrder = { affinity: -2, turn: -1, context: -0.5, heartbeat: 0, reflection: 1, episode_annealing: 2, episode_relation: 3, logging: 4, thinking: 5 };
 const runtimeDescriptions = {
-  context: "共享上下文闲置达到设定时长后，在下一次使用前收缩至最小窗口。不额外调用模型，也不删除原始历史；不是缓存到期检测。",
+  context: "闲置后，下次对话自动压缩上下文，保留原始历史。",
   turn: "自然结束后等待快速补充；其他任务需要运行时立即让出。0 表示关闭。",
   logging: "控制运行日志的详细程度，用于查看服务状态与排查问题。",
   budget: "设置 Momoi 的每日或每月预算。",
