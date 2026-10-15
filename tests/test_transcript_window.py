@@ -394,6 +394,37 @@ class TranscriptWindowTest(unittest.TestCase):
             self.assertEqual(directory_rows[0]["turn_ids"], [current])
             store.close()
 
+    def test_compacted_directory_filters_archives_before_limit_and_keeps_partial(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "store.sqlite3")
+            try:
+                store.create_episode("chat", episode_id="chat")
+                for index in (1, 2):
+                    turn = self._add_visible_turn(store, index)
+                    store.link_turn_to_episode("chat", turn)
+                with store._db:
+                    store._db.execute(
+                        "UPDATE conversation_episodes SET narrative_summary='full summary' WHERE id='chat'"
+                    )
+                for index, kind in enumerate(("heartbeat", "webhook", "goal"), 3):
+                    turn = self._add_visible_turn(store, index, workflow_kind=kind,
+                                                  source=f"{kind}:{index}")
+                    store.create_episode(kind, episode_id=kind)
+                    store.link_turn_to_episode(kind, turn)
+                # Exercise the legacy workflow adapter as well as explicit archive ownership.
+                with store._db:
+                    store._db.execute("UPDATE turns SET workflow_kind=NULL WHERE id='turn-0005'")
+                    store._db.execute("UPDATE conversation_episodes SET archive_kind='webhook' WHERE id='webhook'")
+                full = store.compacted_episode_directory([], 1, before_timestamp=100)
+                self.assertEqual([row["id"] for row in full], ["chat"])
+                self.assertEqual(full[0]["narrative_summary"], "full summary")
+                partial = store.compacted_episode_directory(["turn-0002"], 1, before_timestamp=100)
+                self.assertEqual([row["id"] for row in partial], ["chat"])
+                self.assertEqual(partial[0]["summary_state"], "partial")
+                self.assertEqual(partial[0]["narrative_summary"], "")
+            finally:
+                store.close()
+
     def test_review_window_replays_only_wholly_contained_completed_turns(self):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / 'store.sqlite3')

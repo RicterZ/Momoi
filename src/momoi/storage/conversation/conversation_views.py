@@ -138,16 +138,20 @@ class ConversationViewStore:
             placeholders = ",".join("?" for _ in retained)
             excluded = f"AND t.id NOT IN ({placeholders})"
             parameters.extend(retained)
+        # Resolve legacy archive ownership once per episode, not per joined Turn.
         rows = self._db.execute(
-            f"""SELECT e.*, MAX(t.updated_at) AS last_activity_at,
+            f"""WITH eligible_episodes AS MATERIALIZED (
+                    SELECT e.* FROM conversation_episodes AS e
+                    WHERE {runtime_archive_kind_sql('e')} IS NULL
+                )
+                SELECT e.*, MAX(t.updated_at) AS last_activity_at,
                        (SELECT COUNT(*) FROM episode_turns AS all_turns
                         WHERE all_turns.episode_id=e.id) AS total_turns,
                        COUNT(*) AS outside_turns
-                FROM conversation_episodes AS e
+                FROM eligible_episodes AS e
                 JOIN episode_turns AS et ON et.episode_id=e.id
                 JOIN turns AS t ON t.id=et.turn_id
-                WHERE {runtime_archive_kind_sql('e')} IS NULL
-                  AND t.state='completed' AND t.updated_at < ?
+                WHERE t.state='completed' AND t.updated_at < ?
                   {excluded}
                 GROUP BY e.id
                 ORDER BY last_activity_at DESC, e.id DESC LIMIT ?""",
