@@ -141,14 +141,15 @@ class ConversationViewStore:
         # Resolve legacy archive ownership once per episode, not per joined Turn.
         rows = self._db.execute(
             f"""WITH eligible_episodes AS MATERIALIZED (
-                    SELECT e.* FROM conversation_episodes AS e
+                    SELECT e.id FROM conversation_episodes AS e
                     WHERE {runtime_archive_kind_sql('e')} IS NULL
                 )
                 SELECT e.*, MAX(t.updated_at) AS last_activity_at,
                        (SELECT COUNT(*) FROM episode_turns AS all_turns
                         WHERE all_turns.episode_id=e.id) AS total_turns,
                        COUNT(*) AS outside_turns
-                FROM eligible_episodes AS e
+                FROM conversation_episodes AS e
+                JOIN eligible_episodes AS eligible ON eligible.id=e.id
                 JOIN episode_turns AS et ON et.episode_id=e.id
                 JOIN turns AS t ON t.id=et.turn_id
                 WHERE t.state='completed' AND t.updated_at < ?

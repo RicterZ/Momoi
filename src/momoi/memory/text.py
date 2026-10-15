@@ -3,7 +3,7 @@ import math
 
 class TextSizer:
     def estimate(self, text: str) -> int:
-        ascii_chars = sum(ord(char) < 128 for char in text)
+        ascii_chars = len(text.encode("ascii", errors="ignore"))
         return max(1, math.ceil((len(text) - ascii_chars) + ascii_chars / 4))
 
 

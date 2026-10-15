@@ -5,27 +5,15 @@ def runtime_archive_kind_sql(episode: str) -> str:
     """Resolve explicit archive ownership, with one legacy-read fallback."""
 
     legacy_workflow = turn_workflow_kind_sql("legacy_archive_source")
-    return f"""CASE
-        WHEN COALESCE({episode}.archive_kind, '')<>'' THEN {episode}.archive_kind
-        WHEN EXISTS (
-            SELECT 1 FROM episode_turns AS legacy_archive_turn
+    # Preserve webhook > heartbeat > goal precedence in one legacy Turn scan.
+    return f"""COALESCE(NULLIF({episode}.archive_kind, ''), (
+            SELECT CASE MIN(CASE {legacy_workflow}
+                WHEN 'webhook' THEN 1 WHEN 'heartbeat' THEN 2 WHEN 'goal' THEN 3
+            END)
+                WHEN 1 THEN 'webhook' WHEN 2 THEN 'heartbeat' WHEN 3 THEN 'goal'
+            END
+            FROM episode_turns AS legacy_archive_turn
             JOIN turns AS legacy_archive_source
               ON legacy_archive_source.id=legacy_archive_turn.turn_id
             WHERE legacy_archive_turn.episode_id={episode}.id
-              AND {legacy_workflow}='webhook'
-        ) THEN 'webhook'
-        WHEN EXISTS (
-            SELECT 1 FROM episode_turns AS legacy_archive_turn
-            JOIN turns AS legacy_archive_source
-              ON legacy_archive_source.id=legacy_archive_turn.turn_id
-            WHERE legacy_archive_turn.episode_id={episode}.id
-              AND {legacy_workflow}='heartbeat'
-        ) THEN 'heartbeat'
-        WHEN EXISTS (
-            SELECT 1 FROM episode_turns AS legacy_archive_turn
-            JOIN turns AS legacy_archive_source
-              ON legacy_archive_source.id=legacy_archive_turn.turn_id
-            WHERE legacy_archive_turn.episode_id={episode}.id
-              AND {legacy_workflow}='goal'
-        ) THEN 'goal'
-    END"""
+        ))"""

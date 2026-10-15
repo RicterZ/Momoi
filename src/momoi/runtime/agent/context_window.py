@@ -76,13 +76,11 @@ class ContextWindow:
         elapsed = time.time() - float(usage["started_at"])
         if self.config.turn_max_seconds and elapsed >= self.config.turn_max_seconds:
             raise TurnBudgetExceeded("time limit reached")
-        estimated_input = _estimate_context_tokens(system, messages, tools)
-        total = int(usage["input"]) + int(usage["output"])
-        if (
-            self.config.turn_max_total_tokens
-            and total + estimated_input > self.config.turn_max_total_tokens
-        ):
-            raise TurnBudgetExceeded("token limit reached")
+        if self.config.turn_max_total_tokens:
+            estimated_input = _estimate_context_tokens(system, messages, tools)
+            total = int(usage["input"]) + int(usage["output"])
+            if total + estimated_input > self.config.turn_max_total_tokens:
+                raise TurnBudgetExceeded("token limit reached")
 
     def fit(
         self,

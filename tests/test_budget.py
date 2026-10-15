@@ -1,5 +1,8 @@
 import json
 import unittest
+import math
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from momoi.runtime.agent.budget import (
     MemoryTextFitter,
@@ -12,6 +15,31 @@ from momoi.memory.text import estimate_tokens, truncate_tokens
 
 
 class BudgetTests(unittest.TestCase):
+    def test_text_sizer_preserves_character_weights(self):
+        samples = ("", "a" * 10000, "中文" * 1000, "a你\x00\x7f\x80🙂é\ud800\udfff")
+        for text in samples:
+            with self.subTest(text_length=len(text)):
+                ascii_chars = sum(ord(char) < 128 for char in text)
+                expected = max(1, math.ceil(len(text) - ascii_chars + ascii_chars / 4))
+                self.assertEqual(estimate_tokens(text), expected)
+
+    def test_disabled_token_budget_skips_estimation_but_enforces_time(self):
+        from momoi.runtime.agent.context_window import ContextWindow
+        from momoi.runtime.turn_support import TurnBudgetExceeded
+        config = SimpleNamespace(turn_max_seconds=0, turn_max_total_tokens=0)
+        store = SimpleNamespace(turn_usage=lambda _: {"started_at": 0, "input": 0, "output": 0})
+        window = ContextWindow(config, store, None)
+        with patch("momoi.runtime.agent.context_window._estimate_context_tokens",
+                   side_effect=AssertionError("disabled token budget must not estimate")):
+            window.check_budget("turn", [], [], [])
+            config.turn_max_seconds = 1
+            with self.assertRaises(TurnBudgetExceeded):
+                window.check_budget("turn", [], [], [])
+        config.turn_max_seconds = 0
+        config.turn_max_total_tokens = 1
+        with self.assertRaises(TurnBudgetExceeded):
+            window.check_budget("turn", [], [], [])
+
     def test_memory_text_boundaries(self):
         sizer = TextSizer()
         fitter = MemoryTextFitter(sizer)

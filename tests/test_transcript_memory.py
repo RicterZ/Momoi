@@ -309,3 +309,30 @@ def test_folded_deletes_do_not_accumulate_in_prefix_and_clean_recall(store):
         assert 'old fact' not in messages[-1]['content'][0]['content']
         assert 'valid' in messages[-1]['content'][0]['content']
         assert 'keep' in messages[-1]['content'][0]['content']
+
+
+@pytest.mark.parametrize("kinds, expected", [
+    ([], None), (["owner"], None), (["goal"], "goal"),
+    (["goal", "heartbeat"], "heartbeat"),
+    (["goal", "heartbeat", "webhook"], "webhook"),
+    (["webhook", "heartbeat", "goal"], "webhook"),
+])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_archive_scan_preserves_precedence_and_explicit_metadata(store, kinds, expected, legacy):
+    store.create_episode("mixed", episode_id="mixed")
+    for index, kind in enumerate(kinds):
+        identifier = f"{kind}:archive-test-{index}"
+        store.begin_turn(identifier, kind, [f"{kind}:{index}"])
+        # Historical mixed archives cannot be created through today's guarded API.
+        with store._db:
+            store._db.execute(
+                "INSERT INTO episode_turns(episode_id,turn_id,ordinal,relation) VALUES('mixed',?,?,'primary')",
+                (identifier, index + 1),
+            )
+        if legacy:
+            with store._db:
+                store._db.execute("UPDATE turns SET workflow_kind=NULL WHERE id=?", (identifier,))
+    assert store._runtime_archive_kind("mixed") == expected
+    with store._db:
+        store._db.execute("UPDATE conversation_episodes SET archive_kind='goal' WHERE id='mixed'")
+    assert store._runtime_archive_kind("mixed") == "goal"
