@@ -8,7 +8,9 @@ from momoi.integrations.adapters.fish import FishAudioTTSProvider
 from momoi.channel.napcat.voice_call.broker import MediaBroker
 
 
-def test_fish_yields_audio_before_response_finishes():
+def test_fish_yields_audio_before_response_finishes(caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger='momoi.integrations.adapters.fish')
     async def scenario():
         release = asyncio.Event()
         async def tts(request):
@@ -36,6 +38,12 @@ def test_fish_yields_audio_before_response_finishes():
                 release.set()
                 await stream.aclose()
     asyncio.run(scenario())
+    events = {getattr(record, 'momoi_event', ''): record for record in caplog.records}
+    for event in ('tts_stream_request_started', 'tts_stream_headers', 'tts_stream_first_bytes'):
+        assert event in events
+    assert events['tts_stream_headers'].momoi_fields['status'] == 200
+    assert events['tts_stream_first_bytes'].momoi_fields['elapsed_ms'] >= 0
+    assert 'synthetic speech' not in caplog.text
 
 
 def test_broker_plays_before_upload_finishes_and_deduplicates(monkeypatch):

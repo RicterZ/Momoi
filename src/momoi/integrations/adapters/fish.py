@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import math
+from time import monotonic
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -213,6 +214,10 @@ class FishAudioTTSProvider(TTSProvider):
         """Yield 24kHz mono s16le; never retry a stream that may have played."""
         if not isinstance(text, str) or not text.strip():
             raise TTSError('Fish TTS requires nonempty text')
+        started = monotonic()
+        log_event(logger, logging.INFO, 'tts_stream_request_started', model=self.model,
+                  text_chars=len(text), latency=self.latency,
+                  pooled_connection=getattr(self.transport, "_session", None) is not None)
         try:
             async with self.transport.session(timeout_seconds=self.timeout_seconds) as session:
                 async with session.post(f'{self.base_url}/v1/tts',
@@ -220,6 +225,8 @@ class FishAudioTTSProvider(TTSProvider):
                     json={'text': text, 'reference_id': self.reference_id, 'format': 'pcm',
                           'sample_rate': 24000, 'latency': self.latency},
                     allow_redirects=False, timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)) as response:
+                    log_event(logger, logging.INFO, 'tts_stream_headers', status=response.status,
+                              elapsed_ms=round((monotonic() - started) * 1000))
                     if response.status != 200:
                         raise TTSError(f'Fish streaming TTS returned HTTP {response.status}')
                     if not (response.content_type.startswith('audio/') or response.content_type == 'application/octet-stream'):
@@ -227,6 +234,10 @@ class FishAudioTTSProvider(TTSProvider):
                     total = 0
                     pending = b''
                     async for chunk in response.content.iter_chunked(4096):
+                        if chunk and total == 0:
+                            log_event(logger, logging.INFO, 'tts_stream_first_bytes',
+                                      elapsed_ms=round((monotonic() - started) * 1000),
+                                      chunk_bytes=len(chunk))
                         total += len(chunk)
                         if total > min(self.max_audio_bytes, 24000 * 2 * 120):
                             raise TTSError('Fish streaming TTS exceeds audio limit')

@@ -7,6 +7,7 @@ from time import monotonic, time
 from uuid import uuid4
 
 from ..observability.context import current_log_context
+from ..observability.events import log_event
 from ..memory.text import estimate_tokens
 from ..storage.contracts import PromptFingerprint, RequestShape
 
@@ -41,6 +42,9 @@ def response_headers(status):
     if record is not None:
         record["first_response_ms"] = round((monotonic() - record["started"]) * 1000, 2)
         record["http_status"] = status
+        log_event(logger, logging.INFO, "llm_response_headers",
+                  elapsed_ms=record["first_response_ms"], status=status,
+                  attempt=record["attempt"], protocol=record["protocol"])
 
 
 def response_usage(metrics):

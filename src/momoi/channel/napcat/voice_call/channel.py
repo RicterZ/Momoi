@@ -13,6 +13,7 @@ from ....integrations.contracts.asr import ASRError, AudioInput
 from ....integrations.contracts.tts import TTSError
 from ....models import IncomingMessage
 from ....observability.events import log_event
+from ....observability.context import log_context
 from .audio import Segmenter, wav_bytes
 from .speech import bubble_pcm
 
@@ -127,7 +128,8 @@ class QQCallChannel:
                     if result['final']:
                         log_event(logger, logging.DEBUG, 'qq_call_local_asr_endpoint',
                                   session_id=self.session_id, frames=self.asr_frames,
-                                  compute_ms=round(self.asr_compute_ms), recognized=bool(result['text']))
+                                  compute_ms=round(self.asr_compute_ms), recognized=bool(result['text']),
+                                  trailing_silence_ms=round(getattr(self.asr, 'trailing_silence', 0) * 1000))
                         self.asr_frames = 0
                         self.asr_compute_ms = 0.0
                     if result['final'] and result['text']:
@@ -239,25 +241,32 @@ class QQCallChannel:
         synthesis_error = None
         pcm_bytes = 0
         pcm_peak = 0
+        first_signal = False
         log_event(logger, logging.DEBUG, 'qq_call_send_started', session_id=self.session_id,
                   utterance_id=utterance_id, provider=type(provider).__name__, text_chars=len(text))
         async def upload():
-            nonlocal first_ms, synthesis_error, pcm_bytes, pcm_peak
+            nonlocal first_ms, synthesis_error, pcm_bytes, pcm_peak, first_signal
             from contextlib import aclosing
             try:
-                async with aclosing(bubble_pcm(provider, text, pause_seconds=.5, paced=True)) as stream:
-                    async for chunk in stream:
-                        if not self.context_valid(context):
-                            raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
-                        if first_ms is None:
-                            first_ms = round((time.monotonic() - started) * 1000)
-                            log_event(logger, logging.INFO, 'qq_call_tts_first_audio', channel=self.name,
-                                session_id=self.session_id, utterance_id=utterance_id, elapsed_ms=first_ms)
-                        import array
-                        pcm_bytes += len(chunk)
-                        samples = array.array('h', chunk[:len(chunk)//2*2])
-                        pcm_peak = max(pcm_peak, max((abs(value) for value in samples), default=0))
-                        yield chunk
+                with log_context(session_id=context['call_session_id'], utterance_id=utterance_id):
+                    async with aclosing(bubble_pcm(provider, text, pause_seconds=.5, paced=True)) as stream:
+                        async for chunk in stream:
+                            if not self.context_valid(context):
+                                raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
+                            if first_ms is None:
+                                first_ms = round((time.monotonic() - started) * 1000)
+                                log_event(logger, logging.INFO, 'qq_call_tts_first_audio', channel=self.name,
+                                    session_id=self.session_id, utterance_id=utterance_id, elapsed_ms=first_ms)
+                            import array
+                            pcm_bytes += len(chunk)
+                            samples = array.array('h', chunk[:len(chunk)//2*2])
+                            pcm_peak = max(pcm_peak, max((abs(value) for value in samples), default=0))
+                            if not first_signal and pcm_peak > 32:
+                                first_signal = True
+                                log_event(logger, logging.INFO, 'qq_call_tts_first_signal',
+                                          elapsed_ms=round((time.monotonic() - started) * 1000),
+                                          audio_offset_ms=round((pcm_bytes - len(chunk)) / 48))
+                            yield chunk
                 log_event(logger, logging.DEBUG, 'qq_call_pcm_uploaded', session_id=self.session_id,
                           utterance_id=utterance_id, pcm_bytes=pcm_bytes, peak=pcm_peak)
             except TTSError as error:
@@ -299,6 +308,8 @@ class QQCallChannel:
             bridge_first_frame_ms=result.get('first_frame_ms'), played_ms=result.get('played_ms', 0),
             virtual_mic_signal_ms=result.get('virtual_mic_signal_ms'),
             measurement_endpoint='playback_stdin_written', remote_audible_at=None,
+            first_frame_to_signal_ms=(result['virtual_mic_signal_ms'] - result['first_frame_ms']
+                if result.get('virtual_mic_signal_ms') is not None and result.get('first_frame_ms') is not None else None),
             recognition_to_first_frame_ms=(round((time.time() - context['recognized_at']) * 1000
                 - result.get('elapsed_ms', 0) + result.get('first_frame_ms', 0))
                 if context.get('recognized_at') and result.get('first_frame_ms') is not None else None))

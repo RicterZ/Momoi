@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from ....observability.events import log_event
+from ....observability.context import log_context
 from time import perf_counter as monotonic
 from contextlib import aclosing
 
@@ -22,11 +23,12 @@ async def bubble_pcm(provider, text: str, *, pause_seconds: float = 0, paced: bo
         emitted = False
         for attempt in range(4):
             try:
-                async with aclosing(provider.stream_pcm(bubbles[index])) as stream:
-                    async for chunk in stream:
-                        if chunk:
-                            await queue.put(chunk)
-                            emitted = True
+                with log_context(bubble_index=index):
+                    async with aclosing(provider.stream_pcm(bubbles[index])) as stream:
+                        async for chunk in stream:
+                            if chunk:
+                                await queue.put(chunk)
+                                emitted = True
                 await queue.put(finished)
                 return
             except Exception as error:

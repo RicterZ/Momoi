@@ -2,6 +2,8 @@
 import asyncio
 import copy
 import json
+import logging
+from time import monotonic
 from contextlib import aclosing
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -9,6 +11,9 @@ from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 from .errors import ProviderResponseError
+from ..observability.events import log_event
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -86,8 +91,22 @@ async def sse_data(content):
 
 async def response_data(response, protocol):
     emit = _stream.get()
+    started = monotonic()
     if emit is None:
-        return await response.json()
+        result = await response.json()
+        log_event(logger, logging.INFO, "llm_response_body_complete", protocol=protocol,
+                  streaming=False, body_read_ms=round((monotonic() - started) * 1000))
+        return result
+    original_emit = emit
+    seen = set()
+
+    async def emit(event):
+        if event.type not in seen:
+            seen.add(event.type)
+            log_event(logger, logging.INFO, "llm_first_stream_event", protocol=protocol,
+                      event_type=event.type,
+                      since_headers_ms=round((monotonic() - started) * 1000))
+        await original_emit(event)
     result = {"choices": [{"message": {"content": "", "tool_calls": []}}]} if protocol == "openai" else {}
     tools, blocks, arguments = {}, {}, {}
     terminal = False
