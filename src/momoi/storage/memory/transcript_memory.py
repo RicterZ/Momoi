@@ -17,15 +17,17 @@ class TranscriptMemoryStore:
         return [row for row in rows if str(row["turn_id"]) not in excluded]
 
     def transcript_episode_snapshot(self, content):
-        """Freeze the episode prefix until the next shared compaction."""
+        """Freeze the prefix; evaluate a content factory only on a cache miss."""
         with transaction(self._db):
             row = self._db.execute(
                 "SELECT data_json FROM transcript_memory_state WHERE id=1"
             ).fetchone()
             if not row:
-                return content
+                return content() if callable(content) else content
             state = json.loads(row[0])
-            state.setdefault("episode_snapshot", content)
+            if "episode_snapshot" in state:
+                return state["episode_snapshot"]
+            state["episode_snapshot"] = content() if callable(content) else content
             self._db.execute(
                 "UPDATE transcript_memory_state SET data_json=? WHERE id=1",
                 (json.dumps(state, ensure_ascii=False),),

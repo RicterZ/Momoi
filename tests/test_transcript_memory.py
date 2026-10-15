@@ -336,3 +336,54 @@ def test_archive_scan_preserves_precedence_and_explicit_metadata(store, kinds, e
     with store._db:
         store._db.execute("UPDATE conversation_episodes SET archive_kind='goal' WHERE id='mixed'")
     assert store._runtime_archive_kind("mixed") == "goal"
+
+
+def test_episode_snapshot_factory_is_lazy_durable_and_invalidated_on_compaction(store, tmp_path):
+    calls = []
+
+    def build():
+        calls.append(True)
+        return 'snapshot-' + str(len(calls))
+
+    store.transcript_memory_context(['a'])
+    assert store.transcript_episode_snapshot(build) == 'snapshot-1'
+    changes = store._db.total_changes
+    assert store.transcript_episode_snapshot(build) == 'snapshot-1'
+    assert store._db.total_changes == changes
+    reopened = Store(tmp_path / 'memory.sqlite3')
+    try:
+        assert reopened.transcript_episode_snapshot(build) == 'snapshot-1'
+    finally:
+        reopened.close()
+    assert len(calls) == 1
+    store.transcript_memory_context(['a'], compact=True)
+    assert store.transcript_episode_snapshot(build) == 'snapshot-2'
+    assert len(calls) == 2
+
+
+def test_episode_context_skips_directory_query_with_frozen_snapshot(store, monkeypatch):
+    from momoi.runtime.context.service import ContextService
+    context = ContextService()
+    context.store = store
+    context.config = SimpleNamespace(summary_results=8)
+    calls = []
+
+    def directory(ids, limit, *, before_timestamp):
+        calls.append((ids, limit, before_timestamp))
+        return []
+
+    monkeypatch.setattr(store, 'compacted_episode_directory', directory)
+    # Without initialized memory state, build normally rather than persist a snapshot.
+    first = context.episode_context_message(['a'], before_timestamp=10)
+    assert calls == [(['a'], 8, 10)]
+    store.transcript_memory_context(['a'])
+    second = context.episode_context_message(['a'], before_timestamp=11)
+    third = context.episode_context_message(['a', 'b'], before_timestamp=12)
+    assert len(calls) == 2
+    assert first['content'] == second['content'] == third['content']
+    assert third['_episode_summary_before'] == 12
+    assert third['_context_prefix']
+    store.transcript_memory_context(['b'], compact=True)
+    context.episode_context_message(['b'], before_timestamp=13)
+    assert calls[-1] == (['b'], 8, 13)
+    assert len(calls) == 3

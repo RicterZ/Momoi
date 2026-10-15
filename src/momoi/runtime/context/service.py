@@ -285,18 +285,21 @@ class ContextService:
         self, turn_ids: list[str], *, before_timestamp: float
     ) -> dict[str, object]:
         """Index episodes with historical turns outside the retained transcript."""
-        summaries = recent_episode_lines(
-            self.store.compacted_episode_directory(
-                turn_ids, self.config.summary_results, before_timestamp=before_timestamp
-            ),
-            {},
-        )
-        message = context_data_message(
-            ("recent_episodes", summaries or "No episode summaries available."),
-            required=True,
-        )
+        def build_content():
+            summaries = recent_episode_lines(
+                self.store.compacted_episode_directory(
+                    turn_ids, self.config.summary_results, before_timestamp=before_timestamp
+                ),
+                {},
+            )
+            return context_data_message(
+                ("recent_episodes", summaries or "No episode summaries available."),
+                required=True,
+            )["content"]
+
+        message = context_data_message(("recent_episodes", ""), required=True)
         assert message is not None
-        message["content"] = self.store.transcript_episode_snapshot(message["content"])
+        message["content"] = self.store.transcript_episode_snapshot(build_content)
         message["_episode_summary_before"] = before_timestamp
         return message
 
