@@ -7,7 +7,7 @@ import pytest
 from momoi.models import ProviderResponse, ToolCall
 from momoi.runtime.agent.harness import TurnHarness
 from momoi.runtime.agent.protocol import MAX_CONSECUTIVE_EXECUTION_FAILURES
-from tests.test_memory_operations import daemon, event, response
+from tests.test_memory_operations import event, response
 
 
 def end_call():

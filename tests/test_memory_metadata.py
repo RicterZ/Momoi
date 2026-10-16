@@ -10,8 +10,8 @@ from momoi.memory.retrieval.models import DenseThresholds
 from momoi.memory.retrieval.snapshot import SegmentedVectorSnapshot
 from momoi.memory.storage.records import memory_snapshot_fingerprint
 from momoi.memory.storage.transactions import transaction
-from tests.test_memory_dense import vectors, add_vector
-from tests.test_memory_repository import database, write
+from tests.test_memory_dense import add_vector
+from tests.test_memory_repository import write
 
 
 CATALOG = TagCatalog({'food_drink': '饮食', 'health': '健康', 'work': '工作', 'social': '社交'})

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from momoi.models import ProviderResponse, ToolCall
-from tests.test_memory_operations import daemon, event, response
+from tests.test_memory_operations import event, response
 
 
 @pytest.mark.parametrize('outcome', ['finish', 'cancel', 'failure'])

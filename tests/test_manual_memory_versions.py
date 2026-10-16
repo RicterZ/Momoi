@@ -2,7 +2,7 @@ import pytest
 
 from momoi.memory import PlanningContext
 from tests.support import seed_memory
-from tests.test_memory_operations import store, event, submit, write
+from tests.test_memory_operations import event, submit, write
 
 
 def test_manual_content_and_triggers_create_versions_and_authenticated_evidence(store):

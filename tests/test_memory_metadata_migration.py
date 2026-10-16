@@ -9,7 +9,7 @@ from momoi.memory.storage.transactions import transaction
 from momoi.memory.storage.vectors import encode_vector
 from momoi.runtime.workflows.memory_operation.contracts import MEMORY_OPERATION_FINISH_SPEC
 from tests.test_memory_repository import write
-from tests.test_memory_operations import store, event, submit, write as decision, apply
+from tests.test_memory_operations import event, submit, write as decision, apply
 
 
 def test_host_classifies_with_validated_catalog_and_preserves_batch_atomicity(store):

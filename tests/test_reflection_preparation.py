@@ -13,7 +13,8 @@ from momoi.models import ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.transcript.reflection import reflection_transcript
 from momoi.storage.reflection.reflection_values import reflection_window
-from tests.test_episode_annealing import annealing_items, config
+from tests.support import config
+from tests.test_episode_annealing import annealing_items
 
 
 @pytest.fixture

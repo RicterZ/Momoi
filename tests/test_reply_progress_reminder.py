@@ -9,7 +9,7 @@ from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent.harness import TurnHarness
 from momoi.runtime.agent.tool_batch import ToolBatchRequest, ToolBatchState
 from momoi.runtime.agent.workflow import TurnExecutionSpec
-from tests.test_episode_annealing import config
+from tests.support import config
 
 
 @pytest.mark.parametrize("stage", ["owner", "webhook"])

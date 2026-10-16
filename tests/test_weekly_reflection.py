@@ -7,7 +7,7 @@ from momoi.models import ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.workflows.weekly_reflection import parse_weekly_reflection, weekly_reflection_input
 from momoi.storage import Store
-from tests.test_episode_annealing import config
+from tests.support import config
 from tests.test_weekly_reflection_storage import seed, stamp
 
 

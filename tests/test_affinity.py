@@ -8,7 +8,6 @@ from momoi.config.workspace import bootstrap
 from momoi.dashboard.settings import DashboardSettings
 from momoi.models import IncomingMessage
 from momoi.storage import Store
-from tests.test_current_state_context import daemon
 
 
 def test_affinity_config_prompt_and_persistence(tmp_path):

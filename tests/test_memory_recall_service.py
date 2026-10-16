@@ -8,7 +8,7 @@ from momoi.memory.retrieval.models import DenseMemoryHit, DenseThresholds, Memor
 from momoi.memory.retrieval.service import MemoryRecallService
 from momoi.memory.storage.repository import MemoryRepository
 from momoi.memory.retrieval.rerank import SelectionProtocolError
-from tests.test_memory_repository import database, write
+from tests.test_memory_repository import write
 
 
 def dense(query, *ids):

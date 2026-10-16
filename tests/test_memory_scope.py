@@ -13,7 +13,6 @@ from momoi.storage.core.schema import execute_schema
 from momoi.storage.core.migrations import MIGRATIONS, SCHEMA_VERSION, apply_migrations
 from momoi.storage.core.memory_scope_migration import add_memory_scope, scope_preflight
 from momoi.storage.core.memory_scope_audit import audit, digest
-from tests.test_memory_repository import database
 from tests.test_memory_operations import event, submit, write as command
 
 

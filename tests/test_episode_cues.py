@@ -15,7 +15,8 @@ from momoi.storage.episode.episode_search import (
 )
 from momoi.storage.semantic.semantic_documents import _episode_summary_document, _episode_cue_documents
 from tests.test_episode_search import document
-from tests.test_episode_annealing import add_turn, config
+from tests.support import config
+from tests.test_episode_annealing import add_turn
 from momoi.runtime import MomoiDaemon
 
 

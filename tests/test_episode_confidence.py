@@ -8,7 +8,7 @@ from momoi.storage.episode.episode_ranking import DenseEpisodeHit
 from momoi.runtime.retrieval.models import DenseRecallEvidence
 from momoi.storage import Store
 from momoi.storage.episode.episode_ranking import EpisodeRecallQuery
-from tests.test_episode_annealing import config
+from tests.support import config
 
 
 class EpisodeConfidenceTest(unittest.TestCase):

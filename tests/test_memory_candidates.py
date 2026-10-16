@@ -9,7 +9,7 @@ from momoi.memory.retrieval.dense import VectorMemoryEvidence
 from momoi.memory.retrieval.models import DenseMemoryHit, DenseThresholds
 from momoi.memory.storage.transactions import transaction
 from momoi.memory.writing.candidates import check_budget
-from tests.test_memory_repository import database, write
+from tests.test_memory_repository import write
 from tests.test_memory_writing import request, decision
 
 

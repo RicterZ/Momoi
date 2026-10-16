@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -147,3 +148,23 @@ def stub_reply_delivery_wait(daemon):
     """Queue-focused tests have no network worker; synchronous delivery has separate integration coverage."""
     from unittest.mock import AsyncMock
     daemon.bubble_delivery.wait_reply = AsyncMock(side_effect=daemon.store.committed_reply)
+
+
+def config(directory, *, max_tokens: int = 100, **overrides):
+    from momoi.channel.napcat import NapCatConfig
+    from momoi.config.models import AppConfig
+    from momoi.integrations.models import LLMConfig
+
+    values = {
+        "providers": provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", max_tokens, 0, 1, 0)),
+        "channel": NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+        "system_prompt": "test",
+        "transcript_turns_min": 4,
+        "transcript_turns_max": 4,
+        "episode_unsummarized_tail_turns": 2,
+        "memory_results": 2,
+        "database": Path(directory) / "momoi.sqlite3",
+        "log_level": "INFO",
+    }
+    values.update(overrides)
+    return AppConfig(**values)

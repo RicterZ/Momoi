@@ -8,8 +8,7 @@ import pytest
 from momoi.memory import Memory, PlanningContext
 from momoi.models import IncomingMessage, TurnDraft
 from momoi.runtime.agent import TurnHarness
-from tests.test_memory_repository import database
-from tests.test_current_state_context import daemon, ContextCaptured
+from tests.test_current_state_context import ContextCaptured
 
 
 def seed(memory, *, key='call', text='老师发“喵”等呼唤时，通常是想找小桃聊天、确认小桃在不在。',

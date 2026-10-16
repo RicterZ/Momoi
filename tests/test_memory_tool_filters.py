@@ -10,7 +10,6 @@ from momoi.tools.memory import MemoryTools
 from momoi.tools.contracts.memory import MEMORY_TOOL_SPECS
 from momoi.runtime.workflows.memory_operation.contracts import MEMORY_OPERATION_FINISH_SPEC
 from momoi.runtime.workflows.reflection_retrieval import ReflectionRetrieval
-from tests.test_memory_repository import database
 
 
 def seed(memory, key, tags, *, scope='', kind='preference'):

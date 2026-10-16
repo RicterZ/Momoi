@@ -12,7 +12,7 @@ from momoi.observability.context import current_log_context
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent import TurnExecutionSpec
 from tests.support import install_scripted_replyer, reply_call, with_owner_recall
-from tests.test_episode_annealing import config
+from tests.support import config
 
 
 def response(calls):

@@ -6,7 +6,7 @@ import pytest
 
 from momoi.models import IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
-from tests.test_episode_annealing import config
+from tests.support import config
 
 
 def response(*calls):

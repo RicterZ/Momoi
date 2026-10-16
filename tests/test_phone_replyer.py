@@ -6,7 +6,7 @@ import pytest
 
 from momoi.models import IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime.agent.phone_replyer import PhoneReplyer
-from tests.test_episode_annealing import config
+from tests.support import config
 
 
 @pytest.mark.parametrize('output', ['你好', '[WAIT]', 'tool', ''])

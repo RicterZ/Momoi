@@ -6,37 +6,10 @@ from xml.etree import ElementTree
 
 import pytest
 
-from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig
-from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage, ToolCall, TurnDraft
-from momoi.runtime import MomoiDaemon
 from momoi.runtime.context.current_state import pack_current_turn_context
 from momoi.runtime.workflows.episode.cue_verifier import verify_episode_cues
 from momoi.storage.memory.current_state import CurrentStateManager, SlotInput
-from tests.support import provider_catalog
-
-
-@pytest.fixture
-def daemon(tmp_path):
-    value = MomoiDaemon(
-        AppConfig(
-            providers=provider_catalog(
-                LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)
-            ),
-            channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-            system_prompt="test",
-            database=tmp_path / "test.sqlite3",
-            timezone="Asia/Shanghai",
-            transcript_turns_min=4,
-            transcript_turns_max=4,
-            episode_unsummarized_tail_turns=2,
-            memory_results=6,
-            log_level="INFO",
-        )
-    )
-    yield value
-    value.store.close()
 
 
 def seed(daemon):

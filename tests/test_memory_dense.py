@@ -1,6 +1,5 @@
 """Vector retrieval works with the memory tables and an injected encoder only."""
 import asyncio
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import numpy as np
@@ -13,16 +12,7 @@ from momoi.memory.retrieval.snapshot import SegmentedVectorSnapshot
 from momoi.memory.storage.vectors import encode_vector
 from momoi.memory.storage.repository import MemoryRepository
 from momoi.memory.storage.transactions import transaction
-from momoi.memory.storage.vector_repository import VectorRepository
-from tests.test_memory_repository import database, write
-
-
-@pytest.fixture
-def vectors(database):
-    schema = (Path(__file__).parents[1] / 'src/momoi/storage/core/schema.sql').read_text()
-    start = schema.index('CREATE TABLE IF NOT EXISTS semantic_documents (')
-    database.execute(schema[start:schema.index(';', start) + 1])
-    return VectorRepository(database)
+from tests.test_memory_repository import write
 
 
 def add_vector(db, source_id, vector=(1.0, 0.0), *, kind='confirmed_memory',

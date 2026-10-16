@@ -8,7 +8,7 @@ from momoi.memory import Memory, MemoryRecallQuery
 from momoi.memory.retrieval.models import DenseMemoryHit, DenseThresholds
 from momoi.memory.retrieval.dense import VectorMemoryEvidence
 from momoi.memory.storage.transactions import transaction
-from tests.test_memory_repository import database, write
+from tests.test_memory_repository import write
 
 
 def test_public_memory_api_shares_search_snapshot_and_index_source(database):

@@ -4,7 +4,7 @@ import pytest
 
 from momoi.memory import PlanningContext
 from momoi.models import ToolCall
-from tests.test_memory_operations import store, daemon, event, submit, write, response
+from tests.test_memory_operations import event, submit, write, response
 
 
 def reviewed(store, batch):

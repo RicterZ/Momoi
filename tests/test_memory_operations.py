@@ -9,9 +9,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig
-from momoi.integrations.models import LLMConfig
 from momoi.models import (
     AgentReply,
     IncomingMessage,
@@ -19,7 +16,6 @@ from momoi.models import (
     ToolCall,
     TurnDraft,
 )
-from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent.harness import TurnHarness
 from momoi.memory.writing.validation import parse_decisions
 from momoi.memory import PlanningContext
@@ -28,14 +24,7 @@ from momoi.storage import Store
 from momoi.storage.memory.memory_operations import MEMORY_OPERATION_MAX_ATTEMPTS
 from momoi.storage.core.migrations import MIGRATIONS
 from momoi.tools.memory import MemoryTools
-from tests.support import provider_catalog, seed_memory
-
-
-@pytest.fixture
-def store(tmp_path):
-    value = Store(tmp_path / "memory.sqlite3")
-    yield value
-    value.close()
+from tests.support import seed_memory
 
 
 def event(store, name="owner", text="以后喝茶，记住", timestamp=None):
@@ -460,28 +449,6 @@ def test_recovery_and_retry_use_fresh_turns(store):
         ).fetchone()[0]
         == "cancelled"
     )
-
-
-@pytest.fixture
-def daemon(tmp_path):
-    value = MomoiDaemon(
-        AppConfig(
-            providers=provider_catalog(
-                LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)
-            ),
-            channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-            system_prompt="companion soul sentinel",
-            database=tmp_path / "daemon.sqlite3",
-            transcript_turns_min=4,
-            transcript_turns_max=4,
-            episode_unsummarized_tail_turns=2,
-            memory_results=6,
-            log_level="INFO",
-        )
-    )
-    install_scripted_replyer(value)
-    yield value
-    value.store.close()
 
 
 def response(call):

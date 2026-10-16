@@ -348,7 +348,10 @@ def test_continuous_phone_audio_waits_for_more_paragraphs_and_keeps_duplicates()
         assert not waiting.done()
         audio.start('same')
         audio.finish()
-        assert await waiting == b'same'
+        silence = await waiting
+        assert not any(silence)
+        assert 23000 <= len(silence) <= 24000
+        assert await anext(stream) == b'same'
         with pytest.raises(StopAsyncIteration):
             await anext(stream)
         await audio.close()

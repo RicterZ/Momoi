@@ -9,7 +9,7 @@ import pytest
 
 from momoi.memory import Memory, MemoryPlan, PlanningContext, TagCatalog
 from momoi.memory.storage.transactions import transaction
-from tests.test_memory_repository import database, write
+from tests.test_memory_repository import write
 
 
 def request(identifier='op', event_id='owner:new', **extra):

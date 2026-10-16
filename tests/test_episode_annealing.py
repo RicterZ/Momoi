@@ -1,4 +1,4 @@
-from tests.support import provider_catalog
+from tests.support import config
 import asyncio
 import re
 import tempfile
@@ -6,11 +6,8 @@ import time
 import unittest
 from xml.etree import ElementTree
 from dataclasses import replace
-from pathlib import Path
 
-from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig, EpisodeAnnealingConfig
-from momoi.integrations.models import LLMConfig
+from momoi.config.models import EpisodeAnnealingConfig
 from momoi.observability.context import current_log_context
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
@@ -106,20 +103,6 @@ def workflow_calls_response(
             for call in calls
         ],
         calls,
-    )
-
-
-def config(directory: str) -> AppConfig:
-    return AppConfig(
-        providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-        channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-        system_prompt="test",
-        transcript_turns_min=4,
-        transcript_turns_max=4,
-        episode_unsummarized_tail_turns=2,
-        memory_results=2,
-        database=Path(directory) / "momoi.sqlite3",
-        log_level="INFO",
     )
 
 

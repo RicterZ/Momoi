@@ -11,7 +11,7 @@ from momoi.runtime.context.retrieval import select_plan_recall_queries, build_pl
 from momoi.runtime.context.memory_search import filtered_candidates
 from momoi.runtime.context.selection import RecallSelection
 from momoi.models import IncomingMessage
-from tests.test_recall_episode_binding import config
+from tests.support import config
 from tests.test_memory_tool_filters import seed
 
 

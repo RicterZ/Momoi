@@ -1,35 +1,15 @@
-from tests.support import provider_catalog
+from tests.support import config
 import tempfile
 import unittest
 import json
 from dataclasses import replace
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig
-from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent.runtime_tools import recall_owner_context
 from momoi.runtime.agent.context_window import ContextWindow
-
-
-def config(directory: str) -> AppConfig:
-    return AppConfig(
-        providers=provider_catalog(
-            LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)
-        ),
-        channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-        system_prompt="test",
-        transcript_turns_min=4,
-        transcript_turns_max=4,
-        episode_unsummarized_tail_turns=2,
-        memory_results=2,
-        database=Path(directory) / "momoi.sqlite3",
-        log_level="INFO",
-    )
 
 
 class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):

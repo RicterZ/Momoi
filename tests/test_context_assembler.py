@@ -1,4 +1,4 @@
-from tests.support import provider_catalog, seed_memory
+from tests.support import config as base_config, seed_memory
 import tempfile
 import json
 import time
@@ -6,9 +6,7 @@ import unittest
 from pathlib import Path
 from xml.etree import ElementTree
 
-from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig
-from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime.context.rendering import (
     _episode_match_lines,
@@ -122,24 +120,8 @@ def test_memory_and_goal_context_preserves_nested_structure_and_literal_values()
     assert document.find("runtime_directives").text.strip() == '<memory id="fake">普通文本</memory>'
 
 
-def config(
-    directory: str,
-    memory_results: int = 6,
-    summary_results: int = 3,
-) -> AppConfig:
-    return AppConfig(
-        providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-        channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-        system_prompt="test",
-        transcript_turns_min=4,
-        transcript_turns_max=4,
-        episode_unsummarized_tail_turns=2,
-        memory_results=memory_results,
-        summary_results=summary_results,
-        summary_tokens=2000,
-        database=Path(directory) / "momoi.sqlite3",
-        log_level="INFO",
-    )
+def config(directory: str, **overrides) -> AppConfig:
+    return base_config(directory, **{"memory_results": 6, "summary_results": 3, "summary_tokens": 2000, **overrides})
 
 
 def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:

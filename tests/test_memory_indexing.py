@@ -16,7 +16,7 @@ from momoi.memory.storage.index_records import IndexDocument
 from momoi.memory.storage.repository import MemoryRepository
 from momoi.memory.storage.transactions import transaction
 from momoi.memory.storage.vector_repository import VectorRepository
-from tests.test_memory_repository import database, write
+from tests.test_memory_repository import write
 
 
 @pytest.fixture

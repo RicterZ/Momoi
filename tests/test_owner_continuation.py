@@ -9,7 +9,7 @@ from momoi.models import IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.jobs import AutonomousJob
 from tests.support import with_owner_recall
-from tests.test_episode_annealing import config
+from tests.support import config
 
 
 @pytest.mark.parametrize("phone", [False])

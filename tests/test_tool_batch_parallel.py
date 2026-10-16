@@ -8,7 +8,7 @@ import pytest
 from momoi.models import IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from tests.support import install_scripted_replyer, reply_call, with_owner_recall
-from tests.test_episode_annealing import config
+from tests.support import config
 
 
 @pytest.mark.parametrize("cancel", [False, True])
