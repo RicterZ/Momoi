@@ -182,7 +182,7 @@ jobs:
           if-no-files-found: ignore
 
   publish-release:
-    if: github.event_name == 'release' || (inputs.version != '' && inputs.installer_run == '')
+    if: github.event_name == 'release' || inputs.version != ''
     needs: build
     runs-on: ubuntu-latest
     permissions:
