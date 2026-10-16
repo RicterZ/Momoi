@@ -96,10 +96,10 @@ class BufferedBubbleAudio:
         self.provider = provider
         self.items = {}
         self.slots = asyncio.Semaphore(2)
+        self.order = asyncio.Queue()
 
     def start(self, text):
-        if text in self.items:
-            return
+        key = len(self.items)
         queue = asyncio.Queue(maxsize=32)
 
         async def produce():
@@ -112,18 +112,25 @@ class BufferedBubbleAudio:
             except Exception as error:
                 await queue.put(error)
 
-        self.items[text] = (queue, asyncio.create_task(produce()))
+        self.items[key] = (queue, asyncio.create_task(produce()))
+        self.order.put_nowait(key)
+
+    def finish(self):
+        self.order.put_nowait(None)
 
     async def stream_pcm(self, text):
-        self.start(text)
-        queue, task = self.items[text]
         while True:
-            item = await queue.get()
-            if item is None:
+            key = await self.order.get()
+            if key is None:
                 return
-            if isinstance(item, Exception):
-                raise item
-            yield item
+            queue, task = self.items[key]
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                yield item
 
     async def close(self):
         tasks = [task for _, task in self.items.values()]

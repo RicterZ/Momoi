@@ -1,3 +1,5 @@
+import pytest
+
 import asyncio
 from types import SimpleNamespace
 
@@ -325,4 +327,26 @@ def test_phone_prefetch_starts_next_paragraph_before_playback_and_cleans_up():
         await prefetch.close()
         assert set(closed) == {'first', 'second'}
         assert not prefetch.items
+    asyncio.run(run())
+
+
+def test_continuous_phone_audio_waits_for_more_paragraphs_and_keeps_duplicates():
+    from momoi.channel.napcat.voice_call.speech import BufferedBubbleAudio
+    async def run():
+        class Provider:
+            async def stream_pcm(self, text):
+                yield text.encode()
+        audio = BufferedBubbleAudio(Provider())
+        audio.start('same')
+        stream = audio.stream_pcm('unused')
+        assert await anext(stream) == b'same'
+        waiting = asyncio.create_task(anext(stream))
+        await asyncio.sleep(0)
+        assert not waiting.done()
+        audio.start('same')
+        audio.finish()
+        assert await waiting == b'same'
+        with pytest.raises(StopAsyncIteration):
+            await anext(stream)
+        await audio.close()
     asyncio.run(run())

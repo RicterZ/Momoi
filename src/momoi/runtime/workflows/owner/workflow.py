@@ -276,6 +276,8 @@ class OwnerWorkflow:
                 raise asyncio.CancelledError()
             if prefetch:
                 prefetch.start(paragraph)
+                if deliveries:
+                    return
             identifier = f"phone-reply-{len(deliveries)}"
             delivery = await self.bubble_delivery.send_voice(
                 paragraph, tool_call_id=identifier, turn_id=turn_id,
@@ -286,7 +288,21 @@ class OwnerWorkflow:
                 raise WorkflowProtocolError(str(delivery.result.get("error") or "phone_delivery_rejected"))
             deliveries.append(identifier)
 
-        text = await PhoneReplyer(self.config, self.store, self.provider).generate(batch, turn_id, enqueue)
+        try:
+            text = await PhoneReplyer(self.config, self.store, self.provider).generate(batch, turn_id, enqueue)
+        except BaseException:
+            self.store.cancel_pending_outbox(channel.name, "phone_generation_interrupted")
+            raise
+        finally:
+            if prefetch:
+                prefetch.finish()
+        if prefetch and deliveries:
+            # One durable delivery represents the entire continuous audio stream.
+            with self.store._db:
+                self.store._db.execute("UPDATE turn_progress SET text=? WHERE turn_id=? AND tool_call_id=?",
+                                       (text, turn_id, deliveries[0]))
+                self.store._db.execute("UPDATE outbox SET text=? WHERE turn_id=? AND dedupe_key LIKE ?",
+                                       (text, turn_id, f"turn:{turn_id}:progress:{deliveries[0]}:%"))
         log_event(logger, logging.INFO, "qq_call_reply_generated", channel=channel.name,
                   turn_id=turn_id, elapsed_ms=round((time.monotonic() - started) * 1000),
                   silent=not bool(text))
