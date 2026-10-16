@@ -1,29 +1,18 @@
-from ...llm.streaming import response_data, stream_payload
-from ...llm.request_metrics import RequestMetric, response_headers
+from ...llm.streaming import response_data
 import json
 import logging
-from time import time
 from urllib.parse import urlsplit
 from typing import Any
 
 import aiohttp
-from ..media import text_only_messages
 
-from ...llm.dumps import dump_request
 from ...llm.errors import ProviderResponseError
-from ...llm.telemetry import (
-    compact_response_text,
-    log_tool_schema,
-    openai_reasoning,
-    persist_thinking,
-    record_response,
-    thinking_effort,
-)
-from ...llm.transport import http_error, openai_url, retry_request
+from ...llm.telemetry import openai_reasoning
+from ...llm.transport import openai_url
 from ...observability.events import log_event
 from ...observability.values import safe_preview
 from ...models import ProviderResponse, ToolCall
-from .openai_base import OpenAIProtocolProvider
+from .protocol_base import ProtocolProvider
 
 logger = logging.getLogger(__name__)
 
@@ -166,30 +155,23 @@ def _log_unusable_response(
     )
 
 
-class OpenAIProvider(OpenAIProtocolProvider):
+class OpenAIProvider(ProtocolProvider):
     """OpenAI Chat Completions protocol adapter."""
 
-    async def complete(
-        self,
-        system: str | list[dict[str, Any]],
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        *,
-        require_tool: bool = False,
-        required_tool: str | None = None,
-    ) -> ProviderResponse:
-        if self._session is None:
-            raise RuntimeError("provider is not started")
+    protocol = "openai"
+    label = "OpenAI-compatible"
+
+    def _url(self) -> str:
+        return openai_url(self.config.base_url)
+
+    def _payload(self, system, messages, tools, *, require_tool, required_tool, effort):
         config = self.config
-        if not config.multimodal:
-            messages = text_only_messages(messages)
         payload: dict[str, Any] = {
             "model": config.model,
             "messages": openai_messages(system, messages),
             "max_tokens": config.max_tokens,
             "temperature": config.temperature,
         }
-        effort = thinking_effort(config)
         if effort == "off":
             # Native OpenAI uses `none`; DeepSeek-compatible APIs use their
             # thinking switch and reject a simultaneous reasoning_effort.
@@ -221,171 +203,91 @@ class OpenAIProvider(OpenAIProtocolProvider):
                 }
             elif require_tool and config.tool_choice:
                 payload["tool_choice"] = "required"
-        log_tool_schema("openai", payload.get("tools"))
-        stream_payload(payload, "openai")
-        dump_path = dump_request(self.dump_dir, "openai", payload, require_tool)
-        headers = {
-            "authorization": f"Bearer {config.api_key}",
-            "content-type": "application/json",
-        }
+        return payload
 
-        async def request(attempt_started: float) -> ProviderResponse:
-            billed_at = time()
-            assert self._session is not None
-            async with self._session.post(
-                openai_url(config.base_url),
-                json=payload,
-                headers=headers,
-            ) as response:
-                response_headers(response.status)
-                if response.status != 200:
-                    raise await http_error(response, "OpenAI-compatible")
-                try:
-                    data = await response_data(response, "openai")
-                except (aiohttp.ClientError, ValueError) as error:
-                    body = await response.text()
-                    _log_unusable_response(response, body, "invalid_json")
-                    raise ProviderResponseError(
-                        "OpenAI-compatible endpoint returned invalid JSON: "
-                        f"{type(error).__name__}"
-                    ) from error
-                if not isinstance(data, dict):
-                    _log_unusable_response(response, data, "non_object_json")
-                    raise ProviderResponseError(
-                        "OpenAI-compatible endpoint returned non-object JSON"
-                    )
-                duration_ms, metrics = record_response(
-                    data,
-                    protocol="openai",
-                    attempt_started=attempt_started,
-                    dump_path=dump_path,
-                    usage_sink=self.usage_sink,
-                    model=config.model,
-                    parse_usage=self.usage_parser,
-                    created_at=billed_at,
-                )
-                choices = data.get("choices")
-                if not isinstance(choices, list) or not choices:
-                    _log_unusable_response(response, data, "no_choices")
-                    raise ProviderResponseError(
-                        "OpenAI-compatible endpoint returned no choices"
-                    )
-                message = choices[0].get("message")
-                if not isinstance(message, dict):
-                    _log_unusable_response(response, data, "no_message")
-                    raise ProviderResponseError(
-                        "OpenAI-compatible endpoint returned no message"
-                    )
-                content: list[dict[str, Any]] = []
-                text = message.get("content")
-                if isinstance(text, str) and text.strip():
-                    content.append({"type": "text", "text": text})
-                tool_calls: list[ToolCall] = []
-                for item in message.get("tool_calls") or []:
-                    function = item.get("function") if isinstance(item, dict) else None
-                    if not isinstance(function, dict):
-                        continue
-                    raw_arguments = function.get("arguments")
-                    argument_error = None
-                    try:
-                        if not isinstance(raw_arguments, str):
-                            raise TypeError
-                        arguments = json.loads(raw_arguments)
-                    except json.JSONDecodeError:
-                        arguments = {}
-                        argument_error = "invalid_tool_arguments_json"
-                    except TypeError:
-                        arguments = {}
-                        argument_error = "tool_arguments_must_be_json"
-                    if not isinstance(arguments, dict):
-                        arguments = {}
-                        argument_error = "tool_arguments_must_be_object"
-                    call = ToolCall(
-                        str(item.get("id") or ""),
-                        str(function.get("name") or ""),
-                        arguments,
-                        argument_error,
-                    )
-                    tool_calls.append(call)
-                    content.append(
-                        {
-                            "type": "tool_use",
-                            "id": call.id,
-                            "name": call.name,
-                            "input": call.arguments,
-                        }
-                    )
-                reasoning = openai_reasoning(message)
-                continuation = (
-                    {"openai": {"reasoning_content": (
-                        message["reasoning_content"]
-                        if isinstance(message.get("reasoning_content"), str)
-                        else reasoning
-                    )}}
-                    if reasoning or isinstance(message.get("reasoning_content"), str)
-                    else {}
-                )
-                persist_thinking(
-                    self.thinking_sink,
-                    reasoning=reasoning,
-                    assistant_text="\n".join(
-                        block["text"] for block in content
-                        if isinstance(block, dict) and block.get("type") == "text"
-                        and isinstance(block.get("text"), str)
-                    ),
-                    tools=[call.name for call in tool_calls],
-                    tool_calls=[{"id": call.id, "name": call.name, "arguments": call.arguments,
-                                 **({"argument_error": call.argument_error} if call.argument_error else {})} for call in tool_calls],
-                    dump_file=dump_path.name if dump_path else "",
-                    protocol="openai",
-                    model=config.model,
-                )
-                if tool_calls:
-                    log_event(
-                        logger,
-                        logging.DEBUG,
-                        "llm_response",
-                        protocol="openai",
-                        response_kind="tools",
-                        tool_count=len(tool_calls),
-                        tool_names=",".join(call.name for call in tool_calls),
-                        duration_ms=duration_ms,
-                    )
-                    return ProviderResponse(
-                        content,
-                        tool_calls,
-                        metrics,
-                        reasoning=reasoning,
-                        continuation=continuation,
-                    )
-                if not content:
-                    raise ProviderResponseError(
-                        "OpenAI-compatible endpoint returned no text content"
-                    )
-                log_event(
-                    logger,
-                    logging.DEBUG,
-                    "llm_response",
-                    protocol="openai",
-                    response_kind="text",
-                    text=compact_response_text(str(text)),
-                    duration_ms=duration_ms,
-                )
-                return ProviderResponse(content, [], metrics, reasoning=reasoning, continuation=continuation)
+    async def _response_json(self, response):
+        try:
+            data = await response_data(response, self.protocol)
+        except (aiohttp.ClientError, ValueError) as error:
+            body = await response.text()
+            _log_unusable_response(response, body, "invalid_json")
+            raise ProviderResponseError(
+                "OpenAI-compatible endpoint returned invalid JSON: "
+                f"{type(error).__name__}"
+            ) from error
+        if not isinstance(data, dict):
+            _log_unusable_response(response, data, "non_object_json")
+            raise ProviderResponseError(
+                "OpenAI-compatible endpoint returned non-object JSON"
+            )
+        return data
 
-        return await retry_request(
-            protocol="openai",
-            circuit=self._circuit,
-            max_retries=config.max_retries,
-            request_fields={
-                "model": config.model,
-                "messages": len(messages),
-                "tools": len(tools or []),
-                "require_tool": require_tool,
-                "tool_choice": payload.get("tool_choice"),
-                "thinking_effort": effort or None,
-            },
-            operation=request,
-            monitor=RequestMetric(self.request_metrics_sink, payload=payload,
-                                  protocol="openai", endpoint=config.base_url),
+    def _parse(self, data, response) -> ProviderResponse:
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices:
+            _log_unusable_response(response, data, "no_choices")
+            raise ProviderResponseError(
+                "OpenAI-compatible endpoint returned no choices"
+            )
+        message = choices[0].get("message")
+        if not isinstance(message, dict):
+            _log_unusable_response(response, data, "no_message")
+            raise ProviderResponseError(
+                "OpenAI-compatible endpoint returned no message"
+            )
+        content: list[dict[str, Any]] = []
+        text = message.get("content")
+        if isinstance(text, str) and text.strip():
+            content.append({"type": "text", "text": text})
+        tool_calls: list[ToolCall] = []
+        for item in message.get("tool_calls") or []:
+            function = item.get("function") if isinstance(item, dict) else None
+            if not isinstance(function, dict):
+                continue
+            raw_arguments = function.get("arguments")
+            argument_error = None
+            try:
+                if not isinstance(raw_arguments, str):
+                    raise TypeError
+                arguments = json.loads(raw_arguments)
+            except json.JSONDecodeError:
+                arguments = {}
+                argument_error = "invalid_tool_arguments_json"
+            except TypeError:
+                arguments = {}
+                argument_error = "tool_arguments_must_be_json"
+            if not isinstance(arguments, dict):
+                arguments = {}
+                argument_error = "tool_arguments_must_be_object"
+            call = ToolCall(
+                str(item.get("id") or ""),
+                str(function.get("name") or ""),
+                arguments,
+                argument_error,
+            )
+            tool_calls.append(call)
+            content.append(
+                {
+                    "type": "tool_use",
+                    "id": call.id,
+                    "name": call.name,
+                    "input": call.arguments,
+                }
+            )
+        reasoning = openai_reasoning(message)
+        continuation = (
+            {"openai": {"reasoning_content": (
+                message["reasoning_content"]
+                if isinstance(message.get("reasoning_content"), str)
+                else reasoning
+            )}}
+            if reasoning or isinstance(message.get("reasoning_content"), str)
+            else {}
         )
+        return ProviderResponse(content, tool_calls, reasoning=reasoning, continuation=continuation)
+
+    def _check_content(self, parsed: ProviderResponse) -> None:
+        if not parsed.content:
+            raise ProviderResponseError(
+                "OpenAI-compatible endpoint returned no text content"
+            )

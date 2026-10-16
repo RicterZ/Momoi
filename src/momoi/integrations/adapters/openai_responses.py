@@ -1,20 +1,13 @@
-from ...llm.streaming import response_data, stream_payload
 """Stateless OpenAI Responses protocol, including DeepSeek compatibility."""
 import copy
 import json
-import aiohttp
-from time import time
 from typing import Any
 
-from .openai_base import OpenAIProtocolProvider
+from .protocol_base import ProtocolProvider
 from .openai import openai_messages, _text
-from ..media import text_only_messages
 from ...models import ProviderResponse, ToolCall
-from ...llm.dumps import dump_request
 from ...llm.errors import ProviderResponseError
-from ...llm.request_metrics import RequestMetric, response_headers
-from ...llm.telemetry import record_response, persist_thinking, thinking_effort, log_tool_schema
-from ...llm.transport import retry_request, http_error, responses_url
+from ...llm.transport import responses_url
 
 
 def responses_input(system, messages):
@@ -99,21 +92,20 @@ def parse_output(data):
                             continuation={"openai_responses": {"output": copy.deepcopy(output)}})
 
 
-class OpenAIResponsesProvider(OpenAIProtocolProvider):
+class OpenAIResponsesProvider(ProtocolProvider):
     protocol = "openai_responses"
+    label = "OpenAI Responses-compatible"
 
-    async def complete(self, system, messages, tools=None, *, require_tool=False, required_tool=None):
-        if self._session is None:
-            raise RuntimeError("provider is not started")
+    def _url(self) -> str:
+        return responses_url(self.config.base_url)
+
+    def _payload(self, system, messages, tools, *, require_tool, required_tool, effort):
         config = self.config
-        if not config.multimodal:
-            messages = text_only_messages(messages)
         payload: dict[str, Any] = {
             "model": config.model, "instructions": _text(system, "\n\n"),
             "input": responses_input(system, messages), "max_output_tokens": config.max_tokens,
             "store": False,
         }
-        effort = thinking_effort(config)
         if effort:
             payload["reasoning"] = {"effort": "none" if effort == "off" else effort}
         if not effort or effort == "off":
@@ -128,40 +120,7 @@ class OpenAIResponsesProvider(OpenAIProtocolProvider):
                 payload["tool_choice"] = {"type": "function", "name": required_tool}
             elif config.tool_choice and require_tool:
                 payload["tool_choice"] = "required"
-        log_tool_schema(self.protocol, payload.get("tools"))
-        stream_payload(payload, "openai_responses")
-        dump_path = dump_request(self.dump_dir, self.protocol, payload, require_tool)
+        return payload
 
-        async def request(attempt_started):
-            billed_at = time()
-            async with self._session.post(responses_url(config.base_url), json=payload,
-                                         headers={"authorization": f"Bearer {config.api_key}",
-                                                  "content-type": "application/json"}) as response:
-                response_headers(response.status)
-                if response.status != 200:
-                    raise await http_error(response, "OpenAI Responses-compatible")
-                try:
-                    data = await response_data(response, "openai_responses")
-                except (ValueError, aiohttp.ClientError) as error:
-                    raise ProviderResponseError("Responses endpoint returned invalid JSON") from error
-                if not isinstance(data, dict):
-                    raise ProviderResponseError("Responses endpoint returned non-object JSON")
-                _, metrics = record_response(data, protocol=self.protocol, attempt_started=attempt_started,
-                                             dump_path=dump_path, usage_sink=self.usage_sink,
-                                             model=config.model, parse_usage=self.usage_parser, created_at=billed_at)
-                result = parse_output(data)
-                persist_thinking(self.thinking_sink, reasoning=result.reasoning,
-                                 assistant_text="\n".join(b["text"] for b in result.content if b["type"] == "text"),
-                                 tools=[call.name for call in result.tool_calls],
-                                 tool_calls=[{"id": call.id, "name": call.name, "arguments": call.arguments,
-                                              **({"argument_error": call.argument_error} if call.argument_error else {})}
-                                             for call in result.tool_calls],
-                                 model=config.model, protocol=self.protocol,
-                                 dump_file=dump_path.name if dump_path else "")
-                return ProviderResponse(result.content, result.tool_calls, metrics,
-                                        result.reasoning, result.continuation)
-
-        return await retry_request(protocol=self.protocol, circuit=self._circuit,
-                                   max_retries=config.max_retries, request_fields={"model": config.model},
-                                   operation=request, monitor=RequestMetric(self.request_metrics_sink,
-                                   payload=payload, protocol=self.protocol, endpoint=config.base_url))
+    def _parse(self, data, response) -> ProviderResponse:
+        return parse_output(data)
