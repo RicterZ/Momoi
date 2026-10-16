@@ -256,21 +256,29 @@ class OwnerWorkflow:
         context = batch[-1].delivery_context
         if not channel.context_valid(context):
             raise asyncio.CancelledError()
-        text = await PhoneReplyer(self.config, self.store, self.provider).generate(batch, turn_id)
-        log_event(logger, logging.INFO, "qq_call_reply_generated", channel=channel.name,
-                  turn_id=turn_id, elapsed_ms=round((time.monotonic() - started) * 1000),
-                  silent=not bool(text))
-        if not channel.context_valid(context):
-            raise asyncio.CancelledError()
-        if text:
+        deliveries = []
+
+        async def enqueue(paragraph):
+            if not channel.context_valid(context):
+                raise asyncio.CancelledError()
+            identifier = f"phone-reply-{len(deliveries)}"
             delivery = await self.bubble_delivery.send_voice(
-                text, tool_call_id="phone-reply", turn_id=turn_id,
+                paragraph, tool_call_id=identifier, turn_id=turn_id,
                 delivery_channel=channel, heartbeat_turn=False,
                 heartbeat_owner_event_revision=None, delivery_context=context,
             )
             if not delivery.result.get("ok"):
                 raise WorkflowProtocolError(str(delivery.result.get("error") or "phone_delivery_rejected"))
-            result = await self.bubble_delivery.wait_reply(turn_id, "phone-reply")
+            deliveries.append(identifier)
+
+        text = await PhoneReplyer(self.config, self.store, self.provider).generate(batch, turn_id, enqueue)
+        log_event(logger, logging.INFO, "qq_call_reply_generated", channel=channel.name,
+                  turn_id=turn_id, elapsed_ms=round((time.monotonic() - started) * 1000),
+                  silent=not bool(text))
+        if not channel.context_valid(context):
+            raise asyncio.CancelledError()
+        for identifier in deliveries:
+            result = await self.bubble_delivery.wait_reply(turn_id, identifier)
             if not result.get("ok"):
                 raise WorkflowProtocolError(result.get("error", "phone_delivery_failed"))
         self.store.append_turn_journal(turn_id, "assistant_exchange", {

@@ -143,3 +143,36 @@ def test_phone_prompt_dashboard_edit_is_used_next_request(tmp_path):
     asyncio.run(PhoneReplyer(cfg, store, SimpleNamespace(complete=complete)).generate([], 'now'))
     with pytest.raises(ValueError):
         settings.update('phone_replyer', '')
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_phone_stream_buffers_paragraphs_and_flushes_only_on_success(tmp_path, fail):
+    from momoi.llm.streaming import ProviderEvent
+    store = Mock()
+    store.always_memory_context.return_value = ''
+    store.scoped_memory_context.return_value = ''
+    store.self_state_context.return_value = ''
+    store.replyer_dialogue_rows.return_value = []
+    sent = []
+    async def stream(*args):
+        yield ProviderEvent('text_delta', '好\n')
+        assert sent == []
+        yield ProviderEvent('text_delta', '\n我觉')
+        assert sent == ['好']
+        yield ProviderEvent('reasoning_delta', 'not spoken')
+        yield ProviderEvent('text_delta', '得可以\n\n最后一句')
+        assert sent == ['好', '我觉得可以']
+        if fail:
+            raise RuntimeError('disconnected')
+        yield ProviderEvent('response', data=ProviderResponse(
+            [{'type': 'text', 'text': '好\n\n我觉得可以\n\n最后一句'}], []))
+    async def enqueue(text):
+        sent.append(text)
+    replyer = PhoneReplyer(config(str(tmp_path)), store, SimpleNamespace(stream=stream))
+    if fail:
+        with pytest.raises(RuntimeError):
+            asyncio.run(replyer.generate([], 'now', enqueue))
+        assert sent == ['好', '我觉得可以']
+    else:
+        asyncio.run(replyer.generate([], 'now', enqueue))
+        assert sent == ['好', '我觉得可以', '最后一句']
