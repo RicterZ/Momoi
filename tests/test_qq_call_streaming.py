@@ -223,7 +223,10 @@ def test_channel_sends_bubbles_as_one_ordered_playback_stream():
     asyncio.run(scenario())
 
 
-def test_channel_preserves_synthesis_error_in_streaming_failure():
+def test_channel_preserves_synthesis_error_in_streaming_failure(monkeypatch):
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr('momoi.channel.napcat.voice_call.speech.asyncio.sleep', AsyncMock())
+
     async def scenario():
         from momoi.channel.napcat.voice_call.channel import QQCallChannel
         from momoi.channel import SendRejected
