@@ -119,17 +119,30 @@ class BufferedBubbleAudio:
         self.order.put_nowait(None)
 
     async def stream_pcm(self, text):
+        playback_end = None
+        audio_emitted = False
         while True:
             key = await self.order.get()
             if key is None:
                 return
             queue, task = self.items[key]
+            first_chunk = True
             while True:
                 item = await queue.get()
                 if item is None:
                     break
                 if isinstance(item, Exception):
                     raise item
+                if first_chunk and audio_emitted:
+                    # Account for time already spent waiting for the next audio.
+                    remaining = min(.5, max(0, playback_end + .5 - monotonic()))
+                    if remaining:
+                        silence = bytes(round(remaining * 24000) * 2)
+                        yield silence
+                        playback_end = max(playback_end, monotonic()) + len(silence) / 48000
+                first_chunk = False
+                audio_emitted = True
+                playback_end = max(playback_end or monotonic(), monotonic()) + len(item) / 48000
                 yield item
 
     async def close(self):
