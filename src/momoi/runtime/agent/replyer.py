@@ -21,12 +21,18 @@ def prompt_text(config, name, fallback):
     return (path.read_text(encoding="utf-8").strip() or fallback) if path and path.is_file() else fallback
 
 
-class Replyer:
+class ReplyerBase:
     def __init__(self, config, store, provider):
         self.config, self.store, self.provider = config, store, provider
 
-    async def generate(self, call, request):
+    def expression_prompt(self):
         soul = prompt_text(self.config, self.config.soul_prompt_path.name if self.config.soul_prompt_path else "SOUL.md", self.config.soul_prompt)
+        return soul
+
+
+class Replyer(ReplyerBase):
+    async def generate(self, call, request):
+        soul = self.expression_prompt()
         guide = prompt_text(self.config, "REPLYER.md", files("momoi").joinpath("prompts/replyer.md").read_text(encoding="utf-8"))
         system = soul + "\n\n" + guide
         rows = self.store.replyer_history_rows(getattr(request.delivery_channel, "dialogue_channel", request.delivery_channel.name))

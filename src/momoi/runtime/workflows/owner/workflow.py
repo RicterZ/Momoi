@@ -248,6 +248,41 @@ class OwnerWorkflow:
                 results.append(f"Command rejected: {error}")
         return "\n".join(results)
 
+    async def _complete_phone_batch(self, batch, turn_id, channel):
+        from ...agent.phone_replyer import PhoneReplyer
+        started = time.monotonic()
+        log_event(logger, logging.INFO, "qq_call_turn_started", channel=channel.name,
+                  turn_id=turn_id, executor="phone_replyer")
+        context = batch[-1].delivery_context
+        if not channel.context_valid(context):
+            raise asyncio.CancelledError()
+        text = await PhoneReplyer(self.config, self.store, self.provider).generate(batch, turn_id)
+        log_event(logger, logging.INFO, "qq_call_reply_generated", channel=channel.name,
+                  turn_id=turn_id, elapsed_ms=round((time.monotonic() - started) * 1000),
+                  silent=not bool(text))
+        if not channel.context_valid(context):
+            raise asyncio.CancelledError()
+        if text:
+            delivery = await self.bubble_delivery.send_voice(
+                text, tool_call_id="phone-reply", turn_id=turn_id,
+                delivery_channel=channel, heartbeat_turn=False,
+                heartbeat_owner_event_revision=None, delivery_context=context,
+            )
+            if not delivery.result.get("ok"):
+                raise WorkflowProtocolError("phone_delivery_rejected")
+            result = await self.bubble_delivery.wait_reply(turn_id, "phone-reply")
+            if not result.get("ok"):
+                raise WorkflowProtocolError(result.get("error", "phone_delivery_failed"))
+        self.store.append_turn_journal(turn_id, "assistant_exchange", {
+            "content": [{"type": "text", "text": text}] if text else [],
+            "results": [],
+        }, trust="runtime")
+        self.store.commit_turn(batch, self._render_batch(batch), AgentReply([]),
+                               turn_id=turn_id, target_channel=channel.name)
+        self.outbox_changed.set()
+        if self.config.episode_annealing.enabled:
+            self._episode_annealing_dirty = True
+
     async def _complete_batch(
         self,
         batch: list[IncomingMessage],
@@ -255,6 +290,9 @@ class OwnerWorkflow:
         channel: Channel | None = None,
     ) -> None:
         channel = channel or self._channel_for(batch[0].channel)
+        if channel.name == "qq_call":
+            await self._complete_phone_batch(batch, turn_id, channel)
+            return
         prepared_at = time.monotonic()
         if channel.name == "qq_call":
             log_event(logger, logging.INFO, "qq_call_turn_started", channel=channel.name, turn_id=turn_id,
