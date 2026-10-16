@@ -9,6 +9,8 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <ApplicationIcon>../Momoi.Desktop/Assets/momoi.ico</ApplicationIcon>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Keep single-file tooling consistent with the checked-in NuGet lock. -->
+    <RuntimeFrameworkVersion>10.0.13</RuntimeFrameworkVersion>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Momoi.Update/Momoi.Update.csproj" GlobalPropertiesToRemove="PublishSingleFile;IncludeNativeLibrariesForSelfExtract;EnableCompressionInSingleFile" />
