@@ -1,0 +1,13 @@
+{
+  "provenance": "Read-only production SQLite inspection; only allowlisted enums, counts and event ordering were exported. All replay text is newly synthetic, not redacted quotations.",
+  "observed": {
+    "memory_operation_types": {"add": 212, "replace": 20, "forget": 13},
+    "memory_decisions": {"write": 210, "noop": 20, "forget": 2, "defer": 1},
+    "background_pause_resume_refresh_sequences_observed": true,
+    "turns_needing_reconciliation": 2,
+    "external_calls_dispatching": 3
+  },
+  "limitations": "Counts are a point-in-time observation, not incident labels. Dispatching and running records are not necessarily failures. No production identifiers, timestamps, paths, tool arguments, quotes, memories or credentials are included.",
+  "memory_cases": ["new_fact", "paraphrase", "correction", "forget", "single_episode"],
+  "faults": ["external_unknown", "completed_external", "read_interrupted", "owner_stop", "sending_restart", "sending_exhausted"]
+}

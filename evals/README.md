@@ -9,10 +9,25 @@
 
 仓库根目录执行，无需新增依赖：
 
+真实调用前，将根目录的 `env.evals.example` 复制为已忽略的 `.env.evals`，
+在本地填写接口地址、密钥和模型名称。不要提交或分享真实凭据。
+
+```bash
+cp env.evals.example .env.evals
+chmod 600 .env.evals
+# 编辑 .env.evals 后，显式加载配置执行（会产生模型费用）
+uv run --locked --env-file .env.evals python -m evals --live --judge
+```
+
+runner 不自动加载环境文件；也可使用已导出的环境变量和以下 Makefile 入口：
+
 ```bash
 # 离线烟测：真实 Replyer + 固定占位模型；不代表语义质量通过
 make eval
 make eval EVAL_ARGS='--case brief_choice'
+
+# README 主要功能的表达边界场景（42 条，不代表功能端到端评估）
+make eval EVAL_ARGS='--suite features'
 
 # 显式启用真实模型；配置通过环境变量提供，不加载项目 providers.yaml
 # MOMOI_EVAL_BASE_URL、MOMOI_EVAL_API_KEY、MOMOI_EVAL_MODEL
@@ -94,3 +109,54 @@ uv run --locked python -m evals.calibrate
 结果写入独立 `/tmp/momoi-eval-calibration-*`，报告有效标注一致率、违规漏判数、
 误报数、错误与证据不足。分母及未判定数量一起保留，不静默排除错误。
 暂不实现离线重评分、平台上传和综合分数。
+
+## README 功能覆盖
+
+`--suite features` 独立选择 `datasets/features.jsonl`，不改变默认 60 条交互集。
+新增 42 个从零编写的虚构场景，每类 6 条，共 28 条开发、14 条保留场景。
+以下“当前覆盖”均属于 **Replyer 接收给定证据后的表达评估**，不是实际执行功能的证明：
+
+| README 能力 | 当前覆盖 | 尚缺的实际功能评估 |
+| --- | --- | --- |
+| 记忆与上下文 | 更新、遗忘、候选准入、作用域、Episode 顺序、触发词不等于指令 | 真实记忆写入、检索排名、上下文组装与隔离 |
+| Goal | 定时已保存不等于已触发、时区、阻塞、取消、部分完成 | 虚拟时钟下的触发、持久化与重复执行检查 |
+| Heartbeat | 静默原因、未发送、对话优先、恢复不作时间承诺 | 真正的静默/主动决策、静默时段和调度优先级 |
+| 长任务与恢复 | 超时未知不重放、停止、插话、部分投递 | 故障注入下的暂停恢复、副作用次数与 outbox 状态 |
+| 语音电话 | 真实 Replyer voice 模式中的口语、数字、失败、识别不确定性表达 | 音频 ASR/TTS、电话 Replyer、打断延迟和媒体链路 |
+| Webhook 与工具 | 认证不等于完成、不可信载荷、失败/缺参、凭据不复述 | 认证拒绝、工具白名单、命令沙箱和工具轨迹 |
+| 渠道与媒体 | 来源渠道、primary、图片缺失、附件与表情投递状态、撤回引用 | 渠道路由、真实图像理解、媒体生成与投递 |
+
+manifest 中保存 suite 和 coverage_layer，报告标题及详情不把给定证据当实际工具回执。
+合法沉默无法由当前非空 Replyer 执行器测量；它应在 Planner/Heartbeat 层验证“没有调用回复”，
+不能用一条声称“我保持沉默”的回复代替。
+
+下一步扩展优先接真实记忆回放和运行时故障注入，各自使用状态断言；不要仅给 Replyer
+编更多参考文本就宣称实现了 Agent 端到端评估。现有 Python 测试继续承担确定性功能回归，
+不自动计入真实模型质量通过率。
+
+## 真实记忆工作流与恢复故障注入
+
+```bash
+# 无模型费用：真实记忆宿主 + 脚本化决策，以及真实 SQLite 恢复
+uv run --locked python -m evals.replay
+# 显式付费：记忆决策改用 MOMOI_EVAL_* 模型；恢复场景仍为确定性检查
+uv run --locked --env-file .env.evals python -m evals.replay --live
+```
+
+线上容器仅以 SQLite `mode=ro` 查询；只带回白名单枚举、聚合数量与后台暂停/恢复事件顺序。
+`datasets/production_shapes.json` 记录观察边界，不含生产对话、记忆正文、标识符、时间、
+路径、参数或凭据。不是逐条生产案例的匿名副本：以线上观察到的操作形态驱动选题，
+实际文字完全采用已有合成 fixture，避免正则脱敏遗漏私人语义。
+
+五条记忆回放复用 `scripts/replay_memory_operation.py` 的真实宿主和存储流程，验证新增、
+重复语义不新增、更正旧版本、遗忘墓碑及单次经历不固化。仅启用字面检索，显式提供现有
+记忆快照，不覆盖 embedding 和检索质量；脚本化通过不代表真实模型决策正确。
+
+六条故障在独立临时数据库内模拟派发后进程丢失、已有回执后重启、只读调用中断、主人停止、
+投递中重启和投递尝试耗尽；关闭重开真实 Store，验证审计、缓存、待核对状态和重复风险。
+工具副作用由本地计数器代替，绝不调用真实外部工具。工具结果未知不会重放同一调用；
+文本 outbox 的既有策略则允许一次有重复风险标记的有限重试，耗尽后失败，不混为同一规则。
+这里不是操作系统 kill 注入，也尚未接调度器后台暂停/恢复的完整模型回放。
+
+结果及每条记忆的执行证据输出 `/tmp/momoi-eval-replay-*`；目前独立 JSON 汇总，
+不合并进 Replyer 的 HTML 通过率。生产的 running/dispatching 数量只是瞬时状态，不能当故障数。

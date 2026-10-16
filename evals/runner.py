@@ -24,8 +24,8 @@ JUDGE = ROOT / 'prompts/judge.md'
 TEMP_ROOT = None if os.name == 'nt' else '/tmp'
 
 
-def load_cases():
-    cases = [json.loads(line) for line in DATASET.read_text(encoding='utf-8').splitlines() if line.strip()]
+def load_cases(dataset=DATASET):
+    cases = [json.loads(line) for line in dataset.read_text(encoding='utf-8').splitlines() if line.strip()]
     ids = set()
     for case in cases:
         if not isinstance(case, dict) or not isinstance(case.get('id'), str) or case['id'] in ids:
@@ -53,6 +53,8 @@ def load_cases():
             raise ValueError('invalid expected semantics')
         if not isinstance(case.get('tags'), list) or not case['tags'] or not all(isinstance(t, str) for t in case['tags']):
             raise ValueError('invalid tags')
+        if case.get('mode', 'text') not in {'text', 'voice'}:
+            raise ValueError('invalid mode')
     return cases
 
 
@@ -132,7 +134,8 @@ async def run_case(case, provider, judge=None):
                 request = SimpleNamespace(turn_id='eval', round_number=1, current_events=[event],
                                           delivery_channel=SimpleNamespace(name='dashboard'))
                 bubbles = await Replyer(config, store, recorded).generate(
-                    ToolCall('reply', 'reply', {'intent': case['intent'], 'reference': case['reference']}), request)
+                    ToolCall('reply', 'reply', {'intent': case['intent'], 'reference': case['reference'],
+                                              'mode': case.get('mode', 'text')}), request)
             finally:
                 store.close()
         result['reply'] = bubbles
@@ -182,14 +185,17 @@ async def execute(args, cases):
 
     config = model_config('MOMOI_EVAL') if args.live else None
     judge_config = model_config('MOMOI_JUDGE') if args.judge else None
+    dataset = ROOT / 'datasets' / (getattr(args, 'suite', 'interaction') + '.jsonl')
     output = Path(tempfile.mkdtemp(prefix='momoi-eval-', dir=TEMP_ROOT))
     manifest = {'mode': 'live' if args.live else 'smoke', 'commit': git_info('rev-parse', 'HEAD'),
                 'dirty': bool(git_info('status', '--porcelain')), 'case_ids': [c['id'] for c in cases],
                 'repeat': getattr(args, 'repeat', 1),
+                'suite': getattr(args, 'suite', 'interaction'),
+                'coverage_layer': 'replyer_expression_with_supplied_evidence',
                 'model': config.model if config else None, 'judge_model': judge_config.model if judge_config else None,
                 'parameters': {'temperature': 0, 'max_tokens': 1024, 'timeout_seconds': 60, 'max_retries': 0},
                 'hashes': {str(p.relative_to(ROOT.parent)): hashlib.sha256(p.read_bytes()).hexdigest()
-                           for p in (DATASET, SOUL, JUDGE, ROOT.parent / 'src/momoi/prompts/replyer.md')}}
+                           for p in (dataset, SOUL, JUDGE, ROOT.parent / 'src/momoi/prompts/replyer.md')}}
     write_json(output / 'manifest.json', manifest)
     results = []
     async with AsyncExitStack() as stack:
@@ -223,6 +229,7 @@ def main():
     parser.add_argument('--live', action='store_true', help='explicitly call an external model')
     parser.add_argument('--judge', action='store_true', help='explicitly call a separate judge (requires --live)')
     parser.add_argument('--case', action='append', default=[], help='select a case id; repeatable')
+    parser.add_argument('--suite', choices=['interaction', 'features'], default='interaction')
     parser.add_argument('--split', choices=['dev', 'holdout', 'regression'])
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--baseline', type=Path, help='previous output directory for paired comparison')
@@ -233,7 +240,7 @@ def main():
         parser.error('--repeat must be positive')
     if args.baseline and not (args.baseline / 'results.jsonl').is_file():
         parser.error('baseline must contain results.jsonl')
-    cases = load_cases()
+    cases = load_cases(ROOT / 'datasets' / (args.suite + '.jsonl'))
     unknown = set(args.case) - {c['id'] for c in cases}
     if unknown:
         parser.error('unknown case id')

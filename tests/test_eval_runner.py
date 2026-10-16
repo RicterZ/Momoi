@@ -160,3 +160,18 @@ def test_calibration_labels_reference_known_criteria():
     for sample in samples:
         assert sample['criterion'] in cases[sample['case_id']]['criteria']
         assert sample['expected_status'] in {'pass', 'fail'}
+
+
+def test_feature_suite_covers_readme_capabilities_and_voice():
+    from evals.runner import ROOT
+    cases = load_cases(ROOT / 'datasets/features.jsonl')
+    assert len(cases) == 42
+    assert {c['tags'][0] for c in cases} == {
+        'memory', 'goals', 'heartbeat', 'recovery', 'voice', 'webhook', 'channels_media'}
+    voice = next(c for c in cases if c['id'] == 'voice_brief')
+    result = asyncio.run(run_case(voice, None))
+    assert result['status'] == 'unscored'
+    messages = json.dumps(result['exchanges'][0]['messages'], ensure_ascii=False)
+    assert '发送形式：语音' in messages
+    assert '适合朗读' in messages
+    assert all(c['coverage_layer'] == 'replyer_expression_with_supplied_evidence' for c in cases)
