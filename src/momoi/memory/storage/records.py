@@ -6,6 +6,17 @@ from typing import TypedDict
 
 from ..metadata import MemoryMeta
 
+
+NOT_TOMBSTONED_SQL = (
+    "NOT EXISTS (SELECT 1 FROM memory_tombstones AS t "
+    "WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key)"
+)
+# Expects the memories table aliased as `m` and binds one parameter: now.
+LIVE_MEMORY_SQL = (
+    "m.superseded_by IS NULL AND (m.expires_at IS NULL OR m.expires_at > ?) AND "
+    + NOT_TOMBSTONED_SQL
+)
+
 # The one classification used by both memory planes: confirmed memory (owner
 # evidence) and reflection memory (daily review). They differ in provenance and
 # reliability, not in what a fact is about, so they share this vocabulary.

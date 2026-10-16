@@ -4,6 +4,7 @@ import time
 from uuid import uuid4
 from dataclasses import asdict
 
+from ...memory.storage.records import LIVE_MEMORY_SQL
 from ..core.timestamps import add_context_timestamps
 
 def _dashboard_unix(value: object) -> float | None:
@@ -48,13 +49,8 @@ class DashboardStore:
             ),
             "memories": int(
                 self._db.execute(
-                    """SELECT COUNT(*) FROM memories AS m
-                       WHERE m.superseded_by IS NULL
-                         AND (m.expires_at IS NULL OR m.expires_at > ?)
-                         AND NOT EXISTS (
-                             SELECT 1 FROM memory_tombstones AS t
-                             WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
-                         )""",
+                    f"""SELECT COUNT(*) FROM memories AS m
+                       WHERE {LIVE_MEMORY_SQL}""",
                     (time.time(),),
                 ).fetchone()[0]
             ),
@@ -101,16 +97,11 @@ class DashboardStore:
         self.memories.repository.purge_expired()
         now = time.time()
         rows = self._db.execute(
-            """SELECT id, kind, key, scope_key, content, activation, authority,
+            f"""SELECT id, kind, key, scope_key, content, activation, authority,
                       evidence_quote, importance, created_at, updated_at,
                       expires_at, meta_json
                FROM memories AS m
-               WHERE m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
-                 )
+               WHERE {LIVE_MEMORY_SQL}
                ORDER BY CASE m.activation
                           WHEN 'always' THEN 0
                           WHEN 'recent' THEN 1
@@ -162,17 +153,12 @@ class DashboardStore:
 
     def _active_memory_row(self, memory_id: int) -> sqlite3.Row | None:
         return self._db.execute(
-            """SELECT id, kind, key, scope_key, content, activation, authority,
+            f"""SELECT id, kind, key, scope_key, content, activation, authority,
                       evidence_quote, importance, created_at, updated_at,
                       expires_at, meta_json
                FROM memories AS m
                WHERE m.id=?
-                 AND m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
-                 )""",
+                 AND {LIVE_MEMORY_SQL}""",
             (memory_id, time.time()),
         ).fetchone()
 

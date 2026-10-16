@@ -6,7 +6,10 @@ import time
 from typing import cast
 
 from ..metadata import MemoryFilters, TagCatalog, validate_scope, inherited_triggers, validate_triggers
-from .records import ActiveMemory, InventoryMemory, MEMORY_ACTIVATIONS, memory_snapshot_fingerprint, memory_scope
+from .records import (
+    LIVE_MEMORY_SQL, NOT_TOMBSTONED_SQL, ActiveMemory, InventoryMemory, MEMORY_ACTIVATIONS,
+    memory_snapshot_fingerprint, memory_scope,
+)
 from .transactions import transaction
 
 
@@ -133,16 +136,11 @@ class MemoryRepository:
         self.purge_expired()
         now = time.time()
         rows = self._db.execute(
-            """SELECT id, kind, key, content, activation, authority,
+            f"""SELECT id, kind, key, content, activation, authority,
                       source_event_id, evidence_quote, importance,
                       created_at, updated_at, expires_at, superseded_by, meta_json, scope_key
                FROM memories AS m
-               WHERE m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at>?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
-                 )
+               WHERE {LIVE_MEMORY_SQL}
                ORDER BY m.id""",
             (now,),
         ).fetchall()
@@ -151,13 +149,10 @@ class MemoryRepository:
     def purge_expired(self, *, now: float | None = None) -> int:
         now = time.time() if now is None else now
         rows = self._db.execute(
-            """SELECT id FROM memories AS m
+            f"""SELECT id FROM memories AS m
                WHERE m.superseded_by IS NULL
                  AND m.expires_at IS NOT NULL AND m.expires_at <= ?
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
-                 )""",
+                 AND {NOT_TOMBSTONED_SQL}""",
             (now,),
         ).fetchall()
         if not rows:
@@ -181,14 +176,9 @@ class MemoryRepository:
             raise ValueError("invalid memory activation")
         now = time.time() if now is None else now
         rows = self._db.execute(
-            """SELECT id, kind, key, content, activation, importance, updated_at, meta_json, scope_key
+            f"""SELECT id, kind, key, content, activation, importance, updated_at, meta_json, scope_key
                FROM memories AS m
-               WHERE m.activation=? AND m.scope_key=? AND m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
-                 )
+               WHERE m.activation=? AND m.scope_key=? AND {LIVE_MEMORY_SQL}
                ORDER BY m.id""",
             (activation, validate_scope(scope), now),
         ).fetchall()
@@ -197,13 +187,8 @@ class MemoryRepository:
     def has(self, kind: str, key: str, *, scope: str = "") -> bool:
         return (
             self._db.execute(
-                """SELECT 1 FROM memories AS m
-               WHERE m.kind=? AND m.key=? AND m.scope_key=? AND m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
-                 )""",
+                f"""SELECT 1 FROM memories AS m
+               WHERE m.kind=? AND m.key=? AND m.scope_key=? AND {LIVE_MEMORY_SQL}""",
                 (kind, key, validate_scope(scope), time.time()),
             ).fetchone()
             is not None
@@ -211,13 +196,8 @@ class MemoryRepository:
 
     def active(self, kind: str, key: str, *, scope: str = "") -> ActiveMemory | None:
         row = self._db.execute(
-            """SELECT id, kind, key, content, importance, meta_json, scope_key FROM memories AS m
-               WHERE m.kind=? AND m.key=? AND m.scope_key=? AND m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
-                 )
+            f"""SELECT id, kind, key, content, importance, meta_json, scope_key FROM memories AS m
+               WHERE m.kind=? AND m.key=? AND m.scope_key=? AND {LIVE_MEMORY_SQL}
                ORDER BY m.id DESC LIMIT 1""",
             (kind, key, validate_scope(scope), time.time()),
         ).fetchone()
@@ -229,8 +209,7 @@ class MemoryRepository:
         placeholders = ",".join("?" for _ in ids)
         rows = self._db.execute(
             f"""SELECT * FROM memories AS m WHERE m.id IN ({placeholders})
-                AND m.superseded_by IS NULL AND (m.expires_at IS NULL OR m.expires_at>?)
-                AND NOT EXISTS (SELECT 1 FROM memory_tombstones t WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key)
+                AND {LIVE_MEMORY_SQL}
                 ORDER BY m.id""",
             (*ids, time.time()),
         ).fetchall()
@@ -347,13 +326,8 @@ class MemoryRepository:
             clause = " AND m.id IN (" + ",".join("?" for _ in ids) + ")"
             params.extend(ids)
         rows = self._db.execute(
-            """SELECT m.* FROM memories m
-               WHERE m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at>?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones t
-                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
-                 )""" + clause + " ORDER BY m.id", params,
+            f"""SELECT m.* FROM memories AS m
+               WHERE {LIVE_MEMORY_SQL}""" + clause + " ORDER BY m.id", params,
         ).fetchall()
         return [self._record(row) for row in rows]
 
@@ -367,14 +341,9 @@ class MemoryRepository:
         clause, params = self._filter_sql(filters)
         rows = self._db.execute(
             f"""SELECT id, kind, key, content, importance, updated_at, meta_json, scope_key
-               FROM memories
-               WHERE superseded_by IS NULL
-                 AND ((activation='recall' AND scope_key='') OR (activation='scoped' AND scope_key!=''))
-                 AND (expires_at IS NULL OR expires_at > ?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=memories.kind AND t.key=memories.key AND t.scope_key=memories.scope_key
-                 ){clause}""",
+               FROM memories AS m
+               WHERE {LIVE_MEMORY_SQL}
+                 AND ((activation='recall' AND scope_key='') OR (activation='scoped' AND scope_key!='')){clause}""",
             (now, *params),
         ).fetchall()
         return [self._record(row) for row in rows]
@@ -388,16 +357,11 @@ class MemoryRepository:
             f"""SELECT id, kind, key, content, authority, evidence_quote,
                       activation, importance, updated_at, meta_json, scope_key,
                       (SELECT COUNT(*) FROM memory_evidence AS e
-                       WHERE e.memory_id=memories.id) AS evidence_count
-               FROM memories
-               WHERE superseded_by IS NULL
-                 AND (expires_at IS NULL OR expires_at > ?)
+                       WHERE e.memory_id=m.id) AS evidence_count
+               FROM memories AS m
+               WHERE {LIVE_MEMORY_SQL}
                  AND (? OR activation!='scoped')
-                 AND (? IS NULL OR activation=?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=memories.kind AND t.key=memories.key AND t.scope_key=memories.scope_key
-                 ){clause}""",
+                 AND (? IS NULL OR activation=?){clause}""",
             (time.time(), include_scoped or bool((filters or {}).get("scope")), activation, activation, *params),
         ).fetchall()
         return [self._record(row) for row in rows]
