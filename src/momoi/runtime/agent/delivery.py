@@ -107,6 +107,7 @@ class BubbleDelivery:
         self.policy = policy
         self.outbox_changed = outbox_changed
         self.tts_provider = tts_provider
+        self.phone_prefetch = {}
         self.voice_audio: OrderedDict[tuple[str, str], AudioOutput] = OrderedDict()
 
     async def prepare_voice(self, turn_id: str, text: str, channel: str) -> dict[str, object] | None:

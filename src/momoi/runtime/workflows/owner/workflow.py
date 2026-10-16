@@ -256,11 +256,27 @@ class OwnerWorkflow:
         context = batch[-1].delivery_context
         if not channel.context_valid(context):
             raise asyncio.CancelledError()
+        from ....channel.napcat.voice_call.speech import PhoneSpeechPrefetch
+        provider = self.bubble_delivery.tts_provider
+        prefetch = PhoneSpeechPrefetch(provider) if callable(getattr(provider, "stream_pcm", None)) else None
+        if prefetch:
+            self.bubble_delivery.phone_prefetch[turn_id] = prefetch
+        try:
+            await self._run_phone_reply(batch, turn_id, channel, context, started, prefetch)
+        finally:
+            if prefetch:
+                self.bubble_delivery.phone_prefetch.pop(turn_id, None)
+                await prefetch.close()
+
+    async def _run_phone_reply(self, batch, turn_id, channel, context, started, prefetch):
+        from ...agent.phone_replyer import PhoneReplyer
         deliveries = []
 
         async def enqueue(paragraph):
             if not channel.context_valid(context):
                 raise asyncio.CancelledError()
+            if prefetch:
+                prefetch.start(paragraph)
             identifier = f"phone-reply-{len(deliveries)}"
             delivery = await self.bubble_delivery.send_voice(
                 paragraph, tool_call_id=identifier, turn_id=turn_id,

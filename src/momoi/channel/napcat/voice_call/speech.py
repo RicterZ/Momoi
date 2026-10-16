@@ -87,3 +87,47 @@ async def bubble_pcm(provider, text: str, *, pause_seconds: float = 0, paced: bo
         for task in tasks.values():
             task.cancel()
         await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+
+class PhoneSpeechPrefetch:
+    """Prepare queued paragraphs ahead of ordered outbox playback."""
+
+    def __init__(self, provider):
+        self.provider = provider
+        self.items = {}
+        self.slots = asyncio.Semaphore(2)
+
+    def start(self, text):
+        if text in self.items:
+            return
+        queue = asyncio.Queue(maxsize=32)
+
+        async def produce():
+            try:
+                async with self.slots:
+                    async with aclosing(self.provider.stream_pcm(text)) as stream:
+                        async for chunk in stream:
+                            await queue.put(chunk)
+                await queue.put(None)
+            except Exception as error:
+                await queue.put(error)
+
+        self.items[text] = (queue, asyncio.create_task(produce()))
+
+    async def stream_pcm(self, text):
+        self.start(text)
+        queue, task = self.items[text]
+        while True:
+            item = await queue.get()
+            if item is None:
+                return
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
+    async def close(self):
+        tasks = [task for _, task in self.items.values()]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.items.clear()

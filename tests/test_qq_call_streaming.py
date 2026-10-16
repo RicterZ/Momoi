@@ -297,3 +297,30 @@ def test_bubble_partial_failure_never_replays_audio_and_continues():
         assert sum(chunk.count(b'\x01') for chunk in chunks) == 2
         assert calls == ['partial', 'next']
     asyncio.run(scenario())
+
+
+def test_phone_prefetch_starts_next_paragraph_before_playback_and_cleans_up():
+    from momoi.channel.napcat.voice_call.speech import PhoneSpeechPrefetch
+    async def run():
+        started = []
+        closed = []
+        class Provider:
+            async def stream_pcm(self, text):
+                started.append(text)
+                try:
+                    yield text.encode()
+                    await asyncio.sleep(60)
+                finally:
+                    closed.append(text)
+        prefetch = PhoneSpeechPrefetch(Provider())
+        prefetch.start('first')
+        prefetch.start('second')
+        await asyncio.sleep(0)
+        assert started == ['first', 'second']
+        stream = prefetch.stream_pcm('first')
+        assert await anext(stream) == b'first'
+        await stream.aclose()
+        await prefetch.close()
+        assert set(closed) == {'first', 'second'}
+        assert not prefetch.items
+    asyncio.run(run())

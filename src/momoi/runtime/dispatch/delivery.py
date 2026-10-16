@@ -105,7 +105,7 @@ class OutboxWorker:
                     try:
                         if not callable(getattr(channel, "send_voice", None)):
                             raise TTSError("voice_not_supported")
-                        provider = self.bubble_delivery.tts_provider
+                        provider = self.bubble_delivery.phone_prefetch.get(row.turn_id, self.bubble_delivery.tts_provider)
                         if provider is None:
                             raise TTSError("tts_not_configured")
                         audio = self.bubble_delivery.voice_audio.get((row.turn_id, row.text))
