@@ -173,6 +173,51 @@ class OwnerWorkflow:
                 results.append(f"Command rejected: {error}")
         return "\n".join(results)
 
+    def _phone_planner_messages(self, batch, turn_id):
+        from ...agent.phone_replyer import PhoneReplyer
+        return PhoneReplyer(self.config, self.store, self.provider).messages(batch, turn_id)
+
+    async def _phone_planner(self, batch, turn_id, channel):
+        from ...agent.workflow import AgentWorkflow
+        from ...turn_support import context_data_message
+        reports = []
+        done = False
+
+        async def report(call):
+            nonlocal done
+            reports.append(call.arguments)
+            done = True
+            return {"ok": True, "forwarded_to_phone_replyer": True}
+
+        spec = {
+            "name": "phone_result",
+            "description": "操作完成或失败后提交实际结果；纯聊天提交空字符串。不直接向用户发声。",
+            "input_schema": {"type": "object", "properties": {
+                "result": {"type": "string", "maxLength": 6000}},
+                "required": ["result"], "additionalProperties": False},
+        }
+        permitted = self.tool_surface.permitted_names("owner") - {"reply", "wait", "end_turn"}
+        tools = [tool for tool in self.tool_surface.conversation_specs() if tool["name"] in permitted]
+        tools.append(spec)
+        draft = TurnDraft()
+        workflow = AgentWorkflow(
+            stage="owner", tool_names=frozenset({"phone_result"}), execute_tool=report,
+            is_complete=lambda: done, completion_result=lambda: {"ok": True},
+            no_tool_correction="请执行必要操作后调用 phone_result；纯聊天 result 留空。",
+        )
+        await self._run_tool_loop(
+            self._system(planner=True),
+            [context_data_message(("runtime_directives",
+                "你是电话后台 Planner。前台已并行回应，禁止直接发消息、代写台词或承诺未完成的操作。"
+                "仅在用户确实要求时执行工具。完成后以 phone_result 提交真实结果与失败原因；纯聊天提交空结果。"), required=True),
+             *self._phone_planner_messages(batch, turn_id)],
+            tools, batch, draft,
+            execution=TurnExecutionSpec("owner", permitted_tools=frozenset({*permitted, "phone_result"})),
+            source_event_id=batch[0].event_id, turn_id=turn_id, delivery_channel=channel,
+            workflow=workflow,
+        )
+        return {"result": reports[-1].get("result", "") if reports else "", "draft": draft}
+
     async def _complete_phone_batch(self, batch, turn_id, channel):
         started = time.monotonic()
         log_event(logger, logging.INFO, "qq_call_turn_started", channel=channel.name,
@@ -214,7 +259,17 @@ class OwnerWorkflow:
             deliveries.append(identifier)
 
         try:
-            text = await PhoneReplyer(self.config, self.store, self.provider).generate(batch, turn_id, enqueue)
+            async with asyncio.TaskGroup() as tasks:
+                planner = tasks.create_task(self._phone_planner(batch, turn_id, channel))
+                reaction = tasks.create_task(PhoneReplyer(self.config, self.store, self.provider).generate(
+                    batch, turn_id, enqueue))
+            text = reaction.result()
+            outcome = planner.result()
+            result = outcome["result"]
+            if result and channel.context_valid(context):
+                supplement = await PhoneReplyer(self.config, self.store, self.provider).generate(
+                    batch, turn_id, enqueue, operation_result=result)
+                text = "\n\n".join(part for part in (text, supplement) if part)
         except BaseException:
             self.store.cancel_pending_outbox(channel.name, "phone_generation_interrupted")
             raise
@@ -241,7 +296,7 @@ class OwnerWorkflow:
             "content": [{"type": "text", "text": text}] if text else [],
             "results": [],
         }, trust="runtime")
-        self.store.commit_turn(batch, self._render_batch(batch), AgentReply([]),
+        self.store.commit_turn(batch, self._render_batch(batch), AgentReply([]), outcome["draft"],
                                turn_id=turn_id, target_channel=channel.name)
         self.outbox_changed.set()
         if self.config.episode_annealing.enabled:

@@ -287,10 +287,23 @@ class TranscriptStore:
             )
         return current
 
-    def replyer_dialogue_rows(self, channel: str, *, limit: int = 96):
+    def replyer_dialogue_rows(self, channel: str, *, limit: int = 96, turn_limit: int | None = None):
         """Actual messages, including the active turn; never journal/tool text."""
         channels = ("napcat", "qq_call") if channel in {"napcat", "qq_call"} else (channel, channel)
-        rows = self._db.execute("""SELECT m.id, m.role, m.content, m.created_at,
+        turn_filter = ""
+        turn_args = ()
+        if turn_limit:
+            turn_filter = """AND m.turn_id IN (
+                SELECT DISTINCT m2.turn_id FROM messages m2
+                LEFT JOIN outbox o2 ON o2.id=m2.outbox_id
+                WHERE o2.target_channel IN (?, ?) OR EXISTS (
+                    SELECT 1 FROM json_each(m2.source_event_ids_json) src2
+                    JOIN events e2 ON e2.id=src2.value
+                    WHERE json_extract(CASE WHEN json_valid(e2.payload_json)
+                        THEN e2.payload_json ELSE 'null' END, '$.channel') IN (?, ?))
+                ORDER BY m2.id DESC LIMIT ?)"""
+            turn_args = (*channels, *channels, turn_limit)
+        rows = self._db.execute(f"""SELECT m.id, m.role, m.content, m.created_at,
                     m.delivery_state, m.turn_id FROM messages m
                     LEFT JOIN outbox o ON o.id=m.outbox_id
                     WHERE ((m.role='user' AND EXISTS (
@@ -299,7 +312,11 @@ class TranscriptStore:
                         WHERE json_extract(CASE WHEN json_valid(e.payload_json) THEN e.payload_json ELSE 'null' END, '$.channel') IN (?, ?))) OR
                         (m.role='assistant' AND m.delivery_state='delivered'
                          AND o.target_channel IN (?, ?)))
-                    ORDER BY m.id DESC LIMIT ?""", (*channels, *channels, limit)).fetchall()
+                    {turn_filter}
+                    ORDER BY m.id DESC LIMIT ?""", (*channels, *channels, *turn_args, -1 if turn_limit else limit)).fetchall()
+        if turn_limit:
+            identifiers = list(dict.fromkeys(row["turn_id"] for row in rows))[:turn_limit]
+            rows = [row for row in rows if row["turn_id"] in identifiers]
         return [dict(row) for row in reversed(rows)]
 
     def recent_conversation_messages(
