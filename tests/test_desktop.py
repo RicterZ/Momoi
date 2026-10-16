@@ -18,7 +18,7 @@ def test_desktop_manages_embedding_across_config_entry_points(tmp_path, monkeypa
 
     prepare_workspace(tmp_path)
     path = tmp_path / "providers.yaml"
-    catalog = yaml.safe_load(path.read_text())
+    catalog = yaml.safe_load(path.read_text(encoding="utf-8"))
     catalog["services"]["embedding"]["adapter"] = "openai"
     catalog["bindings"]["embedding"].update(enabled=False, options={
         "endpoint": "https://custom.example/v1/embeddings", "model": "custom", "dimensions": 32})
@@ -176,12 +176,12 @@ def test_desktop_system_timezone_default_preserves_existing_selection(tmp_path, 
     monkeypatch.setenv("MOMOI_DESKTOP_TIMEZONE", "Asia/Shanghai")
     prepare_workspace(tmp_path)
     path = tmp_path / "config.json"
-    app = json.loads(path.read_text())
+    app = json.loads(path.read_text(encoding="utf-8"))
     assert app["timezone"] == "Asia/Shanghai"
     app["timezone"] = "America/New_York"
     atomic_write(path, json.dumps(app))
     prepare_workspace(tmp_path)
-    assert json.loads(path.read_text())["timezone"] == "America/New_York"
+    assert json.loads(path.read_text(encoding="utf-8"))["timezone"] == "America/New_York"
 
 
 def test_desktop_affinity_defaults_seed_missing_and_preserve_existing(tmp_path):
@@ -190,16 +190,16 @@ def test_desktop_affinity_defaults_seed_missing_and_preserve_existing(tmp_path):
     expected = files("momoi").joinpath("prompts/affinity.md").read_text(encoding="utf-8")
     prepare_workspace(tmp_path)
     path = tmp_path / "prompts/AFFINITY.md"
-    assert path.read_text() == expected
+    assert path.read_text(encoding="utf-8") == expected
     path.unlink()
     prepare_workspace(tmp_path)
-    assert path.read_text() == expected
+    assert path.read_text(encoding="utf-8") == expected
     path.write_text("自定义关系边界", encoding="utf-8")
     prepare_workspace(tmp_path)
-    assert path.read_text() == "自定义关系边界"
+    assert path.read_text(encoding="utf-8") == "自定义关系边界"
     path.write_text("", encoding="utf-8")
     prepare_workspace(tmp_path)
-    assert path.read_text() == ""
+    assert path.read_text(encoding="utf-8") == ""
 
 
 def test_desktop_image_prompt_seeds_only_missing_file(tmp_path):
@@ -208,11 +208,11 @@ def test_desktop_image_prompt_seeds_only_missing_file(tmp_path):
     prepare_workspace(tmp_path)
     path = tmp_path / "prompts/IMAGE_RECOGNITION.md"
     expected = files("momoi").joinpath("prompts/image_recognition.md").read_text(encoding="utf-8")
-    assert path.read_text() == expected
+    assert path.read_text(encoding="utf-8") == expected
     path.unlink()
     prepare_workspace(tmp_path)
-    assert path.read_text() == expected
+    assert path.read_text(encoding="utf-8") == expected
     for content in ("自定义图片识别", ""):
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8")
         prepare_workspace(tmp_path)
-        assert path.read_text() == content
+        assert path.read_text(encoding="utf-8") == content

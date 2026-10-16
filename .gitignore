@@ -54,6 +54,5 @@ desktop/Momoi.Desktop/keys/*.pem
 /docs/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.md
 /docs/architecture/
 
-# Local agent instructions and publishing helper.
+# Local agent instructions.
 /AGENTS.md
-/packaging/windows/publish_cos.py

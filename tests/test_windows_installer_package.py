@@ -22,3 +22,12 @@ def test_distribution_layout_excludes_diagnostics(tmp_path):
     with zipfile.ZipFile(result) as archive:
         assert set(archive.namelist()) == {name for name in files if name.startswith(('Momoi-Setup-', 'components/'))}
         assert archive.read('components/Momoi-QQ-Components-1.1.2-pair-x64.exe') == b'qq'
+
+
+def test_github_release_publishes_full_installer_not_online_bootstrap():
+    workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/windows.yml').read_text(encoding='utf-8')
+    publish = workflow.split('  publish-release:', 1)[1]
+    upload = next(line for line in publish.splitlines() if 'gh release upload' in line)
+    assert 'Momoi-Windows-${RELEASE_TAG#v}-x64.zip' in upload
+    assert '${installers[0]}' in upload
+    assert 'Online-Setup' not in upload

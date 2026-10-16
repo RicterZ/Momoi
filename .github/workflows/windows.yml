@@ -39,7 +39,7 @@ jobs:
         id: version
         shell: pwsh
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || format('v{0}', inputs.version) }}
           BUILD_VERSION: ${{ inputs.version }}
         run: |
           if ($env:GITHUB_EVENT_NAME -eq 'release') {
@@ -179,7 +179,7 @@ jobs:
           if-no-files-found: ignore
 
   publish-release:
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || (inputs.version != '' && inputs.installer_run == '')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -195,7 +195,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || format('v{0}', inputs.version) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -206,4 +206,4 @@ jobs:
             exit 1
           fi
           python packaging/windows/package_installer.py --directory dist/windows --version "${RELEASE_TAG#v}"
-          gh release upload "$RELEASE_TAG" "dist/windows/Momoi-Windows-${RELEASE_TAG#v}-x64.zip" "dist/windows/Momoi-Online-Setup-${RELEASE_TAG#v}-x64.exe" --clobber
+          gh release upload "$RELEASE_TAG" "dist/windows/Momoi-Windows-${RELEASE_TAG#v}-x64.zip" "${installers[0]}" --clobber

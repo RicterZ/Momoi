@@ -105,7 +105,7 @@ def test_code_zip_ships_windows_bridge_and_portable_media_worker(tmp_path, monke
     for name, content in paths.items():
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8")
     monkeypatch.setattr(module, 'ROOT', tmp_path)
     monkeypatch.setattr(module, 'runtime_requirements', lambda: '')
     monkeypatch.setitem(sys.modules, 'prepare_qq_call', SimpleNamespace(
