@@ -4,30 +4,14 @@ import base64
 import binascii
 import hashlib
 import json
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from ...models import IncomingMessage
+from ...segments import image_block, visual_segments
 
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
-
-
-def visual_segments(segments: Sequence[dict[str, Any]]) -> Iterator[dict[str, Any]]:
-    for segment in segments:
-        if not isinstance(segment, dict):
-            continue
-        data = segment.get("data")
-        if not isinstance(data, dict):
-            continue
-        if segment.get("type") == "image" and str(data.get("sub_type", "0")) != "1":
-            yield data
-        quoted = data.get("_quoted")
-        if isinstance(quoted, dict):
-            yield from visual_segments(quoted.get("segments") or [])
-        for node in data.get("_forward") or []:
-            if isinstance(node, dict):
-                yield from visual_segments(node.get("segments") or [])
 
 
 class ImageStore:
@@ -83,14 +67,7 @@ class ImageStore:
         ).fetchone()
         if row is None:
             return None
-        return {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": row["media_type"],
-                "data": base64.b64encode(row["data"]).decode("ascii"),
-            },
-        }
+        return image_block(row["media_type"], base64.b64encode(row["data"]).decode("ascii"))
 
     def image_history_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Request-only enrichment; do not alter visible conversation records."""

@@ -25,6 +25,7 @@ from .media import (
     safe_filename,
 )
 from ...models import IncomingMessage, OwnerInputStatus
+from ...segments import image_block, visual_segments
 
 
 logger = logging.getLogger(__name__)
@@ -549,17 +550,7 @@ class WeixinChannel:
         self, segments: tuple[dict[str, Any], ...]
     ) -> list[dict[str, Any]]:
         blocks: list[dict[str, Any]] = []
-        for segment in segments:
-            data = segment.get("data")
-            if segment.get("type") == "reply" and isinstance(data, dict):
-                quoted = data.get("_quoted")
-                if isinstance(quoted, dict) and isinstance(
-                    quoted.get("segments"), list
-                ):
-                    blocks.extend(self.content_blocks(tuple(quoted["segments"])))
-                continue
-            if segment.get("type") != "image" or not isinstance(data, dict):
-                continue
+        for data in visual_segments(segments):
             if data.get("_image_id"):
                 blocks.append({"type": "text", "text": f"[Image attachment id={data['_image_id']}]"})
             source = data.get("file")
@@ -572,18 +563,7 @@ class WeixinChannel:
                 encoded = base64.b64encode(path.read_bytes()).decode("ascii")
             except OSError:
                 continue
-            blocks.append(
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": str(
-                            data.get("media_type") or media_type(path, "image/jpeg")
-                        ),
-                        "data": encoded,
-                    },
-                }
-            )
+            blocks.append(image_block(str(data.get("media_type") or media_type(path, "image/jpeg")), encoded))
         return blocks
 
     def workflow_variables(self) -> dict[str, str]:

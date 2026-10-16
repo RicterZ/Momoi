@@ -4,6 +4,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 from xml.sax.saxutils import escape
 
+from ...segments import image_block, visual_segments
 from .face_names import QQ_FACE_NAMES
 
 
@@ -76,25 +77,7 @@ def image_blocks(
     segments: list[dict[str, Any]] | tuple[dict[str, Any], ...],
 ) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = []
-    for segment in segments:
-        kind = segment.get("type")
-        data = segment.get("data")
-        if kind == "reply" and isinstance(data, dict):
-            quoted = data.get("_quoted")
-            if isinstance(quoted, dict) and isinstance(quoted.get("segments"), list):
-                blocks.extend(image_blocks(quoted["segments"]))
-            continue
-        if kind == "forward" and isinstance(data, dict):
-            nodes = data.get("_forward")
-            if isinstance(nodes, list):
-                for node in nodes:
-                    if isinstance(node, dict) and isinstance(
-                        node.get("segments"), list
-                    ):
-                        blocks.extend(image_blocks(node["segments"]))
-            continue
-        if not is_visual_image(segment):
-            continue
+    for data in visual_segments(segments):
         if data.get("_image_id"):
             blocks.append({"type": "text", "text": f"[Image attachment id={data['_image_id']}]"})
         source = data.get("url") or data.get("file")
@@ -103,16 +86,9 @@ def image_blocks(
         if source.startswith(("http://", "https://")):
             blocks.append({"type": "image", "source": {"type": "url", "url": source}})
         elif source.startswith("base64://"):
-            blocks.append(
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": str(data.get("media_type") or "image/jpeg"),
-                        "data": source.removeprefix("base64://"),
-                    },
-                }
-            )
+            blocks.append(image_block(
+                str(data.get("media_type") or "image/jpeg"), source.removeprefix("base64://"),
+            ))
     return blocks
 
 
