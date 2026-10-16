@@ -1,7 +1,9 @@
 from ..tools.presentation import present_result
+import asyncio
 import json
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from importlib.resources import files
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -15,6 +17,7 @@ from ..llm.errors import ProviderError
 from .agent.budget import TOOL_RESULT_FITTER
 
 logger = logging.getLogger(__name__)
+turns_logger = logging.getLogger("momoi.runtime.turns")
 PROMPT_ROOT = files("momoi").joinpath("prompts")
 SYSTEM_PROMPT_PATH = PROMPT_ROOT.joinpath("system.md")
 OWNER_PROMPT_PATH = PROMPT_ROOT.joinpath("owner.md")
@@ -243,6 +246,59 @@ class ExternalToolTurnError(RuntimeError):
 
 class TurnBudgetExceeded(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class TurnFailure:
+    kind: str  # external | budget | protocol | provider | runtime
+    reason: str
+    error: BaseException
+
+
+async def run_classified_turn(
+    store: Any,
+    work: Awaitable[None],
+    *,
+    stage: str,
+    turn_id: str,
+    log_fields: dict[str, object],
+    protocol_errors: tuple[type[BaseException], ...] = (),
+) -> TurnFailure | None:
+    """Run a Turn body; log and classify failure. Cancellation propagates."""
+    try:
+        try:
+            await work
+        except (ExternalToolTurnError, TurnBudgetExceeded, asyncio.CancelledError, *protocol_errors):
+            raise
+        except Exception as error:
+            if store.turn_has_external_effect(turn_id):
+                raise ExternalToolTurnError(type(error).__name__) from error
+            raise
+        return None
+    except ExternalToolTurnError as error:
+        reason = "fatal_error_after_external_tool"
+        log_event(turns_logger, logging.ERROR, "turn_failure", stage=stage, turn_id=turn_id,
+                  **log_fields, reason=reason, exc_info=True)
+        store.open_reconciliation(turn_id, reason)
+        return TurnFailure("external", reason, error)
+    except Exception as error:
+        if isinstance(error, TurnBudgetExceeded):
+            kind = "budget"
+        elif isinstance(error, protocol_errors):
+            kind = "protocol"
+        elif isinstance(error, ProviderError):
+            kind = "provider"
+        else:
+            kind = "runtime"
+        log_event(
+            turns_logger,
+            logging.WARNING if kind in {"budget", "protocol"} else logging.ERROR,
+            "turn_failure", stage=stage, turn_id=turn_id, **log_fields,
+            **({} if kind == "budget" else {"layer": kind}),
+            error_type=type(error).__name__, reason=safe_preview(str(error), 300),
+            **({"exc_info": True} if kind == "runtime" else {}),
+        )
+        return TurnFailure(kind, type(error).__name__, error)
 
 
 class OwnerMessagesChanged(RuntimeError):

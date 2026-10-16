@@ -8,17 +8,15 @@ from ....channel import Channel
 from ....observability.events import log_event
 from ....observability.values import safe_preview
 from ....models import AgentReply, IncomingMessage, TurnDraft
-from ....llm.errors import ProviderError
 from ...agent import TurnExecutionSpec, WorkflowProtocolError
 from ...context.triggers import triggered_memory_context
 from ...context.trigger_monitor import record_trigger_injections
 from ...context.current_state import pack_current_turn_context
 from ...turn_support import (
-    ExternalToolTurnError,
-    TurnBudgetExceeded,
     owner_content_blocks as _owner_content_blocks,
     provider_failure_message as _provider_failure_message,
     reconciliation_message as _reconciliation_message,
+    run_classified_turn,
     turn_tool_names as _turn_tool_names,
 )
 
@@ -118,93 +116,22 @@ class OwnerWorkflow:
             return
         if stop.is_set():
             return
-        try:
-            try:
-                await self._complete_batch(batch, turn_id)
-            except (ExternalToolTurnError, WorkflowProtocolError, TurnBudgetExceeded, asyncio.CancelledError):
-                raise
-            except Exception as error:
-                if self.store.turn_has_external_effect(turn_id):
-                    raise ExternalToolTurnError(type(error).__name__) from error
-                raise
+        failure = await run_classified_turn(
+            self.store, self._complete_batch(batch, turn_id),
+            stage="owner", turn_id=turn_id, log_fields={"channel": channel.name},
+            protocol_errors=(WorkflowProtocolError,),
+        )
+        if failure is None:
             return
-        except ExternalToolTurnError:
-            log_event(
-                logger,
-                logging.ERROR,
-                "turn_failure",
-                stage="owner",
-                turn_id=turn_id,
-                channel=channel.name,
-                reason="fatal_error_after_external_tool",
-                exc_info=True,
-            )
-            self.store.open_reconciliation(turn_id, "fatal_error_after_external_tool")
-            failure_message = _reconciliation_message(turn_id)
-            failure_reason = "fatal_error_after_external_tool"
-        except TurnBudgetExceeded as error:
-            log_event(
-                logger,
-                logging.WARNING,
-                "turn_failure",
-                stage="owner",
-                turn_id=turn_id,
-                channel=channel.name,
-                error_type=type(error).__name__,
-                reason=safe_preview(str(error), 300),
-            )
-            failure_message = (
-                "这次处理已达到执行上限，已暂停，任务尚未完成。"
-            )
-            failure_reason = type(error).__name__
-        except WorkflowProtocolError as error:
-            log_event(
-                logger,
-                logging.WARNING,
-                "turn_failure",
-                stage="owner",
-                turn_id=turn_id,
-                channel=channel.name,
-                layer="protocol",
-                error_type=type(error).__name__,
-                reason=safe_preview(str(error), 300),
-            )
-            failure_message = (
-                "这次处理连续出错，已经停下了，没能完成。"
-            )
-            failure_reason = type(error).__name__
-        except asyncio.CancelledError:
-            raise
-        except ProviderError as error:
-            log_event(
-                logger,
-                logging.ERROR,
-                "turn_failure",
-                stage="owner",
-                turn_id=turn_id,
-                channel=channel.name,
-                layer="provider",
-                error_type=type(error).__name__,
-                reason=safe_preview(str(error), 300),
-            )
-            failure_message = _provider_failure_message(error)
-            failure_reason = type(error).__name__
-        except Exception as error:
-            log_event(
-                logger,
-                logging.ERROR,
-                "turn_failure",
-                stage="owner",
-                turn_id=turn_id,
-                channel=channel.name,
-                layer="runtime",
-                error_type=type(error).__name__,
-                exc_info=True,
-            )
-            failure_message = (
-                "处理时发生内部错误，已停止，任务尚未完成。"
-            )
-            failure_reason = type(error).__name__
+        if failure.kind == "provider":
+            failure_message = _provider_failure_message(failure.error)
+        else:
+            failure_message = {
+                "external": _reconciliation_message(turn_id),
+                "budget": "这次处理已达到执行上限，已暂停，任务尚未完成。",
+                "protocol": "这次处理连续出错，已经停下了，没能完成。",
+                "runtime": "处理时发生内部错误，已停止，任务尚未完成。",
+            }[failure.kind]
         owner_content = self._render_batch(batch)
         self.store.commit_turn(
             batch,
@@ -214,7 +141,7 @@ class OwnerWorkflow:
             target_channel=channel.name,
         )
         self.outbox_changed.set()
-        self.store.record_turn_failure(turn_id, failure_reason)
+        self.store.record_turn_failure(turn_id, failure.reason)
 
     def _render_batch(self, batch: list[IncomingMessage]) -> str:
         return "\n".join(message.text for message in batch if not message.delivery_context.get("channel_notice"))

@@ -3,23 +3,29 @@ import logging
 
 from ...storage.core.timestamps import context_timestamp
 from ...observability.events import log_event
-from ...observability.values import safe_preview
 from ...models import TurnDraft
-from ...llm.errors import ProviderError
 from ..agent import TurnExecutionSpec
 from ..context.current_state import pack_current_turn_context
 from ..context.presentation import due_goal_lines
 from ..turn_support import (
-    ExternalToolTurnError,
     GOAL_PROMPT_PATH,
     GOAL_SYSTEM_PROMPT,
-    TurnBudgetExceeded,
+    run_classified_turn,
     live_prompt as _live_prompt,
     reconciliation_message as _reconciliation_message,
     turn_tool_names as _turn_tool_names,
 )
 
 logger = logging.getLogger("momoi.runtime.turns")
+
+
+def _goal_reconciliation_draft(turn_id: str) -> TurnDraft:
+    return TurnDraft(
+        notification_messages=[_reconciliation_message(turn_id)],
+        notification_key="goal.reconciliation",
+        notification_priority="urgent",
+        notification_reason="External action outcome requires owner confirmation.",
+    )
 
 
 class GoalWorkflow:
@@ -33,16 +39,7 @@ class GoalWorkflow:
             self.store.release_goal_claim(goal_id)
             return
         if state == "needs_reconciliation":
-            self.store.commit_autonomous_turn(
-                goal_id,
-                TurnDraft(
-                    notification_messages=[_reconciliation_message(turn_id)],
-                    notification_key="goal.reconciliation",
-                    notification_priority="urgent",
-                    notification_reason="External action outcome requires owner confirmation.",
-                ),
-                turn_id=turn_id,
-            )
+            self.store.commit_autonomous_turn(goal_id, _goal_reconciliation_draft(turn_id), turn_id=turn_id)
             self.outbox_changed.set()
             self.store.record_turn_failure(
                 turn_id, "process_interrupted_after_external_effect"
@@ -51,74 +48,19 @@ class GoalWorkflow:
         if stop.is_set():
             return
         try:
-            try:
-                await self._complete_goal(goal_id, turn_id)
-            except (ExternalToolTurnError, TurnBudgetExceeded, asyncio.CancelledError):
-                raise
-            except Exception as error:
-                if self.store.turn_has_external_effect(turn_id):
-                    raise ExternalToolTurnError(type(error).__name__) from error
-                raise
-            return
-        except ExternalToolTurnError:
-            log_event(
-                logger,
-                logging.ERROR,
-                "turn_failure",
-                stage="goal",
-                turn_id=turn_id,
-                goal_id=goal_id,
-                reason="fatal_error_after_external_tool",
-                exc_info=True,
+            failure = await run_classified_turn(
+                self.store, self._complete_goal(goal_id, turn_id),
+                stage="goal", turn_id=turn_id, log_fields={"goal_id": goal_id},
             )
-            self.store.open_reconciliation(turn_id, "fatal_error_after_external_tool")
-            draft = TurnDraft(
-                notification_messages=[_reconciliation_message(turn_id)],
-                notification_key="goal.reconciliation",
-                notification_priority="urgent",
-                notification_reason="External action outcome requires owner confirmation.",
-            )
-            failure_reason = "fatal_error_after_external_tool"
-        except TurnBudgetExceeded as error:
-            log_event(
-                logger,
-                logging.WARNING,
-                "turn_failure",
-                stage="goal",
-                turn_id=turn_id,
-                goal_id=goal_id,
-                error_type=type(error).__name__,
-                reason=safe_preview(str(error), 300),
-            )
-            draft = TurnDraft(
-                notification_messages=[
-                    "这项任务已达到本轮执行上限，已暂停，尚未完成。"
-                ],
-                notification_key="goal.budget",
-                notification_priority="urgent",
-                notification_reason="Autonomous turn budget exhausted.",
-            )
-            failure_reason = type(error).__name__
         except asyncio.CancelledError:
             if self._stop_requested:
                 self.store.cancel_turn(turn_id)
             raise
-        except Exception as error:
-            provider_error = isinstance(error, ProviderError)
-            log_event(
-                logger,
-                logging.ERROR,
-                "turn_failure",
-                stage="goal",
-                turn_id=turn_id,
-                goal_id=goal_id,
-                layer="provider" if provider_error else "runtime",
-                error_type=type(error).__name__,
-                reason=safe_preview(str(error), 300),
-                **({} if provider_error else {"exc_info": True}),
-            )
+        if failure is None:
+            return
+        if failure.kind in {"provider", "runtime"}:
             retry_at = self.store.defer_goal_failure(goal_id)
-            self.store.record_turn_failure(turn_id, type(error).__name__)
+            self.store.record_turn_failure(turn_id, failure.reason)
             self.agenda_changed.set()
             log_event(
                 logger,
@@ -130,10 +72,21 @@ class GoalWorkflow:
                 retry_at=retry_at,
             )
             return
+        if failure.kind == "external":
+            draft = _goal_reconciliation_draft(turn_id)
+        else:
+            draft = TurnDraft(
+                notification_messages=[
+                    "这项任务已达到本轮执行上限，已暂停，尚未完成。"
+                ],
+                notification_key="goal.budget",
+                notification_priority="urgent",
+                notification_reason="Autonomous turn budget exhausted.",
+            )
         self.store.commit_autonomous_turn(goal_id, draft, turn_id=turn_id)
         if draft.notification_messages:
             self.outbox_changed.set()
-        self.store.record_turn_failure(turn_id, failure_reason)
+        self.store.record_turn_failure(turn_id, failure.reason)
         self.agenda_changed.set()
 
     async def _complete_goal(self, goal_id: str, turn_id: str) -> None:
