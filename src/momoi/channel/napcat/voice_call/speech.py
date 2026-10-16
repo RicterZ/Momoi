@@ -89,8 +89,8 @@ async def bubble_pcm(provider, text: str, *, pause_seconds: float = 0, paced: bo
         await asyncio.gather(*tasks.values(), return_exceptions=True)
 
 
-class PhoneSpeechPrefetch:
-    """Prepare queued paragraphs ahead of ordered outbox playback."""
+class BufferedBubbleAudio:
+    """Adapt the existing bubble pipeline to paragraphs arriving incrementally."""
 
     def __init__(self, provider):
         self.provider = provider
@@ -105,7 +105,7 @@ class PhoneSpeechPrefetch:
         async def produce():
             try:
                 async with self.slots:
-                    async with aclosing(self.provider.stream_pcm(text)) as stream:
+                    async with aclosing(bubble_pcm(self.provider, text)) as stream:
                         async for chunk in stream:
                             await queue.put(chunk)
                 await queue.put(None)

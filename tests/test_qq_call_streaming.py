@@ -300,7 +300,7 @@ def test_bubble_partial_failure_never_replays_audio_and_continues():
 
 
 def test_phone_prefetch_starts_next_paragraph_before_playback_and_cleans_up():
-    from momoi.channel.napcat.voice_call.speech import PhoneSpeechPrefetch
+    from momoi.channel.napcat.voice_call.speech import BufferedBubbleAudio
     async def run():
         started = []
         closed = []
@@ -312,10 +312,12 @@ def test_phone_prefetch_starts_next_paragraph_before_playback_and_cleans_up():
                     await asyncio.sleep(60)
                 finally:
                     closed.append(text)
-        prefetch = PhoneSpeechPrefetch(Provider())
+        prefetch = BufferedBubbleAudio(Provider())
         prefetch.start('first')
         prefetch.start('second')
-        await asyncio.sleep(0)
+        async with asyncio.timeout(1):
+            while len(started) < 2:
+                await asyncio.sleep(0)
         assert started == ['first', 'second']
         stream = prefetch.stream_pcm('first')
         assert await anext(stream) == b'first'

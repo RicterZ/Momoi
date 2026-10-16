@@ -256,9 +256,9 @@ class OwnerWorkflow:
         context = batch[-1].delivery_context
         if not channel.context_valid(context):
             raise asyncio.CancelledError()
-        from ....channel.napcat.voice_call.speech import PhoneSpeechPrefetch
+        from ....channel.napcat.voice_call.speech import BufferedBubbleAudio
         provider = self.bubble_delivery.tts_provider
-        prefetch = PhoneSpeechPrefetch(provider) if callable(getattr(provider, "stream_pcm", None)) else None
+        prefetch = BufferedBubbleAudio(provider) if callable(getattr(provider, "stream_pcm", None)) else None
         if prefetch:
             self.bubble_delivery.phone_prefetch[turn_id] = prefetch
         try:
