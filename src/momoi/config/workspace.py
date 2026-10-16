@@ -86,7 +86,7 @@ def bootstrap(config_path: Path) -> bool:
     )
     _create(root / "prompts/HEARTBEAT.md", "")
     seed_image_recognition_prompt(root / "prompts")
-    for name in ("planner", "replyer", "affinity"):
+    for name in ("planner", "replyer", "phone_replyer", "affinity"):
         _create(root / f"prompts/{name.upper()}.md",
                 files("momoi").joinpath(f"prompts/{name}.md").read_text(encoding="utf-8"))
     return _create(config_path, json.dumps(config, ensure_ascii=False, indent=2) + "\n")

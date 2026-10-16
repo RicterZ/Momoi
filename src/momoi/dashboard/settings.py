@@ -30,6 +30,7 @@ class DashboardSettings:
                 PromptFile("affinity", config.soul_prompt_path.parent / "AFFINITY.md", True),
                 PromptFile("image_recognition", config.soul_prompt_path.parent / "IMAGE_RECOGNITION.md", True),
                 PromptFile("replyer", config.soul_prompt_path.parent / "REPLYER.md", True),
+                PromptFile("phone_replyer", config.soul_prompt_path.parent / "PHONE_REPLYER.md", True),
             )
         )
 
@@ -39,7 +40,7 @@ class DashboardSettings:
     def read(self, prompt_id: str) -> dict[str, object]:
         item = self._file(prompt_id)
         content = item.path.read_text(encoding="utf-8") if item.path.is_file() else ""
-        if not content and prompt_id in {"planner", "replyer", "affinity", "image_recognition"}:
+        if not content and prompt_id in {"planner", "replyer", "phone_replyer", "affinity", "image_recognition"}:
             from importlib.resources import files
             content = files("momoi").joinpath(f"prompts/{prompt_id}.md").read_text(encoding="utf-8")
         return {

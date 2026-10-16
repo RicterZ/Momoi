@@ -120,3 +120,26 @@ def test_phone_runtime_thinking_override(tmp_path, effort):
         assert requested_thinking_effort('medium') == ('off' if effort is None else effort or 'medium')
         return ProviderResponse([{'type': 'text', 'text': '你好'}], [])
     asyncio.run(PhoneReplyer(cfg, store, SimpleNamespace(complete=complete)).generate([], 'now'))
+
+
+def test_phone_prompt_dashboard_edit_is_used_next_request(tmp_path):
+    from dataclasses import replace
+    from momoi.dashboard.settings import DashboardSettings
+    cfg = replace(config(str(tmp_path)), soul_prompt_path=tmp_path / 'SOUL.md',
+                  heartbeat_prompt_path=tmp_path / 'HEARTBEAT.md')
+    settings = DashboardSettings.from_config(cfg)
+    assert settings.read('phone_replyer')['filename'] == 'PHONE_REPLYER.md'
+    assert 'QQ 电话' in settings.read('phone_replyer')['content']
+    settings.update('phone_replyer', '电话自定义表达要求')
+    assert (tmp_path / 'PHONE_REPLYER.md').read_text() == '电话自定义表达要求'
+    store = Mock()
+    store.always_memory_context.return_value = ''
+    store.scoped_memory_context.return_value = ''
+    store.self_state_context.return_value = ''
+    store.replyer_dialogue_rows.return_value = []
+    async def complete(system, messages, tools):
+        assert '电话自定义表达要求' in system
+        return ProviderResponse([{'type': 'text', 'text': '你好'}], [])
+    asyncio.run(PhoneReplyer(cfg, store, SimpleNamespace(complete=complete)).generate([], 'now'))
+    with pytest.raises(ValueError):
+        settings.update('phone_replyer', '')
