@@ -1,5 +1,7 @@
 """Tool-free phone expression over a bounded projection of real dialogue."""
 import re
+import asyncio
+from ...models import ProviderResponse
 from contextlib import aclosing
 from importlib.resources import files
 from datetime import datetime
@@ -51,10 +53,27 @@ class PhoneReplyer(ReplyerBase):
                 streamed = True
                 pending = ""
                 response = None
+                received = ""
                 async with aclosing(self.provider.stream(system, messages, [])) as stream:
-                    async for event in stream:
+                    while True:
+                        try:
+                            event = await asyncio.wait_for(anext(stream), timeout=15)
+                        except StopAsyncIteration:
+                            break
+                        except TimeoutError:
+                            raise ValueError("phone stream idle timeout")
                         if event.type == "text_delta":
+                            received += event.delta
                             pending += event.delta
+                            if "[END]" in pending:
+                                pending = pending.split("[END]", 1)[0]
+                                for paragraph in pending.split("\n\n"):
+                                    paragraph = clean_phone_text(paragraph)
+                                    if paragraph:
+                                        await on_paragraph(paragraph)
+                                pending = ""
+                                response = ProviderResponse([{"type": "text", "text": received.split("[END]", 1)[0]}], [])
+                                break
                             while "\n\n" in pending:
                                 paragraph, pending = pending.split("\n\n", 1)
                                 paragraph = clean_phone_text(paragraph)
@@ -89,5 +108,6 @@ class PhoneReplyer(ReplyerBase):
 
 def clean_phone_text(text):
     # SOUL may teach chat-only actions; never pass those markers to TTS.
+    text = text.split("[END]", 1)[0]
     text = re.sub(r"(?:emotion|qq)://[^\s]+", "", text).strip()
     return "" if text == "[WAIT]" else text

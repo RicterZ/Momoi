@@ -176,3 +176,49 @@ def test_phone_stream_buffers_paragraphs_and_flushes_only_on_success(tmp_path, f
     else:
         asyncio.run(replyer.generate([], 'now', enqueue))
         assert sent == ['好', '我觉得可以', '最后一句']
+
+
+def test_phone_end_marker_flushes_tail_and_ignores_trailing_output(tmp_path):
+    from momoi.llm.streaming import ProviderEvent
+    store = Mock()
+    store.always_memory_context.return_value = ''
+    store.scoped_memory_context.return_value = ''
+    store.self_state_context.return_value = ''
+    store.replyer_dialogue_rows.return_value = []
+    sent = []
+    async def stream(*args):
+        yield ProviderEvent('text_delta', '好\n\n我觉得可以[EN')
+        assert sent == ['好']
+        yield ProviderEvent('text_delta', 'D]不要朗读')
+        assert sent == ['好', '我觉得可以']
+        yield ProviderEvent('text_delta', '更多不要朗读')
+        yield ProviderEvent('response', data=ProviderResponse(
+            [{'type': 'text', 'text': '好\n\n我觉得可以[END]不要朗读'}], []))
+    async def enqueue(text):
+        sent.append(text)
+    result = asyncio.run(PhoneReplyer(config(str(tmp_path)), store, SimpleNamespace(stream=stream)).generate([], 'now', enqueue))
+    assert result == '好\n\n我觉得可以'
+    assert sent == ['好', '我觉得可以']
+
+
+def test_phone_stream_timeout_does_not_speak_incomplete_tail(tmp_path, monkeypatch):
+    from momoi.llm.streaming import ProviderEvent
+    import momoi.runtime.agent.phone_replyer as module
+    original = asyncio.wait_for
+    async def short_timeout(awaitable, timeout):
+        return await original(awaitable, .01)
+    monkeypatch.setattr(module.asyncio, 'wait_for', short_timeout)
+    store = Mock()
+    store.always_memory_context.return_value = ''
+    store.scoped_memory_context.return_value = ''
+    store.self_state_context.return_value = ''
+    store.replyer_dialogue_rows.return_value = []
+    sent = []
+    async def stream(*args):
+        yield ProviderEvent('text_delta', '好\n\n我觉')
+        await asyncio.sleep(60)
+    async def enqueue(text):
+        sent.append(text)
+    with pytest.raises(ValueError, match='idle timeout'):
+        asyncio.run(PhoneReplyer(config(str(tmp_path)), store, SimpleNamespace(stream=stream)).generate([], 'now', enqueue))
+    assert sent == ['好']
