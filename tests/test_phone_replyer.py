@@ -129,7 +129,7 @@ def test_phone_prompt_dashboard_edit_is_used_next_request(tmp_path):
                   heartbeat_prompt_path=tmp_path / 'HEARTBEAT.md')
     settings = DashboardSettings.from_config(cfg)
     assert settings.read('phone_replyer')['filename'] == 'PHONE_REPLYER.md'
-    assert 'QQ 电话' in settings.read('phone_replyer')['content']
+    assert '语音通话' in settings.read('phone_replyer')['content']
     settings.update('phone_replyer', '电话自定义表达要求')
     assert (tmp_path / 'PHONE_REPLYER.md').read_text() == '电话自定义表达要求'
     store = Mock()
