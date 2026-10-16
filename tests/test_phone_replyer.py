@@ -102,3 +102,21 @@ def test_phone_removes_chat_actions_before_tts(tmp_path):
         return ProviderResponse([{'type': 'text', 'text': '我在听呢\n\nemotion://content-sigh\nqq://poke'}], [])
     replyer = PhoneReplyer(config(str(tmp_path)), store, SimpleNamespace(complete=complete))
     assert asyncio.run(replyer.generate([], 'now')) == '我在听呢'
+
+
+@pytest.mark.parametrize('effort', [None, '', 'off', 'high'])
+def test_phone_runtime_thinking_override(tmp_path, effort):
+    from dataclasses import replace
+    from momoi.integrations.request_context import requested_thinking_effort
+    cfg = replace(config(str(tmp_path)), thinking_stages={
+        'replyer': 'high', **({'phone_replyer': effort} if effort is not None else {}),
+    })
+    store = Mock()
+    store.always_memory_context.return_value = ''
+    store.scoped_memory_context.return_value = ''
+    store.self_state_context.return_value = ''
+    store.replyer_dialogue_rows.return_value = []
+    async def complete(system, messages, tools):
+        assert requested_thinking_effort('medium') == ('off' if effort is None else effort or 'medium')
+        return ProviderResponse([{'type': 'text', 'text': '你好'}], [])
+    asyncio.run(PhoneReplyer(cfg, store, SimpleNamespace(complete=complete)).generate([], 'now'))

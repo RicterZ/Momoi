@@ -290,7 +290,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
             {"continuation_seconds": turn_raw.get("continuation_seconds", 5)}, path="turn")["continuation_seconds"],
         thinking_stages={
             stage: effort for stage, effort in thinking["stages"].items()
-            if effort or stage == "topic_selection"
+            if effort or stage in {"topic_selection", "phone_replyer"}
         },
         timezone=app_timezone,
         max_input_tokens=max_input_tokens,

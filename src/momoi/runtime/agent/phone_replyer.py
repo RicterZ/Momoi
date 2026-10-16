@@ -45,7 +45,7 @@ class PhoneReplyer(ReplyerBase):
         system = self.expression_prompt() + "\n\n" + PHONE_RULES
         messages = self.messages(events, turn_id)
         with log_context(stage="phone_replyer", turn_id=turn_id, channel="qq_call", call_id=new_trace_id()), model_request(
-            thinking_effort=self.config.thinking_stages.get("replyer") or "low"
+            thinking_effort=self.config.thinking_stages.get("phone_replyer", "off")
         ):
             response = await self.provider.complete(system, messages, [])
         usage = response.usage or {}
