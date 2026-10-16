@@ -116,6 +116,19 @@ Planner understands the current conversation, retrieves relevant memories, and
 uses tools to carry out work. Replyer turns its response intent and supporting
 context into natural speech, guided by SOUL and the recent dialogue.
 
+QQ voice calls use **Sidecar mode**: the phone Replyer and a background executor
+receive your speech together. The Replyer responds naturally while the executor
+decides whether to retrieve information or use tools. When there is a result,
+the Replyer follows up; ordinary conversation does not trigger an extra result
+announcement. The initial response does not wait for background work to finish.
+Text chat keeps the existing Planner / Replyer collaboration.
+
+Calls support streaming speech, continuous paragraph playback, interruption, and
+recent complete conversation turns for continuity. The Dashboard offers a separate
+phone prompt and thinking-effort setting, with thinking off by default. New speech
+interrupts the current reply and its background execution, but does not undo
+external actions that have already taken place.
+
 Chat, scheduled tasks, autonomous activity and external events share a continuous
 history. During an owner conversation, new messages enter the current Turn as
 lightweight updates and cancel unsent replies while preserving completed tool
@@ -227,7 +240,7 @@ edited in the Dashboard.
 | --- | --- |
 | Private chat | One owner across QQ (NapCat) and WeChat; replies return to the originating channel and proactive messages use the configured primary channel |
 | Conversation | Message batching, quoted/forwarded content, media handling, natural multi-bubble delivery, optional image reactions, and valid silence |
-| Voice calls | Real-time QQ voice calls through NapCat, with speech recognition, synthesized replies, and interruption support on Windows and Linux |
+| Voice calls | Real-time QQ calls through NapCat, with Sidecar responses and tool execution, streaming speech, and interruption support on Windows and Linux |
 | Speech recognition | Choose Tencent Cloud ASR or optional local CPU streaming ASR with Sherpa; Linux bundles the model for in-process inference, and Windows installs the model as an optional component |
 | Context | Native shared transcript, on-demand recall, background Episode archiving and relationships, triggered memory injection, and bounded model input |
 | Tools | Built-in file/HTTP tools plus dynamically discovered MCP servers and per-server tool allowlists |
