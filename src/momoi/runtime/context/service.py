@@ -1,6 +1,7 @@
 import copy
 import json
 import time
+from datetime import datetime
 
 from ...models import IncomingMessage
 from ...memory import Memory, MemoryRecallQuery
@@ -10,7 +11,7 @@ from ...storage.memory.catalog import MOMOI_MEMORY_TAGS
 from .selection import RecallSelection, TOPIC_CANDIDATE_LIMIT, select_topics
 from ..agent.context_window import context_compaction_tokens
 from ..turn_support import context_data_message
-from .presentation import recent_episode_lines, recall_context_lines
+from .presentation import heartbeat_self_state_lines, recent_episode_lines, recall_context_lines
 from .rendering import assemble_main_context
 from .retrieval import build_plan_retrieval, select_plan_recall_queries
 
@@ -115,6 +116,37 @@ class ContextService:
             before_timestamp,
             include_images=True,
         )
+
+    def self_state_section(self) -> tuple[str, str]:
+        return ("self_state", heartbeat_self_state_lines(
+            self.store.self_state_context(affinity_enabled=self.config.affinity_enabled),
+            current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
+        ))
+
+    def autonomous_turn_messages(self, shared: dict[str, object], current_input: str) -> list[dict[str, object]]:
+        from ..transcript.rendering import owner_idle_gap_message
+
+        idle_gap = owner_idle_gap_message(shared["rows"], now=time.time(), timezone=self.store.timezone)
+        if idle_gap:
+            current_input += "\n\n" + "\n".join(
+                block["text"] for block in idle_gap["content"] if block.get("type") == "text"
+            )
+        return [
+            *shared["messages"],
+            {"role": "user", "content": [
+                {"type": "text", "text": current_input, "cache_control": {"type": "ephemeral"}},
+            ]},
+        ]
+
+    @staticmethod
+    def recent_message_refs(shared: dict[str, object], role: str, prefix: str) -> str:
+        transcript = shared["transcript"]
+        return ", ".join(dict.fromkeys(
+            f"{prefix}{message_id}"
+            for group in (*transcript.orphaned, *transcript.groups)
+            if group.role == role
+            for message_id in group.message_ids
+        ))
 
     def shared_turn_context(self, turn_id: str, *, fresh: bool = False) -> dict[str, object]:
         """One canonical prefix and transcript for every conversation executor."""

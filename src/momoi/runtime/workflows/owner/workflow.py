@@ -2,7 +2,6 @@ import asyncio
 import logging
 import re
 import time
-from datetime import datetime
 from typing import Any
 
 from ....channel import Channel
@@ -14,7 +13,6 @@ from ...agent import TurnExecutionSpec, WorkflowProtocolError
 from ...context.triggers import triggered_memory_context
 from ...context.trigger_monitor import record_trigger_injections
 from ...context.current_state import pack_current_turn_context
-from ...context.presentation import heartbeat_self_state_lines
 from ...turn_support import (
     ExternalToolTurnError,
     TurnBudgetExceeded,
@@ -400,13 +398,7 @@ class OwnerWorkflow:
         runtime_text = pack_current_turn_context(
             self.store, "owner",
             ("workflow_contract", self._owner_system_prompt()),
-            (
-                "self_state",
-                heartbeat_self_state_lines(
-                    self.store.self_state_context(affinity_enabled=self.config.affinity_enabled),
-                    current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
-                ),
-            ),
+            self.self_state_section(),
             ("runtime_directives", "\n\n".join(directives)),
             ("recent_recall_context", candidates["recent_recall_context"]),
             ("triggered_memories", triggered_memory_context(self.memory, batch, injected_memories, on_injected=self._record_trigger_injections)),

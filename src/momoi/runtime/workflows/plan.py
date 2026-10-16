@@ -2,7 +2,6 @@
 import copy
 import asyncio
 import logging
-from datetime import datetime
 
 from ...models import TurnDraft
 from ...observability.events import log_event
@@ -12,7 +11,6 @@ from .plan_context import frozen_plan_messages
 from ..tool_contracts.plan import PLAN_TOOLS, PLAN_STEP_FINISH
 from .plan_audit import audit_plan_step
 from ..context.current_state import pack_current_turn_context
-from ..context.presentation import heartbeat_self_state_lines
 
 logger = logging.getLogger("momoi.runtime.turns")
 
@@ -86,10 +84,7 @@ class PlanWorkflow:
                 shared["messages"], plan, step_rows=[], timezone=self.store.timezone,
             )
             messages[-1]["content"].insert(0, {"type": "text", "text": pack_current_turn_context(
-                self.store, "plan_step", ("self_state", heartbeat_self_state_lines(
-                    self.store.self_state_context(affinity_enabled=self.config.affinity_enabled),
-                    current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
-                )),
+                self.store, "plan_step", self.self_state_section(),
             )})
             tools = self.tool_surface.conversation_specs()
             self.tool_surface.append_visible(tools, copy.deepcopy(context["tools"]))

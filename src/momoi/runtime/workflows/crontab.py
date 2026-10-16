@@ -1,7 +1,5 @@
 import asyncio
 import logging
-from datetime import datetime
-from typing import Any
 
 from ...storage.core.timestamps import context_timestamp
 from ...observability.events import log_event
@@ -10,8 +8,7 @@ from ...models import TurnDraft
 from ...llm.errors import ProviderError
 from ..agent import TurnExecutionSpec
 from ..context.current_state import pack_current_turn_context
-from ..context.presentation import due_goal_lines, heartbeat_self_state_lines
-from ..transcript.rendering import owner_idle_gap_message
+from ..context.presentation import due_goal_lines
 from ..turn_support import (
     ExternalToolTurnError,
     GOAL_PROMPT_PATH,
@@ -146,19 +143,7 @@ class GoalWorkflow:
             return
         review_at = context_timestamp(goal["next_review_at"], self.store.timezone)
         shared = self.shared_turn_context(turn_id)
-        conversation_rows = shared["rows"]
-        transcript = shared["transcript"]
-        idle_gap = owner_idle_gap_message(
-            conversation_rows,
-            now=datetime.now(self.store.timezone).timestamp(),
-            timezone=self.store.timezone,
-        )
-        recent_goals = ", ".join(dict.fromkeys(
-            f"G{message_id}"
-            for group in (*transcript.orphaned, *transcript.groups)
-            if group.role == "goal"
-            for message_id in group.message_ids
-        ))
+        recent_goals = self.recent_message_refs(shared, "goal", "G")
         def build_input():
             return pack_current_turn_context(
                 self.store, "goal",
@@ -168,24 +153,12 @@ class GoalWorkflow:
                     _live_prompt(GOAL_PROMPT_PATH, GOAL_SYSTEM_PROMPT),
                 ),
                 ("due_goal", due_goal_lines(self.store.goal(goal_id) or {"id": goal_id, "status": "deleted"}, scheduled_review_at=review_at)),
-                ("self_state", heartbeat_self_state_lines(self.store.self_state_context(affinity_enabled=self.config.affinity_enabled), current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"))),
+                self.self_state_section(),
                 ("recent_goals", recent_goals),
             )
 
         current_input = build_input()
-        messages: list[dict[str, Any]] = [
-            *shared["messages"],
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": current_input + ("\n\n" + "\n".join(block["text"] for block in idle_gap["content"] if block.get("type") == "text") if idle_gap else ""),
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-            },
-        ]
+        messages = self.autonomous_turn_messages(shared, current_input)
         tools = self.tool_surface.conversation_specs()
         draft = TurnDraft()
         await self._run_tool_loop(
