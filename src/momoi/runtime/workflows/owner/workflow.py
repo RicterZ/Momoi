@@ -269,7 +269,7 @@ class OwnerWorkflow:
                 heartbeat_owner_event_revision=None, delivery_context=context,
             )
             if not delivery.result.get("ok"):
-                raise WorkflowProtocolError("phone_delivery_rejected")
+                raise WorkflowProtocolError(str(delivery.result.get("error") or "phone_delivery_rejected"))
             result = await self.bubble_delivery.wait_reply(turn_id, "phone-reply")
             if not result.get("ok"):
                 raise WorkflowProtocolError(result.get("error", "phone_delivery_failed"))

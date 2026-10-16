@@ -46,6 +46,7 @@ const navItems = [
 const thinkingStageLabels = {
   owner: "CHAT // 行为规划",
   replyer: "REPLY // 发言生成",
+  phone_replyer: "CHAT // 语音电话",
   affinity_checker: "AFFINITY // 好感度审批",
   webhook: "EVENT // Webhook",
   heartbeat: "HEARTBEAT // 自主活动",

@@ -90,3 +90,15 @@ def test_phone_executor_delivery_and_archive(tmp_path, output, stale):
                 daemon.bubble_delivery.wait_reply.assert_awaited_once()
     finally:
         daemon.store.close()
+
+
+def test_phone_removes_chat_actions_before_tts(tmp_path):
+    store = Mock()
+    store.always_memory_context.return_value = ''
+    store.scoped_memory_context.return_value = ''
+    store.self_state_context.return_value = ''
+    store.replyer_dialogue_rows.return_value = []
+    async def complete(system, messages, tools):
+        return ProviderResponse([{'type': 'text', 'text': '我在听呢\n\nemotion://content-sigh\nqq://poke'}], [])
+    replyer = PhoneReplyer(config(str(tmp_path)), store, SimpleNamespace(complete=complete))
+    assert asyncio.run(replyer.generate([], 'now')) == '我在听呢'
