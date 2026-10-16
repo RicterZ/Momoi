@@ -31,3 +31,9 @@ def test_github_release_publishes_full_installer_not_online_bootstrap():
     assert 'Momoi-Windows-${RELEASE_TAG#v}-x64.zip' in upload
     assert '${installers[0]}' in upload
     assert 'Online-Setup' not in upload
+
+
+def test_online_locked_restore_precedes_expensive_build():
+    workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/windows.yml').read_text(encoding='utf-8')
+    assert workflow.index('Validate online installer locked restore') < workflow.index('Build installer and smoke private runtime')
+    assert 'dotnet restore desktop/Momoi.Installer/Momoi.Installer.csproj -r win-x64 --locked-mode' in workflow
