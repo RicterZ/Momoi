@@ -60,6 +60,71 @@ async def observe_playback_audio(session_id, utterance, started):
         await stop_process(process)
 
 
+class SessionPlayback:
+    """One player per call. Writing silence while idle keeps the null sink awake;
+    a player spawned per utterance waits up to ~1.5s for the idle sink to resume."""
+    FRAME = 960
+
+    def __init__(self, command):
+        self.command = command
+        self.process = self.task = None
+        self.queue = asyncio.Queue(maxsize=3)
+
+    @property
+    def alive(self):
+        return bool(self.process and self.process.returncode is None and self.task and not self.task.done())
+
+    async def start(self):
+        if self.alive:
+            return
+        await self.close()
+        self.process = await asyncio.create_subprocess_exec(*self.command, stdin=asyncio.subprocess.PIPE, stderr=None)
+        self.task = asyncio.create_task(self.pump())
+
+    async def pump(self):
+        silence = bytes(self.FRAME)
+        deadline = time.monotonic()
+        try:
+            while True:
+                try:
+                    frame, done = self.queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    frame, done = silence, None
+                if frame:
+                    self.process.stdin.write(frame)
+                    await self.process.stdin.drain()
+                if done is not None and not done.done():
+                    done.set_result(time.monotonic())
+                now = time.monotonic()
+                deadline = max(deadline + len(frame) / 48000, now - 0.1)
+                await asyncio.sleep(max(0, deadline - now))
+        finally:
+            self.clear()
+
+    async def write(self, frame, *, wait=False):
+        if not self.alive:
+            raise ConnectionError('Playback stopped')
+        done = asyncio.get_running_loop().create_future() if wait else None
+        await self.queue.put((frame, done))
+        return await done if done is not None else None
+
+    async def flush(self):
+        return await self.write(b'', wait=True)
+
+    def clear(self):
+        while not self.queue.empty():
+            _, done = self.queue.get_nowait()
+            if done is not None and not done.done():
+                done.set_exception(ConnectionError('Playback cleared'))
+
+    async def close(self):
+        if self.task:
+            self.task.cancel()
+            await asyncio.gather(self.task, return_exceptions=True)
+        await stop_process(self.process)
+        self.process = self.task = None
+
+
 class MediaBroker:
     def __init__(self, token, *, native_url='http://127.0.0.1:6110', host_url='http://127.0.0.1:6111', audio=None):
         if len(token.encode()) < 32:
@@ -82,6 +147,7 @@ class MediaBroker:
         self.generation = 0
         self.status = {'protocol_version': 1, 'ready': False, 'phase': 'unavailable', 'error': 'Starting'}
         self.capture = self.capture_task = self.play_process = self.poll_task = None
+        self.output = None
         self.capture_stats = {}
         self.capture_muted_until = 0.0
         self.audio_error = ""
@@ -133,8 +199,20 @@ class MediaBroker:
             self.capture_task.cancel()
             await asyncio.gather(self.capture_task, return_exceptions=True)
         await stop_process(self.play_process)
+        if self.output is not None:
+            await self.output.close()
+            self.output = None
         await stop_process(self.capture)
         self.capture_task = self.capture = None
+
+    async def session_output(self):
+        """Windows adapters keep per-utterance players; half-duplex muting depends on them."""
+        if self.audio is not None:
+            return None
+        if self.output is None:
+            self.output = SessionPlayback(self.playback_command)
+        await self.output.start()
+        return self.output
 
     async def send_status(self):
         if self.ws is not None and not self.ws.closed:
@@ -197,6 +275,11 @@ class MediaBroker:
                 self.session_id = uuid.uuid4().hex
                 self.capture_stats = {'frames': 0, 'bytes': 0, 'peak': 0}
                 self.generation = 0
+                try:
+                    await self.session_output()
+                except OSError as error:
+                    print(json.dumps({"event": "qq_call_playback_prewarm_failed", "session_id": self.session_id,
+                        "error_type": type(error).__name__}), flush=True)
             self.status = {'protocol_version': 1, 'ready': ready, 'dependencies': deps,
                 'phase': phase, 'client_connected': self.ws is not None and not self.ws.closed,
                 'audio_devices': getattr(self.audio, 'device_selection', {}),
@@ -286,6 +369,8 @@ class MediaBroker:
             raise web.HTTPConflict(text='Stale call generation')
         self.generation = generation
         await stop_process(self.play_process)
+        if self.output is not None:
+            self.output.clear()
         return web.json_response({'ok': True})
 
     async def play_stream(self, request):
@@ -310,11 +395,12 @@ class MediaBroker:
             logging.getLogger(__name__).debug("event=qq_call_bridge_playback_started session_id=%s utterance_id=%s devices=%s half_duplex=%s",
                 session_id, utterance, getattr(self.audio, 'device_selection', {}), getattr(self.audio, 'half_duplex', False))
             pending = b''
-            process = None
+            process = output = None
             complete = False
             observer = (asyncio.create_task(observe_playback_audio(session_id, utterance, started))
                 if self.audio is None and sys.platform.startswith('linux') else None)
             try:
+                output = await self.session_output()
                 async def playback():
                     nonlocal played, pending, process, first_ms
                     async for chunk in request.content.iter_chunked(960):
@@ -331,36 +417,47 @@ class MediaBroker:
                             raise ValueError('Incomplete PCM sample')
                         await write_frame(pending)
                         pending = b''
-                    if process is not None:
+                    if output is not None:
+                        if played:
+                            await output.flush()
+                    elif process is not None:
                         process.stdin.close()
                         await asyncio.wait_for(process.wait(), 3)
                 async def write_frame(frame):
                     nonlocal process, played, first_ms, pcm_peak
                     if not self.valid(session_id, generation):
                         raise ConnectionError('Call superseded')
-                    if process is None:
+                    if output is None and process is None:
                         process = await asyncio.create_subprocess_exec(*self.playback_command, stdin=asyncio.subprocess.PIPE,
                             stderr=None)
                         self.play_process = process
                     samples = array.array('h', frame)
                     pcm_peak = max(pcm_peak, max((abs(value) for value in samples), default=0))
-                    process.stdin.write(frame)
-                    await process.stdin.drain()
+                    if output is not None:
+                        # The player paces frames; waiting on the first marks its real stdin write.
+                        await output.write(frame, wait=first_ms is None)
+                    else:
+                        process.stdin.write(frame)
+                        await process.stdin.drain()
                     if first_ms is None:
                         first_ms = round((time.monotonic() - started) * 1000)
                         print(json.dumps({'event': 'qq_call_playback_first_frame', 'session_id': session_id,
                             'utterance_id': utterance, 'elapsed_ms': first_ms,
                             'observed_at': time.time(), 'measurement_endpoint': 'playback_stdin_written'}), flush=True)
                     played += len(frame)
-                    await asyncio.sleep(len(frame) / 48000)
+                    if output is None:
+                        await asyncio.sleep(len(frame) / 48000)
                 await asyncio.wait_for(playback(), 150)
-                complete = bool(played and process and process.returncode == 0 and self.valid(session_id, generation))
+                complete = bool(played and self.valid(session_id, generation) and (
+                    output.alive if output is not None else process and process.returncode == 0))
             except (OSError, ConnectionError, ValueError, asyncio.TimeoutError):
                 pass
             finally:
                 if observer is not None:
                     observer.cancel()
                     await asyncio.gather(observer, return_exceptions=True)
+                if output is not None and not complete:
+                    output.clear()
                 await stop_process(process)
                 if self.play_process is process:
                     self.play_process = None
@@ -438,28 +535,42 @@ class MediaBroker:
                 raise web.HTTPBadRequest(text='Audio decode failed or exceeds two minutes')
             if not self.valid(session_id, generation):
                 raise web.HTTPConflict(text='Call ended or utterance superseded')
-            process = await asyncio.create_subprocess_exec(*self.playback_command, stdin=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-            self.play_process = process
+            output = await self.session_output()
+            process = None
+            if output is None:
+                process = await asyncio.create_subprocess_exec(*self.playback_command, stdin=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+                self.play_process = process
             played = 0
             try:
                 # Pace writes so cancellation also stops queued audio quickly.
                 for offset in range(0, len(pcm), 960):
-                    if not self.valid(session_id, generation) or process.returncode is not None:
+                    if not self.valid(session_id, generation) or (process is not None and process.returncode is not None):
                         break
                     frame = pcm[offset:offset + 960]
-                    process.stdin.write(frame)
-                    await process.stdin.drain()
+                    if output is not None:
+                        await output.write(frame)
+                    else:
+                        process.stdin.write(frame)
+                        await process.stdin.drain()
                     played += len(frame)
-                    await asyncio.sleep(len(frame) / 48000)
+                    if output is None:
+                        await asyncio.sleep(len(frame) / 48000)
                 if played == len(pcm) and self.valid(session_id, generation):
-                    process.stdin.close()
-                    await asyncio.wait_for(process.wait(), 3)
+                    if output is not None:
+                        await output.flush()
+                    else:
+                        process.stdin.close()
+                        await asyncio.wait_for(process.wait(), 3)
             except (BrokenPipeError, ConnectionError, asyncio.TimeoutError):
                 pass
             finally:
                 await stop_process(process)
-                self.play_process = None
-            completed = played == len(pcm) and process.returncode == 0 and self.valid(session_id, generation)
+                if process is not None:
+                    self.play_process = None
+            completed = played == len(pcm) and self.valid(session_id, generation) and (
+                output.alive if output is not None else process.returncode == 0)
+            if output is not None and not completed:
+                output.clear()
             result = {'ok': completed, 'state': 'played' if completed else 'interrupted',
                       'played_ms': round(played / 48), 'session_id': session_id,
                       'reason': None if completed else ('call_ended' if session_id != self.session_id

@@ -112,6 +112,73 @@ def test_broker_plays_before_upload_finishes_and_deduplicates(monkeypatch):
     asyncio.run(scenario())
 
 
+def test_broker_keeps_one_player_per_call_and_interrupts_without_respawn(monkeypatch):
+    from momoi.channel.napcat.voice_call import broker as broker_module
+    async def observe(*args):
+        return None
+    monkeypatch.setattr(broker_module, 'observe_playback_audio', observe)
+    monkeypatch.setattr(broker_module.sys, 'platform', 'linux')
+    async def scenario():
+        processes = []
+        class Process:
+            returncode = None
+            def __init__(self):
+                self.stdin = self
+                self.audio = bytearray()
+            def write(self, data):
+                self.audio.extend(data)
+            async def drain(self):
+                pass
+            async def wait(self):
+                return self.returncode
+            def terminate(self):
+                self.returncode = -15
+        async def spawn(*args, **kwargs):
+            processes.append(Process())
+            return processes[-1]
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn)
+        broker = MediaBroker('x' * 32)
+        broker.ws = SimpleNamespace(closed=False)
+        broker.armed = True
+        broker.session_id = 'synthetic'
+        broker.status = {'phase': 'connected'}
+        app = web.Application()
+        app.router.add_post('/stream', broker.play_stream)
+        app.router.add_post('/stop', broker.stop_playback)
+        tone = b'\x01\x00' * 480
+        async with TestServer(app) as server, ClientSession() as client:
+            for utterance in ('one', 'two'):
+                headers = {'X-Call-Session': 'synthetic', 'X-Call-Generation': '0', 'X-Call-Utterance': utterance}
+                async with client.post(server.make_url('/stream'), data=tone * 2, headers=headers) as response:
+                    assert (await response.json())['ok']
+            await asyncio.sleep(0.06)
+            assert len(processes) == 1
+            player = processes[0]
+            assert bytes(player.audio).count(tone) == 4
+            assert not any(bytes(player.audio)[-960:])
+
+            release = asyncio.Event()
+            async def upload():
+                yield tone
+                await release.wait()
+                yield tone * 50
+            headers = {'X-Call-Session': 'synthetic', 'X-Call-Generation': '0', 'X-Call-Utterance': 'three'}
+            task = asyncio.create_task(client.post(server.make_url('/stream'), data=upload(), headers=headers))
+            while bytes(player.audio).count(tone) < 5:
+                await asyncio.sleep(0.005)
+            async with client.post(server.make_url('/stop'), json={'session_id': 'synthetic', 'generation': 1}) as response:
+                assert response.status == 200
+            release.set()
+            result = await (await task).json()
+            assert not result['ok'] and result['reason'] == 'owner_speech'
+            assert player.returncode is None and len(processes) == 1
+            await asyncio.sleep(0.06)
+            assert bytes(player.audio).count(tone) < 5 + 50
+            await broker.invalidate()
+            assert player.returncode == -15 and broker.output is None
+    asyncio.run(scenario())
+
+
 def test_playback_observer_ignores_silence_and_cleans_up(monkeypatch, capsys):
     import json
     import time
