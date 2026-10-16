@@ -27,8 +27,8 @@ class ModelRequestTest(unittest.IsolatedAsyncioTestCase):
     async def run_round(self, runner, stage, complete):
         return await runner.run(
             [], [{"role": "user", "content": "Hello"}], [], complete=complete,
-            system_policy=None, authority="agent", remind_owner_bubbles=False,
-            harness_started=True, require_tool=False, required_tool=None,
+            system_policy=None, authority="agent",
+            require_tool=False, required_tool=None,
             history_messages=0, stage=stage, turn_id="turn", round_number=1,
             channel="test", goal_id=None,
         )

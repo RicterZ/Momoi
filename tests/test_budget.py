@@ -4,8 +4,8 @@ import math
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from momoi.memory.text import MemoryTextFitter
 from momoi.runtime.agent.budget import (
-    MemoryTextFitter,
     SectionBudgetAllocator,
     TextSizer,
     ToolResultFitter,

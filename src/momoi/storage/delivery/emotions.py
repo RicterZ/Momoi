@@ -1,6 +1,5 @@
 import hashlib
 import re
-import shutil
 import sqlite3
 import time
 from pathlib import Path
@@ -25,25 +24,6 @@ def emotion_slug(message: str) -> str | None:
 
 def emotion_directory(workspace: str | Path) -> Path:
     return Path(workspace).expanduser().resolve() / "emotion"
-
-
-def managed_emotion_path(workspace: str | Path, source_value: str | Path) -> Path:
-    source = Path(source_value).expanduser().resolve()
-    if not source.is_file():
-        raise ValueError("path must be an existing file")
-    extension = source.suffix.lower()
-    if not re.fullmatch(r"\.[a-z0-9]{1,10}", extension):
-        raise ValueError("emotion file needs a simple extension")
-    digest = hashlib.md5(usedforsecurity=False)
-    with source.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    directory = emotion_directory(workspace)
-    directory.mkdir(parents=True, exist_ok=True)
-    destination = directory / f"{digest.hexdigest()}{extension}"
-    if not destination.exists():
-        shutil.copy2(source, destination)
-    return destination
 
 
 def managed_emotion_bytes(workspace: str | Path, data: bytes, filename: str) -> Path:

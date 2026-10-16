@@ -115,7 +115,6 @@ def test_mcp_runtime_uses_writable_user_caches_and_private_toolchain(tmp_path):
 
 
 def test_desktop_prompt_defaults_match_examples(tmp_path):
-    from importlib.resources import files
 
     prepare_workspace(tmp_path)
     examples = Path(__file__).resolve().parents[1] / "config.example/prompts"

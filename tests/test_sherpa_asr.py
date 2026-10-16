@@ -5,7 +5,7 @@ import pytest
 from aiohttp import WSMessage, WSMsgType
 
 from momoi.integrations.adapters.sherpa import SherpaASRProvider
-from momoi.integrations.contracts.asr import ASRError, AudioInput
+from momoi.integrations.contracts.asr import AudioInput
 from momoi.channel.napcat.voice_call.channel import QQCallChannel
 
 

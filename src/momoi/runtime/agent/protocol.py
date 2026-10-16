@@ -81,9 +81,7 @@ def handle_no_tool_response(
     return NoToolResolution("retry", failed_rounds)
 
 
-def owner_request_messages(
-    messages: list[dict[str, Any]], *, remind_bubbles: bool
-) -> list[dict[str, Any]]:
+def owner_request_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Build an Owner-only wire copy without changing canonical Turn history."""
 
     return copy.deepcopy(messages)

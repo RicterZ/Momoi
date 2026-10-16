@@ -1,5 +1,4 @@
 from tests.support import provider_catalog
-import asyncio
 import tempfile
 import unittest
 from pathlib import Path

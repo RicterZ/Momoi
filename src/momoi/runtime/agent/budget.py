@@ -2,7 +2,7 @@ import json
 from collections.abc import Callable
 
 from ...observability.values import safe_preview
-from ...memory.text import TextSizer, MemoryTextFitter, TEXT_SIZER, MEMORY_TEXT_FITTER
+from ...memory.text import TextSizer, TEXT_SIZER
 
 
 class ToolResultFitter:

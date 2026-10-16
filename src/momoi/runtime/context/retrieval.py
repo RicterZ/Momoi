@@ -12,7 +12,8 @@ from ...observability.values import safe_preview
 from ...storage import Store
 from ...memory.retrieval.service import MAX_MEMORY_RECALL_RESULTS
 from ...storage.context.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
-from ...storage.episode.episode_ranking import EpisodeRecallQuery, rank_recall_items
+from ...memory.retrieval.ranking import rank_recall_items
+from ...storage.episode.episode_ranking import EpisodeRecallQuery
 
 if TYPE_CHECKING:
     from ..retrieval.models import DenseRecallEvidence

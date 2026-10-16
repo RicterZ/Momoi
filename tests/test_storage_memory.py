@@ -30,7 +30,6 @@ from momoi.runtime import (
 from momoi.memory.retrieval.models import MemoryRecallQuery
 from momoi.storage import Store
 from momoi.memory.text import estimate_tokens
-from momoi.storage.core.integrity import StorageIntegrityError
 from momoi.storage.core.scheduling import next_schedule_at, normalize_schedule
 
 

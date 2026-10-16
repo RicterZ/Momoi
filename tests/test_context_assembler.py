@@ -26,7 +26,7 @@ from momoi.runtime.transcript.building import build_transcript
 from momoi.storage import Store
 from momoi.memory.text import estimate_tokens
 from momoi.storage.memory.presentation import format_reflection_memory
-from momoi.storage.episode.episode_ranking import rank_recall_items
+from momoi.memory.retrieval.ranking import rank_recall_items
 from momoi.runtime.turn_support import context_data_message
 from momoi.runtime.context.presentation import (
     heartbeat_self_state_lines, recent_episode_lines, recall_context_lines, turn_label_ranges,

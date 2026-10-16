@@ -401,16 +401,3 @@ class MemoryRepository:
             (time.time(), include_scoped or bool((filters or {}).get("scope")), activation, activation, *params),
         ).fetchall()
         return [self._record(row) for row in rows]
-
-    def recall_row(self, source_id: str):
-        row = self._db.execute(
-            """SELECT id, kind, key, content, meta_json, scope_key FROM memories AS m
-               WHERE id=? AND superseded_by IS NULL AND activation='recall' AND scope_key=''
-                 AND (expires_at IS NULL OR expires_at>?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key AND t.scope_key=m.scope_key
-                 )""",
-            (source_id, time.time()),
-        ).fetchone()
-        return self._record(row) if row is not None else None

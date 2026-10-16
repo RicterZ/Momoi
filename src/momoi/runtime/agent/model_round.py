@@ -33,7 +33,6 @@ class ModelRoundResult:
     request_tools: list[dict[str, Any]]
     call_id: str
     history_messages: int
-    remind_owner_bubbles: bool
     request_system: list[dict[str, Any]]
     request_messages: list[dict[str, Any]]
 
@@ -58,8 +57,6 @@ class ModelRoundRunner:
         complete: Complete,
         system_policy: SystemPolicy | None,
         authority: str,
-        remind_owner_bubbles: bool,
-        harness_started: bool,
         require_tool: bool,
         required_tool: str | None,
         history_messages: int,
@@ -92,10 +89,7 @@ class ModelRoundRunner:
                     history_messages,
                 )
             request_messages = (
-                owner_request_messages(
-                    messages,
-                    remind_bubbles=remind_owner_bubbles and harness_started,
-                )
+                owner_request_messages(messages)
                 if authority == "owner"
                 else messages
             )
@@ -146,8 +140,4 @@ class ModelRoundRunner:
             request_tools=request_tools,
             call_id=call_id,
             history_messages=history_messages,
-            remind_owner_bubbles=(
-                authority == "owner"
-                and not any(call.name in {"reply", "send_bubbles", "send_voice"} for call in response.tool_calls)
-            ),
         )

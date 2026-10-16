@@ -20,7 +20,6 @@ from momoi.integrations.models import LLMConfig
 from momoi.runtime import (
     MomoiDaemon,
 )
-from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
 from momoi.runtime.jobs import AutonomousJob
 from momoi.runtime.agent import TurnExecutionSpec
 from momoi.runtime.agent.context_window import ContextWindow
@@ -1112,14 +1111,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ],
                         calls,
                     )
-
-                @staticmethod
-                def assert_terminal_tools(tools: list[dict[str, object]]) -> None:
-                    names = [tool["name"] for tool in tools]
-                    if "reply" not in names or "end_turn" in names:
-                        raise AssertionError(tools)
-                    if "goal_create" not in names:
-                        raise AssertionError(tools)
 
             provider = Provider()
             daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]

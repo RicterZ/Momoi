@@ -104,7 +104,6 @@ def test_affinity_tools_follow_switch():
 ])
 def test_affinity_review_only_writes_on_valid_approval(tmp_path, monkeypatch, decision, expected):
     import asyncio
-    import json
     from types import SimpleNamespace
     from momoi.runtime.agent.affinity import review_affinity
     path = tmp_path / 'config.json'

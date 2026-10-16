@@ -33,7 +33,6 @@ def plan(d, units):
 
 
 def test_schema_and_plan_keep_filters_and_examples_are_direct(daemon):
-    validator = Draft202012Validator(RECALL_TOOL_SPEC['input_schema'])
     assert 'examples' not in RECALL_TOOL_SPEC['input_schema']
     p = plan(daemon, {'semantic': ['饮食习惯', '运动习惯'], 'keyword': ['咖啡'],
                      'tags': ['health', 'food_drink'], 'kind': ['profile'], 'scope': 'webhook'})

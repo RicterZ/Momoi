@@ -1,4 +1,3 @@
-from momoi.runtime.agent.protocol import MAX_CONSECUTIVE_THOUGHT_ROUNDS
 from tests.support import reply_call, install_scripted_replyer
 import asyncio
 from types import SimpleNamespace
@@ -82,8 +81,8 @@ def test_execution_failures_have_separate_budget_and_bounded_recovery(daemon, fa
 
 def test_end_allows_internal_text_but_keeps_read_result_boundary():
     harness = TurnHarness.for_stage("owner")
-    assert harness.validate([end_call()], has_assistant_text=True) is None
-    assert harness.validate([ToolCall("voice", "reply", {}), end_call()], has_assistant_text=True) is None
+    assert harness.validate([end_call()]) is None
+    assert harness.validate([ToolCall("voice", "reply", {}), end_call()]) is None
     assert harness.validate([ToolCall("read", "read_file", {}), end_call()]) == "end_turn_must_be_alone"
     assert harness.validate([end_call(), ToolCall("send", "reply", {})]) == "end_turn_must_be_alone"
 

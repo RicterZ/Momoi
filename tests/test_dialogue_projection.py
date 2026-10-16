@@ -3,15 +3,12 @@ from copy import deepcopy
 """Historical chat projection must preserve delivery evidence and tool protocol."""
 import copy
 import json
-from zoneinfo import ZoneInfo
 
 import pytest
 
 from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime.transcript.native import render_exchanges
 from momoi.storage import Store
-
-TZ = ZoneInfo('Asia/Shanghai')
 
 
 def exchange(name='reply', *, identifier='r', ok=True, speech=None):

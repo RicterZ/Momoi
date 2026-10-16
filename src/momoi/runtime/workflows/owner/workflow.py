@@ -249,7 +249,6 @@ class OwnerWorkflow:
         return "\n".join(results)
 
     async def _complete_phone_batch(self, batch, turn_id, channel):
-        from ...agent.phone_replyer import PhoneReplyer
         started = time.monotonic()
         log_event(logger, logging.INFO, "qq_call_turn_started", channel=channel.name,
                   turn_id=turn_id, executor="phone_replyer")

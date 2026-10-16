@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from ...memory.retrieval.ranking import recall_item_score, rank_recall_items
-
 import math
 import time
 from dataclasses import dataclass

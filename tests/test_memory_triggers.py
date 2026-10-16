@@ -63,7 +63,7 @@ def test_expensive_regex_is_rejected(database, pattern):
 def test_trigger_warning_threshold_window_deduplication_and_restart(daemon):
     from momoi.runtime.context.trigger_monitor import record_trigger_injections
     from momoi.storage import Store
-    identifier = seed(daemon.memory, triggers=['你好'])
+    seed(daemon.memory, triggers=['你好'])
     rows = daemon.memory.triggered('你好')
 
     def send(index, rows=rows, store=None):

@@ -1,7 +1,6 @@
 from tests.support import provider_catalog
 import tempfile
 import unittest
-import uuid
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -139,9 +138,6 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_malformed_recall_returns_actionable_example_without_persistence(self):
-        from jsonschema import Draft202012Validator
-        from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC
-        import copy
 
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(config(directory))
@@ -192,32 +188,6 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
             {"units": [{"intent": "x", "recall_mode": "skip", "recall_queries": [],
                           "episode": {"action": "new"}}]}
         ))
-        return
-        from jsonschema import Draft202012Validator
-        from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC
-
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(config(directory))
-            self.addCleanup(daemon.store.close)
-            event = IncomingMessage("episode:reason", "1", "开始整理书房", 1, 1)
-            daemon.store.add_event(event)
-            turn_id = daemon._turn_id(event.event_id)
-            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
-            base = {
-                "intent": "开始整理书房", "recall_mode": "skip",
-                "recall_queries": [],
-            }
-            validator = Draft202012Validator(RECALL_TOOL_SPEC["input_schema"])
-            for episode in (
-                {"action": "new", "ref": "new:study", "title": "整理书房"},
-                {"action": "continue", "ref": "candidate-id"},
-                {"action": "new", "ref": "new:study", "title": "整理书房", "reason": "  "},
-            ):
-                arguments = {"units": [{**base, "episode": episode}]}
-                self.assertFalse(validator.is_valid(arguments))
-                with self.assertRaisesRegex(ValueError, "episode.reason"):
-                    await daemon.submit_owner_context([event], turn_id, arguments)
-                self.assertIsNone(daemon.store.context_plan(turn_id))
 
     async def test_skip_rejects_search_arguments_instead_of_discarding_them(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -436,56 +406,6 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
             {"units": [{"intent": "x", "recall_mode": "skip", "recall_queries": [],
                           "episode": {"action": "new"}}]}
         ))
-        return
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(config(directory))
-            event = IncomingMessage("episode:new", "1", "开始整理书房", 1, 1)
-            daemon.store.add_event(event)
-            turn_id = daemon._turn_id(event.event_id)
-            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
-
-            await daemon.submit_owner_context(
-                [event],
-                turn_id,
-                {
-                    "units": [
-                        {
-                            "intent": "整理书房",
-                            "recall_queries": [
-                                {
-                                    "semantic": "此前整理书房的计划与进展",
-                                    "keywords": ["书房", "整理"],
-                                }
-                            ],
-
-                            "episode": {
-                                "action": "new",
-                                "ref": "new:study-cleanup",
-                                "title": "整理书房",
-                                "reason": "开始整理书房是一段新的具体经历，而非延续旧话题",
-                            },
-                        }
-                    ]
-                },
-            )
-            daemon.store.commit_turn(
-                [event],
-                event.text,
-                AgentReply(["开始吧"]),
-                turn_id=turn_id,
-            )
-
-            expected = uuid.uuid5(
-                uuid.NAMESPACE_URL,
-                f"momoi:episode:{turn_id}:1:new:study-cleanup",
-            ).hex
-            linked = daemon.store._db.execute(
-                "SELECT episode_id, unit_ids_json FROM episode_turns WHERE turn_id=?",
-                (turn_id,),
-            ).fetchone()
-            self.assertEqual(linked["episode_id"], expected)
-            self.assertEqual(daemon.store.episode(expected)["title"], "整理书房")
-            daemon.store.close()
 
     async def test_unknown_continue_target_is_rejected_before_persistence(self) -> None:
         from jsonschema import Draft202012Validator
@@ -494,42 +414,6 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
             {"units": [{"intent": "x", "recall_mode": "skip", "recall_queries": [],
                           "episode": {"action": "continue"}}]}
         ))
-        return
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(config(directory))
-            event = IncomingMessage("episode:bad", "1", "继续", 1, 1)
-            daemon.store.add_event(event)
-            turn_id = daemon._turn_id(event.event_id)
-            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
-
-            with self.assertRaisesRegex(ValueError, "episode reference"):
-                await daemon.submit_owner_context(
-                    [event],
-                    turn_id,
-                    {
-                        "units": [
-                            {
-                                "intent": "继续当前经历",
-                                "recall_queries": [
-                                    {
-                                        "semantic": "当前经历此前的状态",
-                                        "keywords": [],
-                                    }
-                                ],
-
-                                "episode": {
-                                    "action": "continue",
-                                    "ref": "not-a-candidate",
-                                    "title": "",
-                                    "reason": "仍在谈同一件事，但引用的 Episode 不是候选项",
-                                },
-                            }
-                        ]
-                    },
-                )
-            self.assertIsNone(daemon.store.context_plan(turn_id))
-            daemon.store.close()
-
 
 if __name__ == "__main__":
     unittest.main()

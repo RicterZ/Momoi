@@ -2,16 +2,8 @@ import json
 import unittest
 from unittest.mock import patch
 
-from momoi.integrations.contracts.asr import ASRProvider, AudioInput
+from momoi.integrations.contracts.asr import AudioInput
 from momoi.integrations.adapters.tencent import TencentASRProvider, _tc3_headers
-
-
-class StubASRProvider(ASRProvider):
-    def __init__(self, *, prefix: str = "") -> None:
-        self.prefix = prefix
-
-    async def transcribe(self, audio: AudioInput) -> str:
-        return self.prefix + audio.data.decode()
 
 
 class ASRProviderTest(unittest.IsolatedAsyncioTestCase):

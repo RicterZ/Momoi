@@ -6,7 +6,7 @@ import pytest
 from momoi.config.manager import ConfigurationManager
 from momoi.config.workspace import bootstrap
 from momoi.config.models import BudgetConfig, ConfigError
-from momoi.runtime.budget import BudgetGuard, BudgetExceeded
+from momoi.runtime.budget import BudgetGuard
 from momoi.storage import Store
 
 

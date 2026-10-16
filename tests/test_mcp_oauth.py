@@ -18,7 +18,7 @@ from mcp.shared.auth import AuthorizationCodeResult, OAuthMetadata, OAuthToken
 from momoi.dashboard.auth import DASHBOARD_TOKEN, _auth, issue_dashboard_jwt
 from momoi.dashboard.mcp_oauth import obtain_tokens, register_mcp_oauth_routes
 from momoi.mcp.config import parse_mcp_servers
-from momoi.mcp.oauth import MCPOAuthProvider, oauth_provider, validate_oauth
+from momoi.mcp.oauth import oauth_provider, validate_oauth
 from momoi.mcp.manager import MCPManager
 
 

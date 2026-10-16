@@ -20,7 +20,6 @@ from ...llm.telemetry import (
     thinking_effort,
 )
 from ...llm.transport import http_error, openai_url, retry_request
-from ...integrations.models import LLMConfig
 from ...observability.events import log_event
 from ...observability.values import safe_preview
 from ...models import ProviderResponse, ToolCall

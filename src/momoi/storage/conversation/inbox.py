@@ -218,15 +218,6 @@ class InboxStore:
         ).fetchall()
         return [self._incoming_message(row) for row in rows]
 
-    def recent_owner_events(self, limit: int = 20) -> list[IncomingMessage]:
-        rows = self._db.execute(
-            """SELECT * FROM events
-               WHERE processed=1 AND content NOT LIKE '/%'
-               ORDER BY received_at DESC, rowid DESC LIMIT ?""",
-            (max(0, limit),),
-        ).fetchall()
-        return [self._incoming_message(row) for row in reversed(rows)]
-
     def heartbeat_conversation_snapshot(self) -> dict[str, object]:
         revision = int(
             self._db.execute("SELECT COALESCE(MAX(rowid), 0) FROM events").fetchone()[0]

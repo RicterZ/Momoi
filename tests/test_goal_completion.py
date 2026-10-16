@@ -1,7 +1,6 @@
 from zoneinfo import ZoneInfo
 from xml.etree import ElementTree
 from momoi.models import AgentReply, IncomingMessage
-from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
 from tests.support import reply_call, install_scripted_replyer
 import asyncio
 import copy

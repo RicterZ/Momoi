@@ -88,7 +88,6 @@ class AgentLoop:
         last_round_directives = ""
         observed_input_ids = {event.event_id for event in current_events}
         llm_round = 0
-        remind_owner_bubbles = False
         enable_tool_groups = self.tool_surface.discovery_groups()
         mcp_generation = getattr(self.tool_surface.mcp, "generation", 0)
         mcp_names = {spec["name"] for spec in self.tool_surface.mcp.tool_specs}
@@ -154,7 +153,6 @@ class AgentLoop:
                 history_messages = len(shared["messages"])
                 last_round_directives = ""
                 protocol_failures = thought_rounds = execution_failures = 0
-                remind_owner_bubbles = False
                 harness.accept_owner_update()
                 if execution.goal_id:
                     goal = self.store.goal(execution.goal_id)
@@ -200,7 +198,6 @@ class AgentLoop:
                 )
                 protocol_failures = 0
                 thought_rounds = execution_failures = 0
-                remind_owner_bubbles = False
             required_tool = harness.spec.first_tool if not harness.started else None
             if required_tool == "recall":
                 # The harness requires recall within the batch, not an exclusive tool choice.
@@ -290,8 +287,6 @@ class AgentLoop:
                         else None
                     ),
                     authority=authority,
-                    remind_owner_bubbles=remind_owner_bubbles,
-                    harness_started=harness.started,
                     require_tool=require_tool,
                     required_tool=required_tool,
                     history_messages=history_messages,
@@ -314,7 +309,6 @@ class AgentLoop:
                 )
                 protocol_failures = 0
                 thought_rounds = execution_failures = 0
-                remind_owner_bubbles = False
                 continue
             except Exception as error:
                 if circuit_reason:
@@ -328,7 +322,6 @@ class AgentLoop:
             request_tools = model_round.request_tools
             call_id = model_round.call_id
             history_messages = model_round.history_messages
-            remind_owner_bubbles = model_round.remind_owner_bubbles
             updates = (
                 await self.owner_updates.settle(
                     current_events, delivery_channel.name
@@ -343,7 +336,6 @@ class AgentLoop:
                 )
                 protocol_failures = 0
                 thought_rounds = execution_failures = 0
-                remind_owner_bubbles = False
                 continue
             if not response.tool_calls and self.background_pause_requested():
                 continue
@@ -432,7 +424,6 @@ class AgentLoop:
             harness_error = harness.validate(
                 response.tool_calls,
                 required_tool=required_tool,
-                has_assistant_text=bool(response_text(response.content)),
             )
             if harness_error is not None:
                 protocol_failures += 1

@@ -173,7 +173,6 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
                     return ProviderResponse([], [reply_call(f'reply-{self.calls}', bubbles=['老师，我记得！'])])
                 return ProviderResponse([], [ToolCall(f'end-{self.calls}', 'end_turn', {'mood': {'decision': 'unchanged'}})])
         daemon.provider = with_owner_recall(Provider())
-        now = time.time()
         for index, (channel, text) in enumerate((('napcat', '昨日在 QQ 聊的游戏'), ('dashboard', '接着聊吧'))):
             stamp = time.time()
             event = IncomingMessage(f'{channel}:context', f'context{index}', text, stamp, stamp, channel=channel)

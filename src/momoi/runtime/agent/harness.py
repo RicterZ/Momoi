@@ -115,7 +115,6 @@ class TurnHarness:
         calls: list[ToolCall],
         *,
         required_tool: str | None = None,
-        has_assistant_text: bool = False,
     ) -> str | None:
         names = [call.name for call in calls]
         if "goal_review" in names and self.spec.stage != "goal":
