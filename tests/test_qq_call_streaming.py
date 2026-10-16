@@ -179,6 +179,53 @@ def test_broker_keeps_one_player_per_call_and_interrupts_without_respawn(monkeyp
     asyncio.run(scenario())
 
 
+def test_windows_adapter_reuses_player_and_reports_speaking_only_for_voice(monkeypatch):
+    async def scenario():
+        spawned = []
+        class Process:
+            returncode = None
+            def __init__(self, args):
+                self.args, self.stdin, self.audio = args, self, bytearray()
+            def write(self, data):
+                self.audio.extend(data)
+            async def drain(self):
+                pass
+            async def wait(self):
+                return self.returncode
+            def terminate(self):
+                self.returncode = -15
+        async def spawn(*args, **kwargs):
+            spawned.append(Process(args))
+            return spawned[-1]
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn)
+        audio = SimpleNamespace(ready=True, half_duplex=True, capture_command=('capture',),
+                                playback_command=('wasapi-playback',))
+        broker = MediaBroker('x' * 32, audio=audio)
+        broker.ws = SimpleNamespace(closed=False)
+        broker.armed = True
+        broker.session_id = 'synthetic'
+        broker.status = {'phase': 'connected'}
+        app = web.Application()
+        app.router.add_post('/stream', broker.play_stream)
+        async with TestServer(app) as server, ClientSession() as client:
+            output = await broker.session_output()
+            await asyncio.sleep(0.05)
+            assert not output.speaking
+            for utterance in ('one', 'two'):
+                headers = {'X-Call-Session': 'synthetic', 'X-Call-Generation': '0', 'X-Call-Utterance': utterance}
+                task = asyncio.create_task(client.post(server.make_url('/stream'), data=b'\x01\x00' * 4800, headers=headers))
+                while not spawned or not any(spawned[0].audio[-960:]):
+                    await asyncio.sleep(0.005)
+                assert output.speaking
+                assert (await (await task).json())['ok']
+            assert [process.args for process in spawned] == [('wasapi-playback',)]
+            await asyncio.sleep(0.05)
+            assert not output.speaking
+        await broker.invalidate()
+        assert spawned[0].returncode == -15
+    asyncio.run(scenario())
+
+
 def test_playback_observer_ignores_silence_and_cleans_up(monkeypatch, capsys):
     import json
     import time
