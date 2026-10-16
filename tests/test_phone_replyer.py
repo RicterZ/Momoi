@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -241,13 +243,15 @@ def test_phone_sidecar_reports_results_without_direct_speech(tmp_path):
     async def loop(system, messages, tools, events, draft, **kwargs):
         names = {tool['name'] for tool in tools}
         assert 'phone_result' in names
-        assert not names.intersection({'reply', 'wait', 'end_turn'})
+        assert {'reply', 'wait'} <= names
+        assert tools == daemon.tool_surface.conversation_specs()
         workflow = kwargs['workflow']
         assert not workflow.is_complete()
         await workflow.execute_tool(ToolCall('done', 'phone_result', {'result': '查询失败，服务不可用'}))
         assert workflow.is_complete()
     daemon._run_tool_loop = loop
     daemon._render_batch = lambda _: '查一下'
+    daemon._phone_planner_context = lambda *args: ([], __import__('momoi.models', fromlist=['TurnDraft']).TurnDraft())
     try:
         result = asyncio.run(daemon._phone_planner([event], 'now', channel))
         assert result['result'] == '查询失败，服务不可用'
@@ -289,5 +293,100 @@ def test_phone_sidecar_reaction_does_not_wait_for_planner(tmp_path):
         assert [call.args[0] for call in daemon.bubble_delivery.send_voice.await_args_list] == ['我看看', '结果是42']
     try:
         asyncio.run(run())
+    finally:
+        daemon.store.close()
+
+
+def test_sidecar_keeps_owner_prefix_and_puts_protocol_in_latest_user(tmp_path):
+    from momoi.runtime import MomoiDaemon
+    from unittest.mock import patch
+    daemon = MomoiDaemon(config(str(tmp_path)))
+    event = IncomingMessage('e', 'm', '打开灯', 1, 1, channel='qq_call')
+    prefix = [{'role': 'user', 'content': 'stable-prefix'},
+              {'role': 'assistant', 'content': 'stable-history'}]
+    shared = {'messages': prefix, 'memories': {}, 'history': [], 'rows': []}
+    channel = SimpleNamespace(content_blocks=lambda _: [])
+    try:
+        with patch.object(daemon, 'owner_context_baseline'), \
+             patch.object(daemon, 'shared_turn_context', return_value=shared), \
+             patch.object(daemon, 'owner_context_candidates', return_value={'recent_recall_context': ''}):
+            messages, draft = daemon._phone_planner_context([event], 'now', channel)
+        assert messages[:-1] == prefix
+        assert messages[-1]['role'] == 'user'
+        assert 'phone_result' in str(messages[-1]['content'])
+        assert '打开灯' in str(messages[-1]['content'])
+        assert messages[-1]['content'][-1]['cache_control'] == {'type': 'ephemeral'}
+    finally:
+        daemon.store.close()
+
+
+def test_text_owner_and_phone_sidecar_share_prefix_system_and_tools(tmp_path):
+    from unittest.mock import patch, AsyncMock
+    from momoi.runtime import MomoiDaemon
+    from momoi.models import AgentReply
+    daemon = MomoiDaemon(config(str(tmp_path)))
+    prefix = [{'role': 'user', 'content': 'shared prefix'},
+              {'role': 'assistant', 'content': 'shared history'}]
+    shared = {'messages': prefix, 'memories': {}, 'history': [], 'rows': [],
+              'transcript': SimpleNamespace(orphaned=[])}
+    captures = []
+    text = IncomingMessage('text', 'text', '文字请求', 1, 1, channel=daemon.channel.name)
+    phone = IncomingMessage('phone', 'phone', '电话请求', 2, 2, channel='qq_call')
+    channel = SimpleNamespace(name='qq_call', content_blocks=lambda _: [])
+    async def loop(system, messages, tools, events, draft, **kwargs):
+        captures.append((system, messages, tools, kwargs))
+        if kwargs.get('workflow'):
+            await kwargs['workflow'].execute_tool(ToolCall('result', 'phone_result', {'result': ''}))
+            return {'ok': True}
+        return AgentReply([])
+    async def run():
+        daemon.store.add_event(text)
+        daemon.store.begin_turn('text-turn', 'owner', ['text'])
+        daemon.store.begin_turn('phone-turn', 'owner', [])
+        with patch.object(daemon, 'owner_context_baseline'), \
+             patch.object(daemon, 'shared_turn_context', return_value=shared), \
+             patch.object(daemon, 'owner_context_candidates', return_value={'recent_recall_context': ''}), \
+             patch.object(daemon, '_run_tool_loop', side_effect=loop), \
+             patch.object(daemon, '_complete_phone_batch', new_callable=AsyncMock) as phone_executor:
+            await daemon._complete_batch([text], 'text-turn', daemon.channel)
+            phone_executor.assert_not_called()
+            await daemon._phone_planner([phone], 'phone-turn', channel)
+        owner, sidecar = captures
+        assert owner[0] == sidecar[0]
+        assert owner[2] == sidecar[2]
+        assert owner[1][:-1] == sidecar[1][:-1] == prefix
+        assert owner[3]['execution'].stage == sidecar[3]['execution'].stage == 'owner'
+        assert owner[3].get('workflow') is None
+        assert sidecar[3]['workflow'] is not None
+        assert '文字请求' in str(owner[1][-1])
+        assert '电话请求' in str(sidecar[1][-1])
+        assert 'phone_result' in str(sidecar[1][-1])
+        assert daemon.store._db.execute("SELECT state FROM turns WHERE id='text-turn'").fetchone()[0] == 'completed'
+    try:
+        asyncio.run(run())
+    finally:
+        daemon.store.close()
+
+
+def test_shared_transcript_prefix_is_identical_for_owner_and_background_stages(tmp_path):
+    from momoi.runtime import MomoiDaemon
+    daemon = MomoiDaemon(config(str(tmp_path)))
+    try:
+        daemon.store.begin_turn('prefix-turn', 'owner', [])
+        first = daemon.shared_turn_context('prefix-turn')
+        second = daemon.shared_turn_context('prefix-turn')
+        assert first['messages'] == second['messages']
+        assert first['history'] == second['history']
+        assert first['transcript'] == second['transcript']
+        # These workflows all consume the canonical shared_turn_context prefix;
+        # their stage contract is appended only after this boundary.
+        source = Path(__file__).resolve().parents[1] / 'src/momoi/runtime'
+        expected = {
+            'workflows/owner/workflow.py', 'workflows/heartbeat.py',
+            'workflows/webhook.py', 'workflows/plan.py',
+            'workflows/crontab.py', 'workflows/current_state.py',
+        }
+        for relative in expected:
+            assert 'shared_turn_context(' in (source / relative).read_text()
     finally:
         daemon.store.close()

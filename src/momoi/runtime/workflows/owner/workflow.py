@@ -173,13 +173,38 @@ class OwnerWorkflow:
                 results.append(f"Command rejected: {error}")
         return "\n".join(results)
 
-    def _phone_planner_messages(self, batch, turn_id):
-        from ...agent.phone_replyer import PhoneReplyer
-        return PhoneReplyer(self.config, self.store, self.provider).messages(batch, turn_id)
+    def _phone_planner_context(self, batch, turn_id, channel):
+        self.owner_context_baseline()
+        shared = self.shared_turn_context(turn_id)
+        memories = shared["memories"]
+        candidates = self.owner_context_candidates([str(row["turn_id"]) for row in shared["rows"]])
+        runtime_text = pack_current_turn_context(
+            self.store, "owner",
+            ("workflow_contract", self._owner_system_prompt()),
+            self.self_state_section(),
+            ("runtime_directives",
+             "当前消息渠道：qq_call（QQ 电话）。"
+             "reply 省略 channel 时回复此渠道；历史对话或默认渠道不代表当前消息来源。\n\n"
+             "用户正在和你进行 QQ 对话，你现在的角色是“电话执行者”。"
+             "电话回复器已经承担了回复的任务，你只需要根据用户消息进行执行判断，"
+             "不要调用 reply、wait 等回复工具，不要代写台词。\n\n"
+             "你只负责判断是否需要执行实际操作："
+             "如果不需要执行工具，调用 phone_result，result 留空；"
+             "用户提出操作请求时，调用现有工具完成操作；"
+             "操作成功、失败或无法执行后，调用 phone_result。"
+             "phone_result.result 只填写真实结果、失败原因和必要事实，不写给用户的台词，"
+             "前台回复器会根据你的结论再次讲话。"),
+            ("recent_recall_context", candidates["recent_recall_context"]),
+            ("triggered_memories", triggered_memory_context(
+                self.memory, batch, memories, on_injected=self._record_trigger_injections)),
+        )
+        content = _owner_content_blocks(batch, channel.content_blocks, self.store.timezone, runtime_text)
+        content[-1]["cache_control"] = {"type": "ephemeral"}
+        return [*shared["messages"], {"role": "user", "content": content}], TurnDraft(
+            memory_context=memories, memory_conversation=shared["history"])
 
     async def _phone_planner(self, batch, turn_id, channel):
         from ...agent.workflow import AgentWorkflow
-        from ...turn_support import context_data_message
         reports = []
         done = False
 
@@ -189,17 +214,9 @@ class OwnerWorkflow:
             done = True
             return {"ok": True, "forwarded_to_phone_replyer": True}
 
-        spec = {
-            "name": "phone_result",
-            "description": "操作完成或失败后提交实际结果；纯聊天提交空字符串。不直接向用户发声。",
-            "input_schema": {"type": "object", "properties": {
-                "result": {"type": "string", "maxLength": 6000}},
-                "required": ["result"], "additionalProperties": False},
-        }
-        permitted = self.tool_surface.permitted_names("owner") - {"reply", "wait", "end_turn"}
-        tools = [tool for tool in self.tool_surface.conversation_specs() if tool["name"] in permitted]
-        tools.append(spec)
-        draft = TurnDraft()
+        permitted = self.tool_surface.permitted_names("owner")
+        tools = self.tool_surface.conversation_specs()
+        messages, draft = self._phone_planner_context(batch, turn_id, channel)
         workflow = AgentWorkflow(
             stage="owner", tool_names=frozenset({"phone_result"}), execute_tool=report,
             is_complete=lambda: done, completion_result=lambda: {"ok": True},
@@ -207,12 +224,9 @@ class OwnerWorkflow:
         )
         await self._run_tool_loop(
             self._system(planner=True),
-            [context_data_message(("runtime_directives",
-                "你是电话后台 Planner。前台已并行回应，禁止直接发消息、代写台词或承诺未完成的操作。"
-                "仅在用户确实要求时执行工具。完成后以 phone_result 提交真实结果与失败原因；纯聊天提交空结果。"), required=True),
-             *self._phone_planner_messages(batch, turn_id)],
+            messages,
             tools, batch, draft,
-            execution=TurnExecutionSpec("owner", permitted_tools=frozenset({*permitted, "phone_result"})),
+            execution=TurnExecutionSpec("owner", permitted_tools=permitted),
             source_event_id=batch[0].event_id, turn_id=turn_id, delivery_channel=channel,
             workflow=workflow,
         )

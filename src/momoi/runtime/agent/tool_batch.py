@@ -458,6 +458,11 @@ class ToolBatchExecutor:
                     **({"mood_decision": "updated" if reply and reply.mood_update else "unchanged"}
                        if ended else {"reason": result.get("error")}),
                 )
+            elif call.name == "phone_result" and not (
+                request.workflow is not None and call.name in request.workflow.tool_names
+            ):
+                result = {"ok": False, "error": "phone_sidecar_not_active",
+                          "message": "当前不是电话边车，按当前阶段正常回应或结束。"}
             elif call.name == "reply":
                 target = self.bubble_delivery.channels.get(
                     call.arguments.get("channel") or request.delivery_channel.name, request.delivery_channel)

@@ -28,6 +28,14 @@ from ..tool_contracts.reply import REPLY_TOOL_SPEC
 from ..tool_contracts.qq_call import QQ_CALL_STATUS_SPEC
 from ..tool_contracts.qq_message import QQ_RECALL_MESSAGE_SPEC
 
+PHONE_RESULT_SPEC = {
+    "name": "phone_result",
+    "description": "电话后台执行者向电话 Replyer 提交真实操作结果或失败原因；纯聊天 result 留空。非电话边车阶段不使用。",
+    "input_schema": {"type": "object", "properties": {
+        "result": {"type": "string", "maxLength": 6000}},
+        "required": ["result"], "additionalProperties": False},
+}
+
 logger = logging.getLogger("momoi.runtime.turns")
 
 DEFERRED_TOOLS = frozenset({
@@ -169,6 +177,7 @@ class ToolSurface:
         if not self.voice_enabled:
             reply_spec["input_schema"]["properties"]["mode"]["enum"] = ["text"]
         tools = [
+            copy.deepcopy(PHONE_RESULT_SPEC),
             copy.deepcopy(RECALL_TOOL_SPEC),
             copy.deepcopy(WAIT_TOOL_SPEC),
             copy.deepcopy(MOOD_CHANGE_TOOL_SPEC),
@@ -205,7 +214,7 @@ class ToolSurface:
         thinking = {str(spec["name"]) for spec in THINKING_TOOL_SPECS}
         channel_tools = {spec["name"] for group, specs in self.discovery_groups().items()
                          if group in {"builtin_qq_messages", "builtin_calls", "builtin_mcp_management"} for spec in specs}
-        shared = {"reply", "mood_change", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
+        shared = {"phone_result", "reply", "mood_change", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
         if self.affinity_enabled():
             shared.update(spec["name"] for spec in AFFINITY_TOOLS)
         general_chat = {
