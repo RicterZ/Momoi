@@ -70,11 +70,15 @@ class SessionPlayback:
     interpreter and WASAPI endpoint startup on every reply."""
     FRAME = 960
 
-    def __init__(self, command):
+    def __init__(self, command, *, ready_marker=None):
         self.command = command
-        self.process = self.task = None
+        self.process = self.task = self.log_task = None
         self.queue = asyncio.Queue(maxsize=3)
         self.voice_until = 0.0
+        # Silence written before the player opens its device stays queued in the pipe
+        # for the whole call and delays every reply by that much.
+        self.ready_marker = ready_marker
+        self.ready = None
 
     @property
     def alive(self):
@@ -88,13 +92,35 @@ class SessionPlayback:
         if self.alive:
             return
         await self.close()
-        self.process = await asyncio.create_subprocess_exec(*self.command, stdin=asyncio.subprocess.PIPE, stderr=None)
+        self.ready = asyncio.Event() if self.ready_marker else None
+        self.process = await asyncio.create_subprocess_exec(*self.command, stdin=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE if self.ready_marker else None)
+        if self.ready_marker:
+            self.log_task = asyncio.create_task(self.forward_log(self.process.stderr, self.ready))
         self.task = asyncio.create_task(self.pump())
+
+    async def forward_log(self, stream, ready):
+        tail = b''
+        while chunk := await stream.read(4096):
+            target = getattr(sys.stderr, 'buffer', None)
+            if target is None:
+                sys.stderr.write(chunk.decode('utf-8', errors='replace'))
+            else:
+                target.write(chunk)
+            sys.stderr.flush()
+            if not ready.is_set():
+                tail = (tail + chunk)[-(len(chunk) + len(self.ready_marker)):]
+                if self.ready_marker in tail:
+                    ready.set()
+        ready.set()
 
     async def pump(self):
         silence = bytes(self.FRAME)
-        deadline = time.monotonic()
         try:
+            if self.ready is not None:
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(self.ready.wait(), 10)
+            deadline = time.monotonic()
             while True:
                 try:
                     frame, done = self.queue.get_nowait()
@@ -134,7 +160,10 @@ class SessionPlayback:
             self.task.cancel()
             await asyncio.gather(self.task, return_exceptions=True)
         await stop_process(self.process)
-        self.process = self.task = None
+        if self.log_task:
+            self.log_task.cancel()
+            await asyncio.gather(self.log_task, return_exceptions=True)
+        self.process = self.task = self.log_task = None
 
 
 class MediaBroker:
@@ -221,7 +250,8 @@ class MediaBroker:
 
     async def session_output(self):
         if self.output is None:
-            self.output = SessionPlayback(self.playback_command)
+            self.output = SessionPlayback(self.playback_command, ready_marker=(
+                b'event=qq_call_wasapi_opened' if self.audio is not None else None))
         await self.output.start()
         return self.output
 

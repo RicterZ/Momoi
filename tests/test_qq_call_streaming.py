@@ -186,6 +186,8 @@ def test_windows_adapter_reuses_player_and_reports_speaking_only_for_voice(monke
             returncode = None
             def __init__(self, args):
                 self.args, self.stdin, self.audio = args, self, bytearray()
+                self.stderr = asyncio.StreamReader()
+                self.stderr.feed_data(b'event=qq_call_wasapi_opened mode=playback\n')
             def write(self, data):
                 self.audio.extend(data)
             async def drain(self):

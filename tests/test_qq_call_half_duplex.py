@@ -282,6 +282,8 @@ def test_broker_arms_loopback_probe_after_leading_quiet_frames(monkeypatch):
             returncode = None
             def __init__(self):
                 self.stdin = self
+                self.stderr = asyncio.StreamReader()
+                self.stderr.feed_data(b'event=qq_call_wasapi_opened mode=playback\n')
             def write(self, data):
                 pass
             async def drain(self):
@@ -308,4 +310,66 @@ def test_broker_arms_loopback_probe_after_leading_quiet_frames(monkeypatch):
                 assert (await response.json())['ok']
         assert broker.loopback_probe is not None
         await broker.output.close()
+    asyncio.run(scenario())
+
+
+class FakePlayer:
+    returncode = None
+
+    def __init__(self, stderr=False):
+        self.stdin = self
+        self.written = bytearray()
+        self.stderr = asyncio.StreamReader() if stderr else None
+
+    def write(self, data):
+        self.written.extend(data)
+
+    async def drain(self):
+        pass
+
+    async def wait(self):
+        return self.returncode
+
+    def terminate(self):
+        self.returncode = -15
+
+
+def test_windows_player_gets_no_silence_until_device_opens(monkeypatch, capsys):
+    from momoi.channel.napcat.voice_call.broker import SessionPlayback
+
+    async def scenario():
+        spawned = []
+        async def spawn(*args, **kwargs):
+            assert kwargs['stderr'] == asyncio.subprocess.PIPE
+            spawned.append(FakePlayer(stderr=True))
+            return spawned[-1]
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn)
+        output = SessionPlayback(('p',), ready_marker=b'event=qq_call_wasapi_opened')
+        await output.start()
+        player = spawned[0]
+        await asyncio.sleep(0.1)
+        assert not player.written
+        player.stderr.feed_data(b'2026 DEBUG event=qq_call_wasapi_opened mode=playback\n')
+        await asyncio.sleep(0.1)
+        assert player.written
+        await output.close()
+    asyncio.run(scenario())
+    assert 'qq_call_wasapi_opened' in capsys.readouterr().err
+
+
+def test_linux_player_keeps_immediate_silence_prefill(monkeypatch):
+    from momoi.channel.napcat.voice_call.broker import MediaBroker
+
+    async def scenario():
+        spawned = []
+        async def spawn(*args, **kwargs):
+            assert kwargs['stderr'] is None
+            spawned.append(FakePlayer())
+            return spawned[-1]
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn)
+        broker = MediaBroker('x' * 32)
+        output = await broker.session_output()
+        await asyncio.sleep(0.05)
+        assert spawned[0].written
+        await output.close()
     asyncio.run(scenario())

@@ -152,7 +152,9 @@ class VocuTTSProvider(TTSProvider):
             async with asyncio.timeout(self.timeout_seconds):
                 process = await asyncio.create_subprocess_exec(
                     decoder, "-hide_banner", "-loglevel", "error",
-                    "-probesize", "32768", "-analyzeduration", "0",
+                    # The forced mp3 demuxer needs no probing; a larger probe holds the first PCM
+                    # until that many streamed MP3 bytes arrive (~0.8s at 320kbps).
+                    "-probesize", "32", "-analyzeduration", "0",
                     "-f", "mp3", "-i", "pipe:0", "-f", "s16le",
                     "-ar", "24000", "-ac", "1", "pipe:1",
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
