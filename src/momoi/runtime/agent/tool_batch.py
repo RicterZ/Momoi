@@ -317,7 +317,10 @@ class ToolBatchExecutor:
                         heartbeat_turn=execution.heartbeat,
                         harness_started=request.harness.started,
                     )
-            elif call.name == "affinity_change":
+            elif call.name == "affinity_change" and not (
+                # Reflection owns settlement context and completion bookkeeping.
+                request.workflow is not None and call.name in request.workflow.tool_names
+            ):
                 from .affinity import review_affinity
                 limit_error = request.harness.affinity_limit_error(call.arguments.get("direction"), self.store.affinity_daily_increases())
                 result = ({"ok": False, "allowed": False, "error": "affinity_daily_limit", "reason": limit_error}

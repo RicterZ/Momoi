@@ -282,3 +282,55 @@ def test_unchanged_only_reflection_without_context_or_llm(tmp_path):
     assert not asyncio.run(review_affinity(config, None, None, call, request))['ok']
     request.affinity_settlement = True
     assert asyncio.run(review_affinity(config, None, None, call, request))['state'] == 'unchanged'
+
+
+@pytest.mark.parametrize('direction', ['unchanged', 'increase'])
+def test_reflection_affinity_uses_settlement_executor(daemon, monkeypatch, direction):
+    import asyncio
+    import json
+    from datetime import datetime
+    from types import SimpleNamespace
+    from zoneinfo import ZoneInfo
+    from momoi.config.models import ReflectionConfig
+    from momoi.models import ProviderResponse, ToolCall
+
+    daemon.config = replace(daemon.config, affinity_enabled=True,
+                            reflection=ReflectionConfig(enabled=True))
+    now = datetime(2026, 10, 18, 3, tzinfo=ZoneInfo('Asia/Shanghai'))
+    claimed = daemon.store.claim_due_reflection(daemon.config.reflection, now.timestamp())
+    day = claimed['local_date']
+    seen = []
+
+    async def review(config, store, provider, call, request):
+        assert request.affinity_settlement is True
+        assert request.affinity_settlement_date == day
+        seen.append(call.arguments['direction'])
+        # A rejected adjustment is still a completed relationship decision.
+        return ({'ok': True, 'state': 'unchanged'} if direction == 'unchanged'
+                else {'ok': True, 'allowed': False, 'reason': '同一事件不重复计分'})
+
+    monkeypatch.setattr('momoi.runtime.agent.affinity.review_affinity', review)
+    rounds = 0
+
+    async def complete(system, messages, tools, **kwargs):
+        nonlocal rounds
+        rounds += 1
+        assert rounds <= 2, 'settlement must unblock reflection_finish'
+        call = (ToolCall('settle', 'affinity_change', {'direction': direction, 'reason': '本日判断',
+                                                    **({'evidence': '已有计分记录'} if direction == 'increase' else {})})
+                if rounds == 1 else ToolCall('finish', 'reflection_finish',
+                    {'summary': '本日关系保持不变。', 'memories': [], 'conversation_actions': []}))
+        return ProviderResponse(content=[{'type': 'tool_use', 'id': call.id,
+                                         'name': call.name, 'input': call.arguments}], tool_calls=[call])
+
+    daemon.provider = SimpleNamespace(complete=complete)
+    daemon.store.begin_turn('reflection-affinity-regression', 'reflection', [f'reflection:{day}'])
+    asyncio.run(daemon._complete_reflection(day, 'reflection-affinity-regression'))
+    assert seen == [direction]
+    assert rounds == 2
+    assert daemon.store.reflection(day)['state'] == 'completed'
+    settlements = daemon.store._db.execute(
+        "SELECT payload_json FROM turn_journal WHERE item_type='affinity_settlement'"
+    ).fetchall()
+    assert len(settlements) == 1
+    assert json.loads(settlements[0][0])['local_date'] == day
