@@ -18,6 +18,7 @@ def test_phone_prompt_and_tool_free_completion(tmp_path, output):
     store.always_memory_context.return_value = '常驻记忆'
     store.scoped_memory_context.return_value = '当前状态'
     store.self_state_context.return_value = '心情'
+    store.turn_exchanges.return_value = {}
     store.phone_history_rows.return_value = [
         {'turn_id': 'old', 'role': 'user', 'content': '之前的话'},
         {'turn_id': 'old', 'role': 'assistant', 'content': '之前的回应'},
@@ -73,7 +74,7 @@ def test_phone_executor_delivery_and_archive(tmp_path, output, stale):
             asyncio.run(daemon._complete_batch([event], 'now', channel))
             assert daemon.store._db.execute("SELECT state FROM turns WHERE id='now'").fetchone()[0] == 'completed'
             exchanges = daemon.store.turn_exchanges(['now'])
-            assert 'now' in exchanges
+            assert ('now' in exchanges) is (output != '[WAIT]')
             if output == '[WAIT]':
                 daemon.bubble_delivery.send_voice.assert_not_called()
             else:
@@ -88,6 +89,7 @@ def test_phone_removes_chat_actions_before_tts(tmp_path):
     store.always_memory_context.return_value = ''
     store.scoped_memory_context.return_value = ''
     store.self_state_context.return_value = ''
+    store.turn_exchanges.return_value = {}
     store.phone_history_rows.return_value = []
     async def complete(system, messages, tools):
         return ProviderResponse([{'type': 'text', 'text': '我在听呢\n\nemotion://content-sigh\nqq://poke'}], [])
@@ -106,6 +108,7 @@ def test_phone_runtime_thinking_override(tmp_path, effort):
     store.always_memory_context.return_value = ''
     store.scoped_memory_context.return_value = ''
     store.self_state_context.return_value = ''
+    store.turn_exchanges.return_value = {}
     store.phone_history_rows.return_value = []
     async def complete(system, messages, tools):
         assert requested_thinking_effort('medium') == ('off' if effort is None else effort or 'medium')
@@ -127,6 +130,7 @@ def test_phone_prompt_dashboard_edit_is_used_next_request(tmp_path):
     store.always_memory_context.return_value = ''
     store.scoped_memory_context.return_value = ''
     store.self_state_context.return_value = ''
+    store.turn_exchanges.return_value = {}
     store.phone_history_rows.return_value = []
     async def complete(system, messages, tools):
         assert '电话自定义表达要求' in system
@@ -143,6 +147,7 @@ def test_phone_stream_buffers_paragraphs_and_flushes_only_on_success(tmp_path, f
     store.always_memory_context.return_value = ''
     store.scoped_memory_context.return_value = ''
     store.self_state_context.return_value = ''
+    store.turn_exchanges.return_value = {}
     store.phone_history_rows.return_value = []
     sent = []
     async def stream(*args):
@@ -175,6 +180,7 @@ def test_phone_end_marker_flushes_tail_and_ignores_trailing_output(tmp_path):
     store.always_memory_context.return_value = ''
     store.scoped_memory_context.return_value = ''
     store.self_state_context.return_value = ''
+    store.turn_exchanges.return_value = {}
     store.phone_history_rows.return_value = []
     sent = []
     async def stream(*args):
@@ -203,6 +209,7 @@ def test_phone_stream_timeout_does_not_speak_incomplete_tail(tmp_path, monkeypat
     store.always_memory_context.return_value = ''
     store.scoped_memory_context.return_value = ''
     store.self_state_context.return_value = ''
+    store.turn_exchanges.return_value = {}
     store.phone_history_rows.return_value = []
     sent = []
     async def stream(*args):
@@ -233,7 +240,8 @@ def test_phone_turn_window_rotates_in_blocks_and_preserves_pairs():
     assert select_phone_turns(huge, []) == []
 
 
-def test_phone_sidecar_reports_results_without_direct_speech(tmp_path):
+@pytest.mark.parametrize("called_tool", [False, True])
+def test_phone_sidecar_reports_results_without_direct_speech(tmp_path, called_tool):
     from unittest.mock import AsyncMock
     from momoi.runtime import MomoiDaemon
     from momoi.models import ToolCall
@@ -247,14 +255,17 @@ def test_phone_sidecar_reports_results_without_direct_speech(tmp_path):
         assert tools == daemon.tool_surface.conversation_specs()
         workflow = kwargs['workflow']
         assert not workflow.is_complete()
-        await workflow.execute_tool(ToolCall('done', 'phone_result', {'result': '查询失败，服务不可用'}))
+        if called_tool:
+            draft.tool_calls.append({'tool': 'web_fetch', 'ok': False})
+        report = await workflow.execute_tool(ToolCall('done', 'phone_result', {'result': '查询失败，服务不可用'}))
+        assert report['forwarded_to_phone_replyer'] is called_tool
         assert workflow.is_complete()
     daemon._run_tool_loop = loop
     daemon._render_batch = lambda _: '查一下'
     daemon._phone_planner_context = lambda *args: ([], __import__('momoi.models', fromlist=['TurnDraft']).TurnDraft())
     try:
         result = asyncio.run(daemon._phone_planner([event], 'now', channel))
-        assert result['result'] == '查询失败，服务不可用'
+        assert result['result'] == ('查询失败，服务不可用' if called_tool else '')
     finally:
         daemon.store.close()
 
@@ -390,3 +401,41 @@ def test_shared_transcript_prefix_is_identical_for_owner_and_background_stages(t
             assert 'shared_turn_context(' in (source / relative).read_text()
     finally:
         daemon.store.close()
+
+
+def test_phone_supplement_sees_immediately_journaled_reaction(tmp_path):
+    from momoi.runtime import MomoiDaemon
+    daemon = MomoiDaemon(config(str(tmp_path)))
+    event = IncomingMessage('e', 'm', '查一下天气', 1, 1, channel='qq_call')
+    daemon.store.add_event(event)
+    daemon.store.begin_turn('now', 'owner', ['e'])
+    requests = []
+
+    async def complete(system, messages, tools):
+        requests.append(messages)
+        if len(requests) == 2:
+            assert messages[-2] == {'role': 'assistant', 'content': '稍等，我查一下'}
+            assert '晴天' in str(messages[-1])
+        return ProviderResponse([{'type': 'text', 'text':
+            '稍等，我查一下' if len(requests) == 1 else '今天晴天'}], [])
+
+    async def run():
+        replyer = PhoneReplyer(daemon.config, daemon.store, SimpleNamespace(complete=complete))
+        await replyer.generate([event], 'now')
+        assert len(daemon.store.turn_exchanges(['now'])['now']) == 1
+        daemon.store.append_turn_journal('now', 'assistant_exchange', {
+            'content': [{'type': 'text', 'text': 'Planner 内部重试内容'}], 'results': []}, trust='runtime')
+        await replyer.generate([event], 'now', operation_result='晴天')
+        exchanges = daemon.store.turn_exchanges(['now'])['now']
+        assert [x['content'][0]['text'] for x in exchanges if x.get('source') == 'phone_replyer'] == ['稍等，我查一下', '今天晴天']
+
+    try:
+        asyncio.run(run())
+    finally:
+        daemon.store.close()
+
+
+@pytest.mark.parametrize('text,expected', [('你好\n\n[WAIT]', '你好'), ('[WAIT]', ''), ('你好[END]忽略', '你好')])
+def test_phone_control_markers_are_not_archived_or_spoken(text, expected):
+    from momoi.runtime.agent.phone_replyer import clean_phone_text
+    assert clean_phone_text(text) == expected

@@ -770,7 +770,8 @@ class ToolBatchExecutor:
 
         calls_since_reply = state.calls_since_reply
         notice_blocks: list[dict[str, Any]] = []
-        if execution.stage == "owner":
+        if execution.stage == "owner" and not (
+                request.workflow is not None and "phone_result" in request.workflow.tool_names):
             # A successful reply anywhere in this batch satisfies the progress reminder.
             if any(name == "reply" and ok for name, ok in completed_calls):
                 calls_since_reply = 0

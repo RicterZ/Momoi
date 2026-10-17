@@ -8,12 +8,12 @@ from momoi.models import ProviderResponse, ToolCall, TurnDraft
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent.harness import TurnHarness
 from momoi.runtime.agent.tool_batch import ToolBatchRequest, ToolBatchState
-from momoi.runtime.agent.workflow import TurnExecutionSpec
+from momoi.runtime.agent.workflow import AgentWorkflow, TurnExecutionSpec
 from tests.support import config
 
 
-@pytest.mark.parametrize("stage", ["owner", "webhook"])
-def test_progress_reminder_counts_calls_and_resets_on_successful_reply(tmp_path, stage):
+@pytest.mark.parametrize("stage,sidecar", [("owner", False), ("webhook", False), ("owner", True)])
+def test_progress_reminder_counts_calls_and_resets_on_successful_reply(tmp_path, stage, sidecar):
     daemon = MomoiDaemon(config(str(tmp_path)))
     daemon.store.begin_turn("progress", stage, [])
     messages = []
@@ -42,7 +42,8 @@ def test_progress_reminder_counts_calls_and_resets_on_successful_reply(tmp_path,
             harness=harness, execution=TurnExecutionSpec(stage), source_event_id="",
             turn_id="progress", call_id=f"round-{serial}", round_number=serial,
             delivery_channel=daemon.channel, heartbeat_owner_event_revision=None,
-            workflow=None, state=state, prepare_heartbeat_context=empty,
+            workflow=(AgentWorkflow("owner", frozenset({"phone_result"}), AsyncMock(),
+                                    lambda: False, lambda: None, "") if sidecar else None), state=state, prepare_heartbeat_context=empty,
             submit_owner_context=empty, settle_owner_updates=empty,
             pause_requested=lambda: paused,
         )
@@ -67,30 +68,30 @@ def test_progress_reminder_counts_calls_and_resets_on_successful_reply(tmp_path,
     async def run():
         assert not await batch(["web_fetch", "web_fetch"])
         assert not await batch(["web_fetch"], paused=True)
-        assert state.calls_since_reply == (2 if stage == "owner" else 0)
+        assert state.calls_since_reply == (2 if stage == "owner" and not sidecar else 0)
         notices = await batch(["web_fetch"], ok=False)
-        assert bool(notices) == (stage == "owner")
+        assert bool(notices) == (stage == "owner" and not sidecar)
         assert not await batch(["web_fetch", "web_fetch"])
-        assert bool(await batch(["web_fetch"])) == (stage == "owner")
+        assert bool(await batch(["web_fetch"])) == (stage == "owner" and not sidecar)
         # Crossing several thresholds in a parallel batch still produces one notice.
         notices = await batch(["web_fetch"] * 7)
-        assert len(notices) == (1 if stage == "owner" else 0)
+        assert len(notices) == (1 if stage == "owner" and not sidecar else 0)
         assert not await batch(["reply"])
         assert state.calls_since_reply == 0
         assert not await batch(["web_fetch", "web_fetch"])
         assert not await batch(["reply"], ok=False)
-        assert bool(await batch(["web_fetch"])) == (stage == "owner")
+        assert bool(await batch(["web_fetch"])) == (stage == "owner" and not sidecar)
         assert not await batch(["web_fetch"] * 3 + ["reply"])
         assert state.calls_since_reply == 0
         rows = daemon.store._db.execute(
             "SELECT payload_json FROM turn_journal WHERE turn_id=? AND item_type='runtime_notice'",
             ("progress",),
         ).fetchall()
-        assert len(rows) == (4 if stage == "owner" else 0)
+        assert len(rows) == (4 if stage == "owner" and not sidecar else 0)
         assert all(json.loads(row[0])["type"] == "reply_progress_reminder" for row in rows)
         assert not await batch(["web_fetch", "web_fetch"])
         assert not await batch(["end_turn"])
-        assert state.calls_since_reply == (2 if stage == "owner" else 0)
+        assert state.calls_since_reply == (2 if stage == "owner" and not sidecar else 0)
 
     try:
         asyncio.run(run())

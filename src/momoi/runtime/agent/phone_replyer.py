@@ -27,8 +27,18 @@ class PhoneReplyer(ReplyerBase):
         )
         selected = [{"role": row["role"], "content": str(row["content"])}
                     for row in self.store.phone_history_rows(turn_id)]
+        current = []
+        for exchange in self.store.turn_exchanges([turn_id]).get(turn_id, []):
+            if exchange.get("source") != "phone_replyer":
+                continue
+            content = exchange.get("content", [])
+            if isinstance(content, list) and content and all(
+                    block.get("type") == "text" for block in content):
+                text = "\n\n".join(block.get("text", "") for block in content)
+                if text.strip():
+                    current.append({"role": "assistant", "content": text})
         return [background, *selected,
-                *({"role": "user", "content": event.text} for event in events)]
+                *({"role": "user", "content": event.text} for event in events), *current]
 
     async def generate(self, events, turn_id, on_paragraph=None, *, operation_result=None):
         guide = prompt_text(self.config, "PHONE_REPLYER.md", files("momoi").joinpath("prompts/phone_replyer.md").read_text(encoding="utf-8"))
@@ -101,6 +111,11 @@ class PhoneReplyer(ReplyerBase):
             for paragraph in text.split("\n\n"):
                 if paragraph.strip():
                     await on_paragraph(paragraph.strip())
+        if text:
+            self.store.append_turn_journal(turn_id, "assistant_exchange", {
+                "content": [{"type": "text", "text": text}], "results": [],
+                "source": "phone_replyer",
+            }, trust="runtime")
         return text
 
 
@@ -108,4 +123,4 @@ def clean_phone_text(text):
     # SOUL may teach chat-only actions; never pass those markers to TTS.
     text = text.split("[END]", 1)[0]
     text = re.sub(r"(?:emotion|qq)://[^\s]+", "", text).strip()
-    return "" if text == "[WAIT]" else text
+    return text.replace("[WAIT]", "").strip()

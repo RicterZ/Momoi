@@ -193,7 +193,10 @@ class OwnerWorkflow:
              "用户提出操作请求时，调用现有工具完成操作；"
              "操作成功、失败或无法执行后，调用 phone_result。"
              "phone_result.result 只填写真实结果、失败原因和必要事实，不写给用户的台词，"
-             "前台回复器会根据你的结论再次讲话。"),
+             "前台回复器会根据你的结论再次讲话。"
+             "本轮必须先实际调用过其他工具，才允许提交非空 result；"
+             "没有调用工具时，即使无法执行请求也必须 result 留空。"
+             "纯聊天、用户意图复述、语气建议和道歉都不是执行结果，不得提交。"),
             ("recent_recall_context", candidates["recent_recall_context"]),
             ("triggered_memories", triggered_memory_context(
                 self.memory, batch, memories, on_injected=self._record_trigger_injections)),
@@ -210,9 +213,12 @@ class OwnerWorkflow:
 
         async def report(call):
             nonlocal done
-            reports.append(call.arguments)
+            result = call.arguments.get("result", "")
+            if not any(item.get("tool") != "phone_result" for item in draft.tool_calls):
+                result = ""
+            reports.append({"result": result})
             done = True
-            return {"ok": True, "forwarded_to_phone_replyer": True}
+            return {"ok": True, "forwarded_to_phone_replyer": bool(result.strip())}
 
         permitted = self.tool_surface.permitted_names("owner")
         tools = self.tool_surface.conversation_specs()
@@ -306,10 +312,6 @@ class OwnerWorkflow:
             result = await self.bubble_delivery.wait_reply(turn_id, identifier)
             if not result.get("ok"):
                 raise WorkflowProtocolError(result.get("error", "phone_delivery_failed"))
-        self.store.append_turn_journal(turn_id, "assistant_exchange", {
-            "content": [{"type": "text", "text": text}] if text else [],
-            "results": [],
-        }, trust="runtime")
         self.store.commit_turn(batch, self._render_batch(batch), AgentReply([]), outcome["draft"],
                                turn_id=turn_id, target_channel=channel.name)
         self.outbox_changed.set()
