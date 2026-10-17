@@ -219,3 +219,49 @@ def test_full_duplex_never_gates():
         channel.capture_turn_started('t')
         assert not channel.gate.closed
     asyncio.run(scenario())
+
+
+def test_audible_end_adds_measured_loopback_latency():
+    assert audible_end(10.0, {'first_frame_ms': 200, 'played_ms': 3000,
+                              'loopback_latency_ms': 1300}) == pytest.approx(14.5)
+
+
+def test_broker_measures_loopback_latency_from_capture(monkeypatch, capsys):
+    import json
+    import time
+    from momoi.channel.napcat.voice_call.broker import MediaBroker
+
+    async def scenario():
+        class Process:
+            returncode = None
+            def __init__(self):
+                self.stdout = asyncio.StreamReader()
+            def terminate(self):
+                self.returncode = -15
+            async def wait(self):
+                return self.returncode
+        process = Process()
+        async def spawn(*args, **kwargs):
+            return process
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn)
+        sent = []
+        broker = MediaBroker('x' * 32, audio=SimpleNamespace(capture_command=('c',), playback_command=('p',)))
+        broker.session_id = 's'
+        broker.ws = SimpleNamespace(closed=False, send_bytes=lambda frame: asyncio.sleep(0, sent.append(frame)))
+        broker.capture_stats = {}
+        broker.loopback_probe = time.monotonic() - 1.2
+        task = asyncio.create_task(broker.capture_audio('s'))
+        process.stdout.feed_data(bytes(640))
+        while len(sent) < 1:
+            await asyncio.sleep(0.001)
+        assert broker.loopback_probe is not None and broker.loopback_latency is None
+        process.stdout.feed_data(b'\x00\x10' * 320)
+        while len(sent) < 2:
+            await asyncio.sleep(0.001)
+        assert broker.loopback_probe is None and 1.2 <= broker.loopback_latency < 2
+        broker.session_id = ''
+        process.stdout.feed_eof()
+        await asyncio.gather(task, return_exceptions=True)
+    asyncio.run(scenario())
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert any(e['event'] == 'qq_call_loopback_latency' and e['latency_ms'] >= 1200 for e in events)

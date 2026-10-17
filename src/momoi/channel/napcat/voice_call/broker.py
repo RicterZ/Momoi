@@ -158,6 +158,9 @@ class MediaBroker:
         self.output = None
         self.capture_stats = {}
         self.capture_muted_until = 0.0
+        # Render-to-loopback delay, including frames queued in the player pipe.
+        self.loopback_latency = None
+        self.loopback_probe = None
         self.audio_error = ""
         self.audio_retry_at = 0.0
         self.play_lock = asyncio.Lock()
@@ -278,6 +281,7 @@ class MediaBroker:
                 self.invite = invite
                 self.session_id = uuid.uuid4().hex
                 self.capture_stats = {'frames': 0, 'bytes': 0, 'peak': 0}
+                self.loopback_latency = self.loopback_probe = None
                 self.generation = 0
                 try:
                     await self.session_output()
@@ -314,6 +318,15 @@ class MediaBroker:
                 self.capture_stats["frames"] = self.capture_stats.get("frames", 0) + 1
                 self.capture_stats["bytes"] = self.capture_stats.get("bytes", 0) + len(frame)
                 self.capture_stats["peak"] = max(self.capture_stats.get("peak", 0), peak)
+                if self.loopback_probe is not None:
+                    waited = time.monotonic() - self.loopback_probe
+                    if peak > 32:
+                        self.loopback_latency = waited
+                        self.loopback_probe = None
+                        print(json.dumps({"event": "qq_call_loopback_latency", "session_id": session_id,
+                              "latency_ms": round(waited * 1000)}), flush=True)
+                    elif waited > 3:
+                        self.loopback_probe = None
                 if time.monotonic() >= next_report:
                     print(json.dumps({"event": "qq_call_capture_progress", "session_id": session_id,
                           **self.capture_stats}), flush=True)
@@ -427,9 +440,16 @@ class MediaBroker:
                     if not self.valid(session_id, generation):
                         raise ConnectionError('Call superseded')
                     samples = array.array('h', frame)
-                    pcm_peak = max(pcm_peak, max((abs(value) for value in samples), default=0))
+                    frame_peak = max((abs(value) for value in samples), default=0)
+                    pcm_peak = max(pcm_peak, frame_peak)
+                    # Probe only after the pipe has emptied of earlier voice, so loopback
+                    # signal cannot belong to a previous utterance.
+                    probe = (self.audio is not None and frame_peak > 32 and self.loopback_probe is None
+                             and time.monotonic() > output.voice_until + 2)
                     # The player paces frames; waiting on the first marks its real stdin write.
-                    await output.write(frame, wait=first_ms is None)
+                    wrote = await output.write(frame, wait=first_ms is None or probe)
+                    if probe:
+                        self.loopback_probe = wrote
                     if first_ms is None:
                         first_ms = round((time.monotonic() - started) * 1000)
                         print(json.dumps({'event': 'qq_call_playback_first_frame', 'session_id': session_id,
@@ -450,6 +470,7 @@ class MediaBroker:
                 session_id, utterance, played, pcm_peak, bool(output and output.alive), complete)
             result = {'ok': complete, 'state': 'played' if complete else 'interrupted',
                 'played_ms': round(played / 48), 'first_frame_ms': first_ms,
+                'loopback_latency_ms': None if self.loopback_latency is None else round(self.loopback_latency * 1000),
                 'virtual_mic_signal_ms': (observer.result() if observer is not None
                     and not observer.cancelled() and observer.exception() is None else None),
                 'remote_audible_at': None,
@@ -543,6 +564,7 @@ class MediaBroker:
                 output.clear()
             result = {'ok': completed, 'state': 'played' if completed else 'interrupted',
                       'played_ms': round(played / 48), 'session_id': session_id, 'first_frame_ms': first_ms,
+                      'loopback_latency_ms': None if self.loopback_latency is None else round(self.loopback_latency * 1000),
                       'reason': None if completed else ('call_ended' if session_id != self.session_id
                           else 'owner_speech' if generation != self.generation else 'playback_failed')}
             self.receipts[key] = result

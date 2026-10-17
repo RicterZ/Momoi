@@ -26,12 +26,14 @@ STREAM_RECONNECTS = 3
 
 
 def audible_end(request_started, result):
-    """Monotonic end of audible playback: first frame plus PCM duration, not the stdin flush."""
+    """Monotonic end of audible playback: first stdin frame, PCM duration and the measured
+    render-to-loopback delay (player pipe backlog), not the stdin flush."""
     first = result.get('first_frame_ms')
     played = result.get('played_ms') or 0
+    latency = result.get('loopback_latency_ms') or 0
     if first is None:
-        return request_started + (result.get('elapsed_ms') or 0) / 1000
-    return request_started + (first + played) / 1000
+        return request_started + ((result.get('elapsed_ms') or 0) + latency) / 1000
+    return request_started + (first + played + latency) / 1000
 
 
 class QQCallChannel:
