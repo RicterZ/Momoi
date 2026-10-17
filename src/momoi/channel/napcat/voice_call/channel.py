@@ -26,14 +26,14 @@ STREAM_RECONNECTS = 3
 
 
 def audible_end(request_started, result):
-    """Monotonic end of audible playback: first stdin frame, PCM duration and the measured
-    render-to-loopback delay (player pipe backlog), not the stdin flush."""
+    """Monotonic end of audible playback: the later of the last stdin write and first frame
+    plus PCM duration (streamed TTS can stall after the first frame), plus the measured
+    render-to-loopback delay (player pipe backlog)."""
     first = result.get('first_frame_ms')
-    played = result.get('played_ms') or 0
-    latency = result.get('loopback_latency_ms') or 0
-    if first is None:
-        return request_started + ((result.get('elapsed_ms') or 0) + latency) / 1000
-    return request_started + (first + played + latency) / 1000
+    written = result.get('elapsed_ms') or 0
+    if first is not None:
+        written = max(written, first + (result.get('played_ms') or 0))
+    return request_started + (written + (result.get('loopback_latency_ms') or 0)) / 1000
 
 
 class QQCallChannel:
@@ -479,6 +479,7 @@ class QQCallChannel:
             bridge_first_frame_ms=result.get('first_frame_ms'),
             played_ms=sum(item.get('played_ms', 0) for item in results),
             virtual_mic_signal_ms=result.get('virtual_mic_signal_ms'),
+            loopback_latency_ms=results[-1].get('loopback_latency_ms'),
             measurement_endpoint='playback_stdin_written', remote_audible_at=None,
             first_frame_to_signal_ms=(result['virtual_mic_signal_ms'] - result['first_frame_ms']
                 if result.get('virtual_mic_signal_ms') is not None and result.get('first_frame_ms') is not None else None),
@@ -526,7 +527,8 @@ class QQCallChannel:
             raise SendRejected('Phone playback uncertain; do not retry') from error
         log_event(logger, logging.INFO, 'qq_call_playback', channel=self.name,
                   session_id=context['call_session_id'], state=result.get('state'),
-                  elapsed_ms=round((time.monotonic() - started) * 1000), played_ms=result.get('played_ms', 0))
+                  elapsed_ms=round((time.monotonic() - started) * 1000), played_ms=result.get('played_ms', 0),
+                  loopback_latency_ms=result.get('loopback_latency_ms'))
         if not self.context_valid(context):
             raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
         if not result.get('ok'):

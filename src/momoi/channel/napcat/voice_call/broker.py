@@ -60,6 +60,10 @@ async def observe_playback_audio(session_id, utterance, started):
         await stop_process(process)
 
 
+# Well above line noise on the shared cable (owner-side noise peaks ~600), well below speech.
+LOOPBACK_PROBE_PEAK = 2000
+
+
 class SessionPlayback:
     """One player per call, fed silence while idle. A player started per utterance
     waits up to ~1.5s for an idle PulseAudio sink to resume, and on Windows pays
@@ -320,7 +324,7 @@ class MediaBroker:
                 self.capture_stats["peak"] = max(self.capture_stats.get("peak", 0), peak)
                 if self.loopback_probe is not None:
                     waited = time.monotonic() - self.loopback_probe
-                    if peak > 32:
+                    if peak > LOOPBACK_PROBE_PEAK:
                         self.loopback_latency = waited
                         self.loopback_probe = None
                         print(json.dumps({"event": "qq_call_loopback_latency", "session_id": session_id,
@@ -444,7 +448,7 @@ class MediaBroker:
                     pcm_peak = max(pcm_peak, frame_peak)
                     # Probe only after the pipe has emptied of earlier voice, so loopback
                     # signal cannot belong to a previous utterance.
-                    probe = (self.audio is not None and frame_peak > 32 and self.loopback_probe is None
+                    probe = (self.audio is not None and frame_peak > LOOPBACK_PROBE_PEAK and self.loopback_probe is None
                              and time.monotonic() > output.voice_until + 2)
                     # The player paces frames; waiting on the first marks its real stdin write.
                     wrote = await output.write(frame, wait=first_ms is None or probe)

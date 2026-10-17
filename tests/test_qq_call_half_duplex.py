@@ -130,8 +130,13 @@ def test_cancelled_turn_with_in_flight_send_waits_for_send():
     assert gate.poll()
 
 
-def test_audible_end_uses_first_frame_plus_pcm_not_response_time():
+def test_audible_end_uses_first_frame_plus_pcm_when_later_than_response():
     assert audible_end(10.0, {'first_frame_ms': 200, 'played_ms': 3000, 'elapsed_ms': 3100}) == 13.2
+
+
+def test_audible_end_uses_last_write_when_streamed_tts_stalls():
+    assert audible_end(10.0, {'first_frame_ms': 15, 'played_ms': 4702, 'elapsed_ms': 7938,
+                              'loopback_latency_ms': 1200}) == pytest.approx(19.138)
 
 
 class Stream:
@@ -251,7 +256,7 @@ def test_broker_measures_loopback_latency_from_capture(monkeypatch, capsys):
         broker.capture_stats = {}
         broker.loopback_probe = time.monotonic() - 1.2
         task = asyncio.create_task(broker.capture_audio('s'))
-        process.stdout.feed_data(bytes(640))
+        process.stdout.feed_data(b'\x58\x02' * 320)
         while len(sent) < 1:
             await asyncio.sleep(0.001)
         assert broker.loopback_probe is not None and broker.loopback_latency is None
