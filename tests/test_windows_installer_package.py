@@ -29,7 +29,8 @@ def test_github_release_publishes_full_installer_not_online_bootstrap():
     publish = workflow.split('  publish-release:', 1)[1]
     upload = next(line for line in publish.splitlines() if 'gh release upload' in line)
     assert 'Momoi-Windows-${RELEASE_TAG#v}-x64.zip' in upload
-    assert '${installers[0]}' in upload
+    assert '${installers[0]}' not in upload
+    assert '.exe' not in upload
     assert 'Online-Setup' not in upload
 
 

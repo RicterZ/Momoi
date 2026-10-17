@@ -209,4 +209,4 @@ jobs:
             exit 1
           fi
           python packaging/windows/package_installer.py --directory dist/windows --version "${RELEASE_TAG#v}"
-          gh release upload "$RELEASE_TAG" "dist/windows/Momoi-Windows-${RELEASE_TAG#v}-x64.zip" "${installers[0]}" --clobber
+          gh release upload "$RELEASE_TAG" "dist/windows/Momoi-Windows-${RELEASE_TAG#v}-x64.zip" --clobber
