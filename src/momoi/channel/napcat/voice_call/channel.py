@@ -15,6 +15,7 @@ from ....models import IncomingMessage
 from ....observability.events import log_event
 from ....observability.context import log_context
 from .audio import Segmenter, wav_bytes
+from .gate import CaptureGate, detect_half_duplex
 from .speech import bubble_pcm
 
 logger = logging.getLogger('momoi.qq_call')
@@ -22,6 +23,15 @@ logger = logging.getLogger('momoi.qq_call')
 STREAM_SEGMENT_SECONDS = 100
 STREAM_SEGMENT_BYTES = 48000 * 100
 STREAM_RECONNECTS = 3
+
+
+def audible_end(request_started, result):
+    """Monotonic end of audible playback: first frame plus PCM duration, not the stdin flush."""
+    first = result.get('first_frame_ms')
+    played = result.get('played_ms') or 0
+    if first is None:
+        return request_started + (result.get('elapsed_ms') or 0) / 1000
+    return request_started + (first + played) / 1000
 
 
 class QQCallChannel:
@@ -47,6 +57,8 @@ class QQCallChannel:
         self.asr_compute_ms = 0.0
         self.pending_stop = None
         self.sent = OrderedDict()
+        self.half_duplex = False
+        self.gate = CaptureGate(getattr(config, 'half_duplex_tail_ms', 400))
 
     def routing_context(self):
         return {'call_session_id': self.session_id, 'call_generation': self.generation}
@@ -66,6 +78,8 @@ class QQCallChannel:
         self.session_id = ''
         self.generation += 1
         self.segmenter.reset()
+        self.gate.reset()
+        self.half_duplex = False
         self.asr_frames = 0
         self.asr_compute_ms = 0.0
         if self.asr_stream is not None:
@@ -111,8 +125,16 @@ class QQCallChannel:
                     await self.end_session(reason='session_replaced' if sid else 'bridge_session_ended')
                     self.session_id = sid
                     self.generation = int(value.get('generation') or 0)
+                    if sid:
+                        self.half_duplex, reason = detect_half_duplex(
+                            value.get('audio_devices'), mode=getattr(self.config, 'half_duplex', 'auto'),
+                            bridge_flag=bool(value.get('half_duplex')))
+                        log_event(logger, logging.INFO, 'qq_call_half_duplex', channel=self.name,
+                                  session_id=sid, half_duplex=self.half_duplex, reason=reason)
                 self.status = {k: value[k] for k in ('phase', 'ready', 'error', 'dependencies') if k in value}
             elif message.type == aiohttp.WSMsgType.BINARY and self.session_id:
+                if self.half_duplex and not await self.admit_frame(message.data):
+                    continue
                 if callable(getattr(self.asr, 'create_stream', None)):
                     try:
                         if self.asr_stream is None:
@@ -154,6 +176,30 @@ class QQCallChannel:
             elif message.type == aiohttp.WSMsgType.ERROR:
                 break
 
+    async def admit_frame(self, frame):
+        if self.gate.poll():
+            self.segmenter.reset()
+            self.asr_frames = 0
+            self.asr_compute_ms = 0.0
+            if self.asr_stream is not None:
+                stream, self.asr_stream = self.asr_stream, None
+                with contextlib.suppress(Exception):
+                    await stream.close()
+        if not self.gate.closed:
+            return True
+        import array
+        samples = array.array('h', frame[:len(frame) // 2 * 2])
+        self.gate.drop(max((abs(value) for value in samples), default=0))
+        return False
+
+    def capture_turn_started(self, turn_id):
+        if self.half_duplex:
+            self.gate.turn_started(turn_id)
+
+    def capture_turn_finished(self, turn_id, *, cancelled=False):
+        if self.half_duplex:
+            self.gate.turn_finished(turn_id, cancelled=cancelled)
+
     async def transcribe(self, on_event):
         while True:
             context, audio = await self.queue.get()
@@ -178,7 +224,17 @@ class QQCallChannel:
                       elapsed_ms=round((time.monotonic() - started) * 1000),
                       queue_wait_ms=round((time.time() - context.get('segment_finished_at', time.time())) * 1000
                                           - (time.monotonic() - started) * 1000))
-            if text.strip() and self.context_valid(context):
+            if text.strip() and self.context_valid(context) and self.half_duplex:
+                if self.gate.closed:
+                    log_event(logger, logging.INFO, 'qq_call_speech_discarded', channel=self.name,
+                              session_id=self.session_id, reason='capture_gate_closed')
+                    continue
+                context = {**context, 'recognized_at': time.time()}
+                event_id = 'qq-call:' + context['call_session_id'] + ':' + uuid.uuid4().hex
+                now = time.time()
+                await on_event(IncomingMessage(event_id, event_id, text.strip(), now, now,
+                                               channel=self.name, delivery_context=context))
+            elif text.strip() and self.context_valid(context):
                 self.generation += 1
                 context = {**context, **self.routing_context(), 'recognized_at': time.time()}
                 log_event(logger, logging.INFO, 'qq_call_interrupt', channel=self.name,
@@ -240,6 +296,19 @@ class QQCallChannel:
             raise SendInterrupted('call_ended')
         if self.pending_stop:
             await self.pending_stop
+        if self.half_duplex:
+            self.gate.send_started(utterance_id)
+            end = None
+            try:
+                result = await self._send_call_stream(provider, text, context, utterance_id)
+                end = self._audible_end
+                return result
+            finally:
+                self.gate.send_finished(audible_end=end)
+        return await self._send_call_stream(provider, text, context, utterance_id)
+
+    async def _send_call_stream(self, provider, text, context, utterance_id):
+        self._audible_end = None
         started = time.monotonic()
         first_ms = None
         synthesis_error = None
@@ -337,13 +406,17 @@ class QQCallChannel:
                 return await response.json()
 
         async def play(first, part_id):
+            request_started = time.monotonic()
             request = asyncio.create_task(request_playback(first, part_id))
             try:
                 while not request.done():
                     await asyncio.wait({request}, timeout=.05)
                     if not self.context_valid(context):
                         raise interrupted()
-                return request.result()
+                result = request.result()
+                if result.get('ok'):
+                    self._audible_end = max(self._audible_end or 0, audible_end(request_started, result))
+                return result
             finally:
                 request.cancel()
                 await asyncio.gather(request, return_exceptions=True)
@@ -392,6 +465,8 @@ class QQCallChannel:
             raise SendRejected('Streaming phone audio failed') from source_error
         if not results:
             raise SendRejected('Streaming phone playback failed')
+        if self._audible_end is None:
+            self._audible_end = time.monotonic()
         log_event(logger, logging.DEBUG, 'qq_call_pcm_uploaded', session_id=self.session_id,
                   utterance_id=utterance_id, pcm_bytes=pcm_bytes, peak=pcm_peak, segments=part)
         result = results[0]
@@ -420,6 +495,20 @@ class QQCallChannel:
         key = (context['call_session_id'], utterance_id)
         if key in self.sent:
             return self.sent[key]
+        if not self.half_duplex:
+            return await self._send_call_voice(audio, context, utterance_id, key)
+        self.gate.send_started(utterance_id)
+        self._audible_end = None
+        end = None
+        try:
+            result = await self._send_call_voice(audio, context, utterance_id, key)
+            end = self._audible_end
+            return result
+        finally:
+            self.gate.send_finished(audible_end=end)
+
+    async def _send_call_voice(self, audio, context, utterance_id, key):
+        self._audible_end = None
         started = time.monotonic()
         try:
             async with self.http.post(self.config.bridge_url + '/v1/playback', data=audio.data,
@@ -442,6 +531,7 @@ class QQCallChannel:
             if result.get('reason') in {'owner_speech', 'call_ended'}:
                 raise SendInterrupted(result['reason'])
             raise SendRejected('Phone playback failed')
+        self._audible_end = audible_end(started, result)
         self.sent[key] = 'call:' + context['call_session_id'] + ':' + utterance_id
         while len(self.sent) > 128:
             self.sent.popitem(last=False)

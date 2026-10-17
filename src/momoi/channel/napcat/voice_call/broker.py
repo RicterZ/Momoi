@@ -462,6 +462,7 @@ class MediaBroker:
             return web.json_response(result)
 
     async def play(self, request):
+        started = time.monotonic()
         session_id = request.headers.get('X-Call-Session', '')
         utterance = request.headers.get('X-Call-Utterance', '')
         try:
@@ -522,13 +523,16 @@ class MediaBroker:
                 raise web.HTTPConflict(text='Call ended or utterance superseded')
             output = await self.session_output()
             played = 0
+            first_ms = None
             try:
                 # The player paces frames, so cancellation also stops queued audio quickly.
                 for offset in range(0, len(pcm), 960):
                     if not self.valid(session_id, generation):
                         break
                     frame = pcm[offset:offset + 960]
-                    await output.write(frame)
+                    await output.write(frame, wait=first_ms is None)
+                    if first_ms is None:
+                        first_ms = round((time.monotonic() - started) * 1000)
                     played += len(frame)
                 if played == len(pcm) and self.valid(session_id, generation):
                     await output.flush()
@@ -538,7 +542,7 @@ class MediaBroker:
             if not completed:
                 output.clear()
             result = {'ok': completed, 'state': 'played' if completed else 'interrupted',
-                      'played_ms': round(played / 48), 'session_id': session_id,
+                      'played_ms': round(played / 48), 'session_id': session_id, 'first_frame_ms': first_ms,
                       'reason': None if completed else ('call_ended' if session_id != self.session_id
                           else 'owner_speech' if generation != self.generation else 'playback_failed')}
             self.receipts[key] = result

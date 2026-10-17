@@ -286,6 +286,19 @@ class OwnerWorkflow:
         started = time.monotonic()
         log_event(logger, logging.INFO, "qq_call_turn_started", channel=channel.name,
                   turn_id=turn_id, executor="phone_replyer")
+        gate_started = getattr(channel, "capture_turn_started", None)
+        if callable(gate_started):
+            gate_started(turn_id)
+        cancelled = True
+        try:
+            await self._phone_turn(batch, turn_id, channel, started)
+            cancelled = False
+        finally:
+            gate_finished = getattr(channel, "capture_turn_finished", None)
+            if callable(gate_finished):
+                gate_finished(turn_id, cancelled=cancelled)
+
+    async def _phone_turn(self, batch, turn_id, channel, started):
         context = batch[-1].delivery_context
         if not channel.context_valid(context):
             raise asyncio.CancelledError()

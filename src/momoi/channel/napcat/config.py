@@ -12,10 +12,13 @@ class QQCallConfig:
     request_timeout_seconds: float = 5
     input_device: str = ""
     output_device: str = ""
+    half_duplex: str = "auto"
+    half_duplex_tail_ms: int = 400
 
     @classmethod
     def from_mapping(cls, value):
-        if not isinstance(value, dict) or value.keys() - {"enabled", "bridge_url", "bridge_token", "request_timeout_seconds", "input_device", "output_device"}:
+        if not isinstance(value, dict) or value.keys() - {"enabled", "bridge_url", "bridge_token", "request_timeout_seconds",
+                                                          "input_device", "output_device", "half_duplex", "half_duplex_tail_ms"}:
             raise ValueError("invalid napcat voice_call configuration")
         enabled = value.get("enabled", False)
         if type(enabled) is not bool:
@@ -36,7 +39,13 @@ class QQCallConfig:
         devices = [value.get(key, "") for key in ("input_device", "output_device")]
         if any(not isinstance(item, str) or len(item) > 256 or "\0" in item for item in devices):
             raise ValueError("voice_call device identities must be strings")
-        return cls(enabled, url, token, float(timeout), *devices)
+        half_duplex = value.get("half_duplex", "auto")
+        if half_duplex not in {"auto", "on", "off"}:
+            raise ValueError("voice_call.half_duplex must be auto, on or off")
+        tail = value.get("half_duplex_tail_ms", 400)
+        if type(tail) is not int or not 0 <= tail <= 5000:
+            raise ValueError("voice_call.half_duplex_tail_ms must be an integer between 0 and 5000")
+        return cls(enabled, url, token, float(timeout), *devices, half_duplex, tail)
 
 
 @dataclass(frozen=True)

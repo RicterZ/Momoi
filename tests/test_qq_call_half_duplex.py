@@ -1,0 +1,221 @@
+import asyncio
+import logging
+from types import SimpleNamespace
+
+import pytest
+
+from momoi.channel.napcat.config import QQCallConfig
+from momoi.channel.napcat.voice_call.channel import QQCallChannel, audible_end
+from momoi.channel.napcat.voice_call.gate import CaptureGate, detect_half_duplex
+
+
+class Clock:
+    def __init__(self):
+        self.now = 100.0
+
+    def __call__(self):
+        return self.now
+
+
+def cable(direction, device_id=''):
+    return {'id': device_id, 'name': f'CABLE {direction} (VB-Audio Virtual Cable)'}
+
+
+def test_detects_shared_cable_by_id_pair_and_name_fallback():
+    single_cable = {'input_device': cable('Output', '{0.0.1}.{c}'), 'output_device': cable('Input', '{0.0.0}.{c}'),
+                    'injection_device': cable('Input', '{0.0.0}.{C}')}
+    assert detect_half_duplex(single_cable) == (True, 'shared_virtual_cable')
+    steam = {'input_device': {'id': '{0.0.1}.{mic}', 'name': '麦克风 (Steam Streaming Microphone)'},
+             'output_device': {'id': '{0.0.0}.{spk}', 'name': '扬声器 (Steam Streaming Speakers)'},
+             'injection_device': {'id': '{0.0.0}.{inj}', 'name': '扬声器 (Steam Streaming Microphone)'}}
+    assert detect_half_duplex(steam) == (False, 'separate_devices')
+    assert detect_half_duplex({'output_device': cable('Input'), 'injection_device': cable('Input')}) == (
+        True, 'shared_virtual_cable_name')
+    assert detect_half_duplex({'input_device': cable('Output'), 'output_device': cable('Input')}) == (
+        True, 'shared_virtual_cable_name')
+    assert detect_half_duplex({}, bridge_flag=True)[0]
+    assert detect_half_duplex({'input_device': cable('Output'), 'output_device': {
+        'name': 'CABLE-A Input (VB-Audio Cable A)'}}) == (False, 'separate_devices')
+    assert detect_half_duplex(None) == (False, 'separate_devices')
+    assert detect_half_duplex({}, mode='on') == (True, 'forced_on')
+    assert detect_half_duplex(single_cable, mode='off') == (False, 'forced_off')
+
+
+def test_config_validates_half_duplex_options():
+    assert QQCallConfig.from_mapping({}).half_duplex == 'auto'
+    assert QQCallConfig.from_mapping({}).half_duplex_tail_ms == 400
+    assert QQCallConfig.from_mapping({'half_duplex': 'on', 'half_duplex_tail_ms': 0}).half_duplex == 'on'
+    for bad in ({'half_duplex': 'yes'}, {'half_duplex_tail_ms': -1}, {'half_duplex_tail_ms': 1.5}):
+        with pytest.raises(ValueError):
+            QQCallConfig.from_mapping(bad)
+
+
+def test_single_sentence_opens_after_audible_end_plus_tail(caplog):
+    caplog.set_level(logging.INFO, logger='momoi.qq_call')
+    clock = Clock()
+    gate = CaptureGate(400, clock)
+    gate.turn_started('t1')
+    assert gate.closed
+    clock.now = 102.0
+    gate.send_started('u1')
+    clock.now = 103.0
+    gate.send_finished(audible_end=104.0)
+    gate.turn_finished('t1')
+    gate.drop(500)
+    clock.now = 104.39
+    assert not gate.poll() and gate.closed
+    clock.now = 104.4
+    assert gate.poll() and not gate.closed
+    assert not gate.poll()
+    events = {r.momoi_event: r.momoi_fields for r in caplog.records if hasattr(r, 'momoi_event')}
+    assert events['qq_call_capture_gate_closed'] == {'reason': 'turn_started', 'turn_id': 't1'}
+    assert events['qq_call_capture_gate_opened']['tail_ms'] == 400
+    assert events['qq_call_capture_gate_opened']['dropped_frames'] == 1
+
+
+def test_multi_sentence_stays_closed_between_sentences():
+    clock = Clock()
+    gate = CaptureGate(400, clock)
+    gate.turn_started('t')
+    gate.send_started('a')
+    gate.send_finished(audible_end=101.0)
+    clock.now = 102.0
+    assert not gate.poll()
+    gate.send_started('b')
+    gate.send_finished(audible_end=105.0)
+    clock.now = 106.0
+    assert not gate.poll()
+    gate.turn_finished('t')
+    clock.now = 105.3
+    assert not gate.poll()
+    clock.now = 105.4
+    assert gate.poll()
+
+
+def test_send_without_turn_closes_and_failed_playback_waits_tail_from_failure():
+    clock = Clock()
+    gate = CaptureGate(400, clock)
+    gate.send_started('u')
+    assert gate.closed and gate.turn_id is None
+    clock.now = 101.0
+    gate.send_finished(audible_end=None)
+    clock.now = 101.39
+    assert not gate.poll()
+    clock.now = 101.4
+    assert gate.poll()
+
+
+def test_cancelled_turn_without_audio_opens_tail_after_cancel():
+    clock = Clock()
+    gate = CaptureGate(400, clock)
+    gate.turn_started('t')
+    clock.now = 103.0
+    gate.turn_finished('t', cancelled=True)
+    clock.now = 103.3
+    assert not gate.poll()
+    clock.now = 103.4
+    assert gate.poll()
+
+
+def test_cancelled_turn_with_in_flight_send_waits_for_send():
+    clock = Clock()
+    gate = CaptureGate(400, clock)
+    gate.turn_started('t')
+    gate.send_started('u')
+    gate.turn_finished('t', cancelled=True)
+    clock.now = 110.0
+    assert not gate.poll()
+    gate.send_finished(audible_end=None)
+    clock.now = 110.4
+    assert gate.poll()
+
+
+def test_audible_end_uses_first_frame_plus_pcm_not_response_time():
+    assert audible_end(10.0, {'first_frame_ms': 200, 'played_ms': 3000, 'elapsed_ms': 3100}) == 13.2
+
+
+class Stream:
+    def __init__(self):
+        self.closed = False
+        self.fed = []
+
+    async def feed(self, pcm):
+        self.fed.append(pcm)
+        return {'final': False, 'text': ''}
+
+    async def close(self):
+        self.closed = True
+
+
+def make_channel(clock):
+    channel = QQCallChannel(SimpleNamespace(half_duplex='auto', half_duplex_tail_ms=400), '1',
+                            None, tts_enabled=False)
+    channel.gate = CaptureGate(400, clock)
+    channel.half_duplex = True
+    channel.session_id = 's'
+    channel.status = {'phase': 'connected'}
+    return channel
+
+
+def test_gate_drops_frames_and_resets_vad_and_asr_on_open():
+    async def scenario():
+        clock = Clock()
+        channel = make_channel(clock)
+        stream = channel.asr_stream = Stream()
+        channel.segmenter.frames = [b'x' * 640]
+        channel.capture_turn_started('t')
+        assert not await channel.admit_frame(b'\x10\x00' * 320)
+        assert channel.gate.dropped == 1 and channel.gate.dropped_peak == 16
+        channel.capture_turn_finished('t')
+        clock.now += .4
+        assert await channel.admit_frame(bytes(640))
+        assert stream.closed and channel.asr_stream is None
+        assert channel.segmenter.frames == []
+    asyncio.run(scenario())
+
+
+def test_half_duplex_ignores_interrupt_and_drops_speech_while_closed(caplog):
+    caplog.set_level(logging.INFO, logger='momoi.qq_call')
+    async def scenario():
+        channel = make_channel(Clock())
+        interrupts, events = [], []
+        channel.interrupt = interrupts.append
+        async def on_event(event):
+            events.append(event.text)
+
+        async def say(text):
+            channel.queue.put_nowait(({**channel.routing_context()}, text))
+            while channel.queue.qsize():
+                await asyncio.sleep(0.01)
+            await asyncio.sleep(0.01)
+        worker = asyncio.create_task(channel.transcribe(on_event))
+        channel.capture_turn_started('t')
+        await say('就一')
+        channel.gate.reset()
+        await say('你好')
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
+        return channel, interrupts, events
+    channel, interrupts, events = asyncio.run(scenario())
+    assert interrupts == [] and channel.generation == 0
+    assert events == ['你好']
+    assert 'qq_call_interrupt' not in {getattr(r, 'momoi_event', '') for r in caplog.records}
+
+
+def test_end_session_clears_gate_state():
+    async def scenario():
+        channel = make_channel(Clock())
+        channel.capture_turn_started('t')
+        channel.gate.send_started('u')
+        await channel.end_session()
+        assert not channel.gate.closed and channel.gate.sends == 0 and not channel.half_duplex
+    asyncio.run(scenario())
+
+
+def test_full_duplex_never_gates():
+    async def scenario():
+        channel = make_channel(Clock())
+        channel.half_duplex = False
+        channel.capture_turn_started('t')
+        assert not channel.gate.closed
+    asyncio.run(scenario())
