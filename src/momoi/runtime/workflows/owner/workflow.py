@@ -173,7 +173,7 @@ class OwnerWorkflow:
                 results.append(f"Command rejected: {error}")
         return "\n".join(results)
 
-    def _phone_planner_context(self, batch, turn_id, channel):
+    def _phone_planner_context(self, batch, turn_id, channel, carryover=""):
         self.owner_context_baseline()
         shared = self.shared_turn_context(turn_id)
         memories = shared["memories"]
@@ -185,7 +185,8 @@ class OwnerWorkflow:
             ("runtime_directives",
              "当前消息渠道：qq_call（QQ 电话）。"
              "历史对话或默认渠道不代表当前消息来源。\n\n"
-             "用户正在和你进行 QQ 对话，你现在的角色是“电话执行者”。"
+             + (carryover + "\n\n" if carryover else "") +
+             "用户正在和你进行 QQ 电话，你现在的角色是“电话执行者”。"
              "电话回复器已经承担了回复的任务，你只需要根据用户消息进行执行判断，"
              "不要调用 reply、wait 等回复工具，不要代写台词。\n\n"
              "你只负责判断是否需要执行实际操作："
@@ -206,7 +207,7 @@ class OwnerWorkflow:
         return [*shared["messages"], {"role": "user", "content": content}], TurnDraft(
             memory_context=memories, memory_conversation=shared["history"])
 
-    async def _phone_planner(self, batch, turn_id, channel):
+    async def _phone_planner(self, batch, turn_id, channel, carryover=""):
         from ...agent.workflow import AgentWorkflow
         reports = []
         done = False
@@ -222,7 +223,7 @@ class OwnerWorkflow:
 
         permitted = self.tool_surface.permitted_names("owner") - {"reply", "wait"}
         tools = self.tool_surface.conversation_specs()
-        messages, draft = self._phone_planner_context(batch, turn_id, channel)
+        messages, draft = self._phone_planner_context(batch, turn_id, channel, carryover)
         workflow = AgentWorkflow(
             stage="owner", tool_names=frozenset({"phone_result"}), execute_tool=report,
             is_complete=lambda: done, completion_result=lambda: {"ok": True},
@@ -232,11 +233,54 @@ class OwnerWorkflow:
             self._system(planner=True),
             messages,
             tools, batch, draft,
-            execution=TurnExecutionSpec("owner", permitted_tools=permitted),
+            # Speech is owned by the replyer lane; new utterances start a new phone turn.
+            execution=TurnExecutionSpec("owner", permitted_tools=permitted, absorb_owner_updates=False),
             source_event_id=batch[0].event_id, turn_id=turn_id, delivery_channel=channel,
             workflow=workflow,
         )
         return {"result": reports[-1].get("result", "") if reports else "", "draft": draft}
+
+    async def _phone_planner_lane(self, previous, batch, turn_id, channel):
+        """Run after any detached predecessor; never raises ordinary failures."""
+        if previous is not None:
+            await asyncio.wait({previous})
+            await asyncio.sleep(0)
+        carryover = "\n".join(self._interruption_notices.pop("qq_call", []))
+        try:
+            outcome = await self._phone_planner(batch, turn_id, channel, carryover)
+        except Exception as error:
+            reason = type(error).__name__
+            effect = self.store.turn_has_external_effect(turn_id)
+            log_event(logger, logging.WARNING, "qq_call_planner_failed", channel=channel.name,
+                      turn_id=turn_id, error_type=reason, external_effect=effect, exc_info=True)
+            if effect:
+                self.store.open_reconciliation(turn_id, "phone_planner_failed_after_external_tool")
+            outcome = {"result": f"后台执行出错（{reason}），" + (
+                "部分操作可能已生效，结果无法确认，不要重试。" if effect else "没有产生外部操作。"),
+                "draft": TurnDraft()}
+        if carryover:
+            outcome["result"] = "\n".join(part for part in (carryover, outcome["result"]) if part)
+        return outcome
+
+    def _detach_phone_planner(self, planner, batch):
+        request = self._render_batch(batch)
+        self._phone_detached_planner = planner
+
+        def settled(task):
+            if getattr(self, "_phone_detached_planner", None) is task:
+                self._phone_detached_planner = None
+            if task.cancelled():
+                result = "执行被取消，操作是否完成无法确认"
+            elif task.exception() is not None:
+                result = f"执行出错（{type(task.exception()).__name__}）"
+            else:
+                result = task.result()["result"]
+                if not result:
+                    return
+            self._interruption_notices.setdefault("qq_call", []).append(
+                f"此前被打断的电话请求「{request}」已在后台结束：{result}。不要重复执行这些操作。")
+
+        planner.add_done_callback(settled)
 
     async def _complete_phone_batch(self, batch, turn_id, channel):
         started = time.monotonic()
@@ -278,31 +322,41 @@ class OwnerWorkflow:
                 raise WorkflowProtocolError(str(delivery.result.get("error") or "phone_delivery_rejected"))
             deliveries.append(identifier)
 
+        async def speak(**options):
+            try:
+                return await PhoneReplyer(self.config, self.store, self.provider).generate(
+                    batch, turn_id, enqueue, **options)
+            except Exception as error:
+                log_event(logger, logging.WARNING, "qq_call_reply_failed", channel=channel.name,
+                          turn_id=turn_id, supplement="operation_result" in options,
+                          error_type=type(error).__name__, exc_info=True)
+                return ""
+
+        previous = getattr(self, "_phone_detached_planner", None)
+        busy = previous is not None and not previous.done()
+        # The lane is not part of this turn's cancellation scope: started tools finish and report later.
+        planner = asyncio.create_task(self._phone_planner_lane(previous, batch, turn_id, channel))
         try:
-            async with asyncio.TaskGroup() as tasks:
-                planner = tasks.create_task(self._phone_planner(batch, turn_id, channel))
-                reaction = tasks.create_task(PhoneReplyer(self.config, self.store, self.provider).generate(
-                    batch, turn_id, enqueue))
-            text = reaction.result()
-            outcome = planner.result()
+            text = await speak(notice=(
+                "上一轮电话请求的后台操作仍在执行，结果未知；不要声称已完成，也不要重复承诺。" if busy else ""))
+            outcome = await asyncio.shield(planner)
             result = outcome["result"]
             if result and channel.context_valid(context):
-                supplement = await PhoneReplyer(self.config, self.store, self.provider).generate(
-                    batch, turn_id, enqueue, operation_result=result)
+                supplement = await speak(operation_result=result)
                 text = "\n\n".join(part for part in (text, supplement) if part)
+        except asyncio.CancelledError:
+            self._detach_phone_planner(planner, batch)
+            self.store.cancel_pending_outbox(channel.name, "phone_generation_interrupted")
+            raise
         except BaseException:
+            planner.cancel()
             self.store.cancel_pending_outbox(channel.name, "phone_generation_interrupted")
             raise
         finally:
             if prefetch:
                 prefetch.finish()
-        if prefetch and deliveries:
-            # One durable delivery represents the entire continuous audio stream.
-            with self.store._db:
-                self.store._db.execute("UPDATE turn_progress SET text=? WHERE turn_id=? AND tool_call_id=?",
-                                       (text, turn_id, deliveries[0]))
-                self.store._db.execute("UPDATE outbox SET text=? WHERE turn_id=? AND dedupe_key LIKE ?",
-                                       (text, turn_id, f"turn:{turn_id}:progress:{deliveries[0]}:%"))
+        if prefetch and deliveries and text:
+            self.store.replace_voice_progress_text(turn_id, deliveries[0], text)
         log_event(logger, logging.INFO, "qq_call_reply_generated", channel=channel.name,
                   turn_id=turn_id, elapsed_ms=round((time.monotonic() - started) * 1000),
                   silent=not bool(text))

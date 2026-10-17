@@ -19,6 +19,18 @@ class OutboxStore:
         ).fetchone()
         return dict(row) if row else None
 
+    def replace_voice_progress_text(self, turn_id: str, tool_call_id: str, text: str) -> None:
+        """Record the full transcript of one continuous voice stream."""
+        with self._db:
+            self._db.execute(
+                "UPDATE turn_progress SET text=? WHERE turn_id=? AND tool_call_id=? AND part_index=0",
+                (text, turn_id, tool_call_id),
+            )
+            self._db.execute(
+                "UPDATE outbox SET text=? WHERE dedupe_key=?",
+                (text, f"turn:{turn_id}:progress:{tool_call_id}:0"),
+            )
+
     def committed_reply(self, turn_id: str, tool_call_id: str) -> dict[str, object] | None:
         """Recover exact generated speech on replay of an already queued call."""
         rows = self._db.execute(

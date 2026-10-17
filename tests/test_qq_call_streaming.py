@@ -470,3 +470,72 @@ def test_continuous_phone_audio_waits_for_more_paragraphs_and_keeps_duplicates()
             await anext(stream)
         await audio.close()
     asyncio.run(run())
+
+
+def test_stream_reconnects_after_bridge_drop_without_surfacing_failure():
+    async def scenario():
+        from momoi.channel.napcat.voice_call.channel import QQCallChannel
+        dropped = asyncio.Event()
+        utterances = []
+        received = []
+
+        class Provider:
+            async def stream_pcm(self, text):
+                yield (b'\x01\x00' if text == 'first' else b'\x02\x00') * 480
+                if text == 'first':
+                    await asyncio.wait_for(dropped.wait(), 2)
+
+        async def playback(request):
+            utterances.append(request.headers['X-Call-Utterance'])
+            if len(utterances) == 1:
+                await request.content.readexactly(960)
+                dropped.set()
+                request.transport.close()
+                return web.json_response({'ok': True})
+            received.append(await request.read())
+            return web.json_response({'ok': True, 'state': 'played', 'played_ms': 20})
+
+        app = web.Application()
+        app.router.add_post('/v1/playback/stream', playback)
+        async with TestServer(app) as server, ClientSession() as http:
+            channel = QQCallChannel(SimpleNamespace(bridge_url=str(server.make_url('')).rstrip('/'),
+                bridge_token='x' * 32), '123', object(), tts_enabled=True)
+            channel.http = http
+            channel.session_id = 'synthetic'
+            channel.status = {'phase': 'connected'}
+            await asyncio.wait_for(channel.send_call_stream(
+                Provider(), 'first\n\nsecond', channel.routing_context(), 'one'), 5)
+        assert utterances[0] == 'one' and utterances[1].startswith('one#')
+        assert b''.join(received).endswith(b'\x02\x00' * 480)
+
+    asyncio.run(scenario())
+
+
+def test_stream_rotates_segments_before_bridge_limits(monkeypatch):
+    import momoi.channel.napcat.voice_call.channel as module
+    monkeypatch.setattr(module, 'STREAM_SEGMENT_BYTES', 960)
+
+    async def scenario():
+        utterances = []
+
+        class Provider:
+            async def stream_pcm(self, text):
+                yield b'\x01\x00' * 480
+
+        async def playback(request):
+            utterances.append(request.headers['X-Call-Utterance'])
+            await request.read()
+            return web.json_response({'ok': True, 'played_ms': 20})
+
+        app = web.Application()
+        app.router.add_post('/v1/playback/stream', playback)
+        async with TestServer(app) as server, ClientSession() as http:
+            channel = module.QQCallChannel(SimpleNamespace(bridge_url=str(server.make_url('')).rstrip('/'),
+                bridge_token='x' * 32), '123', object(), tts_enabled=True)
+            channel.http = http
+            channel.session_id = 'synthetic'
+            channel.status = {'phase': 'connected'}
+            await channel.send_call_stream(Provider(), 'a\n\nb', channel.routing_context(), 'one')
+        assert len(utterances) >= 2 and len(set(utterances)) == len(utterances)
+
+    asyncio.run(scenario())

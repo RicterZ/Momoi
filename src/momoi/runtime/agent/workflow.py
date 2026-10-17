@@ -21,6 +21,7 @@ class TurnExecutionSpec:
     allowed_capabilities: frozenset[str] | None = None
     artifact_root: Path | None = None
     permitted_tools: frozenset[str] | None = None
+    absorb_owner_updates: bool = True
 
     def __post_init__(self) -> None:
         if self.stage not in TURN_HARNESS_SPECS:
@@ -38,7 +39,7 @@ class TurnExecutionSpec:
 
     @property
     def accept_owner_updates(self) -> bool:
-        return self.stage == "owner"
+        return self.stage == "owner" and self.absorb_owner_updates
 
     @property
     def dynamic_tool_policies(self) -> bool:

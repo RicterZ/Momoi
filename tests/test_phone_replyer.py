@@ -447,3 +447,126 @@ def test_phone_supplement_sees_immediately_journaled_reaction(tmp_path):
 def test_phone_control_markers_are_not_archived_or_spoken(text, expected):
     from momoi.runtime.agent.phone_replyer import clean_phone_text
     assert clean_phone_text(text) == expected
+
+
+def _phone_daemon(tmp_path, complete):
+    from unittest.mock import AsyncMock
+    from momoi.runtime import MomoiDaemon
+    daemon = MomoiDaemon(config(str(tmp_path)))
+    daemon.provider = SimpleNamespace(complete=complete)
+    daemon.bubble_delivery.send_voice = AsyncMock(return_value=SimpleNamespace(result={'ok': True}))
+    daemon.bubble_delivery.wait_reply = AsyncMock(return_value={'ok': True})
+    return daemon
+
+
+def test_phone_planner_failure_does_not_cut_reaction(tmp_path):
+    texts = iter(['我看看', '刚才出错了'])
+    seen = []
+    async def complete(system, messages, tools):
+        seen.append(str(messages))
+        return ProviderResponse([{'type': 'text', 'text': next(texts)}], [])
+    daemon = _phone_daemon(tmp_path, complete)
+    async def planner(*args):
+        raise RuntimeError('synthetic planner failure')
+    daemon._phone_planner = planner
+    channel = SimpleNamespace(name='qq_call', context_valid=lambda _: True)
+    event = IncomingMessage('e', 'm', '帮我查', 1, 1, channel='qq_call')
+    try:
+        daemon.store.add_event(event)
+        daemon.store.begin_turn('now', 'owner', ['e'])
+        asyncio.run(daemon._complete_phone_batch([event], 'now', channel))
+        assert [c.args[0] for c in daemon.bubble_delivery.send_voice.await_args_list] == ['我看看', '刚才出错了']
+        assert 'RuntimeError' in seen[1] and '没有产生外部操作' in seen[1]
+        assert daemon.store._db.execute("SELECT state FROM turns WHERE id='now'").fetchone()[0] == 'completed'
+    finally:
+        daemon.store.close()
+
+
+def test_phone_reaction_failure_keeps_planner_result(tmp_path):
+    from momoi.models import TurnDraft
+    calls = []
+    async def complete(system, messages, tools):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError('synthetic replyer failure')
+        assert '已开灯' in str(messages)
+        return ProviderResponse([{'type': 'text', 'text': '灯开好了'}], [])
+    daemon = _phone_daemon(tmp_path, complete)
+    async def planner(*args):
+        return {'result': '已开灯', 'draft': TurnDraft()}
+    daemon._phone_planner = planner
+    channel = SimpleNamespace(name='qq_call', context_valid=lambda _: True)
+    event = IncomingMessage('e', 'm', '开灯', 1, 1, channel='qq_call')
+    try:
+        daemon.store.add_event(event)
+        daemon.store.begin_turn('now', 'owner', ['e'])
+        asyncio.run(daemon._complete_phone_batch([event], 'now', channel))
+        assert [c.args[0] for c in daemon.bubble_delivery.send_voice.await_args_list] == ['灯开好了']
+    finally:
+        daemon.store.close()
+
+
+def test_interrupted_phone_turn_lets_planner_finish_and_reports_next_turn(tmp_path):
+    from momoi.models import TurnDraft
+    async def complete(system, messages, tools):
+        return ProviderResponse([{'type': 'text', 'text': '好'}], [])
+    daemon = _phone_daemon(tmp_path, complete)
+    release = asyncio.Event()
+    planned = []
+    async def planner(batch, turn_id, channel, carryover=''):
+        planned.append((turn_id, carryover))
+        if turn_id == 'first':
+            await release.wait()
+            return {'result': '已发送消息', 'draft': TurnDraft()}
+        return {'result': '', 'draft': TurnDraft()}
+    daemon._phone_planner = planner
+    channel = SimpleNamespace(name='qq_call', context_valid=lambda _: True)
+    first = IncomingMessage('a', 'a', '帮我发消息', 1, 1, channel='qq_call')
+    second = IncomingMessage('b', 'b', '嗯', 2, 2, channel='qq_call')
+
+    async def run():
+        for event, turn in ((first, 'first'), (second, 'second')):
+            daemon.store.add_event(event)
+            daemon.store.begin_turn(turn, 'owner', [event.event_id])
+        task = asyncio.create_task(daemon._complete_phone_batch([first], 'first', channel))
+        while not daemon.bubble_delivery.send_voice.await_count:
+            await asyncio.sleep(0)
+        await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert daemon._phone_detached_planner is not None
+        follow = asyncio.create_task(daemon._complete_phone_batch([second], 'second', channel))
+        await asyncio.sleep(0.01)
+        assert [turn for turn, _ in planned] == ['first']
+        release.set()
+        await asyncio.wait_for(follow, 2)
+        assert planned[1][0] == 'second' and '帮我发消息' in planned[1][1] and '已发送消息' in planned[1][1]
+
+    try:
+        asyncio.run(run())
+    finally:
+        daemon.store.close()
+
+
+def test_phone_end_marker_still_records_provider_usage(tmp_path):
+    from momoi.llm.streaming import ProviderEvent
+    store = Mock()
+    store.always_memory_context.return_value = ''
+    store.scoped_memory_context.return_value = ''
+    store.self_state_context.return_value = ''
+    store.turn_exchanges.return_value = {}
+    store.phone_history_rows.return_value = []
+    async def stream(*args):
+        yield ProviderEvent('text_delta', '好[END]')
+        yield ProviderEvent('response', data=ProviderResponse(
+            [{'type': 'text', 'text': '好[END]'}], [], usage={'input': 123, 'output': 4}))
+    async def enqueue(text):
+        pass
+    asyncio.run(PhoneReplyer(config(str(tmp_path)), store, SimpleNamespace(stream=stream)).generate([], 'now', enqueue))
+    store.record_turn_usage.assert_called_once_with('now', 123, 4)
+
+
+def test_phone_text_drops_links_of_any_scheme():
+    from momoi.runtime.agent.phone_replyer import clean_phone_text
+    assert clean_phone_text('看这个 https://example.com/a 吧\n\nmailto://x qq://poke') == '看这个  吧'

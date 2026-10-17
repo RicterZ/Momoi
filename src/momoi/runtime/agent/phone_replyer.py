@@ -40,7 +40,7 @@ class PhoneReplyer(ReplyerBase):
         return [background, *selected,
                 *({"role": "user", "content": event.text} for event in events), *current]
 
-    async def generate(self, events, turn_id, on_paragraph=None, *, operation_result=None):
+    async def generate(self, events, turn_id, on_paragraph=None, *, operation_result=None, notice=""):
         guide = prompt_text(self.config, "PHONE_REPLYER.md", files("momoi").joinpath("prompts/phone_replyer.md").read_text(encoding="utf-8"))
         system = self.expression_prompt() + "\n\n" + guide
         messages = self.messages(events, turn_id)
@@ -51,6 +51,8 @@ class PhoneReplyer(ReplyerBase):
                 ("current_state", operation_result), required=True))
         else:
             system += "\n后台 Planner 正在并行判断及执行。你只先接话，不声称操作已完成，不重复执行；不要笼统宣称电话不能执行操作。"
+        if notice:
+            system += "\n" + notice
         with log_context(stage="phone_replyer", turn_id=turn_id, channel="qq_call", call_id=new_trace_id()), model_request(
             thinking_effort=self.config.thinking_stages.get("phone_replyer", "off")
         ):
@@ -81,6 +83,9 @@ class PhoneReplyer(ReplyerBase):
                                         await on_paragraph(paragraph)
                                 pending = ""
                                 response = ProviderResponse([{"type": "text", "text": received.split("[END]", 1)[0]}], [])
+                                usage = await drain_usage(stream)
+                                if usage:
+                                    response = ProviderResponse(response.content, [], usage=usage)
                                 break
                             while "\n\n" in pending:
                                 paragraph, pending = pending.split("\n\n", 1)
@@ -119,8 +124,25 @@ class PhoneReplyer(ReplyerBase):
         return text
 
 
+async def drain_usage(stream, budget=3):
+    """Read past [END] only to recover provider usage; trailing text is discarded."""
+    try:
+        async with asyncio.timeout(budget):
+            async for event in stream:
+                if event.type == "response":
+                    return event.data.usage
+    except Exception:
+        return None
+    return None
+
+
+# Speech carries only words: chat actions and links (any scheme://) are never read aloud.
+_PHONE_URI = re.compile(r"\b[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE)
+_PHONE_CONTROL_MARKERS = ("[WAIT]",)
+
+
 def clean_phone_text(text):
-    # SOUL may teach chat-only actions; never pass those markers to TTS.
-    text = text.split("[END]", 1)[0]
-    text = re.sub(r"(?:emotion|qq)://[^\s]+", "", text).strip()
-    return text.replace("[WAIT]", "").strip()
+    text = _PHONE_URI.sub("", text.split("[END]", 1)[0])
+    for marker in _PHONE_CONTROL_MARKERS:
+        text = text.replace(marker, "")
+    return text.strip()

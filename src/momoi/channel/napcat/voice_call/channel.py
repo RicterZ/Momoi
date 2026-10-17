@@ -18,6 +18,10 @@ from .audio import Segmenter, wav_bytes
 from .speech import bubble_pcm
 
 logger = logging.getLogger('momoi.qq_call')
+# The bridge caps one stream at 150 s wall time and 120 s audio; rotate before either.
+STREAM_SEGMENT_SECONDS = 100
+STREAM_SEGMENT_BYTES = 48000 * 100
+STREAM_RECONNECTS = 3
 
 
 class QQCallChannel:
@@ -239,73 +243,164 @@ class QQCallChannel:
         started = time.monotonic()
         first_ms = None
         synthesis_error = None
+        source_error = None
         pcm_bytes = 0
         pcm_peak = 0
         first_signal = False
+        chunks = asyncio.Queue(maxsize=64)
+        finished = object()
+        carry = None
         log_event(logger, logging.DEBUG, 'qq_call_send_started', session_id=self.session_id,
                   utterance_id=utterance_id, provider=type(provider).__name__, text_chars=len(text))
-        async def upload():
-            nonlocal first_ms, synthesis_error, pcm_bytes, pcm_peak, first_signal
+
+        def interrupted():
+            return SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
+
+        # Synthesis outlives any single bridge request, so a reconnect resumes the same speech.
+        async def pump():
+            nonlocal synthesis_error, source_error
             from contextlib import aclosing
             try:
                 with log_context(session_id=context['call_session_id'], utterance_id=utterance_id):
                     async with aclosing(bubble_pcm(provider, text, pause_seconds=.5, paced=True)) as stream:
                         async for chunk in stream:
-                            if not self.context_valid(context):
-                                raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
-                            if first_ms is None:
-                                first_ms = round((time.monotonic() - started) * 1000)
-                                log_event(logger, logging.INFO, 'qq_call_tts_first_audio', channel=self.name,
-                                    session_id=self.session_id, utterance_id=utterance_id, elapsed_ms=first_ms)
-                            import array
-                            pcm_bytes += len(chunk)
-                            samples = array.array('h', chunk[:len(chunk)//2*2])
-                            pcm_peak = max(pcm_peak, max((abs(value) for value in samples), default=0))
-                            if not first_signal and pcm_peak > 32:
-                                first_signal = True
-                                log_event(logger, logging.INFO, 'qq_call_tts_first_signal',
-                                          elapsed_ms=round((time.monotonic() - started) * 1000),
-                                          audio_offset_ms=round((pcm_bytes - len(chunk)) / 48))
-                            yield chunk
-                log_event(logger, logging.DEBUG, 'qq_call_pcm_uploaded', session_id=self.session_id,
-                          utterance_id=utterance_id, pcm_bytes=pcm_bytes, peak=pcm_peak)
+                            await chunks.put(chunk)
             except TTSError as error:
                 synthesis_error = error
-                raise
-        async def request_playback():
-            async with self.http.post(self.config.bridge_url + '/v1/playback/stream', data=upload(),
+            except Exception as error:
+                source_error = error
+            await chunks.put(finished)
+
+        async def next_chunk(timeout=None):
+            getter = asyncio.ensure_future(chunks.get())
+            deadline = None if timeout is None else time.monotonic() + timeout
+            try:
+                while not getter.done():
+                    wait = .05 if deadline is None else min(.05, max(0, deadline - time.monotonic()))
+                    await asyncio.wait({getter}, timeout=wait)
+                    if not self.context_valid(context):
+                        raise interrupted()
+                    if deadline is not None and time.monotonic() >= deadline and not getter.done():
+                        return None
+                return getter.result()
+            finally:
+                if not getter.done():
+                    getter.cancel()
+                    await asyncio.gather(getter, return_exceptions=True)
+                    # A cancelled get may already have dequeued its item.
+                    if not getter.cancelled() and getter.exception() is None:
+                        chunks.put_nowait(getter.result())
+
+        async def segment(first):
+            nonlocal first_ms, pcm_bytes, pcm_peak, first_signal, carry
+            import array
+            deadline = time.monotonic() + STREAM_SEGMENT_SECONDS
+            sent = 0
+            item = first
+            while True:
+                if not self.context_valid(context):
+                    raise interrupted()
+                if first_ms is None:
+                    first_ms = round((time.monotonic() - started) * 1000)
+                    log_event(logger, logging.INFO, 'qq_call_tts_first_audio', channel=self.name,
+                        session_id=self.session_id, utterance_id=utterance_id, elapsed_ms=first_ms)
+                pcm_bytes += len(item)
+                samples = array.array('h', item[:len(item)//2*2])
+                pcm_peak = max(pcm_peak, max((abs(value) for value in samples), default=0))
+                if not first_signal and pcm_peak > 32:
+                    first_signal = True
+                    log_event(logger, logging.INFO, 'qq_call_tts_first_signal',
+                              elapsed_ms=round((time.monotonic() - started) * 1000),
+                              audio_offset_ms=round((pcm_bytes - len(item)) / 48))
+                yield item
+                sent += len(item)
+                remaining = deadline - time.monotonic()
+                if sent >= STREAM_SEGMENT_BYTES or remaining <= 0:
+                    return
+                item = await next_chunk(remaining)
+                if item is None:
+                    return
+                if item is finished:
+                    carry = finished
+                    return
+
+        async def request_playback(first, part_id):
+            async with self.http.post(self.config.bridge_url + '/v1/playback/stream', data=segment(first),
                 headers={**self.headers, 'Content-Type': 'application/octet-stream',
                     'X-Call-Session': context['call_session_id'],
                     'X-Call-Generation': str(context['call_generation']),
-                    'X-Call-Utterance': utterance_id}, timeout=aiohttp.ClientTimeout(total=160)) as response:
+                    'X-Call-Utterance': part_id}, timeout=aiohttp.ClientTimeout(total=160)) as response:
                 log_event(logger, logging.DEBUG, 'qq_call_bridge_response', session_id=self.session_id,
-                          utterance_id=utterance_id, status=response.status, pcm_bytes=pcm_bytes, peak=pcm_peak)
+                          utterance_id=part_id, status=response.status, pcm_bytes=pcm_bytes, peak=pcm_peak)
                 if response.status != 200:
                     raise SendRejected('Streaming phone playback rejected')
                 return await response.json()
-        request = asyncio.create_task(request_playback())
+
+        async def play(first, part_id):
+            request = asyncio.create_task(request_playback(first, part_id))
+            try:
+                while not request.done():
+                    await asyncio.wait({request}, timeout=.05)
+                    if not self.context_valid(context):
+                        raise interrupted()
+                return request.result()
+            finally:
+                request.cancel()
+                await asyncio.gather(request, return_exceptions=True)
+
+        producer = asyncio.create_task(pump())
+        results = []
+        failures = 0
+        part = 0
         try:
-            while not request.done():
-                await asyncio.wait({request}, timeout=.05)
-                if not self.context_valid(context):
-                    raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended')
-            result = request.result()
-            if synthesis_error is not None:
-                raise SendRejected(f'Phone speech synthesis failed: {synthesis_error}')
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
-            if not self.context_valid(context):
-                raise SendInterrupted('owner_speech' if self.session_valid(context) else 'call_ended') from error
-            if synthesis_error is not None:
-                raise SendRejected(f'Phone speech synthesis failed: {synthesis_error}') from error
-            raise SendRejected('Streaming playback uncertain; do not retry') from error
+            while True:
+                item, carry = (carry, None) if carry is not None else (await next_chunk(), None)
+                if item is finished:
+                    break
+                part_id = utterance_id if part == 0 else f'{utterance_id}#{part}'
+                part += 1
+                try:
+                    result = await play(item, part_id)
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
+                    if not self.context_valid(context):
+                        raise interrupted() from error
+                    result, failure = None, error
+                if result is not None:
+                    if not self.context_valid(context) or result.get('reason') in {'owner_speech', 'call_ended'}:
+                        raise SendInterrupted(result.get('reason') or 'call_ended')
+                    if result.get('ok'):
+                        results.append(result)
+                        failures = 0
+                        continue
+                    failure = None
+                failures += 1
+                if failures > STREAM_RECONNECTS:
+                    if synthesis_error is not None:
+                        raise SendRejected(f'Phone speech synthesis failed: {synthesis_error}') from failure
+                    if failure is not None:
+                        raise SendRejected('Streaming playback uncertain; do not retry') from failure
+                    raise SendRejected('Streaming phone playback failed')
+                log_event(logger, logging.WARNING, 'qq_call_playback_reconnect', channel=self.name,
+                          session_id=context['call_session_id'], utterance_id=part_id, attempt=failures,
+                          error_type=type(failure).__name__ if failure is not None else 'bridge_not_ok')
         finally:
-            request.cancel()
-            await asyncio.gather(request, return_exceptions=True)
+            producer.cancel()
+            await asyncio.gather(producer, return_exceptions=True)
+        if synthesis_error is not None and not results:
+            raise SendRejected(f'Phone speech synthesis failed: {synthesis_error}')
+        if source_error is not None and not results:
+            raise SendRejected('Streaming phone audio failed') from source_error
+        if not results:
+            raise SendRejected('Streaming phone playback failed')
+        log_event(logger, logging.DEBUG, 'qq_call_pcm_uploaded', session_id=self.session_id,
+                  utterance_id=utterance_id, pcm_bytes=pcm_bytes, peak=pcm_peak, segments=part)
+        result = results[0]
         log_event(logger, logging.INFO, 'qq_call_playback', channel=self.name,
             session_id=context['call_session_id'], utterance_id=utterance_id,
-            state=result.get('state'), streaming=True,
+            state=results[-1].get('state'), streaming=True, segments=part,
             elapsed_ms=round((time.monotonic() - started) * 1000), tts_first_audio_ms=first_ms,
-            bridge_first_frame_ms=result.get('first_frame_ms'), played_ms=result.get('played_ms', 0),
+            bridge_first_frame_ms=result.get('first_frame_ms'),
+            played_ms=sum(item.get('played_ms', 0) for item in results),
             virtual_mic_signal_ms=result.get('virtual_mic_signal_ms'),
             measurement_endpoint='playback_stdin_written', remote_audible_at=None,
             first_frame_to_signal_ms=(result['virtual_mic_signal_ms'] - result['first_frame_ms']
@@ -313,10 +408,6 @@ class QQCallChannel:
             recognition_to_first_frame_ms=(round((time.time() - context['recognized_at']) * 1000
                 - result.get('elapsed_ms', 0) + result.get('first_frame_ms', 0))
                 if context.get('recognized_at') and result.get('first_frame_ms') is not None else None))
-        if not self.context_valid(context) or result.get('reason') in {'owner_speech', 'call_ended'}:
-            raise SendInterrupted(result.get('reason') or 'call_ended')
-        if not result.get('ok'):
-            raise SendRejected('Streaming phone playback failed')
         return 'call:' + context['call_session_id'] + ':' + utterance_id
 
     async def send_call_voice(self, audio, context, utterance_id):
