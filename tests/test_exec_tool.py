@@ -62,7 +62,7 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
         mcp = SimpleNamespace(tool_specs=[], configs={})
         for enabled in (False, True, False):
             surface = ToolSurface(mcp, {}, exec_enabled=enabled)
-            expected = catalog - (replaced if enabled else {"exec"})
+            expected = catalog - (replaced if enabled else {"exec"}) - {"search_web", "fetch_web"}
             visible = {spec["name"] for spec in surface.conversation_specs()}
             from momoi.runtime.agent.tool_surface import DEFERRED_TOOLS
             self.assertEqual(visible & catalog, expected - DEFERRED_TOOLS)
