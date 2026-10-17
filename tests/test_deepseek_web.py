@@ -70,3 +70,11 @@ def test_runtime_save_allows_enable_with_credentials(tmp_path):
     with patch('momoi.tools.deepseek_web.deepseek_web_key', return_value='configured-key'):
         manager.save_runtime({'tools': {'deepseek_web_enabled': True}}, manager.revision())
     assert manager.validate().deepseek_web_enabled is True
+
+
+def test_tools_page_exposes_deepseek_toggle():
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[1] / 'web/src/Tools.jsx').read_text(encoding='utf-8')
+    assert 'setExecSelected("deepseek")' in source
+    assert 'const builtinKey = deepseekSelected ? "deepseek_web_enabled" : "exec_enabled"' in source
+    assert 'tools: { [builtinKey]: value }' in source
