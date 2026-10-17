@@ -50,6 +50,8 @@ _FIELDS = {
     "tools": {
         "label": "工具",
         "fields": {
+            "deepseek_web_enabled": {"type": "boolean", "label": "DeepSeek 网页搜索", "default": True,
+                "description": "启用搜索与网页读取，使用 DeepSeek 凭据。"},
             "exec_enabled": {"type": "boolean", "label": "命令执行（exec）", "default": False},
         },
     },

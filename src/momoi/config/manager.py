@@ -447,6 +447,12 @@ class ConfigurationManager:
                 }
             else:
                 current[section] = value
+        tools = document.get("tools", {})
+        if isinstance(tools, dict) and tools.get("deepseek_web_enabled") is True:
+            from ..tools.deepseek_web import deepseek_web_key
+            catalog = parse_provider_catalog(self.read_providers(), self.provider_path)
+            if not deepseek_web_key(catalog):
+                raise ConfigError("请先配置 DeepSeek API Key")
         return self.save("app", current, revision)
 
     def _set_binding(self, raw, capability, document):

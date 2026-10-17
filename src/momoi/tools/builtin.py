@@ -25,6 +25,8 @@ class BuiltinTools:
         *,
         private_roots: tuple[Path, ...] = (),
         exec_enabled: bool = False,
+        deepseek_web_enabled: bool = True,
+        deepseek_api_key: str = "",
     ) -> None:
         self.workspace = (
             workspace.expanduser().resolve() if workspace is not None else Path.cwd()
@@ -33,6 +35,8 @@ class BuiltinTools:
             path.expanduser().resolve() for path in private_roots
         )
         self.exec_enabled = exec_enabled
+        self.deepseek_web_enabled = deepseek_web_enabled
+        self.deepseek_api_key = deepseek_api_key
         self.skills = Skills(self.workspace)
 
     def resolve_path(self, value: object) -> Path:
@@ -75,14 +79,17 @@ class BuiltinTools:
             "skill_install", "skill_uninstall",
         }:
             return "write"
-        if call.name == "web_fetch":
+        if call.name in {"web_fetch", "search_web", "fetch_web"}:
             return "read"
         return "external_effect"
 
     async def execute(self, call: ToolCall) -> dict[str, Any]:
         try:
-            if not builtin_tool_enabled(call.name, exec_enabled=self.exec_enabled):
+            if not builtin_tool_enabled(call.name, exec_enabled=self.exec_enabled, deepseek_web_enabled=self.deepseek_web_enabled):
                 return {"ok": False, "error": "tool_not_allowed"}
+            if call.name in {"search_web", "fetch_web"}:
+                from .deepseek_web import deepseek_web
+                return await deepseek_web(call.name, call.arguments, self.deepseek_api_key)
             if call.name == "skill_load":
                 return await asyncio.to_thread(self.skills.load, call.arguments.get("name"))
             if call.name == "skill_install":

@@ -116,10 +116,13 @@ class MomoiDaemon(
             self.store, self.semantic_recall, memory=self.memory,
         )
         self.thinking_tools = ThinkingTools(self.store)
+        from ..tools.deepseek_web import deepseek_web_key
         self.builtin_tools = BuiltinTools(
             config.workspace or config.database.parent,
             private_roots=(tool_result_root(config),),
+            deepseek_api_key=deepseek_web_key(config.providers),
             exec_enabled=config.exec_enabled,
+            deepseek_web_enabled=config.deepseek_web_enabled and bool(deepseek_web_key(config.providers)),
         )
         created = (
             (channel,)
@@ -172,6 +175,7 @@ class MomoiDaemon(
             self.channels,
             voice_enabled=self.services.tts is not None,
             exec_enabled=config.exec_enabled,
+            deepseek_web_enabled=config.deepseek_web_enabled and bool(deepseek_web_key(config.providers)),
             emotion_catalog=lambda: bool(self.store.emotion_context().strip()),
             store=self.store,
             skills=self.builtin_tools.skills,
