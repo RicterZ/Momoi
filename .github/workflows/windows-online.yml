@@ -50,7 +50,7 @@ jobs:
           if ($Process.ExitCode -ne 0) { throw 'Online installation failed; inspect installer cache logs' }
           Get-Content (Join-Path $Directory 'online-install-check.json')
           $Python = Join-Path $Directory 'runtime/python/python.exe'
-          & $Python -I -B -X utf8 (Join-Path $Directory 'releases/bundled/app/backend_entry.py') --check-model --model-path (Join-Path $Directory 'models/bge-small-zh-v1.5')
+          uv run --locked python packaging/windows/smoke_backend.py --python $Python --entry (Join-Path $Directory 'releases/bundled/app/backend_entry.py') --model-path (Join-Path $Directory 'models/bge-small-zh-v1.5')
           if ($LASTEXITCODE -ne 0) { throw 'Installed offline BGE verification failed' }
           $Uninstaller = Join-Path $Directory 'unins000.exe'
           $Data = Join-Path $Directory 'data/preserve-online-test.txt'
