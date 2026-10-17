@@ -253,6 +253,13 @@ def test_phone_sidecar_reports_results_without_direct_speech(tmp_path, called_to
         assert 'phone_result' in names
         assert {'reply', 'wait'} <= names
         assert tools == daemon.tool_surface.conversation_specs()
+        from momoi.runtime.agent.harness import TurnHarness
+        permitted = kwargs['execution'].permitted_tools
+        assert permitted == daemon.tool_surface.permitted_names('owner') - {'reply', 'wait'}
+        harness = TurnHarness.for_stage('owner', permitted_tool_names=permitted)
+        for name in ('reply', 'wait'):
+            assert harness.validate([ToolCall('blocked', name, {})]) == 'tool_not_allowed'
+        assert harness.validate([ToolCall('allowed', 'phone_result', {'result': ''})]) is None
         workflow = kwargs['workflow']
         assert not workflow.is_complete()
         if called_tool:
@@ -325,6 +332,7 @@ def test_sidecar_keeps_owner_prefix_and_puts_protocol_in_latest_user(tmp_path):
         assert messages[:-1] == prefix
         assert messages[-1]['role'] == 'user'
         assert 'phone_result' in str(messages[-1]['content'])
+        assert 'reply 省略 channel' not in str(messages[-1]['content'])
         assert '打开灯' in str(messages[-1]['content'])
         assert messages[-1]['content'][-1]['cache_control'] == {'type': 'ephemeral'}
     finally:

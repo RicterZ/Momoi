@@ -184,7 +184,7 @@ class OwnerWorkflow:
             self.self_state_section(),
             ("runtime_directives",
              "当前消息渠道：qq_call（QQ 电话）。"
-             "reply 省略 channel 时回复此渠道；历史对话或默认渠道不代表当前消息来源。\n\n"
+             "历史对话或默认渠道不代表当前消息来源。\n\n"
              "用户正在和你进行 QQ 对话，你现在的角色是“电话执行者”。"
              "电话回复器已经承担了回复的任务，你只需要根据用户消息进行执行判断，"
              "不要调用 reply、wait 等回复工具，不要代写台词。\n\n"
@@ -220,7 +220,7 @@ class OwnerWorkflow:
             done = True
             return {"ok": True, "forwarded_to_phone_replyer": bool(result.strip())}
 
-        permitted = self.tool_surface.permitted_names("owner")
+        permitted = self.tool_surface.permitted_names("owner") - {"reply", "wait"}
         tools = self.tool_surface.conversation_specs()
         messages, draft = self._phone_planner_context(batch, turn_id, channel)
         workflow = AgentWorkflow(
