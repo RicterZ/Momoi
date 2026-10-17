@@ -270,3 +270,42 @@ def test_broker_measures_loopback_latency_from_capture(monkeypatch, capsys):
     asyncio.run(scenario())
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert any(e['event'] == 'qq_call_loopback_latency' and e['latency_ms'] >= 1200 for e in events)
+
+
+def test_broker_arms_loopback_probe_after_leading_quiet_frames(monkeypatch):
+    from aiohttp import ClientSession, web
+    from aiohttp.test_utils import TestServer
+    from momoi.channel.napcat.voice_call.broker import MediaBroker
+
+    async def scenario():
+        class Process:
+            returncode = None
+            def __init__(self):
+                self.stdin = self
+            def write(self, data):
+                pass
+            async def drain(self):
+                pass
+            async def wait(self):
+                return self.returncode
+            def terminate(self):
+                self.returncode = -15
+        async def spawn(*args, **kwargs):
+            return Process()
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn)
+        broker = MediaBroker('x' * 32, audio=SimpleNamespace(capture_command=('c',), playback_command=('p',)))
+        broker.ws = SimpleNamespace(closed=False)
+        broker.armed = True
+        broker.session_id = 's'
+        broker.status = {'phase': 'connected'}
+        broker.loopback_probe = None
+        app = web.Application()
+        app.router.add_post('/stream', broker.play_stream)
+        headers = {'X-Call-Session': 's', 'X-Call-Generation': '0', 'X-Call-Utterance': 'one'}
+        body = b'\x14\x00' * 480 * 3 + b'\x00\x30' * 480
+        async with TestServer(app) as server, ClientSession() as client:
+            async with client.post(server.make_url('/stream'), data=body, headers=headers) as response:
+                assert (await response.json())['ok']
+        assert broker.loopback_probe is not None
+        await broker.output.close()
+    asyncio.run(scenario())

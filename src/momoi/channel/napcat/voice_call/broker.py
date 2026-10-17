@@ -331,6 +331,8 @@ class MediaBroker:
                               "latency_ms": round(waited * 1000)}), flush=True)
                     elif waited > 3:
                         self.loopback_probe = None
+                        print(json.dumps({"event": "qq_call_loopback_probe_timeout", "session_id": session_id}),
+                              flush=True)
                 if time.monotonic() >= next_report:
                     print(json.dumps({"event": "qq_call_capture_progress", "session_id": session_id,
                           **self.capture_stats}), flush=True)
@@ -421,6 +423,10 @@ class MediaBroker:
                 if self.audio is None and sys.platform.startswith('linux') else None)
             try:
                 output = await self.session_output()
+                # Probe only when the pipe has emptied of earlier voice, so loopback signal
+                # cannot belong to a previous utterance; decided once, since this
+                # utterance's own leading quiet frames also extend voice_until.
+                probe_pending = self.audio is not None and time.monotonic() > output.voice_until + 2
                 async def playback():
                     nonlocal played, pending, first_ms
                     async for chunk in request.content.iter_chunked(960):
@@ -440,19 +446,17 @@ class MediaBroker:
                     if played:
                         await output.flush()
                 async def write_frame(frame):
-                    nonlocal played, first_ms, pcm_peak
+                    nonlocal played, first_ms, pcm_peak, probe_pending
                     if not self.valid(session_id, generation):
                         raise ConnectionError('Call superseded')
                     samples = array.array('h', frame)
                     frame_peak = max((abs(value) for value in samples), default=0)
                     pcm_peak = max(pcm_peak, frame_peak)
-                    # Probe only after the pipe has emptied of earlier voice, so loopback
-                    # signal cannot belong to a previous utterance.
-                    probe = (self.audio is not None and frame_peak > LOOPBACK_PROBE_PEAK and self.loopback_probe is None
-                             and time.monotonic() > output.voice_until + 2)
+                    probe = probe_pending and frame_peak > LOOPBACK_PROBE_PEAK and self.loopback_probe is None
                     # The player paces frames; waiting on the first marks its real stdin write.
                     wrote = await output.write(frame, wait=first_ms is None or probe)
                     if probe:
+                        probe_pending = False
                         self.loopback_probe = wrote
                     if first_ms is None:
                         first_ms = round((time.monotonic() - started) * 1000)
