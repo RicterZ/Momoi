@@ -66,6 +66,48 @@ def verify_remote(client, key, local):
         raise ValueError("Published object differs from local file: " + key)
 
 
+def sync_catalog(client, version, directory):
+    """Keep old desktop shells' catalog/version gate compatible with code updates."""
+    import base64
+    from urllib.parse import urlsplit
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from sign_latest import KEYS
+    from publish_catalog import sign
+
+    response = client.get(ORIGIN + "/windows/catalog.json", headers={"Cache-Control": "no-cache"})
+    response.raise_for_status()
+    envelope = response.json()
+    raw = base64.b64decode(envelope["signed"], validate=True)
+    Ed25519PublicKey.from_public_bytes((KEYS / "update-public.bin").read_bytes()).verify(
+        base64.b64decode(envelope["signature"], validate=True), raw)
+    catalog = json.loads(raw)
+    if catalog.get("format_version") != 1:
+        raise ValueError("Unsupported update catalog")
+    if catalog["version"] == version:
+        return
+    for name in ("shell", "napcat", "asr"):
+        artifact = catalog.get(name)
+        if artifact is None and name == "asr":
+            continue
+        url = artifact["url"]
+        if not url.startswith(ORIGIN + "/windows/") or urlsplit(url).netloc != urlsplit(ORIGIN).netloc:
+            raise ValueError("Unexpected catalog artifact origin")
+        digest, size = hashlib.sha256(), 0
+        with client.stream("GET", url) as download:
+            download.raise_for_status()
+            for chunk in download.iter_bytes():
+                digest.update(chunk)
+                size += len(chunk)
+        if size != artifact["size"] or digest.hexdigest() != artifact["sha256"]:
+            raise ValueError("Catalog artifact checksum mismatch: " + name)
+    # This is the release version, not a claim that every component was rebuilt.
+    catalog["version"] = version
+    output = Path(directory) / "catalog.json"
+    output.write_text(json.dumps(sign(catalog), indent=2) + "\n", encoding="utf-8")
+    upload(output, "windows/catalog.json", mutable=True)
+    verify_remote(client, "windows/catalog.json", output)
+
+
 def publish(archive, *, installer=None):
     release = verify_archive(archive)
     code_key = PREFIX + "/releases/Momoi-Code-" + release["release_id"] + ".zip"
@@ -81,6 +123,7 @@ def publish(archive, *, installer=None):
                 installer_key = PREFIX + "/installers/" + installer.name
                 upload(installer, installer_key)
                 verify_remote(client, installer_key, installer)
+            sync_catalog(client, release["version"], directory)
             # Advance discovery only after every referenced download is readable and verified.
             upload(signed, LATEST_KEY, mutable=True)
             verify_remote(client, LATEST_KEY, signed)
