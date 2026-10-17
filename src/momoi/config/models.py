@@ -78,7 +78,7 @@ class AppConfig:
     memory_results: int
     database: Path
     log_level: str
-    deepseek_web_enabled: bool = True
+    deepseek_web_enabled: bool = False
     thinking_stages: dict[str, str] = field(default_factory=dict)
     owner_continuation_seconds: float = 5.0
     timezone: str = "UTC"

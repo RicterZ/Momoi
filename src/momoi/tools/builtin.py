@@ -25,7 +25,7 @@ class BuiltinTools:
         *,
         private_roots: tuple[Path, ...] = (),
         exec_enabled: bool = False,
-        deepseek_web_enabled: bool = True,
+        deepseek_web_enabled: bool = False,
         deepseek_api_key: str = "",
     ) -> None:
         self.workspace = (

@@ -13,7 +13,7 @@ BASH_REPLACED_TOOLS = frozenset({
 })
 
 
-def builtin_tool_enabled(name: str, *, exec_enabled: bool, deepseek_web_enabled: bool = True) -> bool:
+def builtin_tool_enabled(name: str, *, exec_enabled: bool, deepseek_web_enabled: bool = False) -> bool:
     if name in {"search_web", "fetch_web"}:
         return deepseek_web_enabled
     if name == "exec":

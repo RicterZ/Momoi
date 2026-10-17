@@ -53,6 +53,8 @@ def test_runtime_save_rejects_enable_without_credentials(tmp_path):
     path = tmp_path / 'config.json'
     bootstrap(path)
     manager = ConfigurationManager(path)
+    assert manager.validate().deepseek_web_enabled is False
+    assert manager.snapshot()["app"]["tools"]["deepseek_web_enabled"] is False
     revision = manager.revision()
     with pytest.raises(ConfigError, match='请先配置 DeepSeek API Key'):
         manager.save_runtime({'tools': {'deepseek_web_enabled': True}}, revision)

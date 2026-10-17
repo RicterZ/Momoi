@@ -57,7 +57,7 @@ BUILTIN_GROUP_DESCRIPTIONS = {
 class ToolSurface:
     """Projects the tool catalog exposed to each workflow."""
 
-    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False, exec_enabled: bool = False, deepseek_web_enabled: bool = True, emotion_catalog: Callable[[], bool] | None = None, store: Any = None, skills: Any = None, affinity_enabled: Callable[[], bool] | None = None):
+    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False, exec_enabled: bool = False, deepseek_web_enabled: bool = False, emotion_catalog: Callable[[], bool] | None = None, store: Any = None, skills: Any = None, affinity_enabled: Callable[[], bool] | None = None):
         self.affinity_enabled = affinity_enabled or (lambda: False)
         self.mcp = mcp
         self.store = store
