@@ -157,7 +157,7 @@ export default function Tools({ token, request, confirm, refreshKey }) {
       if (!editing.config.description?.trim()) throw new Error("请描述工具是什么、能做什么。");
       if (name !== selected && Object.hasOwn(document.mcpServers, name)) throw new Error("同名服务已存在。");
       const servers = { ...document.mcpServers };
-      if (selected !== null) delete servers[selected];
+      if (selected !== null && name !== selected) delete servers[selected];
       servers[name] = editing.config;
       await saveDocument({ ...document, mcpServers: servers });
       const draft = { name, config: editing.config }; setSelected(name); setEditing(draft); setSaved(structuredClone(draft));

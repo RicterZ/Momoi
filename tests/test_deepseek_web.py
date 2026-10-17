@@ -78,3 +78,22 @@ def test_tools_page_exposes_deepseek_toggle():
     assert 'setExecSelected("deepseek")' in source
     assert 'const builtinKey = deepseekSelected ? "deepseek_web_enabled" : "exec_enabled"' in source
     assert 'tools: { [builtinKey]: value }' in source
+
+
+def test_mcp_edit_keeps_existing_server_position():
+    from pathlib import Path
+    import subprocess
+    source = (Path(__file__).resolve().parents[1] / 'web/src/Tools.jsx').read_text(encoding='utf-8')
+    start = source.index('      const servers = { ...document.mcpServers };')
+    end = source.index('      await saveDocument', start)
+    mutation = source[start:end]
+    script = '''
+const document = {mcpServers: {first: {}, middle: {}, last: {}}};
+const selected = 'middle';
+let name = 'middle';
+const editing = {config: {disabled: true}};
+''' + mutation + '''
+if (Object.keys(servers).join(',') !== 'first,middle,last') throw Error('order changed');
+if (!servers.middle.disabled) throw Error('edit lost');
+'''
+    subprocess.run(['node', '-e', script], check=True)
