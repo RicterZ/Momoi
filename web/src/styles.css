@@ -2333,3 +2333,12 @@ a.tag:hover {
 .usage-home-stats .usage-budget-track { height:4px; margin-top:12px; overflow:hidden; border-radius:2px; background:var(--line); }
 .usage-home-stats .usage-budget-fill { height:100%; border-radius:inherit; background:var(--blue); }
 .usage-budget-meter.is-paused .usage-budget-fill { background:var(--pink); }
+
+.episode-triggers { display: grid; gap: 14px; margin-top: 16px; }
+.episode-triggers-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.episode-triggers-row .panel-label { margin: 0; }
+.episode-triggers-row .secondary { font-size: 12px; }
+.episode-triggers-form { width: 100%; max-width: 480px; }
+.episode-triggers-field { display: grid; gap: 8px; min-width: 0; }
+.episode-triggers-field .secondary { font-size: 12px; }
+.episode-triggers-form .card-actions { margin-top: 0; }

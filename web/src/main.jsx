@@ -1100,7 +1100,9 @@ function SortArrow({ down }) {
   );
 }
 
-function EpisodeTriggers({ item, token, onSaved }) {
+function EpisodeTriggers({ item, token }) {
+  const [triggers, setTriggers] = useState(item.triggers || []);
+  const [editing, setEditing] = useState(false);
   const [value, setValue] = useState((item.triggers || []).join("\n"));
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1113,26 +1115,51 @@ function EpisodeTriggers({ item, token, onSaved }) {
         body: { triggers: value.split("\n").map((word) => word.trim()).filter(Boolean) },
       });
       setValue(result.triggers.join("\n"));
-      onSaved(result.triggers);
-      setStatus("已保存");
+      setTriggers(result.triggers);
+      setEditing(false);
     } catch (error) {
       setStatus(error.message);
     } finally {
       setSaving(false);
     }
   }
-  return <details>
-    <summary>话题触发词</summary>
-    <label>建议留空，最多 2 个关键触发词，每行一个，不支持正则；手动保存后不再自动覆盖。
-      <textarea aria-label="话题触发词" rows={4} value={value} onChange={(event) => setValue(event.target.value)} />
-    </label>
-    <button type="button" disabled={saving} onClick={save}>{saving ? "保存中…" : "保存"}</button>
-    <span role="status">{status}</span>
-  </details>;
+  return (
+    <div className="episode-triggers">
+      <div className="episode-triggers-row">
+        <span className="panel-label">触发词</span>
+        {triggers.length ? <div className="tags">{triggers.map((word) => (
+          <span className="tag" key={word}>{word}</span>
+        ))}</div> : <span className="secondary">未设置</span>}
+        {!editing && <button type="button" className="quiet-button" onClick={() => {
+          setValue(triggers.join("\n"));
+          setStatus("");
+          setEditing(true);
+        }}>编辑</button>}
+      </div>
+      {editing && <form className="edit-form compact episode-triggers-form" onSubmit={(event) => {
+        event.preventDefault();
+        save();
+      }}>
+        <label className="episode-triggers-field" htmlFor="episode-trigger-input">
+          <span className="secondary" id="episode-trigger-help">最多 2 个，可留空</span>
+          <textarea id="episode-trigger-input" aria-label="话题触发词" aria-describedby="episode-trigger-help"
+            rows={2} placeholder="每行一个" autoFocus disabled={saving}
+            value={value} onChange={(event) => setValue(event.target.value)} />
+        </label>
+        <div className="card-actions">
+          <button type="submit" className="quiet-button" disabled={saving}>{saving ? "保存中…" : "保存"}</button>
+          <button type="button" className="quiet-button pink" disabled={saving} onClick={() => {
+            setEditing(false);
+            setStatus("");
+          }}>取消</button>
+        </div>
+        {status && <span role="alert" className="secondary">{status}</span>}
+      </form>}
+    </div>
+  );
 }
 
 function ConversationDetail({ item, token }) {
-  const [triggers, setTriggers] = useState(item.triggers || []);
   const [newestFirst, setNewestFirst] = useState(false);
   const messages = [...(item.messages || [])].sort((left, right) =>
     compareMessages(left, right, newestFirst),
@@ -1156,14 +1183,7 @@ function ConversationDetail({ item, token }) {
           </button>
         </div>
         <h2>{item.title}</h2>
-        {item.record_type === "episode" && <EpisodeTriggers item={item} token={token} onSaved={setTriggers} />}
-        <div className="tags">
-          {triggers.map((trigger) => (
-            <span className="tag" key={trigger}>
-              {trigger}
-            </span>
-          ))}
-        </div>
+        {item.record_type === "episode" && <EpisodeTriggers item={item} token={token} />}
       </header>
       <div className="messages">
         {messages.length ? (
