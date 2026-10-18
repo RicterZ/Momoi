@@ -458,6 +458,18 @@ def create_dashboard_app(
         item["record_type"] = "episode"
         return web.json_response(item)
 
+    async def edit_episode_triggers(request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+            if not isinstance(body, dict) or set(body) != {"triggers"}:
+                raise ValueError("expected triggers")
+            item = store.set_episode_triggers(request.match_info["record_id"], body["triggers"])
+        except (ValueError, TypeError) as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        except KeyError:
+            raise web.HTTPNotFound(text="conversation not found") from None
+        return web.json_response({"triggers": item["triggers"]})
+
     async def turn_conversation(request: web.Request) -> web.Response:
         item = store.dashboard_conversation_turn(request.match_info["record_id"])
         if item is None:
@@ -764,6 +776,7 @@ def create_dashboard_app(
     app.router.add_get("/api/thinking", thinking)
     app.router.add_get("/api/thinking/calls/{call_id}", thinking_call)
     app.router.add_get("/api/thinking/{turn_id}", thinking_turn)
+    app.router.add_patch("/api/conversations/episode/{record_id}/triggers", edit_episode_triggers)
     app.router.add_get("/api/conversations", conversations)
     app.router.add_get("/api/conversations/episode/{record_id}", episode_conversation)
     app.router.add_get("/api/conversations/turn/{record_id}", turn_conversation)

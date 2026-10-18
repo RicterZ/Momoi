@@ -813,6 +813,14 @@ def _add_transcript_context_activity(database):
         last_used_at REAL NOT NULL, turn_id TEXT NOT NULL)""")
 
 
+def _add_episode_triggers(database):
+    columns = _columns(database, "conversation_episodes")
+    if "triggers_json" not in columns:
+        database.execute("ALTER TABLE conversation_episodes ADD COLUMN triggers_json TEXT NOT NULL DEFAULT '[]'")
+    if "triggers_manual" not in columns:
+        database.execute("ALTER TABLE conversation_episodes ADD COLUMN triggers_manual INTEGER NOT NULL DEFAULT 0")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -858,6 +866,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_trigger_injection_monitor,
     _add_affinity,
     _add_transcript_context_activity,
+    _add_episode_triggers,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

@@ -765,7 +765,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                 "assistant": "",
                                 "tone": "",
                             },
-                            "outcomes": [], "recall_cues": [],
+                            "outcomes": [], "triggers": ["时之笛"], "recall_cues": [],
                         },
                     )
 
@@ -985,7 +985,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                         ],
                         "narrative_summary": "",
                         "emotional_context": {"owner": "", "assistant": "", "tone": ""},
-                        "outcomes": [], "recall_cues": [],
+                        "outcomes": [], "triggers": ["时之笛"], "recall_cues": [],
                     }
                     return workflow_response(
                         "episode_summary_finish",
@@ -1050,7 +1050,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                 "tone": "合作",
                             },
                             "outcomes": ["完成一次阶段讨论"],
-                            "recall_cues": [
+                            "triggers": ["时之笛"], "recall_cues": [
                                 {
                                     "text": "阶段讨论回顾",
                                     "evidence_message_ids": [message["message_id"]],
@@ -1069,6 +1069,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(episode["emotional_context"]["tone"], "合作")
             self.assertEqual(episode["outcomes"], ["完成一次阶段讨论"])
             self.assertEqual(episode["recall_cues"], ["阶段讨论回顾"])
+            self.assertEqual(episode["triggers"], ["时之笛"])
             timeline = daemon.store.dashboard_thinking(month="all")["items"]
             self.assertEqual(len(timeline), 1)
             self.assertEqual(timeline[0]["stages"], ["episode_anneal", "episode_cue_admit"])
@@ -1243,7 +1244,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                 "assistant": "",
                                 "tone": "",
                             },
-                            "outcomes": [], "recall_cues": [],
+                            "outcomes": [], "triggers": ["时之笛"], "recall_cues": [],
                         },
                     )
 

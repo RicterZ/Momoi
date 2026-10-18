@@ -265,6 +265,8 @@ CREATE TABLE IF NOT EXISTS conversation_episodes (
     narrative_summary TEXT NOT NULL DEFAULT '',
     emotional_context_json TEXT NOT NULL DEFAULT '{}',
     recall_cues_json TEXT NOT NULL DEFAULT '[]',
+    triggers_json TEXT NOT NULL DEFAULT '[]',
+    triggers_manual INTEGER NOT NULL DEFAULT 0,
     outcomes_json TEXT NOT NULL DEFAULT '[]',
     summarized_through_ordinal INTEGER NOT NULL DEFAULT 0
         CHECK (summarized_through_ordinal >= 0),

@@ -6,6 +6,7 @@ import time
 
 from ...observability.events import log_event
 from .episode_cues import normalize_cues
+from ...memory.metadata import validate_episode_triggers
 from .episode_claims import render_verified_claims
 from ...memory.text import estimate_tokens
 from .episode_sql import runtime_archive_kind_sql
@@ -231,6 +232,7 @@ class EpisodeAnnealingStore:
         emotional_context: dict[str, object] | None = None,
         outcomes: list[object] | None = None,
         recall_cues: list[object] | None = None,
+        triggers: list[str] | None = None,
     ) -> str:
         normalized = self.validate_episode_summary_claims(episode_id, through_ordinal, claims)
         working_summary = render_verified_claims(normalized)
@@ -250,6 +252,7 @@ class EpisodeAnnealingStore:
         ):
             raise ValueError("invalid episode emotional context")
         recall_cues = normalize_cues(recall_cues, normalized)
+        triggers = validate_episode_triggers([] if triggers is None else triggers)
         outcomes = outcomes or []
         if (
             not isinstance(outcomes, list)
@@ -268,6 +271,7 @@ class EpisodeAnnealingStore:
                    SET working_summary=?, working_summary_claims_json=?,
                        narrative_summary=?, emotional_context_json=?,
                        outcomes_json=?, recall_cues_json=?,
+                       triggers_json=CASE WHEN triggers_manual=1 THEN triggers_json ELSE ? END,
                        summarized_through_ordinal=?,
                        summary_claimed_at=NULL, summary_retry_at=NULL,
                        summary_failure_count=0, summary_abandoned_at=NULL,
@@ -293,6 +297,7 @@ class EpisodeAnnealingStore:
                         separators=(",", ":"),
                     ),
                     json.dumps(recall_cues, ensure_ascii=False),
+                    json.dumps(triggers, ensure_ascii=False),
                     through_ordinal,
                     time.time(),
                     episode_id,

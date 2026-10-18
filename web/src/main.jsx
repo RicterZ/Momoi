@@ -1039,7 +1039,7 @@ function ConversationLayout({
               <p>
                 {item.narrative_summary ||
                   item.summary ||
-                  item.topics?.join(" · ") ||
+                  item.triggers?.join(" · ") ||
                   "暂无摘要"}
               </p>
               <time>{formatDate(item.updated_at)}</time>
@@ -1051,7 +1051,7 @@ function ConversationLayout({
         {detail.loading && <Loading>正在读取聊天…</Loading>}
         {detail.error && <ErrorState error={detail.error} />}
         {detail.data && (
-          <ConversationDetail key={activeRecord} item={detail.data} />
+          <ConversationDetail key={activeRecord} item={detail.data} token={token} />
         )}
       </div>
     </section>
@@ -1100,7 +1100,39 @@ function SortArrow({ down }) {
   );
 }
 
-function ConversationDetail({ item }) {
+function EpisodeTriggers({ item, token, onSaved }) {
+  const [value, setValue] = useState((item.triggers || []).join("\n"));
+  const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+  async function save() {
+    setSaving(true);
+    setStatus("");
+    try {
+      const result = await api(`/api/conversations/episode/${encodeURIComponent(item.id)}/triggers`, {
+        method: "PATCH", token,
+        body: { triggers: value.split("\n").map((word) => word.trim()).filter(Boolean) },
+      });
+      setValue(result.triggers.join("\n"));
+      onSaved(result.triggers);
+      setStatus("已保存");
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return <details>
+    <summary>话题触发词</summary>
+    <label>建议留空，最多 2 个关键触发词，每行一个，不支持正则；手动保存后不再自动覆盖。
+      <textarea aria-label="话题触发词" rows={4} value={value} onChange={(event) => setValue(event.target.value)} />
+    </label>
+    <button type="button" disabled={saving} onClick={save}>{saving ? "保存中…" : "保存"}</button>
+    <span role="status">{status}</span>
+  </details>;
+}
+
+function ConversationDetail({ item, token }) {
+  const [triggers, setTriggers] = useState(item.triggers || []);
   const [newestFirst, setNewestFirst] = useState(false);
   const messages = [...(item.messages || [])].sort((left, right) =>
     compareMessages(left, right, newestFirst),
@@ -1124,10 +1156,11 @@ function ConversationDetail({ item }) {
           </button>
         </div>
         <h2>{item.title}</h2>
+        {item.record_type === "episode" && <EpisodeTriggers item={item} token={token} onSaved={setTriggers} />}
         <div className="tags">
-          {item.topics?.map((topic) => (
-            <span className="tag" key={topic}>
-              {topic}
+          {triggers.map((trigger) => (
+            <span className="tag" key={trigger}>
+              {trigger}
             </span>
           ))}
         </div>
@@ -1772,6 +1805,7 @@ function Goals({ refreshKey, token, onMutated }) {
                       <>
                         <span className="status">{item.status}</span>
                         <h2>{item.title}</h2>
+        {item.record_type === "episode" && <EpisodeTriggers item={item} token={token} onSaved={setTriggers} />}
                         <p className="criteria">{item.success_criteria}</p>
                         <div className="goal-details">
                           <div>

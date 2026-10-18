@@ -230,6 +230,21 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         return {"Authorization": f"Bearer {token or self.access_token}"}
 
     @unittest.skipUnless(_dashboard_frontend_built(), "dashboard frontend is not built")
+    async def test_episode_trigger_editor(self):
+        path = "/api/conversations/episode/episode-one/triggers"
+        self.assertEqual((await self.client.patch(path, json={"triggers": []})).status, 401)
+        response = await self.client.patch(path, headers=self._auth(), json={"triggers": ["时之笛", "時之笛"]})
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())["triggers"], ["时之笛", "時之笛"])
+        saved = self.store.episode("episode-one")
+        self.assertEqual(saved["triggers_manual"], 1)
+        self.assertEqual(saved["topics"], [])
+        for invalid in (None, "word", [""], ["a", "A"], ["a", "b", "c"], ["x"] * 9):
+            response = await self.client.patch(path, headers=self._auth(), json={"triggers": invalid})
+            self.assertEqual(response.status, 400)
+        response = await self.client.patch(path.replace("episode-one", "missing"), headers=self._auth(), json={"triggers": []})
+        self.assertEqual(response.status, 404)
+
     async def test_dashboard_serves_static_ui_with_security_headers(self) -> None:
         response = await self.client.get("/")
         self.assertEqual(response.status, 200)

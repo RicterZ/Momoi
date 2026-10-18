@@ -156,6 +156,7 @@ class EpisodeAnnealingWorkflow:
                     emotional_context=call.arguments.get("emotional_context"),
                     outcomes=call.arguments.get("outcomes"),
                     recall_cues=cues,
+                    triggers=call.arguments.get("triggers"),
                 )
             except (TypeError, ValueError) as error:
                 return {

@@ -6,6 +6,8 @@ import time
 import uuid
 
 from .episode_cues import cue_texts
+from ...memory.metadata import validate_episode_triggers, normalize_trigger
+from ...memory.text import estimate_tokens
 from ..core.integrity import decode_stored_json
 from ..core.timestamps import add_context_timestamps
 
@@ -101,9 +103,53 @@ class EpisodeRecordStore:
         ]
         episode["recall_cues"] = cue_texts(episode["recall_cues"])
         episode.pop("summary", None)
-        for name in ("topics", "entities", "open_loops"):
+        for name in ("topics", "entities", "open_loops", "triggers"):
             episode[name] = json.loads(str(episode.pop(f"{name}_json")))
         return episode
+
+    def set_episode_triggers(self, episode_id: str, triggers: list[str]) -> dict[str, object]:
+        triggers = validate_episode_triggers(triggers)
+        with self._db:
+            cursor = self._db.execute(
+                "UPDATE conversation_episodes SET triggers_json=?, triggers_manual=1 WHERE id=?",
+                (json.dumps(triggers, ensure_ascii=False), episode_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(episode_id)
+        return self.episode(episode_id)
+
+    def triggered_episodes(self, text: str, *, limit: int = 3, token_budget: int = 1200) -> list[dict[str, object]]:
+        """Bounded deterministic lookup; does not inject context or invoke a model."""
+        if not isinstance(text, str):
+            raise ValueError("trigger input must be a string")
+        if not text.strip() or limit <= 0 or token_budget <= 0:
+            return []
+        normalized_text = normalize_trigger(text)
+        matches = []
+        for row in self._db.execute(
+            "SELECT * FROM conversation_episodes WHERE triggers_json!='[]' AND archive_kind IS NULL"
+        ):
+            episode = self._episode_dict(row)
+            words = [word for word in episode["triggers"] if normalize_trigger(word) in normalized_text]
+            summary = episode["narrative_summary"] or episode["working_summary"]
+            if words and summary:
+                matches.append({"id": episode["id"], "title": episode["title"],
+                                "summary": summary, "matched_triggers": words,
+                                "updated_at": episode["updated_at"]})
+        matches.sort(key=lambda item: (
+            max(len(normalize_trigger(word)) for word in item["matched_triggers"]),
+            item["updated_at"], item["id"],
+        ), reverse=True)
+        selected = []
+        for item in matches:
+            cost = 64 + estimate_tokens(json.dumps(item, ensure_ascii=False))
+            if cost > token_budget:
+                continue
+            selected.append(item)
+            token_budget -= cost
+            if len(selected) >= limit:
+                break
+        return selected
 
     def create_episode(
         self,

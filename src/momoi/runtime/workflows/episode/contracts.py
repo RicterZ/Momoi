@@ -1,5 +1,7 @@
 from typing import Any
 
+from ....memory.metadata import EPISODE_TRIGGER_INPUT_SCHEMA
+
 from .cue_contract import CUE_ARCHIVE_CONTRACT
 
 
@@ -173,6 +175,7 @@ EPISODE_SUMMARY_FINISH_SPEC: dict[str, Any] = {
                 "required": ["owner", "assistant", "tone"],
                 "additionalProperties": False,
             },
+            "triggers": EPISODE_TRIGGER_INPUT_SCHEMA,
             "recall_cues": {
                 "type": "array", "maxItems": 5, "uniqueItems": True,
                 "description": CUE_ARCHIVE_CONTRACT + " Empty if none.",
@@ -202,6 +205,7 @@ EPISODE_SUMMARY_FINISH_SPEC: dict[str, Any] = {
             "emotional_context",
             "outcomes",
             "recall_cues",
+            "triggers",
         ],
         "additionalProperties": False,
     },
