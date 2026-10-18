@@ -1,3 +1,4 @@
+from ..context.triggers import attach_reply_episode_triggers
 import time
 import asyncio
 import copy
@@ -541,6 +542,9 @@ class ToolBatchExecutor:
                     except Exception as error:
                         logger.exception("reply_generation_failed")
                         result = {"ok": False, "error": "reply_generation_failed", "message": type(error).__name__}
+                attach_reply_episode_triggers(
+                    self.store, result, stage=execution.stage, seen=request.draft.triggered_episode_ids,
+                )
             elif call.name == "qq_recall_message":
                 result = self.store.begin_tool_call(request.turn_id, call.id, call.name,
                                                     call.arguments, "external_effect")

@@ -9,7 +9,7 @@ from ....observability.events import log_event
 from ....observability.values import safe_preview
 from ....models import AgentReply, IncomingMessage, TurnDraft
 from ...agent import TurnExecutionSpec, WorkflowProtocolError
-from ...context.triggers import triggered_memory_context
+from ...context.triggers import triggered_memory_context, triggered_episode_context
 from ...context.trigger_monitor import record_trigger_injections
 from ...context.current_state import pack_current_turn_context
 from ...turn_support import (
@@ -78,6 +78,7 @@ class OwnerWorkflow:
         runtime_text = (
             (f"<affinity>{self.store.self_state()['affinity']}/100</affinity>\n\n" if self.config.affinity_enabled else "")
             + (f"<triggered_memories>\n{triggered}\n</triggered_memories>\n\n" if triggered else "")
+            + triggered_episode_context(self.store, updates)
             + "[用户中途插话]"
         )
         content = _owner_content_blocks(
@@ -199,6 +200,7 @@ class OwnerWorkflow:
              "没有调用工具时，即使无法执行请求也必须 result 留空。"
              "纯聊天、用户意图复述、语气建议和道歉都不是执行结果，不得提交。"),
             ("recent_recall_context", candidates["recent_recall_context"]),
+            ("triggered_episodes", triggered_episode_context(self.store, batch, wrapped=False)),
             ("triggered_memories", triggered_memory_context(
                 self.memory, batch, memories, on_injected=self._record_trigger_injections)),
         )
@@ -466,6 +468,7 @@ class OwnerWorkflow:
             self.self_state_section(),
             ("runtime_directives", "\n\n".join(directives)),
             ("recent_recall_context", candidates["recent_recall_context"]),
+            ("triggered_episodes", triggered_episode_context(self.store, batch, wrapped=False)),
             ("triggered_memories", triggered_memory_context(self.memory, batch, injected_memories, on_injected=self._record_trigger_injections)),
         )
         current_content = _owner_content_blocks(

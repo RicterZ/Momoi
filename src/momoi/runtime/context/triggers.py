@@ -25,3 +25,26 @@ def triggered_memory_context(memory, events, snapshots, *, only_new=False, on_in
             SubElement(item, "trigger").text = word
         SubElement(item, "content").text = row["content"]
     return "\n".join(tostring(child, encoding="unicode") for child in node)
+
+
+def triggered_episode_context(store, events, *, wrapped=True):
+    texts = [event.text for event in events if not event.delivery_context.get("channel_notice")]
+    rows = store.triggered_episodes("\n\n".join(texts))
+    if not rows:
+        return ""
+    node = Element("triggered_episodes")
+    for row in rows:
+        SubElement(node, "episode", {"id": row["id"]}).text = row["title"]
+    return (tostring(node, encoding="unicode") if wrapped else
+            "\n".join(tostring(child, encoding="unicode") for child in node))
+
+
+def attach_reply_episode_triggers(store, result, *, stage, seen):
+    """Owner replies never trigger a second lookup; autonomous replies do."""
+    if stage == "owner" or not result.get("bubbles") or len(seen) >= 5:
+        return
+    rows = [row for row in store.triggered_episodes("\n\n".join(result["bubbles"]))
+            if row["id"] not in seen][:5 - len(seen)]
+    if rows:
+        result["triggered_episodes"] = rows
+        seen.update(row["id"] for row in rows)

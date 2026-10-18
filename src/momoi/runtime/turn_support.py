@@ -102,6 +102,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "current_webhook_task",
     "autonomous_heartbeat",
     "triggered_memories",
+    "triggered_episodes",
     "current_messages",
 )
 
@@ -116,7 +117,7 @@ def pack_user_context(*items: tuple[str, str]) -> str:
     structured = {
         "long_term_memories", "recall_memories", "goal_directory",
         "recent_episodes", "recent_recall_context", "self_state", "episode_directory",
-        "current_state", "due_goal", "scoped_memories", "triggered_memories",
+        "current_state", "due_goal", "scoped_memories", "triggered_memories", "triggered_episodes",
     }
     return "\n\n".join(
         by_name[name].strip() if name == "followup" else

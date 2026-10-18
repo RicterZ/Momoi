@@ -55,11 +55,9 @@ def test_deterministic_matching_limits_and_persistence(tmp_path):
     store = Store(path, tmp_path)
     try:
         matched = store.triggered_episodes('時之笛预购：ＳＷＩＴＣＨ ２')
-        assert len(matched) == 3
-        assert matched[0]['matched_triggers'] == ['Switch 2']
-        assert matched[0]['summary'] == '用户想送我时之笛'
+        assert len(matched) == 4
+        assert set(matched[0]) == {'id', 'title'}
         assert len(store.triggered_episodes('时之笛', limit=1)) == 1
-        assert store.triggered_episodes('时之笛', token_budget=1) == []
         assert store.triggered_episodes('邮箱检查') == []
         assert store.triggered_episodes('时之笛', limit=0) == []
         with pytest.raises(ValueError):
@@ -76,9 +74,65 @@ def test_episode_triggers_are_literal_and_limited(tmp_path):
         with store._db:
             store._db.execute("UPDATE conversation_episodes SET narrative_summary='summary' WHERE id='literal'")
         assert store.triggered_episodes('axb') == []
-        assert store.triggered_episodes('a.b')[0]['matched_triggers'] == ['a.b']
-        assert store.triggered_episodes('switch')[0]['matched_triggers'] == ['ＳＷＩＴＣＨ']
+        assert store.triggered_episodes('a.b')[0] == {'id': 'literal', 'title': 'literal'}
+        assert store.triggered_episodes('switch')[0]['id'] == 'literal'
         with pytest.raises(ValueError):
             store.set_episode_triggers('literal', ['a', 'b', 'c'])
+    finally:
+        store.close()
+
+
+def test_topic_results_are_capped_at_five_without_summary(tmp_path):
+    store = Store(tmp_path / 'cap.sqlite3', tmp_path)
+    try:
+        for i in range(9):
+            store.create_episode(f'事实 {i}', episode_id=str(i))
+            store.set_episode_triggers(str(i), ['对象'])
+        results = store.triggered_episodes('对象', limit=100)
+        assert len(results) == 5
+        assert all(set(row) == {'id', 'title'} for row in results)
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize('stage', ['owner', 'goal', 'webhook', 'heartbeat'])
+def test_reply_trigger_routing_and_dedupe(tmp_path, stage):
+    from momoi.runtime.context.triggers import attach_reply_episode_triggers
+    from unittest.mock import patch
+    store = Store(tmp_path / 'route.sqlite3', tmp_path)
+    try:
+        store.create_episode('答应送我的礼物', episode_id='gift')
+        store.set_episode_triggers('gift', ['时之笛'])
+        seen = set()
+        with patch.object(store, 'triggered_episodes', wraps=store.triggered_episodes) as lookup:
+            result = {'state': 'sent', 'bubbles': ['时之笛的邮件到了']}
+            attach_reply_episode_triggers(store, result, stage=stage, seen=seen)
+            if stage == 'owner':
+                lookup.assert_not_called()
+                assert 'triggered_episodes' not in result
+            else:
+                assert result['triggered_episodes'] == [{'id': 'gift', 'title': '答应送我的礼物'}]
+                again = {'bubbles': ['时之笛']}
+                attach_reply_episode_triggers(store, again, stage=stage, seen=seen)
+                assert 'triggered_episodes' not in again
+    finally:
+        store.close()
+
+
+def test_owner_episode_context_escapes_titles_and_ignores_notices(tmp_path):
+    from momoi.models import IncomingMessage
+    from momoi.runtime.context.triggers import triggered_episode_context
+    from xml.etree import ElementTree
+    store = Store(tmp_path / 'owner.sqlite3', tmp_path)
+    try:
+        store.create_episode('送我的礼物 <fake/>', episode_id='gift')
+        store.set_episode_triggers('gift', ['时之笛'])
+        event = IncomingMessage('owner', 'owner', '时之笛', 1, 1)
+        node = ElementTree.fromstring(triggered_episode_context(store, [event]))
+        assert node.find('episode').attrib == {'id': 'gift'}
+        assert node.find('episode').text == '送我的礼物 <fake/>'
+        assert node.find('.//fake') is None
+        notice = IncomingMessage('notice', 'owner', '时之笛', 1, 1, delivery_context={'channel_notice': 'recall'})
+        assert triggered_episode_context(store, [notice]) == ''
     finally:
         store.close()

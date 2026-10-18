@@ -234,3 +234,27 @@ def test_merge_trigger_overflow_rolls_back_until_explicitly_reviewed(database):
     assert m.snapshots([first, second]) == snapshots
     merged = m.repository.merge(first, [second], '整理', 'recall', None, events, triggers=['new'])
     assert [r['id'] for r in m.triggered('new')] == [merged]
+
+
+def test_owner_injects_episode_title_in_current_message(daemon):
+    daemon.store.create_episode('老师答应送我礼物', episode_id='gift')
+    daemon.store.set_episode_triggers('gift', ['时之笛'])
+    current = IncomingMessage('topic-now', 'owner', '时之笛', time.time(), time.time())
+    daemon.store.add_event(current)
+    captured = {}
+
+    async def capture(system, messages, tools, events, draft, **kwargs):
+        captured['messages'] = messages
+        raise ContextCaptured()
+
+    daemon._run_tool_loop = capture
+    with pytest.raises(ContextCaptured):
+        asyncio.run(daemon._complete_batch([current], 'topic-turn'))
+    messages = captured['messages']
+    content = messages[-1]['content']
+    assert '<triggered_episodes>' in content[0]['text']
+    root = ElementTree.fromstring('<input>' + ''.join(b.get('text', '') for b in content) + '</input>')
+    episode = root.find('triggered_episodes/episode')
+    assert episode.attrib == {'id': 'gift'}
+    assert episode.text == '老师答应送我礼物'
+    assert all('triggered_episodes' not in str(m) for m in messages[:-1])

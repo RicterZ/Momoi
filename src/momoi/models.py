@@ -92,6 +92,7 @@ class TurnDraft:
     memory_operations: list[dict[str, Any]] = field(default_factory=list)
     memory_context: dict[int, dict[str, Any]] = field(default_factory=dict)
     memory_conversation: list[dict[str, Any]] = field(default_factory=list)
+    triggered_episode_ids: set[str] = field(default_factory=set)
     goals: dict[str, GoalMutation] = field(default_factory=dict)
     notification_messages: list[str | dict[str, Any]] | None = None
     notification_key: str = ""
