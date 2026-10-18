@@ -2337,6 +2337,7 @@ a.tag:hover {
 .episode-triggers { display: grid; gap: 14px; margin-top: 16px; }
 .episode-triggers-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .episode-triggers-row .panel-label { margin: 0; }
+.episode-triggers-row .quiet-button { padding: 5px 10px; font-size: 10px; line-height: 1; border-radius: 6px; }
 .episode-triggers-row .secondary { font-size: 12px; }
 .episode-triggers-form { width: 100%; max-width: 480px; }
 .episode-triggers-field { display: grid; gap: 8px; min-width: 0; }
