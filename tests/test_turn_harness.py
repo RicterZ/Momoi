@@ -117,6 +117,11 @@ class TurnHarnessTest(unittest.TestCase):
             harness.validate([ToolCall("web_fetch", "web_fetch", {"url": "https://x"})])
         )
 
+    def test_webhook_can_schedule_reminder_but_not_write_current_state(self):
+        harness = TurnHarness.for_stage("webhook")
+        self.assertIsNone(harness.validate([ToolCall("later", "goal_create", {})]))
+        self.assertEqual(harness.validate([ToolCall("state", "current_state_finish", {})]), "tool_not_allowed")
+
     def test_current_state_harness_allows_optional_recall(self) -> None:
         harness = TurnHarness.for_stage("current_state_maintenance")
         self.assertIsNone(harness.validate([ToolCall("recall", "recall", {})]))

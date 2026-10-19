@@ -26,7 +26,7 @@ TURN_HARNESS_SPECS = {
             None,
             "end_turn",
             permitted_tools=frozenset(
-                {"reply", "mood_change", "web_fetch", "read_tool_result", "end_turn"}
+                {"reply", "mood_change", "web_fetch", "read_tool_result", "goal_create", "end_turn"}
             ),
         ),
         TurnHarnessSpec("goal", None, "end_turn", required_before_end=frozenset({"goal_review"})),
