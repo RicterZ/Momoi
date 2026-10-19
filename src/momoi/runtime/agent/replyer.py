@@ -159,7 +159,8 @@ class Replyer(ReplyerBase):
                          round=request.round_number, channel=request.delivery_channel.name,
                          tool_call_id=call.id), model_request(thinking_effort=self.config.thinking_stages.get("replyer") or "low"):
             for _ in range(4):
-                response = await self.provider.complete(system, messages, [QQ_POKE_SPEC])
+                with log_context(call_id=new_trace_id()):
+                    response = await self.provider.complete(system, messages, [QQ_POKE_SPEC])
                 usage = response.usage or {}
                 self.store.record_turn_usage(request.turn_id, int(usage.get("input", estimate_tokens(system + str(messages)))),
                                              int(usage.get("output", estimate_tokens(str(response.content)))))

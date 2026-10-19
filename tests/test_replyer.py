@@ -46,7 +46,8 @@ def test_replyer_poke_tool_is_fixed_and_executes_only_on_qq(tmp_path, channel_na
 
     async def complete(system, messages, tools):
         assert tools == [QQ_POKE_SPEC]
-        calls.append(True)
+        calls.append(current_log_context()["call_id"])
+        assert len(set(calls)) == len(calls)
         if len(calls) <= 2:
             identifier = f'poke-action-{len(calls)}'
             return ProviderResponse([{'type': 'tool_use', 'id': identifier, 'name': 'qq_poke', 'input': {}}],
@@ -59,6 +60,7 @@ def test_replyer_poke_tool_is_fixed_and_executes_only_on_qq(tmp_path, channel_na
         replyer = Replyer(config, store, SimpleNamespace(complete=complete))
         assert asyncio.run(replyer.generate(ToolCall('reply', 'reply', {'intent': 'test', 'reference': '', 'mode': mode}), request)) == ['你好']
         assert poke.await_count == 2 * int(channel_name == 'napcat' and not paused)
+        assert store.reply_action_bubbles('poke-turn', 'reply') == ['[动作：戳一戳]'] * (2 * int(channel_name == 'napcat' and not paused and not failed))
         if channel_name == 'napcat' and not paused:
             assert store.begin_tool_call('poke-turn', 'reply:poke-action-1', 'qq_poke', {})['ok'] is (not failed)
     finally:
@@ -635,5 +637,24 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
         assert asyncio.run(Replyer(config, store, SimpleNamespace(complete=complete)).generate(
             ToolCall('next', 'reply', {'intent': 'Continue', 'reference': ''}), request)) == ['Continue latest']
         assert store.replyer_dialogue_rows('test') == []  # Projection does not prematurely archive.
+    finally:
+        store.close()
+
+
+def test_dashboard_replyer_actions_join_audit_without_losing_requests(tmp_path):
+    store = Store(tmp_path / 'audit.sqlite3')
+    try:
+        store.begin_turn('t', 'owner', [])
+        store.begin_tool_call('t', 'dispatch:poke', 'qq_poke', {}, 'external_effect')
+        store.complete_tool_call('t', 'dispatch:poke', {'ok': True})
+        for index in range(2):
+            store.record_thinking_call(created_at=100 + index, turn_id='t', call_id=f'request-{index}',
+                stage='replyer', trace={'tool_call_id': 'dispatch', 'tool_calls':
+                    [{'id': 'poke', 'name': 'qq_poke', 'arguments': {}}] if index == 0 else []})
+        calls = store.dashboard_thinking_detail('t')['calls']
+        assert len(calls) == 2
+        assert calls[0]['actions'][0]['result'] == {'ok': True}
+        assert calls[1]['actions'] == []
+        assert store.reply_action_bubbles('t', 'other') == []
     finally:
         store.close()

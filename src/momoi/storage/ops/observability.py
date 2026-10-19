@@ -322,6 +322,13 @@ class ObservabilityStore:
                         actions = [{"id": b.get("id"), "name": b.get("name"), "arguments": b.get("input", {})}
                                    for b in exchange.get("content", []) if isinstance(b, dict) and b.get("type") == "tool_use"]
                 for action in actions:
+                    if call.get("stage") == "replyer" and trace.get("tool_call_id"):
+                        audit = self._db.execute(
+                            "SELECT result_json FROM tool_audit WHERE turn_id=? AND tool_call_id=?",
+                            (turn_id, str(trace["tool_call_id"]) + ":" + str(action.get("id"))),
+                        ).fetchone()
+                        if audit and audit["result_json"]:
+                            action["result"] = json.loads(audit["result_json"])
                     if action.get("id") in results:
                         action["result"] = results[action["id"]]
                 call["actions"] = actions

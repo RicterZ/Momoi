@@ -542,6 +542,9 @@ class ToolBatchExecutor:
                     except Exception as error:
                         logger.exception("reply_generation_failed")
                         result = {"ok": False, "error": "reply_generation_failed", "message": type(error).__name__}
+                action_bubbles = self.store.reply_action_bubbles(request.turn_id, call.id)
+                if action_bubbles:
+                    result["bubbles"] = action_bubbles + list(result.get("bubbles", []))
                 attach_reply_episode_triggers(
                     self.store, result, stage=execution.stage, seen=request.draft.triggered_episode_ids,
                 )

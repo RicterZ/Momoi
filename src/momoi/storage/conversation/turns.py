@@ -262,6 +262,14 @@ class TurnStore:
         )
         return sequence
 
+    def reply_action_bubbles(self, turn_id: str, reply_call_id: str) -> list[str]:
+        rows = self._db.execute(
+            "SELECT tool_call_id FROM tool_audit WHERE turn_id=? AND tool_name='qq_poke' "
+            "AND state='completed' AND ok=1 ORDER BY id", (turn_id,),
+        )
+        return ["[动作：戳一戳]" for row in rows
+                if row["tool_call_id"].startswith(reply_call_id + ":")]
+
     def begin_tool_call(
         self,
         turn_id: str,
