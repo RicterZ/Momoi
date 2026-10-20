@@ -174,11 +174,9 @@ flowchart TB
     dialogue --> writing["Memory operations<br/>Evidence checks · deduplication and updates"]
   end
 
-  subgraph reflection["Reflection candidates · excluded from everyday recall"]
-    daily["Daily review"] --> observations["Diary and daily observations<br/>Quoted evidence · triggers"]
-    observations --> weekly["Weekly review<br/>Previous candidates · rolling month"]
-    weekly --> candidates["Observations: ≥ 2 events<br/>Ready: ≥ 5 events, no conflicts"]
-    candidates -.-> weekly
+  subgraph reflection["Reflection · excluded from recall until manual admission"]
+    daily["Daily review<br/>Diary and observations"] --> weekly["Weekly consolidation"]
+    weekly --> candidates["Reflection candidates"]
     candidates --> admission["Manual Dashboard admission"]
   end
 

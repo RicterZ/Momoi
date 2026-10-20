@@ -144,11 +144,9 @@ flowchart TB
     dialogue --> writing["记忆操作<br/>证据审查 · 查重与更新"]
   end
 
-  subgraph reflection["复盘候选 · 不直接召回"]
-    daily["每日复盘"] --> observations["日记与每日观察<br/>原文证据 · 触发词"]
-    observations --> weekly["每周盘点<br/>带入上次候选 · 最长一个月"]
-    weekly --> candidates["观察 ≥ 2 次<br/>待准入 ≥ 5 次且无冲突"]
-    candidates -.-> weekly
+  subgraph reflection["复盘 · 人工准入前不参与召回"]
+    daily["每日复盘<br/>日记与观察"] --> weekly["每周整合"]
+    weekly --> candidates["复盘候选"]
     candidates --> admission["Dashboard 人工准入"]
   end
 
