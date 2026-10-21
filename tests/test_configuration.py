@@ -34,10 +34,10 @@ def _napcat_channels() -> dict[str, object]:
 class ConfigurationTest(unittest.TestCase):
     def test_wechaty_is_an_independent_channel(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            config = WechatyConfig.from_mapping({"owner_id": "wxid_owner"}, Path(directory))
+            config = WechatyConfig.from_mapping({"owner_alias": "Momoi主人"}, Path(directory))
             channel = create_wechaty_channel(config)
             self.assertEqual(channel.name, "wechaty")
-            self.assertEqual(config.owner_id, "wxid_owner")
+            self.assertEqual(config.owner_alias, "Momoi主人")
 
     def test_weixin_remains_ilink_channel(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

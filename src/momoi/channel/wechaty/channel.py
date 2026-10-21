@@ -51,7 +51,8 @@ class WechatyChannel:
             await stop.wait()
             return
         self.config.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        env = {**os.environ, "HOME": str(self.config.data_dir), "WECHATY_PUPPET_WECHAT4U_TOKEN_DIR": str(self.config.data_dir)}
+        env = {**os.environ, "HOME": str(self.config.data_dir), "WECHATY_PUPPET_WECHAT4U_TOKEN_DIR": str(self.config.data_dir),
+               "MOMOI_WECHATY_OWNER_ALIAS": self.config.owner_alias}
         self._process = await asyncio.create_subprocess_exec(
             node, str(script), cwd=self.config.data_dir, env=env,
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
@@ -119,7 +120,7 @@ class WechatyChannel:
             elif kind == "message":
                 sender_id = str(event.get("senderId") or "")
                 text = str(event.get("text") or "").strip()
-                if not sender_id or not text or (self.config.owner_id and sender_id != self.config.owner_id):
+                if not sender_id or not text:
                     continue
                 message_id = str(event.get("id") or "")
                 if not message_id:
@@ -148,12 +149,12 @@ class WechatyChannel:
     async def send_message(self, payload: dict) -> str:
         if payload.get("action") != "message":
             raise SendRejected("Wechaty supports text messages only")
-        recipient = str((payload.get("delivery_context") or {}).get("wechaty_recipient") or self.config.owner_id)
+        recipient = str((payload.get("delivery_context") or {}).get("wechaty_recipient") or "")
         text = "\n".join(str(segment.get("data", {}).get("text") or "")
                            for segment in payload.get("segments", [])
                            if segment.get("type") == "text").strip()
-        if not recipient or not text:
-            raise SendRejected("Wechaty requires owner_id and text")
+        if not (recipient or self.config.owner_alias) or not text:
+            raise SendRejected("Wechaty requires owner_alias and text")
         request_id = str(time.monotonic_ns())
         future = asyncio.get_running_loop().create_future()
         self._pending[request_id] = future

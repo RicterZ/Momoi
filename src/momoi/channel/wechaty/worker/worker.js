@@ -6,6 +6,7 @@ const bot = WechatyBuilder.build({
   puppet: 'wechaty-puppet-wechat4u',
   puppetOptions: { uos: true },
 })
+const ownerAlias = process.env.MOMOI_WECHATY_OWNER_ALIAS || ''
 let nextId = 1
 const pending = new Map()
 
@@ -21,7 +22,7 @@ bot.on('message', async message => {
   try {
     if (message.self() || message.room()) return
     const sender = message.from()
-    if (!sender) return
+    if (!sender || !ownerAlias || (await sender.alias()) !== ownerAlias) return
     emit({
       type: 'message', id: String(message.id), senderId: String(sender.id),
       senderName: sender.name(), text: message.text(),
@@ -40,7 +41,9 @@ rl.on('line', async line => {
     catch (error) { emit({ type: 'error', message: error?.message || String(error) }) }
   } else if (command.command === 'send') {
     try {
-      const contact = await bot.Contact.find({ id: String(command.recipient) })
+      const contact = command.recipient
+        ? await bot.Contact.find({ id: String(command.recipient) })
+        : ownerAlias && await bot.Contact.find({ alias: ownerAlias })
       if (!contact) throw new Error('contact_not_found')
       await contact.say(String(command.text))
       emit({ type: 'response', id: command.id, ok: true })
