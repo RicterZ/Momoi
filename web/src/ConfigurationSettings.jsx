@@ -1468,13 +1468,14 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                         {loginActive ? "查看登录进度" : "扫码登录"}
                       </button>
                     </div>
+                    <p className="settings-weixin-hint">{wechatMode === "wechaty" ? "通过 Wechaty 登录个人微信号，账号存在受限风险。" : "通过 iLink 接入微信，扫码后即可对话。"}</p>
                     {wechatMode === "wechaty" && (
                       <label className="settings-field settings-weixin-owner">
                         <span className="settings-label">允许对话的好友 ID</span>
                         <input className="dash-input" value={(channels.enabled.wechaty || {}).owner_id || ""} onChange={event => edit("wechaty", { ...(channels.enabled.wechaty || {}), owner_id: event.target.value })} placeholder="留空时不接收任何联系人的消息" />
                       </label>
                     )}
-                    {(() => { const state = login?.[wechatChannel]?.status; return <span className={`settings-channel-state${state === "confirmed" ? " is-connected" : ""}`}><i aria-hidden="true" />{["starting", "waiting", "scanned", "verification_required"].includes(state) ? "等待扫码" : state === "confirmed" ? "已登录" : "尚未登录"}</span>; })()}
+                    {(() => { const state = login?.[wechatChannel]?.status; return <span className={`settings-channel-state${state === "confirmed" ? " is-connected" : ""}`}><i aria-hidden="true" />{["starting", "waiting", "scanned", "verification_required"].includes(state) ? "等待扫码" : state === "confirmed" ? "已登录" : "尚未登录"}{dirty && <em>保存后可扫码</em>}</span>; })()}
                   </div>
                 ) : <p className="settings-channel-note">保留已有连接配置。</p>}
                 </div>

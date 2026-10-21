@@ -1108,8 +1108,25 @@
 .settings-channel-login.settings-weixin-login {
   justify-items: stretch;
   align-content: start;
-  gap: 10px;
-  padding: 8px 0 0;
+  gap: 14px;
+  padding: 0;
+}
+.settings-weixin-hint {
+  margin: -6px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.7;
+}
+.settings-weixin-login .settings-channel-state {
+  display: flex;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.settings-channel-state em {
+  margin-left: auto;
+  font-style: normal;
+  font-weight: 500;
 }
 .settings-weixin-mode,
 .settings-weixin-owner { width: 100%; }
