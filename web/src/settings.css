@@ -1105,6 +1105,46 @@
 .settings-channel-login .settings-login-actions { flex-wrap: wrap; gap: 12px; }
 .settings-channel-login .settings-verification { flex-wrap: wrap; }
 .settings-channel-login .settings-verification .settings-field { min-width: 100px; }
+.settings-channel-login.settings-weixin-login {
+  justify-items: stretch;
+  align-content: start;
+  gap: 10px;
+  padding: 8px 0 0;
+}
+.settings-weixin-mode,
+.settings-weixin-owner { width: 100%; }
+.settings-weixin-controls {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+.settings-weixin-controls > .settings-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.settings-weixin-controls > button {
+  flex: 0 0 auto;
+  min-height: 42px;
+  white-space: nowrap;
+}
+.settings-channel-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+.settings-channel-state i {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  background: var(--muted);
+}
+.settings-channel-state.is-connected { color: var(--ink); }
+.settings-channel-state.is-connected i { background: var(--green, #77b88a); }
+.settings-weixin-login .settings-channel-note { text-align: left; margin: 0; font-size: 10px; }
 @media (max-width: 650px) {
   .settings-channel-grid { grid-template-columns: minmax(0, 1fr); }
   .settings-channel-column + .settings-channel-column {

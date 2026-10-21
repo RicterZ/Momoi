@@ -234,8 +234,7 @@ def register_configuration_routes(app, configuration, runtime):
 
     async def status(request):
         channels = getattr(getattr(runtime, "daemon", None), "channels", {})
-        wechaty = channels.get("wechaty")
-        wechaty_login = dict(getattr(wechaty, "login_state", {"status": "idle"}))
+        wechaty_login = dict(getattr(channels.get("wechaty"), "login_state", {"status": "idle"}))
         if content := wechaty_login.pop("qr_content", ""):
             output = io.BytesIO()
             qrcode.make(content, image_factory=qrcode.image.svg.SvgPathImage).save(output)
@@ -277,10 +276,9 @@ def register_configuration_routes(app, configuration, runtime):
         return web.json_response(channel_login.state)
 
     async def start_wechaty_login(request):
-        channels = getattr(getattr(runtime, "daemon", None), "channels", {})
-        channel = channels.get("wechaty")
+        channel = getattr(getattr(runtime, "daemon", None), "channels", {}).get("wechaty")
         if channel is None:
-            raise web.HTTPConflict(text="启用并保存 Wechaty 渠道后再登录。")
+            raise web.HTTPConflict(text="启用并保存个人微信渠道后再登录。")
         try:
             await channel.start_login()
         except RuntimeError as error:
@@ -288,11 +286,10 @@ def register_configuration_routes(app, configuration, runtime):
         return web.json_response(channel.login_state, status=202)
 
     async def cancel_wechaty_login(request):
-        channels = getattr(getattr(runtime, "daemon", None), "channels", {})
-        channel = channels.get("wechaty")
+        channel = getattr(getattr(runtime, "daemon", None), "channels", {}).get("wechaty")
         if channel is not None:
             await channel.cancel_login()
-        return web.json_response({"status": "cancelled"})
+        return web.json_response(getattr(channel, "login_state", {"status": "cancelled"}))
 
     async def qq_call_audio_configuration(request):
         if not os.environ.get("MOMOI_QQ_CALL_MANAGED"):

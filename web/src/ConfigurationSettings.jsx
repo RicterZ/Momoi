@@ -1323,12 +1323,11 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
 
 const channelOptions = [
   { value: "weixin", label: "微信" },
-  { value: "wechaty", label: "个人微信（Wechaty）" },
   { value: "napcat", label: "Napcat QQ" },
 ];
 const channelDefaults = (name) =>
-  name === "napcat" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : name === "wechaty" ? { owner_id: "" } : {};
-function ChannelSection({ module, data, save, login, runtimeWechatyLogin, action, saving, actionBusy, next, previous, skip, qqConnected }) {
+  name === "napcat" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : {};
+function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, skip, qqConnected }) {
   const [channels, setChannels] = useState(data.app.channels || { primary: "", enabled: {} });
   const [saved, setSaved] = useState(channels);
   const [status, setStatus] = useState(null);
@@ -1339,11 +1338,13 @@ function ChannelSection({ module, data, save, login, runtimeWechatyLogin, action
   const [loginError, setLoginError] = useState("");
   const cached = useRef({ ...channels.enabled });
   const dirty = !equal(channels, saved);
-  const loginState = loginChannel === "wechaty" ? runtimeWechatyLogin : login;
+  const loginState = login?.[loginChannel] || { status: "idle" };
   const loginActive = ["starting", "waiting", "scanned", "verification_required"].includes(loginState?.status);
   const busy = saving || actionBusy || loginPending;
-  const choices = [...channelOptions, ...Object.keys(channels.enabled).filter(name => !channelOptions.some(option => option.value === name)).map(name => ({ value: name, label: name }))];
-  const enabledChoices = choices.filter(option => option.value in channels.enabled);
+  const choices = [...channelOptions, ...Object.keys(channels.enabled).filter(name => name !== "wechaty" && !channelOptions.some(option => option.value === name)).map(name => ({ value: name, label: name }))];
+  const [wechatMode, setWechatMode] = useState(channels.enabled.wechaty ? "wechaty" : "ilink");
+  const wechatChannel = wechatMode === "wechaty" ? "wechaty" : "weixin";
+  const enabledChoices = [...choices, { value: "wechaty", label: "个人微信" }].filter(option => option.value in channels.enabled);
   function change(value) { setChannels(value); setStatus(null); }
   function toggle(name, enabled) {
     const values = { ...channels.enabled };
@@ -1354,6 +1355,17 @@ function ChannelSection({ module, data, save, login, runtimeWechatyLogin, action
   function edit(name, values) {
     cached.current[name] = values;
     change({ ...channels, enabled: { ...channels.enabled, [name]: values } });
+  }
+  function chooseWechatMode(next) {
+    const old = wechatChannel;
+    const target = next === "wechaty" ? "wechaty" : "weixin";
+    setWechatMode(next);
+    if (!(old in channels.enabled) || old === target) return;
+    const enabled = { ...channels.enabled };
+    cached.current[old] = enabled[old];
+    delete enabled[old];
+    enabled[target] = cached.current[target] || {};
+    change({ ...channels, enabled, primary: channels.primary === old ? target : channels.primary });
   }
   async function submit(event) {
     event.preventDefault();
@@ -1393,13 +1405,11 @@ function ChannelSection({ module, data, save, login, runtimeWechatyLogin, action
     }
     finally { setLoginPending(false); }
   }
-  async function startLogin(name = "weixin") {
-    setLoginChannel(name);
+  async function startLogin(channel = loginChannel) {
+    setLoginChannel(channel);
     setCode("");
     setLoginOpen(true);
-    const state = name === "wechaty" ? runtimeWechatyLogin : login;
-    if (!["starting", "waiting", "scanned", "verification_required"].includes(state?.status))
-      await loginAction(`/api/settings/channels/${name}/login`);
+    if (!login?.[channel] || !["starting", "waiting", "scanned", "verification_required"].includes(login[channel].status)) await loginAction(`/api/settings/channels/${channel}/login`);
   }
   async function closeLogin() {
     if (busy) return;
@@ -1413,8 +1423,9 @@ function ChannelSection({ module, data, save, login, runtimeWechatyLogin, action
       <div className="settings-form-body settings-channels">
         <div className="settings-channel-grid">
           {choices.map(({ value: name, label }) => {
-            const enabled = name in channels.enabled;
-            const options = channels.enabled[name] || {};
+            const key = name === "weixin" ? wechatChannel : name;
+            const enabled = key in channels.enabled;
+            const options = channels.enabled[key] || {};
             const titleId = `settings-channel-${name}`;
             return (
               <section className="settings-channel-column" key={name} aria-labelledby={titleId}>
@@ -1423,15 +1434,15 @@ function ChannelSection({ module, data, save, login, runtimeWechatyLogin, action
                     <h3 id={titleId}>{label}</h3>
                     <span className="panel-label">CHANNEL // {name === "weixin" ? "WEIXIN" : name === "napcat" ? "QQ" : name.toUpperCase()}</span>
                   </div>
-                  <Toggle checked={enabled} disabled={busy || loginActive} onChange={value => toggle(name, value)}>启用{label}</Toggle>
+                  <Toggle checked={enabled} disabled={busy || loginActive} onChange={value => toggle(key, value)}>启用{label}</Toggle>
                 </header>
                 <p className="settings-channel-description">
-                  {name === "weixin" || name === "wechaty" ? "启用并保存后，扫码登录微信。" : name === "napcat" ? "填写 NapCat 连接信息，保存后自动连接。" : "配置并保存后连接此渠道。"}
+                  {name === "weixin" ? "启用并保存后，扫码登录微信。" : name === "napcat" ? "填写 NapCat 连接信息，保存后自动连接。" : "配置并保存后连接此渠道。"}
                 </p>
                 <div className="settings-channel-content">
                 {!enabled ? (
                   <div className="settings-channel-off">
-                    <span className="settings-channel-off-icon" aria-hidden="true"><Icon name={name === "weixin" || name === "wechaty" ? "weixin" : name === "napcat" ? "qq" : "chat"} /></span>
+                    <span className="settings-channel-off-icon" aria-hidden="true"><Icon name={name === "weixin" ? "weixin" : name === "napcat" ? "qq" : "chat"} /></span>
                     <div>
                       <strong>{name === "weixin" ? "在微信里和 Momoi 聊天" : name === "napcat" ? "在 QQ 里和 Momoi 聊天" : `连接${label}`}</strong>
                       <p>{name === "weixin" ? "打开上方开关，保存后扫码登录。" : name === "napcat" ? "打开上方开关，填写 Napcat 连接信息。" : "打开上方开关，接入这个消息渠道。"}</p>
@@ -1448,23 +1459,22 @@ function ChannelSection({ module, data, save, login, runtimeWechatyLogin, action
                   <DesktopQQ botQQ={options.bot_qq} ownerQQ={options.owner_qq} connected={qqConnected} disabled={busy || loginActive} onConnection={connectDesktopQQ} />
                   </div>
                 ) : name === "weixin" ? (
-                  <div className="settings-channel-login">
-                    <button type="button" className="quiet-button settings-button" disabled={busy || dirty || !saved.enabled.weixin} onClick={startLogin}>
-                      {loginActive ? "查看登录进度" : "扫码登录"}
-                    </button>
-                    <p className="settings-channel-note" style={{ visibility: dirty || !saved.enabled.weixin ? "visible" : "hidden" }}>请先点击底部“保存”，再扫码登录。</p>
-                  </div>
-                ) : name === "wechaty" ? (
-                  <div className="settings-channel-login">
-                    <label className="settings-field">
-                      <span className="settings-label">允许对话的好友 ID</span>
-                      <input className="dash-input" value={options.owner_id || ""} onChange={event => edit(name, { ...options, owner_id: event.target.value })} placeholder="Wechaty 联系人 ID" />
-                    </label>
-                    <p className="settings-channel-note">仅允许该联系人触发 Momoi 回复。WeChat4U 是非官方协议，存在账号限制风险。</p>
-                    <button type="button" className="quiet-button settings-button" disabled={busy || dirty || !saved.enabled.wechaty} onClick={() => startLogin("wechaty")}>
-                      {loginState?.status && loginChannel === "wechaty" && loginActive ? "查看登录进度" : "扫码登录"}
-                    </button>
-                    <p className="settings-channel-note" style={{ visibility: dirty || !saved.enabled.wechaty ? "visible" : "hidden" }}>请先保存配置，再扫码登录。</p>
+                  <div className="settings-channel-login settings-weixin-login">
+                    <div className="settings-weixin-controls">
+                      <SelectField label="接入方式" value={wechatMode} onChange={chooseWechatMode}
+                        options={[{ value: "ilink", label: "iLink" }, { value: "wechaty", label: "个人微信" }]}
+                        disabled={busy || loginActive} />
+                      <button type="button" className="quiet-button settings-button" disabled={busy || dirty || !saved.enabled[wechatChannel]} onClick={() => startLogin(wechatChannel)}>
+                        {loginActive ? "查看登录进度" : "扫码登录"}
+                      </button>
+                    </div>
+                    {wechatMode === "wechaty" && (
+                      <label className="settings-field settings-weixin-owner">
+                        <span className="settings-label">允许对话的好友 ID</span>
+                        <input className="dash-input" value={(channels.enabled.wechaty || {}).owner_id || ""} onChange={event => edit("wechaty", { ...(channels.enabled.wechaty || {}), owner_id: event.target.value })} placeholder="留空时不接收任何联系人的消息" />
+                      </label>
+                    )}
+                    {(() => { const state = login?.[wechatChannel]?.status; return <span className={`settings-channel-state${state === "confirmed" ? " is-connected" : ""}`}><i aria-hidden="true" />{["starting", "waiting", "scanned", "verification_required"].includes(state) ? "等待扫码" : state === "confirmed" ? "已登录" : "尚未登录"}</span>; })()}
                   </div>
                 ) : <p className="settings-channel-note">保留已有连接配置。</p>}
                 </div>
@@ -1477,7 +1487,7 @@ function ChannelSection({ module, data, save, login, runtimeWechatyLogin, action
           </fieldset>
       </div>
       {loginOpen && (
-        <SettingsDialog title={loginChannel === "wechaty" ? "个人微信扫码登录" : "微信扫码登录"} onClose={closeLogin} className="settings-weixin-dialog">
+        <SettingsDialog title="微信扫码登录" onClose={closeLogin} className="settings-weixin-dialog">
           <div className="settings-weixin-content">
             {loginPending || !loginState?.status || loginState.status === "starting" ? (
               <Loading>正在处理登录…</Loading>
@@ -1502,7 +1512,7 @@ function ChannelSection({ module, data, save, login, runtimeWechatyLogin, action
           </div>
           <div className="confirm-actions">
             <button type="button" className="quiet-button" disabled={busy} onClick={closeLogin}>关闭</button>
-            {!loginActive && (loginError || ["expired", "error", "cancelled", "idle"].includes(login?.status)) && <button type="button" className="quiet-button" disabled={busy} onClick={startLogin}>重新获取二维码</button>}
+            {!loginActive && (loginError || ["expired", "error", "cancelled", "idle"].includes(loginState?.status)) && <button type="button" className="quiet-button" disabled={busy} onClick={startLogin}>重新获取二维码</button>}
           </div>
         </SettingsDialog>
       )}
@@ -1605,8 +1615,7 @@ export default function ConfigurationSettings({
         const value = await call("/api/settings/runtime", {
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]),
         });
-        if (["starting", "waiting", "scanned", "verification_required"].includes(value?.weixin_login?.status) ||
-            ["starting", "waiting", "scanned", "verification_required"].includes(value?.wechaty_login?.status)) delay = 1000;
+        if (["starting", "waiting", "scanned", "verification_required"].some(status => [value?.weixin_login?.status, value?.wechaty_login?.status].includes(status))) delay = 1000;
         if (active) {
           setRuntime(value);
           setPollError("");
@@ -1720,6 +1729,9 @@ export default function ConfigurationSettings({
     try {
       if (["starting", "waiting", "scanned", "verification_required"].includes(runtime?.weixin_login?.status)) {
         if (!await action("/api/settings/channels/weixin/login", undefined, "DELETE")) return;
+      }
+      if (["starting", "waiting", "scanned", "verification_required"].includes(runtime?.wechaty_login?.status)) {
+        if (!await action("/api/settings/channels/wechaty/login", undefined, "DELETE")) return;
       }
       if (Object.keys(data.app.channels?.enabled || {}).length) {
         await save("/api/settings/configuration/app", { channels: { primary: "", enabled: {} } }, "PATCH");
@@ -1860,8 +1872,7 @@ export default function ConfigurationSettings({
                       previous={previous}
                       data={data}
                       save={save}
-                      login={runtime?.weixin_login}
-                      runtimeWechatyLogin={runtime?.wechaty_login}
+                      login={{ weixin: runtime?.weixin_login, wechaty: runtime?.wechaty_login }}
                       qqConnected={runtime?.qq_connected}
                       skip={setupMode ? () => skipChannels(following?.id) : undefined}
                       action={action}

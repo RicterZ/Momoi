@@ -10,7 +10,8 @@ import asyncio
 from momoi.__main__ import parse_args
 from momoi.tools.agenda import AgendaTools
 from momoi.channel.napcat import NapCatConfig
-from momoi.channel.weixin import WeixinConfig
+from momoi.channel.weixin import WeixinConfig, create_channel as create_weixin_channel
+from momoi.channel.wechaty import WechatyConfig, create_channel as create_wechaty_channel
 from momoi.config.loading import load_config
 from momoi.config.models import ConfigError, DashboardConfig
 from momoi.mcp.config import load_mcp_servers
@@ -31,6 +32,19 @@ def _napcat_channels() -> dict[str, object]:
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_wechaty_is_an_independent_channel(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = WechatyConfig.from_mapping({"owner_id": "wxid_owner"}, Path(directory))
+            channel = create_wechaty_channel(config)
+            self.assertEqual(channel.name, "wechaty")
+            self.assertEqual(config.owner_id, "wxid_owner")
+
+    def test_weixin_remains_ilink_channel(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = WeixinConfig.from_mapping({}, Path(directory))
+            channel = create_weixin_channel(config)
+            self.assertEqual(channel.name, "weixin")
+
     def test_loads_multiple_channels_and_validates_primary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
