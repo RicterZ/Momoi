@@ -115,8 +115,9 @@ class WechatyChannel:
             elif kind == "login_cancelled":
                 self.login_state = {"status": "cancelled"}
             elif kind == "error":
-                self.login_state = {"status": "error", "error": "wechaty_worker_error"}
-                logger.warning("Wechaty worker reported an error")
+                message = str(event.get("message") or "wechaty_worker_error")[:300]
+                self.login_state = {"status": "error", "error": message}
+                logger.warning("Wechaty worker reported an error: %s", message)
             elif kind == "message":
                 sender_id = str(event.get("senderId") or "")
                 text = str(event.get("text") or "").strip()
