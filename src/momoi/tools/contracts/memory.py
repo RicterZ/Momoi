@@ -178,7 +178,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "memory_operation",
         "description": (
-            '更改持久化记忆（默认 scope=memory）或临时状态（scope=current_state）。对于现有临时状态，使用 current_state：replace 用于更新，forget 用于删除。新状态只能由后台状态维护添加；此范围内禁止 add。请使用现有的主题/键；缺失或过期的维度无法通过 replace 创建。为 replace 提供 ttl_seconds，forget 则省略。若无新鲜证据，请勿续期。仅记录当前用户输入直接支持的临时事实或行为，而非您的猜测。在 current_state_maintenance 中使用 current_state_finish。以下审查规则仅适用于持久化记忆：运行时附加召回的记忆和对话；私有审查在该 Turn 提交后运行。接受不意味着更改已生效。请勿重复已接受的请求。'
+            '更改持久化记忆或临时状态（scope=current_state）。持久化记忆可用 memory_scope 指定适用工作流：通用记忆省略或填空字符串；仅 webhook 使用的填 webhook；仅心跳使用的填 heartbeat；仅某个 Goal 使用的填 goal:<已知 Goal ID>。主题标签和 kind 不决定领域。请把明确的领域要求传给后台审核，审核模型必须遵守；不能确认 Goal ID 时不要猜。对于现有临时状态，使用 current_state：replace 用于更新，forget 用于删除。新状态只能由后台状态维护添加；此范围内禁止 add。为 replace 提供 ttl_seconds，forget 则省略。若无新鲜证据，请勿续期。以下审查规则仅适用于持久化记忆：运行时附加召回的记忆和对话；私有审查在该 Turn 提交后运行。接受不意味着更改已生效。请勿重复已接受的请求。'
         ),
         "input_schema": {
             "type": "object",
@@ -201,6 +201,9 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 },
                 "scope": {"type": "string", "enum": ["memory", "current_state"],
                           "description": '存储类别：memory（默认）用于持久化事实、偏好、规则或关系；current_state 仅用于更新或删除现有临时事实或限时行为（最长 24 小时）。持久化记忆种类和激活由后台审查分类，而非 type 参数。'},
+                "memory_scope": {"type": "string", "maxLength": 200,
+                                 "pattern": "^(?:|heartbeat|webhook|goal:[^\\s]+)$",
+                                 "description": '持久化记忆的适用工作流（领域），不是 kind/tags。空字符串或省略表示全局通用；webhook/heartbeat 或 goal:<已知 Goal ID> 表示只在对应工作流使用。主模型应根据用户明确要求和记忆实际用途选择，并把该值交给后台审核。'},
                 "subject": {"type": "string", "minLength": 1, "maxLength": 128,
                             "description": 'current_state 仅限：用户、助手或已建立的实体。'},
                 "key": {"type": "string", "minLength": 1, "maxLength": 64,

@@ -454,8 +454,10 @@ class MemoryTools:
         args = call.arguments
         if args.get("scope") == "current_state":
             return self._state_operation(call, current_events, turn_id)
-        if set(args) - {"type", "content", "evidence", "target_id", "scope"}:
+        if set(args) - {"type", "content", "evidence", "target_id", "scope", "memory_scope"}:
             return {"ok": False, "error": "invalid_memory_operation_fields"}
+        if "memory_scope" in args and "scope" in args:
+            return {"ok": False, "error": "conflicting_memory_scopes"}
         if (
             not call.id
             or not isinstance(args.get("type"), str)
@@ -484,6 +486,7 @@ class MemoryTools:
             "content": content.strip(),
             "evidence": evidence,
             "event_id": event.event_id,
+            **({"scope": args["memory_scope"]} if "memory_scope" in args else {}),
             **({"target_id": target_id} if target_id is not None else {}),
         }
         previous = next(

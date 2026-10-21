@@ -123,6 +123,21 @@ def test_frontend_queues_only_on_commit_and_deduplicates(store):
     assert not store.memories.repository.inventory()
 
 
+def test_frontend_passes_memory_scope_to_private_review(store):
+    source = event(store, text="只在 webhook 处理时使用")
+    draft = TurnDraft()
+    result = MemoryTools(store).execute(
+        ToolCall("op", "memory_operation", {
+            "type": "add", "content": source.text, "evidence": source.text,
+            "memory_scope": "webhook",
+        }), [source], draft,
+    )
+    assert result["ok"]
+    assert draft.memory_operations[0]["scope"] == "webhook"
+    store.commit_turn([source], source.text, AgentReply([]), draft, turn_id="scoped-source")
+    assert store.claim_memory_operation("scoped-source")["operations"][0]["scope"] == "webhook"
+
+
 def test_memory_operation_and_runtime_completion_share_outer_transaction(store):
     source = event(store)
     submit(store, source)

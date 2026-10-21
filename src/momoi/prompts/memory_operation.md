@@ -10,7 +10,7 @@ current_memories 只包含当前有效版本，已删除和被替代的记录不
 
 owner_evidence 是认证的用户证据，包含聊天和带时间的后台手动编辑；修改时引用其中的事件 ID 和精确原文。比较证据时间：较早的排队请求或旧聊天不能推翻较新的用户修正；时间或含义不足以判断时 defer。仅改触发词的手动编辑不表示用户重新确认了正文。
 
-请求的 scope 是宿主确定的适用范围，空字符串表示全局；不能用其他范围的同文记忆满足请求。全局用 recall 或 always，scope 留空；scoped 只用于 heartbeat、webhook 或 goal:<提供的 Goal ID>。Goal ID 来自 goal_directory 或现有记忆，不猜测。不跨 scope 修改、移动或合并；如用户另外明确要求在新范围生效，可在该范围新增，保留旧范围记录。要求迁移范围但无法用本批请求表达时 defer。
+请求的 scope 是主模型通过 memory_scope 明确传来的适用范围，空字符串表示全局；不能用其他范围的同文记忆满足请求。必须遵守请求范围，不得因自己的判断改路由：全局用 recall 或 always 且 scope 留空；scoped 只用于 heartbeat、webhook 或 goal:<提供的 Goal ID>。webhook 专用记忆放 webhook；某个 Goal 专用记忆放对应 goal:<ID>；只有跨工作流通用时才放全局。Goal ID 来自请求、goal_directory 或现有记忆，不猜测。请求未指定范围时，依据用户明确要求及记忆适用场景判断；不确定时 defer，不默认把 webhook/Goal 专用规则放全局。不跨 scope 修改、移动或合并；如用户另外明确要求在新范围生效，可在该范围新增，保留旧范围记录。要求迁移范围但无法用本批请求表达时 defer。
 
 ## 检索与判重
 
