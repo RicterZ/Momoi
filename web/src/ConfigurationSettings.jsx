@@ -1323,21 +1323,24 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
 
 const channelOptions = [
   { value: "weixin", label: "微信" },
+  { value: "wechaty", label: "个人微信（Wechaty）" },
   { value: "napcat", label: "Napcat QQ" },
 ];
 const channelDefaults = (name) =>
-  name === "napcat" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : {};
-function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, skip, qqConnected }) {
+  name === "napcat" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : name === "wechaty" ? { owner_id: "" } : {};
+function ChannelSection({ module, data, save, login, runtimeWechatyLogin, action, saving, actionBusy, next, previous, skip, qqConnected }) {
   const [channels, setChannels] = useState(data.app.channels || { primary: "", enabled: {} });
   const [saved, setSaved] = useState(channels);
   const [status, setStatus] = useState(null);
   const [code, setCode] = useState("");
   const [loginPending, setLoginPending] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [loginChannel, setLoginChannel] = useState("weixin");
   const [loginError, setLoginError] = useState("");
   const cached = useRef({ ...channels.enabled });
   const dirty = !equal(channels, saved);
-  const loginActive = ["starting", "waiting", "scanned", "verification_required"].includes(login?.status);
+  const loginState = loginChannel === "wechaty" ? runtimeWechatyLogin : login;
+  const loginActive = ["starting", "waiting", "scanned", "verification_required"].includes(loginState?.status);
   const busy = saving || actionBusy || loginPending;
   const choices = [...channelOptions, ...Object.keys(channels.enabled).filter(name => !channelOptions.some(option => option.value === name)).map(name => ({ value: name, label: name }))];
   const enabledChoices = choices.filter(option => option.value in channels.enabled);
@@ -1390,14 +1393,17 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
     }
     finally { setLoginPending(false); }
   }
-  async function startLogin() {
+  async function startLogin(name = "weixin") {
+    setLoginChannel(name);
     setCode("");
     setLoginOpen(true);
-    if (!loginActive) await loginAction("/api/settings/channels/weixin/login");
+    const state = name === "wechaty" ? runtimeWechatyLogin : login;
+    if (!["starting", "waiting", "scanned", "verification_required"].includes(state?.status))
+      await loginAction(`/api/settings/channels/${name}/login`);
   }
   async function closeLogin() {
     if (busy) return;
-    if (loginActive && !await loginAction("/api/settings/channels/weixin/login", undefined, "DELETE")) return;
+    if (loginActive && !await loginAction(`/api/settings/channels/${loginChannel}/login`, undefined, "DELETE")) return;
     setLoginOpen(false);
     setCode("");
   }
@@ -1420,12 +1426,12 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                   <Toggle checked={enabled} disabled={busy || loginActive} onChange={value => toggle(name, value)}>启用{label}</Toggle>
                 </header>
                 <p className="settings-channel-description">
-                  {name === "weixin" ? "启用并保存后，使用微信扫码登录。" : name === "napcat" ? "填写 NapCat 连接信息，保存后自动连接。" : "配置并保存后连接此渠道。"}
+                  {name === "weixin" || name === "wechaty" ? "启用并保存后，扫码登录微信。" : name === "napcat" ? "填写 NapCat 连接信息，保存后自动连接。" : "配置并保存后连接此渠道。"}
                 </p>
                 <div className="settings-channel-content">
                 {!enabled ? (
                   <div className="settings-channel-off">
-                    <span className="settings-channel-off-icon" aria-hidden="true"><Icon name={name === "weixin" ? "weixin" : name === "napcat" ? "qq" : "chat"} /></span>
+                    <span className="settings-channel-off-icon" aria-hidden="true"><Icon name={name === "weixin" || name === "wechaty" ? "weixin" : name === "napcat" ? "qq" : "chat"} /></span>
                     <div>
                       <strong>{name === "weixin" ? "在微信里和 Momoi 聊天" : name === "napcat" ? "在 QQ 里和 Momoi 聊天" : `连接${label}`}</strong>
                       <p>{name === "weixin" ? "打开上方开关，保存后扫码登录。" : name === "napcat" ? "打开上方开关，填写 Napcat 连接信息。" : "打开上方开关，接入这个消息渠道。"}</p>
@@ -1448,6 +1454,18 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                     </button>
                     <p className="settings-channel-note" style={{ visibility: dirty || !saved.enabled.weixin ? "visible" : "hidden" }}>请先点击底部“保存”，再扫码登录。</p>
                   </div>
+                ) : name === "wechaty" ? (
+                  <div className="settings-channel-login">
+                    <label className="settings-field">
+                      <span className="settings-label">允许对话的好友 ID</span>
+                      <input className="dash-input" value={options.owner_id || ""} onChange={event => edit(name, { ...options, owner_id: event.target.value })} placeholder="Wechaty 联系人 ID" />
+                    </label>
+                    <p className="settings-channel-note">仅允许该联系人触发 Momoi 回复。WeChat4U 是非官方协议，存在账号限制风险。</p>
+                    <button type="button" className="quiet-button settings-button" disabled={busy || dirty || !saved.enabled.wechaty} onClick={() => startLogin("wechaty")}>
+                      {loginState?.status && loginChannel === "wechaty" && loginActive ? "查看登录进度" : "扫码登录"}
+                    </button>
+                    <p className="settings-channel-note" style={{ visibility: dirty || !saved.enabled.wechaty ? "visible" : "hidden" }}>请先保存配置，再扫码登录。</p>
+                  </div>
                 ) : <p className="settings-channel-note">保留已有连接配置。</p>}
                 </div>
               </section>
@@ -1459,17 +1477,17 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
           </fieldset>
       </div>
       {loginOpen && (
-        <SettingsDialog title="微信扫码登录" onClose={closeLogin} className="settings-weixin-dialog">
+        <SettingsDialog title={loginChannel === "wechaty" ? "个人微信扫码登录" : "微信扫码登录"} onClose={closeLogin} className="settings-weixin-dialog">
           <div className="settings-weixin-content">
-            {loginPending || !login?.status || login.status === "starting" ? (
+            {loginPending || !loginState?.status || loginState.status === "starting" ? (
               <Loading>正在处理登录…</Loading>
             ) : (
               <>
-                {login?.qr_image && ["waiting", "scanned"].includes(login.status) && <img className="settings-qr" src={login.qr_image} alt="使用微信扫描此二维码登录" />}
-                <p className={`confirm-copy${login.status === "error" ? " is-error" : ""}`} role="status">
-                  {{ waiting: "请使用微信扫描二维码。", scanned: "已扫码，请在微信中确认。", confirmed: "微信登录成功。", expired: "二维码已过期，请重新扫码。", cancelled: "登录已取消。", verification_required: "请填写微信中显示的验证码。", error: `登录失败：${login.error || "请重试"}` }[login.status]}
+                {loginState?.qr_image && ["waiting", "scanned"].includes(loginState.status) && <img className="settings-qr" src={loginState.qr_image} alt="使用微信扫描此二维码登录" />}
+                <p className={`confirm-copy${loginState.status === "error" ? " is-error" : ""}`} role="status">
+                  {{ waiting: "请使用微信扫描二维码。", scanned: "已扫码，请在微信中确认。", confirmed: "微信登录成功。", expired: "二维码已过期，请重新扫码。", cancelled: "登录已取消。", verification_required: "请填写微信中显示的验证码。", error: `登录失败：${loginState.error || "请重试"}` }[loginState.status]}
                 </p>
-                {login.status === "verification_required" && (
+                {loginState.status === "verification_required" && (
                   <div className="settings-verification">
                     <label className="settings-field">
                       <span className="settings-label">微信验证码</span>
@@ -1587,7 +1605,8 @@ export default function ConfigurationSettings({
         const value = await call("/api/settings/runtime", {
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]),
         });
-        if (["starting", "waiting", "scanned", "verification_required"].includes(value?.weixin_login?.status)) delay = 1000;
+        if (["starting", "waiting", "scanned", "verification_required"].includes(value?.weixin_login?.status) ||
+            ["starting", "waiting", "scanned", "verification_required"].includes(value?.wechaty_login?.status)) delay = 1000;
         if (active) {
           setRuntime(value);
           setPollError("");
@@ -1842,6 +1861,7 @@ export default function ConfigurationSettings({
                       data={data}
                       save={save}
                       login={runtime?.weixin_login}
+                      runtimeWechatyLogin={runtime?.wechaty_login}
                       qqConnected={runtime?.qq_connected}
                       skip={setupMode ? () => skipChannels(following?.id) : undefined}
                       action={action}

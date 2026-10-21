@@ -233,9 +233,15 @@ def register_configuration_routes(app, configuration, runtime):
         return web.json_response(result)
 
     async def status(request):
-        return web.json_response(
-            {**runtime.status(), "weixin_login": channel_login.state}
-        )
+        channels = getattr(getattr(runtime, "daemon", None), "channels", {})
+        wechaty = channels.get("wechaty")
+        wechaty_login = dict(getattr(wechaty, "login_state", {"status": "idle"}))
+        if content := wechaty_login.pop("qr_content", ""):
+            output = io.BytesIO()
+            qrcode.make(content, image_factory=qrcode.image.svg.SvgPathImage).save(output)
+            wechaty_login["qr_image"] = "data:image/svg+xml;base64," + base64.b64encode(output.getvalue()).decode()
+        return web.json_response({**runtime.status(), "weixin_login": channel_login.state,
+                                  "wechaty_login": wechaty_login})
 
     async def apply(request):
         runtime.request_apply()
@@ -269,6 +275,24 @@ def register_configuration_routes(app, configuration, runtime):
     async def cancel_login(request):
         await channel_login.close()
         return web.json_response(channel_login.state)
+
+    async def start_wechaty_login(request):
+        channels = getattr(getattr(runtime, "daemon", None), "channels", {})
+        channel = channels.get("wechaty")
+        if channel is None:
+            raise web.HTTPConflict(text="启用并保存 Wechaty 渠道后再登录。")
+        try:
+            await channel.start_login()
+        except RuntimeError as error:
+            raise web.HTTPConflict(text=str(error)) from None
+        return web.json_response(channel.login_state, status=202)
+
+    async def cancel_wechaty_login(request):
+        channels = getattr(getattr(runtime, "daemon", None), "channels", {})
+        channel = channels.get("wechaty")
+        if channel is not None:
+            await channel.cancel_login()
+        return web.json_response({"status": "cancelled"})
 
     async def qq_call_audio_configuration(request):
         if not os.environ.get("MOMOI_QQ_CALL_MANAGED"):
@@ -381,3 +405,5 @@ def register_configuration_routes(app, configuration, runtime):
     app.router.add_post("/api/settings/channels/weixin/login", start_login)
     app.router.add_post("/api/settings/channels/weixin/verify", verify)
     app.router.add_delete("/api/settings/channels/weixin/login", cancel_login)
+    app.router.add_post("/api/settings/channels/wechaty/login", start_wechaty_login)
+    app.router.add_delete("/api/settings/channels/wechaty/login", cancel_wechaty_login)

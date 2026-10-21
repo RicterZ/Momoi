@@ -6,6 +6,12 @@ RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
 
+FROM node:24-slim AS wechaty-dependencies
+WORKDIR /opt/momoi/wechaty/worker
+COPY src/momoi/channel/wechaty/worker/package.json src/momoi/channel/wechaty/worker/package-lock.json ./
+RUN npm ci --omit=dev
+
+
 FROM dashboard-dependencies AS dashboard-build
 
 COPY vite.config.js ./
@@ -47,6 +53,7 @@ ARG VERSION=1.1.2
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/home/momoi \
+    MOMOI_WECHATY_WORKER_DIR=/opt/momoi/wechaty/worker \
     MOMOI_EMBEDDING_MODEL_PATH=/opt/momoi/models/bge-small-zh-v1.5 \
     MOMOI_ASR_MODEL_PATH=/opt/momoi/models/asr
 
@@ -63,6 +70,8 @@ WORKDIR /app
 COPY models/bge-small-zh-v1.5 /opt/momoi/models/bge-small-zh-v1.5
 COPY models/asr /opt/momoi/models/asr
 COPY --from=build /wheels /wheels
+COPY --from=wechaty-dependencies /opt/momoi/wechaty/worker/node_modules /opt/momoi/wechaty/worker/node_modules
+COPY src/momoi/channel/wechaty/worker/worker.js /opt/momoi/wechaty/worker/worker.js
 RUN pip install --no-cache-dir --no-index /wheels/*.whl \
     && rm -rf /wheels
 

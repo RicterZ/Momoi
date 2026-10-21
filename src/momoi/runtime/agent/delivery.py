@@ -147,6 +147,7 @@ class BubbleDelivery:
         delivery_channel: Channel,
         heartbeat_turn: bool,
         heartbeat_owner_event_revision: int | None,
+        current_events: list[Any] | None = None,
         delivery_context: dict | None = None,
     ) -> BubbleDeliveryResult:
         """Speak a complete string; only the channel payload is audio."""
@@ -254,6 +255,7 @@ class BubbleDelivery:
         delivery_channel: Channel,
         heartbeat_turn: bool,
         heartbeat_owner_event_revision: int | None,
+        current_events: list[Any] | None = None,
         previous_tool_name: str | None,
         previous_bubbles: list[ChannelMessage] | None,
         previous_channel: str,
@@ -320,7 +322,11 @@ class BubbleDelivery:
                     ),
                 }
             )
-        self.store.queue_progress(turn_id, call.id, bubbles, target.name)
+        delivery_context = next((event.delivery_context for event in reversed(current_events or [])
+                                 if event.channel == target.name and event.delivery_context
+                                 and not event.delivery_context.get("channel_notice")), None)
+        self.store.queue_progress(turn_id, call.id, bubbles, target.name,
+                                  **({"delivery_context": delivery_context} if delivery_context else {}))
         self.outbox_changed.set()
         return BubbleDeliveryResult(
             {

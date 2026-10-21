@@ -273,6 +273,7 @@ class ToolBatchExecutor:
                                 round_number=request.round_number, delivery_channel=request.delivery_channel,
                                 heartbeat_turn=execution.heartbeat,
                                 heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
+                                current_events=request.current_events,
                                 previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
                                 previous_channel=last_sent_channel,
                                 allow_paragraphs=True,
@@ -521,6 +522,7 @@ class ToolBatchExecutor:
                             round_number=request.round_number, delivery_channel=target,
                             heartbeat_turn=execution.heartbeat,
                             heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
+                            current_events=request.current_events,
                             previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
                             previous_channel=last_sent_channel,
                             **({"delivery_context": call_context} if mode == "voice" and call_context else {}))
