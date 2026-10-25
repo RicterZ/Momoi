@@ -43,7 +43,7 @@ COPY src ./src
 RUN mkdir -p ./src/momoi/dashboard/static \
     && find ./src/momoi/dashboard/static -mindepth 1 -delete
 COPY --from=dashboard-build /build/src/momoi/dashboard/static ./src/momoi/dashboard/static
-RUN pip wheel --no-deps --wheel-dir /wheels .
+RUN pip wheel --no-deps --wheel-dir /dist .
 
 
 FROM python:3.13-slim-trixie AS release
@@ -67,13 +67,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY models/bge-small-zh-v1.5 /opt/momoi/models/bge-small-zh-v1.5
-COPY models/asr /opt/momoi/models/asr
-COPY --from=build /wheels /wheels
-COPY --from=wechaty-dependencies /opt/momoi/wechaty/worker/node_modules /opt/momoi/wechaty/worker/node_modules
-COPY src/momoi/channel/wechaty/worker/worker.js /opt/momoi/wechaty/worker/worker.js
+COPY --from=python-dependencies /wheels /wheels
 RUN pip install --no-cache-dir --no-index /wheels/*.whl \
     && rm -rf /wheels
+COPY models/bge-small-zh-v1.5 /opt/momoi/models/bge-small-zh-v1.5
+COPY models/asr /opt/momoi/models/asr
+COPY --from=wechaty-dependencies /opt/momoi/wechaty/worker/node_modules /opt/momoi/wechaty/worker/node_modules
+COPY src/momoi/channel/wechaty/worker/worker.js /opt/momoi/wechaty/worker/worker.js
+COPY --from=build /dist /dist
+RUN pip install --no-cache-dir --no-index --no-deps /dist/*.whl \
+    && rm -rf /dist
 
 EXPOSE 8787 8788
 ENTRYPOINT ["momoi"]
