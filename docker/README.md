@@ -22,7 +22,7 @@ dashboard passphrase in `docker logs momoi`. Existing files are preserved. Open
 capabilities in Settings. Weixin QR login is available in the dashboard.
 Pin a version tag from the Tags tab if you do not want `latest`.
 
-The published Compose file starts only Momoi. BGE is included in the image and
+The published Compose file starts Momoi and SnowLuma. BGE is included in the image and
 runs in the same process, with no encoder port or separate container. Web Settings
 can disable semantic memory or select a remote embedding provider.
 Existing default `embedding:8002` configurations migrate automatically; after

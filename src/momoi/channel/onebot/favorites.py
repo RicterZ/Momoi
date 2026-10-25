@@ -27,7 +27,7 @@ class FavoriteStickers:
         response = await self.request('fetch_custom_face_detail', {'count': 1000})
         items = response.get('data')
         if not isinstance(items, list):
-            raise SendRejected('NapCat returned invalid favorite sticker details')
+            raise SendRejected('OneBot returned invalid favorite sticker details')
         return {str(item.get('md5', '')).lower(): item for item in items
                 if isinstance(item, dict) and item.get('md5')}
 
@@ -53,7 +53,7 @@ class FavoriteStickers:
                         })
                         remote = (uploaded.get('data') or {}).get('file')
                         if not isinstance(remote, str) or not remote:
-                            raise SendRejected('NapCat returned no uploaded sticker path')
+                            raise SendRejected('OneBot returned no uploaded sticker path')
                         await self.request('add_custom_face', {'file': remote, 'is_origin': True})
                         # Read the actual QQ resource rather than assume a shape for add's return value.
                         favorites = await self._fetch()

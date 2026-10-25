@@ -5,7 +5,7 @@
 > 一个常驻在私聊中的、只属于一位主人的个人 Agent。
 
 Momoi 把对话、记忆、工具、定时工作、外部事件、情绪和自主时间放进同一个持续运行的
-系统。目前可通过 QQ（NapCat）、WeChat 交流，支持兼容 Anthropic Messages 或
+系统。目前可通过 QQ（OneBot）、WeChat 交流，支持兼容 Anthropic Messages 或
 OpenAI Chat Completions 的模型，并可通过 MCP 扩展能力。
 
 Momoi 的重点不只是给 LLM 加一个角色。`SOUL.md` 定义 Momoi 是谁；运行时则保存围绕
@@ -38,7 +38,7 @@ Turn 是一次执行过程，可以包含合并输入、中途插话和短时续
 flowchart TB
   subgraph triggers["渠道与触发源"]
     direction LR
-    chat["QQ（NapCat）/ WeChat"]
+    chat["QQ（OneBot）/ WeChat"]
     webhook["Webhook 事件"]
     clock["Goal / Heartbeat"]
     chat ~~~ webhook ~~~ clock
@@ -194,9 +194,9 @@ flowchart TB
 
 | 领域 | 当前行为 |
 | --- | --- |
-| 私聊渠道 | 一个主人可以同时使用 QQ（NapCat）与 WeChat；回复返回发起对话的渠道，主动消息发往配置的 primary |
+| 私聊渠道 | 一个主人可以同时使用 QQ（OneBot）与 WeChat；回复返回发起对话的渠道，主动消息发往配置的 primary |
 | 对话 | 消息合并、引用与转发、媒体处理、自然的多气泡投递、可选图片反应，以及合法沉默 |
-| 语音电话 | 通过 NapCat 进行实时 QQ 通话，Sidecar 并行接话与工具执行、流式语音回复及打断，适配 Windows 与 Linux |
+| 语音电话 | Windows 通过内置 NapCat 进行实时 QQ 通话，Linux 可用可选的 SnowLuma 接入层；Sidecar 并行接话与工具执行、流式语音回复及打断 |
 | 语音识别 | 可选腾讯云 ASR 或本地 Sherpa CPU 流式识别；Linux 镜像内置模型并在进程内识别，Windows 可按需安装本地模型组件 |
 | 上下文 | 原生共享对话、按需 recall、后台话题归档与关联、触发词记忆注入和有上限的模型输入 |
 | 工具 | 内置文件/HTTP 工具、动态发现的 MCP Server，以及按 Server 配置的工具白名单 |
@@ -216,7 +216,7 @@ flowchart TB
 
 ### Docker Compose
 
-`docker-compose.yml` 默认只启动 Momoi，不需要提前填写模型密钥、渠道或准备配置文件。
+`docker-compose.yml` 会启动 Momoi 和 SnowLuma，不需要提前填写模型密钥、渠道或准备配置文件。
 安装 Docker 与 Compose v2 后启动：
 
 ```bash

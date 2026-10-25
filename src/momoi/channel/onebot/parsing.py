@@ -100,7 +100,7 @@ def is_visual_image(segment: dict[str, Any]) -> bool:
 
 
 def media_display_name(source: str) -> str | None:
-    """Derive a NapCat file `name` from a local path or URL basename."""
+    """Derive a OneBot file `name` from a local path or URL basename."""
     if source.startswith("base64://"):
         return None
     if source.startswith(("http://", "https://", "file://")):

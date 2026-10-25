@@ -82,8 +82,8 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 
 ## Fish Audio 语音合成
 
-TTS 默认关闭，关闭时不暴露 `send_voice`。启用后微信和 NapCat 请求使用相同的语音工具 schema，
-保留工具前缀缓存。harness 只允许支持语音发送的频道（目前为 NapCat）执行。不会修改提示词，也不会强制
+TTS 默认关闭，关闭时不暴露 `send_voice`。启用后微信和 QQ（OneBot）请求使用相同的语音工具 schema，
+保留工具前缀缓存。harness 只允许支持语音发送的频道（目前为 QQ OneBot）执行。不会修改提示词，也不会强制
 “语音输入用语音回复”的规则。
 
 合并到工作区 `providers.yaml` 的对应字段：
@@ -142,13 +142,13 @@ Dashboard 模式修改后自动应用，内部可通过 `daemon.bubble_delivery.
 工具等待合成完成后才入队或暂存通知；失败时返回工具错误，建议模型用 `send_bubbles` 降级文字。
 成功调用的返回结构与 `send_bubbles` 一致。
 outbox 只持久化原文和语音投递标记；合成音频通过有容量上限的内存缓存交给投递 worker，
-再以 base64 交给 NapCat。
-Momoi 不保存音频文件或音频数据库字段；NapCat 自身的临时文件行为由其服务实现决定。
+再以 base64 交给 OneBot 网关。
+Momoi 不保存音频文件或音频数据库字段；网关自身的临时文件行为由其实现决定。
 重启或缓存淘汰后，未发送的消息根据原文重新合成；恢复期间合成失败会标记投递失败。
 Weixin 的工具 schema 保持一致，harness 拒绝执行 `send_voice`；直接内部调用返回 `voice_not_supported`。
 Owner、Heartbeat、Webhook、Goal、后续回复工作流均支持语音；Goal 沿用原有通知调度规则。
 
-NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进入数据库和 transcript。
+QQ 和微信的语音转写前统一添加 `[语音消息] `，随后进入数据库和 transcript。
 普通文字不加标记，无法转写的语音占位内容也带此标记。
 
 ## 时区

@@ -89,9 +89,9 @@ No manual container restart is required in dashboard mode.
 ## Fish Audio speech synthesis
 
 TTS is disabled by default and `send_voice` is hidden while disabled. When TTS
-is enabled, both NapCat and Weixin requests include the same `send_voice` schema
+is enabled, both QQ (OneBot) and Weixin requests include the same `send_voice` schema
 to preserve the shared tool prefix for caching. The harness permits execution
-only on channels supporting voice output (currently NapCat).
+only on channels supporting voice output (currently QQ via OneBot).
 Prompts and automatic voice-versus-text reply rules are unchanged.
 
 Merge these entries into your workspace `providers.yaml`:
@@ -155,8 +155,8 @@ text. The tool waits for synthesis before queueing or staging a notification;
 on failure it returns a tool error recommending `send_bubbles` for a text reply.
 Successful calls use the same result structure as `send_bubbles`.
 The outbox persists only the text and a voice delivery marker. A bounded memory
-cache passes the synthesized audio to the worker, which sends it to NapCat as base64. Momoi does
-not persist audio files or audio bytes in SQLite; NapCat controls its own internal
+cache passes the synthesized audio to the worker, which sends it to the OneBot gateway as base64. Momoi does
+not persist audio files or audio bytes in SQLite; the gateway controls its own internal
 temporary-file behavior. Pending messages are synthesized again after a restart
 or cache eviction; failures during this recovery mark delivery failed.
 On Weixin the harness rejects `send_voice` without changing the tool schema;
@@ -164,7 +164,7 @@ direct internal calls return `voice_not_supported`.
 Owner, Heartbeat, Webhook and Goal workflows support voice output.
 Goal voice messages retain the existing notification scheduling.
 
-Incoming voice transcriptions on NapCat and Weixin are prefixed with
+Incoming voice transcriptions on QQ and Weixin are prefixed with
 `[语音消息] ` before storage and transcript assembly. Plain text is unchanged;
 untranscribed voice placeholders are also marked.
 
