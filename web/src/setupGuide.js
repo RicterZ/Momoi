@@ -9,6 +9,6 @@ export function hasMessageChannel(data) {
   const channels = data?.app?.channels;
   const channel = channels?.enabled?.[channels.primary];
   if (!channel) return false;
-  if (channels.primary === "napcat") return Boolean(String(channel.owner_qq || "").trim() && String(channel.url || "").trim());
+  if (channels.primary === "onebot") return Boolean(String(channel.owner_qq || "").trim() && String(channel.url || "").trim());
   return true;
 }

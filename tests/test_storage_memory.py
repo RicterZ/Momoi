@@ -14,7 +14,7 @@ from xml.etree import ElementTree
 from momoi.storage.core.migrations import MIGRATIONS, _normalize_owner_message_received_at
 from momoi.tools.agenda import AgendaTools
 from momoi.tools.builtin import BuiltinTools
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig, HeartbeatConfig, NotificationConfig
 from momoi.integrations.models import LLMConfig
 from momoi.tools.memory import MemoryTools
@@ -2219,7 +2219,7 @@ class StorageMemoryTest(unittest.TestCase):
             store = Store(path)
             store.begin_turn("turn-progress", "owner", ["qq:1:progress"])
             store.queue_progress(
-                "turn-progress", "progress-1", ["先说这一句"], "napcat"
+                "turn-progress", "progress-1", ["先说这一句"], "onebot"
             )
             store.close()
 
@@ -2229,7 +2229,7 @@ class StorageMemoryTest(unittest.TestCase):
                 "running",
             )
             recovered.queue_progress(
-                "turn-progress", "progress-1", ["先说这一句"], "napcat"
+                "turn-progress", "progress-1", ["先说这一句"], "onebot"
             )
             self.assertEqual(
                 recovered._db.execute(
@@ -2249,7 +2249,7 @@ class StorageMemoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -2515,7 +2515,7 @@ class StorageMemoryTest(unittest.TestCase):
             store = Store(Path(directory) / "momoi.sqlite3")
             store.begin_turn("heartbeat-live", "heartbeat", ["heartbeat:1000"])
             store.queue_progress(
-                "heartbeat-live", "live-beat", ["先跟老师说一声"], "napcat"
+                "heartbeat-live", "live-beat", ["先跟老师说一声"], "onebot"
             )
 
             committed = store.commit_heartbeat(
@@ -2528,7 +2528,7 @@ class StorageMemoryTest(unittest.TestCase):
                 mood_update=None,
                 messages=["最后再补一句。"],
                 reason="这次确实有值得分享的内容",
-                notification_channel="napcat",
+                notification_channel="onebot",
             )
 
             self.assertEqual(committed, 2)

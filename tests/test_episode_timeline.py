@@ -78,7 +78,7 @@ def test_message_prefix_continuation_is_exact_and_preserves_quote_targets(tmp_pa
             offset = shown.get('next_content_offset')
         assert ''.join(chunks) == original
         sample = project_episode({'ok': True, 'message': {'id': 1, 'role': 'user', 'content': 'hello',
-            'quote_targets': [{'channel': 'napcat', 'message_id': '42', 'text': 'hello'}]}})
+            'quote_targets': [{'channel': 'onebot', 'message_id': '42', 'text': 'hello'}]}})
         assert sample['message']['quote_targets'][0]['message_id'] == '42'
     finally:
         store.close()

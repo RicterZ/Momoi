@@ -30,7 +30,7 @@ def test_backup_roundtrip_and_exclusions(tmp_path):
         workflow = workspace / 'workflows/custom.yaml'
         workflow.parent.mkdir(parents=True, exist_ok=True)
         workflow.write_text('name: custom-workflow\n')
-        attachment = workspace / 'channel/napcat/files/received.txt'
+        attachment = workspace / 'channel/onebot/files/received.txt'
         attachment.parent.mkdir(parents=True)
         attachment.write_text('渠道收到的文件')
         store.record_llm_call(created_at=123, model='test', metrics={'output': 100})
@@ -165,7 +165,7 @@ def test_legacy_channel_attachments_are_not_restored(tmp_path):
         with zipfile.ZipFile(archive) as source:
             files = {name: source.read(name) for name in source.namelist()}
         manifest = json.loads(files['manifest.json'])
-        name = 'channel/napcat/files/old.txt'
+        name = 'channel/onebot/files/old.txt'
         files[name] = b'legacy attachment'
         manifest['files'][name] = hashlib.sha256(files[name]).hexdigest()
         files['manifest.json'] = json.dumps(manifest).encode()
@@ -174,6 +174,6 @@ def test_legacy_channel_attachments_are_not_restored(tmp_path):
                 target.writestr(name, content)
         extracted = validate_archive(archive, tmp_path / 'restore', store._db)
         restore_archive(extracted, config, store)
-        assert not (config.workspace / 'channel/napcat/files/old.txt').exists()
+        assert not (config.workspace / 'channel/onebot/files/old.txt').exists()
     finally:
         store.close()

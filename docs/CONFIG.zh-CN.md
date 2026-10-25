@@ -179,9 +179,9 @@ QQ 可能异步生成文字，接口拒绝或返回空文字时会分别等待 2
 ```json
 {
   "channels": {
-    "primary": "napcat",
+    "primary": "onebot",
     "enabled": {
-      "napcat": {
+      "onebot": {
         "url": "ws://127.0.0.1:3001",
         "owner_qq": "100000000",
         "quiet_seconds": 6,
@@ -209,11 +209,13 @@ QQ 可能异步生成文字，接口拒绝或返回空文字时会分别等待 2
 | `primary` | 是 | — | 用于出站投递的渠道名称 |
 | `enabled` | 是 | — | 渠道名称与配置对象；dashboard 设置阶段允许为空，否则必须包含 `primary` |
 
-### NapCat
+### OneBot
+
+QQ 渠道键是 `onebot`。已有配置里的 `napcat` 会在读取时改成 `onebot`。Docker 网关是 SnowLuma，Windows 内置组件仍是 NapCat，两边都走这个协议。
 
 | 字段 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `url` | 是 | — | NapCat WebSocket URL |
+| `url` | 是 | — | OneBot WebSocket URL |
 | `owner_qq` | 是 | — | 仅含数字的主人 QQ 号 |
 | `quiet_seconds` | 否 | `1` | 收到主人最新消息后的等待时间 |
 | `max_batch_seconds` | 否 | `60` | 消息批次的最长等待时间 |
@@ -600,10 +602,10 @@ Goal 的 `send_bubbles` / `send_voice` 调用后立即进入通用发送流程�
 
 | 环境变量 | 配置字段 |
 | --- | --- |
-| `MOMOI_NAPCAT_URL` | `channels.enabled.napcat.url` |
-| `MOMOI_OWNER_QQ` | `channels.enabled.napcat.owner_qq` |
-| `MOMOI_NAPCAT_TOKEN_FILE` | `channels.enabled.napcat.access_token`（仅当配置里的令牌为空） |
-| `MOMOI_NAPCAT_ACCESS_TOKEN` | `channels.enabled.napcat.access_token` |
+| `MOMOI_ONEBOT_URL` | `channels.enabled.onebot.url`。旧名 `MOMOI_NAPCAT_URL` 仍可用 |
+| `MOMOI_OWNER_QQ` | `channels.enabled.onebot.owner_qq` |
+| `MOMOI_ONEBOT_TOKEN_FILE` | `channels.enabled.onebot.access_token`（仅当配置里的令牌为空）。旧名 `MOMOI_NAPCAT_TOKEN_FILE` 仍可用 |
+| `MOMOI_ONEBOT_ACCESS_TOKEN` | `channels.enabled.onebot.access_token`。旧名 `MOMOI_NAPCAT_ACCESS_TOKEN` 仍可用 |
 | `MOMOI_PRIMARY` | `channels.primary` |
 | `MOMOI_TIMEZONE` | `timezone` |
 | `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |

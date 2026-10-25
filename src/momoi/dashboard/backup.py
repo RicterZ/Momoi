@@ -16,7 +16,7 @@ FORMAT = "momoi-backup"
 MAX_BYTES = 2 * 1024**3
 DIRECTORIES = ("prompts", "emotion", "artifacts", "workflows")
 # Older archives may contain channel attachments; validate but do not restore them.
-ARCHIVE_DIRECTORIES = (*DIRECTORIES, "channel/napcat/files", "channel/weixin/media")
+ARCHIVE_DIRECTORIES = (*DIRECTORIES, "channel/onebot/files", "channel/napcat/files", "channel/weixin/media")
 
 
 def schema(db):

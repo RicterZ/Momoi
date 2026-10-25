@@ -759,7 +759,7 @@ function normalizeProvider(name, value, adapters) {
 function ProviderSection({ module, data, save, saving, testProvider, testing, next, previous, qqCall, testCall }) {
   const configurationId = useId();
   const managed = module.id === "memory" && data.desktop_embedding_managed;
-  const napcat = data.app.channels?.enabled?.napcat;
+  const napcat = data.app.channels?.enabled?.onebot;
   const [callDraft, setCallDraft] = useState(napcat?.voice_call || {});
   const [callSaved, setCallSaved] = useState(callDraft);
   const callDirty = module.id === "voice" && !equal(callDraft, callSaved);
@@ -889,10 +889,10 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
       let result = !equal(draft, saved) ? await save("/api/settings/providers", document) : data;
       if (callDirty && napcat) {
         const channels = { ...result.app.channels, enabled: { ...result.app.channels.enabled,
-          napcat: { ...result.app.channels.enabled.napcat, voice_call: callDraft } } };
+          onebot: { ...result.app.channels.enabled.onebot, voice_call: callDraft } } };
         result = await save("/api/settings/configuration/app", { channels }, "PATCH");
-        setCallDraft(result.app.channels.enabled.napcat.voice_call || {});
-        setCallSaved(result.app.channels.enabled.napcat.voice_call || {});
+        setCallDraft(result.app.channels.enabled.onebot.voice_call || {});
+        setCallSaved(result.app.channels.enabled.onebot.voice_call || {});
       }
       const next = {
         enabled: draft.enabled,
@@ -1139,7 +1139,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
             <QQCallSettings managed={data.desktop_qq_call_managed} value={callDraft}
               disabled={!napcat || saving || busy} status={qqCall} onTest={testCall}
               onChange={value => { setCallDraft(value); setStatus(null); }} />
-            <p className="settings-channel-note">必须开启 SnowLuma QQ 才能使用此功能。实时电话仍走原来的通话组件。</p>
+            <p className="settings-channel-note">必须开启 QQ 才能使用此功能。实时电话仍走原来的通话组件。</p>
           </div>}
         </div>
         <SaveBar
@@ -1323,10 +1323,10 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
 
 const channelOptions = [
   { value: "weixin", label: "微信" },
-  { value: "napcat", label: "SnowLuma QQ" },
+  { value: "onebot", label: "QQ" },
 ];
 const channelDefaults = (name) =>
-  name === "napcat" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : {};
+  name === "onebot" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : {};
 function ChannelSection({ module, data, save, login, action, saving, actionBusy, next, previous, skip, qqConnected }) {
   const [channels, setChannels] = useState(data.app.channels || { primary: "", enabled: {} });
   const [saved, setSaved] = useState(channels);
@@ -1372,10 +1372,10 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
     if (busy || loginActive || !dirty) return;
     try {
       if (Object.keys(channels.enabled).length && (!channels.primary || !(channels.primary in channels.enabled))) throw new Error("请选择主消息渠道。");
-      if (channels.enabled.napcat) {
-        if (!/^\d+$/.test(channels.enabled.napcat.owner_qq || "")) throw new Error("请填写主人 QQ 号码，仅包含数字。");
+      if (channels.enabled.onebot) {
+        if (!/^\d+$/.test(channels.enabled.onebot.owner_qq || "")) throw new Error("请填写主人 QQ 号码，仅包含数字。");
         let url;
-        try { url = new URL(channels.enabled.napcat.url); } catch { throw new Error("请填写有效的 SnowLuma WebSocket 地址。"); }
+        try { url = new URL(channels.enabled.onebot.url); } catch { throw new Error("请填写有效的 SnowLuma WebSocket 地址。"); }
         if (!["ws:", "wss:"].includes(url.protocol)) throw new Error("SnowLuma 地址需要以 ws:// 或 wss:// 开头。");
       }
       const result = await save("/api/settings/configuration/app", { channels }, "PATCH");
@@ -1386,7 +1386,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
     } catch (error) { setStatus({ text: error.message, error: true }); }
   }
   async function connectDesktopQQ(connection) {
-    const nextChannels = { ...channels, enabled: { ...channels.enabled, napcat: { ...channels.enabled.napcat, url: connection.url, access_token: connection.access_token } } };
+    const nextChannels = { ...channels, enabled: { ...channels.enabled, onebot: { ...channels.enabled.onebot, url: connection.url, access_token: connection.access_token } } };
     change(nextChannels);
     const result = await save("/api/settings/configuration/app", { channels: nextChannels }, "PATCH");
     setChannels(result.app.channels);
@@ -1432,23 +1432,23 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                 <header className="settings-channel-heading">
                   <div className="settings-channel-title">
                     <h3 id={titleId}>{label}</h3>
-                    <span className="panel-label">CHANNEL // {name === "weixin" ? "WEIXIN" : name === "napcat" ? "QQ" : name.toUpperCase()}</span>
+                    <span className="panel-label">CHANNEL // {name === "weixin" ? "WEIXIN" : name === "onebot" ? "QQ" : name.toUpperCase()}</span>
                   </div>
                   <Toggle checked={enabled} disabled={busy || loginActive} onChange={value => toggle(key, value)}>启用{label}</Toggle>
                 </header>
                 <p className="settings-channel-description">
-                  {name === "weixin" ? "启用并保存后，扫码登录微信。" : name === "napcat" ? "填写 SnowLuma 的 OneBot 地址和主人 QQ。Docker 里地址是 ws://snowluma:3001/，令牌可留空。" : "配置并保存后连接此渠道。"}
+                  {name === "weixin" ? "启用并保存后，扫码登录微信。" : name === "onebot" ? "填写 SnowLuma 的 OneBot 地址和主人 QQ。Docker 里地址是 ws://snowluma:3001/，令牌可留空。" : "配置并保存后连接此渠道。"}
                 </p>
                 <div className="settings-channel-content">
                 {!enabled ? (
                   <div className="settings-channel-off">
-                    <span className="settings-channel-off-icon" aria-hidden="true"><Icon name={name === "weixin" ? "weixin" : name === "napcat" ? "qq" : "chat"} /></span>
+                    <span className="settings-channel-off-icon" aria-hidden="true"><Icon name={name === "weixin" ? "weixin" : name === "onebot" ? "qq" : "chat"} /></span>
                     <div>
-                      <strong>{name === "weixin" ? "在微信里和 Momoi 聊天" : name === "napcat" ? "在 QQ 里和 Momoi 聊天" : `连接${label}`}</strong>
-                      <p>{name === "weixin" ? "打开上方开关，保存后扫码登录。" : name === "napcat" ? "打开上方开关，填写 SnowLuma 连接信息。" : "打开上方开关，接入这个消息渠道。"}</p>
+                      <strong>{name === "weixin" ? "在微信里和 Momoi 聊天" : name === "onebot" ? "在 QQ 里和 Momoi 聊天" : `连接${label}`}</strong>
+                      <p>{name === "weixin" ? "打开上方开关，保存后扫码登录。" : name === "onebot" ? "打开上方开关，填写 SnowLuma 连接信息。" : "打开上方开关，接入这个消息渠道。"}</p>
                     </div>
                   </div>
-                ) : name === "napcat" ? (
+                ) : name === "onebot" ? (
                   <div>
                   <Fields disabled={busy || loginActive}>
                     <OptionField name="bot_qq" spec={{ type: "string", label: "机器人 QQ", description: "登录 SnowLuma 的 QQ 号码，与主人 QQ 区分；只连一个账号时可留空。" }} value={options.bot_qq} onChange={value => edit(name, { ...options, bot_qq: value })} />
@@ -1890,7 +1890,7 @@ export default function ConfigurationSettings({
                       data={data}
                       save={save}
                       qqCall={runtime?.qq_call}
-                      testCall={document => call("/api/settings/channels/napcat/voice-call/test", { method: "POST", body: document })}
+                      testCall={document => call("/api/settings/channels/onebot/voice-call/test", { method: "POST", body: document })}
                       testProvider={testProvider}
                       testing={testing}
                       saving={saving || loading}

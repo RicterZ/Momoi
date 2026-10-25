@@ -9,7 +9,7 @@ import asyncio
 
 from momoi.__main__ import parse_args
 from momoi.tools.agenda import AgendaTools
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.channel.weixin import WeixinConfig, create_channel as create_weixin_channel
 from momoi.channel.wechaty import WechatyConfig, create_channel as create_wechaty_channel
 from momoi.config.loading import load_config
@@ -24,9 +24,9 @@ from momoi.storage import Store
 
 def _napcat_channels() -> dict[str, object]:
     return {
-        "primary": "napcat",
+        "primary": "onebot",
         "enabled": {
-            "napcat": {"url": "ws://localhost", "owner_qq": "123"},
+            "onebot": {"url": "ws://localhost", "owner_qq": "123"},
         },
     }
 
@@ -54,9 +54,9 @@ class ConfigurationTest(unittest.TestCase):
             value = {
                 "providers": "providers.yaml",
                 "channels": {
-                    "primary": "napcat",
+                    "primary": "onebot",
                     "enabled": {
-                        "napcat": {"url": "ws://localhost", "owner_qq": "123"},
+                        "onebot": {"url": "ws://localhost", "owner_qq": "123"},
                         "weixin": {},
                     },
                 },
@@ -66,7 +66,7 @@ class ConfigurationTest(unittest.TestCase):
             }
             write_app_config(path, value)
             config = load_config(path)
-            self.assertIsInstance(config.channel, NapCatConfig)
+            self.assertIsInstance(config.channel, OneBotConfig)
             self.assertEqual(config.summary_results, 8)
             self.assertEqual(config.transcript_turns_min, 32)
             self.assertEqual(config.transcript_turns_max, 80)
@@ -80,7 +80,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(config.current_state.max_seconds, 180)
             self.assertEqual(
                 [type(item) for item in config.channel_configs],
-                [NapCatConfig, WeixinConfig],
+                [OneBotConfig, WeixinConfig],
             )
 
             value["context"]["episode_raw_tail_turns"] = 9
@@ -159,7 +159,7 @@ class ConfigurationTest(unittest.TestCase):
                 },
             )
             config = load_config(path)
-            self.assertIsInstance(config.channel, NapCatConfig)
+            self.assertIsInstance(config.channel, OneBotConfig)
             self.assertEqual(config.channel.owner_qq, "123")
             self.assertFalse(config.reflection.enabled)
             self.assertEqual(config.reflection.at, "03:00")
@@ -184,7 +184,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(load_config(path).heartbeat_prompt, "")
 
             legacy = json.loads(path.read_text())
-            legacy["napcat"] = legacy.pop("channels")["enabled"]["napcat"]
+            legacy["onebot"] = legacy.pop("channels")["enabled"]["onebot"]
             write_app_config(path, legacy)
             with self.assertRaisesRegex(ConfigError, "unknown configuration field"):
                 load_config(path)
@@ -221,9 +221,9 @@ class ConfigurationTest(unittest.TestCase):
                 {
                     "providers": "providers.yaml",
                     "channels": {
-                        "primary": "napcat",
+                        "primary": "onebot",
                         "enabled": {
-                            "napcat": {
+                            "onebot": {
                                 "url": "ws://localhost",
                                 "owner_qq": "123",
                             },
@@ -264,7 +264,7 @@ class ConfigurationTest(unittest.TestCase):
                 config = load_config(path)
             self.assertEqual(config.channel.plugin, "weixin")
             napcat = next(
-                item for item in config.channel_configs if item.plugin == "napcat"
+                item for item in config.channel_configs if item.plugin == "onebot"
             )
             self.assertEqual(napcat.url, "ws://napcat:3001")
             self.assertEqual(napcat.owner_qq, "999")

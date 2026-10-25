@@ -199,9 +199,9 @@ controls outgoing voice messages.
 ```json
 {
   "channels": {
-    "primary": "napcat",
+    "primary": "onebot",
     "enabled": {
-      "napcat": {
+      "onebot": {
         "url": "ws://127.0.0.1:3001",
         "owner_qq": "100000000",
         "quiet_seconds": 6,
@@ -229,11 +229,13 @@ controls outgoing voice messages.
 | `primary` | Yes | — | Channel name selected for outbound delivery |
 | `enabled` | Yes | — | Channel names and settings; may be empty during dashboard setup; otherwise must contain `primary` |
 
-### NapCat
+### OneBot
+
+The QQ channel key is `onebot`. A stored `napcat` key is renamed when the config is read. Docker uses SnowLuma; the Windows built-in client is still NapCat. Both speak this protocol.
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
-| `url` | Yes | — | NapCat WebSocket URL |
+| `url` | Yes | — | OneBot WebSocket URL |
 | `owner_qq` | Yes | — | Digits-only owner QQ ID |
 | `quiet_seconds` | No | `1` | Wait after the latest owner message |
 | `max_batch_seconds` | No | `60` | Maximum message-batch wait |
@@ -649,10 +651,10 @@ Environment values override `config.json` for the current process.
 
 | Variable | Configuration field |
 | --- | --- |
-| `MOMOI_NAPCAT_URL` | `channels.enabled.napcat.url` |
-| `MOMOI_OWNER_QQ` | `channels.enabled.napcat.owner_qq` |
-| `MOMOI_NAPCAT_TOKEN_FILE` | `channels.enabled.napcat.access_token` when that token is empty |
-| `MOMOI_NAPCAT_ACCESS_TOKEN` | `channels.enabled.napcat.access_token` |
+| `MOMOI_ONEBOT_URL` | `channels.enabled.onebot.url`. `MOMOI_NAPCAT_URL` is still accepted |
+| `MOMOI_OWNER_QQ` | `channels.enabled.onebot.owner_qq` |
+| `MOMOI_ONEBOT_TOKEN_FILE` | `channels.enabled.onebot.access_token` when that token is empty. `MOMOI_NAPCAT_TOKEN_FILE` is still accepted |
+| `MOMOI_ONEBOT_ACCESS_TOKEN` | `channels.enabled.onebot.access_token`. `MOMOI_NAPCAT_ACCESS_TOKEN` is still accepted |
 | `MOMOI_PRIMARY` | `channels.primary` |
 | `MOMOI_TIMEZONE` | `timezone` |
 | `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |

@@ -6,7 +6,7 @@ from aiohttp import WSMessage, WSMsgType
 
 from momoi.integrations.adapters.sherpa import SherpaASRProvider
 from momoi.integrations.contracts.asr import AudioInput
-from momoi.channel.napcat.voice_call.channel import QQCallChannel
+from momoi.channel.onebot.voice_call.channel import QQCallChannel
 
 
 def test_stream_isolated_across_calls_and_only_final_is_delivered():

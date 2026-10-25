@@ -39,7 +39,7 @@ def audible_end(request_started, result):
 class QQCallChannel:
     # Persistent channel ID; independent of the voice_call package directory.
     name = 'qq_call'
-    dialogue_channel = 'napcat'
+    dialogue_channel = 'onebot'
     quiet_seconds = .05
     max_batch_seconds = .25
     required_reply_mode = 'voice'

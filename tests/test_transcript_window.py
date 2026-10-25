@@ -5,7 +5,7 @@ from pathlib import Path
 from momoi.models import TurnDraft, IncomingMessage, AgentReply
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.runtime import MomoiDaemon
 from tests.support import provider_catalog
 import json
@@ -23,7 +23,7 @@ class TranscriptWindowTest(unittest.TestCase):
             store.add_event(event)
             store.commit_turn([event], event.text, AgentReply(["计时开始"]), turn_id="owner")
             store.begin_turn("followup", "reply_followup", ["owner"])
-            store.queue_progress("followup", "send-followup", ["一分钟到，我来了"], "napcat")
+            store.queue_progress("followup", "send-followup", ["一分钟到，我来了"], "onebot")
             outbox = store._db.execute("SELECT id FROM outbox WHERE turn_id='followup'").fetchone()[0]
             with store._db:
                 store._db.execute(
@@ -49,7 +49,7 @@ class TranscriptWindowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(AppConfig(
                 providers=provider_catalog(LLMConfig("http://localhost", "test", "model", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://localhost", "123", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://localhost", "123", 1, 60, 30, 30, 20),
                 system_prompt="test", transcript_turns_min=4, transcript_turns_max=4,
                 episode_unsummarized_tail_turns=2, memory_results=2,
                 database=Path(directory) / "store.sqlite3", log_level="INFO",
@@ -80,7 +80,7 @@ class TranscriptWindowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(AppConfig(
                 providers=provider_catalog(LLMConfig("http://localhost", "test", "model", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://localhost", "123", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://localhost", "123", 1, 60, 30, 30, 20),
                 system_prompt="test", transcript_turns_min=8, transcript_turns_max=8,
                 episode_unsummarized_tail_turns=2, memory_results=2,
                 database=Path(directory) / "store.sqlite3", log_level="INFO",
@@ -126,10 +126,10 @@ class TranscriptWindowTest(unittest.TestCase):
             self.assertEqual(store.transcript_window_turn_limit(4, 8), 4)
             store.begin_turn("goal-turn", "goal", ["goal:water"])
             store.queue_progress(
-                "goal-turn", "bubbles", ["两点了", "起来走走\n喝口水"], "napcat",
+                "goal-turn", "bubbles", ["两点了", "起来走走\n喝口水"], "onebot",
             )
             store.queue_progress(
-                "goal-turn", "voice", ["语音提醒"], "napcat", voice=True,
+                "goal-turn", "voice", ["语音提醒"], "onebot", voice=True,
             )
             store.commit_autonomous_turn("water", TurnDraft(), turn_id="goal-turn")
 
@@ -159,7 +159,7 @@ class TranscriptWindowTest(unittest.TestCase):
             second = store.due_outbox()[0]
             store.mark_failed(second.id, "delivery failed")
             self.assertEqual([row["content"] for row in rows()], ["两点了", "语音提醒"])
-            self.assertEqual(store.cancel_pending_outbox("napcat", "new owner message"), 1)
+            self.assertEqual(store.cancel_pending_outbox("onebot", "new owner message"), 1)
             self.assertEqual([row["content"] for row in rows()], ["两点了"])
             self.assertNotIn('delivery="queued"', rendered())
             store.close()

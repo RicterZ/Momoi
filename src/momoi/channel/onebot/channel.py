@@ -23,7 +23,7 @@ from .. import (
 from ...observability.events import log_event
 from ...models import IncomingMessage, OwnerInputStatus, MessageRecalled, MessagePoked
 from .favorites import FavoriteStickers
-from .config import NapCatConfig
+from .config import OneBotConfig
 from .parsing import (
     image_blocks,
     incoming_segments,
@@ -36,10 +36,10 @@ logger = logging.getLogger(__name__)
 VOICE_UNAVAILABLE_TEXT = "[QQ 语音消息暂时无法转写]"
 
 
-class NapCatChannel:
-    name = "napcat"
+class OneBotChannel:
+    name = "onebot"
 
-    def __init__(self, config: NapCatConfig) -> None:
+    def __init__(self, config: OneBotConfig) -> None:
         self.config = config
         self.quiet_seconds = config.quiet_seconds
         self.max_batch_seconds = config.max_batch_seconds
@@ -116,7 +116,7 @@ class NapCatChannel:
                             logger,
                             logging.INFO,
                             "channel_connected",
-                            channel="napcat",
+                            channel="onebot",
                         )
 
                         def finish_inbound(task: asyncio.Task[None]) -> None:
@@ -126,7 +126,7 @@ class NapCatChannel:
                                     logger,
                                     logging.ERROR,
                                     "channel_inbound_failure",
-                                    channel="napcat",
+                                    channel="onebot",
                                     error_type=type(task.exception()).__name__,
                                 )
 
@@ -137,7 +137,7 @@ class NapCatChannel:
                                     continue
                                 if self.config.bot_qq and payload.get("self_id") is not None:
                                     if str(payload["self_id"]) != self.config.bot_qq:
-                                        raise aiohttp.ClientError("NapCat logged in with an unexpected QQ account")
+                                        raise aiohttp.ClientError("OneBot logged in with an unexpected QQ account")
                                     self._ready.set()
                                 if self.config.bot_qq and not self._ready.is_set():
                                     continue
@@ -166,7 +166,7 @@ class NapCatChannel:
                         logger,
                         logging.WARNING,
                         "channel_disconnected",
-                        channel="napcat",
+                        channel="onebot",
                         error_type=type(error).__name__,
                         reconnect_delay_seconds=delay,
                     )
@@ -194,7 +194,7 @@ class NapCatChannel:
                 logger,
                 logging.WARNING,
                 "channel_frame_invalid",
-                channel="napcat",
+                channel="onebot",
                 reason="invalid_json",
             )
             return None
@@ -225,7 +225,7 @@ class NapCatChannel:
             if not bot_id or sender not in peers or target not in peers:
                 return
             await on_event(MessagePoked(
-                f"napcat:{bot_id}:poke:{uuid.uuid4().hex}",
+                f"onebot:{bot_id}:poke:{uuid.uuid4().hex}",
                 float(payload.get("time") or time.time()), self.name,
                 "owner" if sender == self.config.owner_qq else "assistant",
                 "owner" if target == self.config.owner_qq else "assistant",
@@ -244,7 +244,7 @@ class NapCatChannel:
             # SnowLuma reports a bot self-recall with the peer's user_id.
             author = "assistant" if user_id == bot_id or sent_by_momoi else "owner"
             await on_event(MessageRecalled(
-                f"napcat:{bot_id}:recall:{message_id}", message_id,
+                f"onebot:{bot_id}:recall:{message_id}", message_id,
                 float(payload.get("time") or time.time()), self.name,
                 author,
             ))
@@ -278,7 +278,7 @@ class NapCatChannel:
             occurred_at = float(payload.get("time") or time.time())
             await on_event(
                 IncomingMessage(
-                    event_id=f"napcat:{self_id}:{message_id}",
+                    event_id=f"onebot:{self_id}:{message_id}",
                     message_id=message_id,
                     text=text,
                     occurred_at=occurred_at,
@@ -310,7 +310,7 @@ class NapCatChannel:
             return VOICE_UNAVAILABLE_TEXT
         try:
             async with asyncio.timeout(self.config.send_timeout_seconds):
-                # NapCat can reject the first lookup while QQ generates the text.
+                # OneBot can reject the first lookup while QQ generates the text.
                 for attempt in range(3):
                     try:
                         response = await self._request_action(
@@ -475,7 +475,7 @@ class NapCatChannel:
                 logger,
                 logging.DEBUG,
                 "channel_media_failure",
-                channel="napcat",
+                channel="onebot",
                 media_type="image",
                 error_type=type(error).__name__,
                 phase=progress["phase"],
@@ -501,7 +501,7 @@ class NapCatChannel:
                 logger,
                 logging.DEBUG,
                 "channel_reference_failure",
-                channel="napcat",
+                channel="onebot",
                 message_id=message_id,
                 reference_kind="quote",
             )
@@ -533,7 +533,7 @@ class NapCatChannel:
                 logger,
                 logging.DEBUG,
                 "channel_reference_failure",
-                channel="napcat",
+                channel="onebot",
                 message_id=message_id,
                 reference_kind="forward",
             )
@@ -621,7 +621,7 @@ class NapCatChannel:
             if item["type"] in {"image", "file", "video", "record"} and isinstance(
                 source, str
             ):
-                # base64:// has no filename; NapCat falls back to a UUID without
+                # base64:// has no filename; OneBot falls back to a UUID without
                 # extension unless `name` is set. Prefer an explicit name.
                 if item["type"] == "file":
                     name = item["data"].get("name")
@@ -664,11 +664,11 @@ class NapCatChannel:
                 self._ready.wait(), timeout=self.config.send_timeout_seconds
             )
         except TimeoutError as error:
-            raise NotConnected("NapCat is not connected") from error
+            raise NotConnected("OneBot is not connected") from error
         async with self._send_lock:
             ws = self._ws
             if ws is None or ws.closed:
-                raise NotConnected("NapCat is not connected")
+                raise NotConnected("OneBot is not connected")
             echo = f"momoi:{uuid.uuid4().hex}"
             future = asyncio.get_running_loop().create_future()
             self._pending[echo] = future
@@ -684,25 +684,26 @@ class NapCatChannel:
                 )
             except (aiohttp.ClientError, asyncio.TimeoutError, AmbiguousSend) as error:
                 self._pending.pop(echo, None)
-                raise AmbiguousSend("NapCat send result is unknown") from error
+                raise AmbiguousSend("OneBot send result is unknown") from error
             finally:
                 self._pending.pop(echo, None)
             if response.get("status") != "ok" or response.get("retcode") != 0:
                 raise SendRejected(
-                    f"NapCat rejected {action} with retcode {response.get('retcode')}"
+                    f"OneBot rejected {action} with retcode {response.get('retcode')}"
                 )
             return response
 
     def _fail_pending(self) -> None:
         for future in self._pending.values():
             if not future.done():
-                future.set_exception(AmbiguousSend("NapCat connection closed"))
+                future.set_exception(AmbiguousSend("OneBot connection closed"))
         self._pending.clear()
 
     def workflow_variables(self) -> dict[str, str]:
         return {
             "channel_url": self.config.url,
             "owner_id": self.config.owner_qq,
+            "onebot_url": self.config.url,
             "napcat_url": self.config.url,
             "owner_qq": self.config.owner_qq,
         }

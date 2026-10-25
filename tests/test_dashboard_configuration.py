@@ -317,11 +317,11 @@ class ConfigurationManagerTest(unittest.TestCase):
         )
         saved = self.manager.save_runtime({"channels": {"primary": "", "enabled": {}}}, saved["revision"])
         self.assertEqual(self.manager.validate().channel_configs, ())
-        for document in ({"channels": None}, {"channels": {"primary": "napcat", "enabled": {}}}):
+        for document in ({"channels": None}, {"channels": {"primary": "onebot", "enabled": {}}}):
             with self.assertRaises(ConfigError):
                 self.manager.save_runtime(document, saved["revision"])
         app = saved["app"]
-        app["channels"] = {"primary": "napcat", "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}}}
+        app["channels"] = {"primary": "onebot", "enabled": {"onebot": {"url": "ws://localhost", "owner_qq": "123"}}}
         saved = self.manager.save("app", app, saved["revision"])
         app = saved["app"]
         app["channels"] = {"primary": "", "enabled": {}}
@@ -539,10 +539,10 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.runtime.state, "running")
         self.assertEqual(self.runtime.daemon.config.channel_configs, ())
         first = self.runtime.daemon
-        self.manager.save_runtime({"channels": {"primary": "napcat", "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}}}}, self.manager.revision())
+        self.manager.save_runtime({"channels": {"primary": "onebot", "enabled": {"onebot": {"url": "ws://localhost", "owner_qq": "123"}}}}, self.manager.revision())
         await self.runtime.apply()
         self.assertTrue(first.closed)
-        self.assertEqual(self.runtime.daemon.config.channel.plugin, "napcat")
+        self.assertEqual(self.runtime.daemon.config.channel.plugin, "onebot")
         second = self.runtime.daemon
         self.manager.save_runtime({"channels": {"primary": "", "enabled": {}}}, self.manager.revision())
         await self.runtime.apply()
@@ -589,8 +589,8 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         snapshot = self.manager.save_binding("llm", llm, self.manager.revision())
         app = snapshot["app"]
         app["channels"] = {
-            "primary": "napcat",
-            "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}},
+            "primary": "onebot",
+            "enabled": {"onebot": {"url": "ws://localhost", "owner_qq": "123"}},
         }
         self.manager.save("app", app, snapshot["revision"])
 
@@ -623,7 +623,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 200)
             value = await response.json()
             self.assertEqual(value["revision"], self.manager.revision())
-            voice = value["app"]["channels"]["enabled"]["napcat"]["voice_call"]
+            voice = value["app"]["channels"]["enabled"]["onebot"]["voice_call"]
             self.assertEqual(set(voice), {"enabled", "input_device", "output_device"})
             self.assertNotIn("bridge_token", voice)
 
@@ -636,10 +636,10 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
                    "outputs": [{"id": "speaker", "name": "EDIFIER Speakers"}], "errors": []}
         endpoint = "/api/settings/channels/napcat/voice-call/devices"
         revision = self.manager.revision()
-        with patch.dict(os.environ, {"MOMOI_QQ_CALL_MANAGED": str(managed)}), patch("momoi.channel.napcat.voice_call.windows_audio.device_catalog", return_value=catalog):
+        with patch.dict(os.environ, {"MOMOI_QQ_CALL_MANAGED": str(managed)}), patch("momoi.channel.onebot.voice_call.windows_audio.device_catalog", return_value=catalog):
             response = await self.client.put(endpoint, json={"revision": revision, "input_device": "mic", "output_device": "speaker"})
             self.assertEqual(response.status, 200, await response.text())
-            voice = self.manager.read_app()["channels"]["enabled"]["napcat"]["voice_call"]
+            voice = self.manager.read_app()["channels"]["enabled"]["onebot"]["voice_call"]
             self.assertEqual(voice["input_device"], "mic")
             self.assertEqual(voice["output_device"], "speaker")
             self.assertEqual(voice["bridge_token"], "a" * 64)

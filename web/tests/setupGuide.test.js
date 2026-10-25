@@ -11,7 +11,7 @@ test("setup is triggered by an absent or blank model key, not redacted credentia
 test("the primary channel must exist and QQ needs an owner and transport", () => {
   const channel = (primary, enabled) => ({ app: { channels: { primary, enabled } } });
   assert.equal(hasMessageChannel(channel("", {})), false);
-  assert.equal(hasMessageChannel(channel("napcat", { napcat: { url: "ws://localhost:3001" } })), false);
-  assert.equal(hasMessageChannel(channel("napcat", { napcat: { url: "ws://localhost:3001", owner_qq: "123456" } })), true);
+  assert.equal(hasMessageChannel(channel("onebot", { onebot: { url: "ws://localhost:3001" } })), false);
+  assert.equal(hasMessageChannel(channel("onebot", { onebot: { url: "ws://localhost:3001", owner_qq: "123456" } })), true);
   assert.equal(hasMessageChannel(channel("weixin", { weixin: {} })), true);
 });

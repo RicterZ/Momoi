@@ -646,7 +646,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
     async def test_chat_flow_links_dispatch_generation_and_delivery(self):
         from momoi.models import IncomingMessage
         now = time.time()
-        event = IncomingMessage("flow-event", "flow-event", "测试输入", now, now, channel="napcat")
+        event = IncomingMessage("flow-event", "flow-event", "测试输入", now, now, channel="onebot")
         self.store.add_event(event)
         self.store.begin_turn("flow-owner", "owner", [event.event_id])
         self.store.record_thinking_call(created_at=now, turn_id="flow-owner", call_id="planner-call", stage="owner",
@@ -655,13 +655,13 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             assistant_text="测试发言", trace={"parent_call_id": "planner-call", "tool_call_id": "reply-tool"})
         self.store.append_turn_journal("flow-owner", "assistant_exchange", {
             "call_id": "planner-call", "content": [], "results": [{"type": "tool_result", "tool_use_id": "reply-tool", "content": '{"ok":true,"bubbles":["测试发言"]}'}]})
-        self.store.queue_progress("flow-owner", "reply-tool", ["测试发言"], "napcat")
+        self.store.queue_progress("flow-owner", "reply-tool", ["测试发言"], "onebot")
         detail = await (await self.client.get("/api/thinking/flow-owner", headers=self._auth())).json()
         self.assertEqual(detail["items"][0]["actions"][0]["arguments"]["intent"], "直接回应")
         self.assertEqual(detail["items"][0]["actions"][0]["result"]["bubbles"], ["测试发言"])
         self.assertEqual(detail["items"][1]["trace"]["parent_call_id"], "planner-call")
         self.assertEqual(detail["flow"]["inputs"][0]["content"], "测试输入")
-        update = IncomingMessage("flow-update", "flow-update", "等等改一下", now+2, now+2, channel="napcat")
+        update = IncomingMessage("flow-update", "flow-update", "等等改一下", now+2, now+2, channel="onebot")
         self.store.add_event(update)
         self.store.append_turn_journal("flow-owner", "owner_interjection",
                                        {"event_ids": [update.event_id], "before_round": 2}, trust="runtime")
@@ -675,7 +675,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(detail["flow"]["running"])
         self.assertEqual(detail["flow"]["deliveries"][0]["state"], "pending")
         self.assertEqual(detail["flow"]["deliveries"][0]["tool_call_id"], "reply-tool")
-        self.store.queue_progress("flow-owner", "reply-next", ["插话后的发言"], "napcat")
+        self.store.queue_progress("flow-owner", "reply-next", ["插话后的发言"], "onebot")
         detail = await (await self.client.get("/api/thinking/flow-owner", headers=self._auth())).json()
         self.assertEqual([(row["tool_call_id"], row["text"]) for row in detail["flow"]["deliveries"]],
                          [("reply-tool", "测试发言"), ("reply-next", "插话后的发言")])
@@ -688,7 +688,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         now = time.time()
         for index, text in enumerate(("开始聊天", "等等", "等等")):
             self.store.add_event(IncomingMessage(f"resume-{index}", f"resume-{index}",
-                text, now + index, now + index, channel="napcat"))
+                text, now + index, now + index, channel="onebot"))
         self.store.begin_turn("resumed-flow", "owner", ["resume-0", "resume-1", "resume-2"])
         for call_id, offset, round_number in (("initial", 0, 1), ("next", 3, 2), ("resumed", 5, 1)):
             self.store.record_thinking_call(turn_id="resumed-flow", call_id=call_id,

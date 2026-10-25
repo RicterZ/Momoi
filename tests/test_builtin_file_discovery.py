@@ -59,7 +59,7 @@ def test_plan_tools_are_discoverable_and_enabled_until_compaction():
     from momoi.runtime.agent.tool_surface import ToolSurface
     from momoi.runtime.tool_contracts.plan import PLAN_TOOLS
     enabled = []
-    surface = ToolSurface(SimpleNamespace(tool_specs=[]), {'napcat': object()},
+    surface = ToolSurface(SimpleNamespace(tool_specs=[]), {'onebot': object()},
                           store=SimpleNamespace(transcript_enabled_tools=lambda: enabled))
     plan_names = {spec['name'] for spec in PLAN_TOOLS}
     defaults = {spec['name'] for spec in surface.conversation_specs()}

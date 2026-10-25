@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
@@ -18,7 +18,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -97,7 +97,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             with self.subTest(with_terminal=with_terminal), tempfile.TemporaryDirectory() as directory:
                 daemon = MomoiDaemon(AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     transcript_turns_min=4,
                     transcript_turns_max=4,
@@ -156,7 +156,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig(
+                    channel=OneBotConfig(
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
                     system_prompt="contract\n{{SOUL}}",
@@ -307,7 +307,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig(
+                    channel=OneBotConfig(
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
                     system_prompt="test",

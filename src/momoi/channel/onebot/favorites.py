@@ -63,10 +63,10 @@ class FavoriteStickers:
                     resources[slug] = {'md5': md5, 'url': str(item['url'])}
                 except (OSError, ChannelError) as error:
                     log_event(logger, logging.WARNING, 'qq_favorite_sync_failure',
-                              channel='napcat', slug=slug, error_type=type(error).__name__,
+                              channel='onebot', slug=slug, error_type=type(error).__name__,
                               reason=str(error))
             self.resources = resources
-            log_event(logger, logging.INFO, 'qq_favorite_sync_complete', channel='napcat',
+            log_event(logger, logging.INFO, 'qq_favorite_sync_complete', channel='onebot',
                       synced=len(resources), total=len(catalog))
 
     async def run(self, ready):
@@ -77,7 +77,7 @@ class FavoriteStickers:
             try:
                 await self.sync()
             except ChannelError as error:
-                log_event(logger, logging.WARNING, 'qq_favorite_sync_failure', channel='napcat',
+                log_event(logger, logging.WARNING, 'qq_favorite_sync_failure', channel='onebot',
                           error_type=type(error).__name__, reason=str(error))
 
     async def segment(self, slug):

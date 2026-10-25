@@ -102,7 +102,7 @@ class ToolSurface:
         groups["builtin_skill_management"] = self.public_specs([
             spec for spec in self.builtin_specs if spec["name"] in {"skill_install", "skill_uninstall"}
         ])
-        if "napcat" in self.channel_names:
+        if "onebot" in self.channel_names:
             groups["builtin_qq_messages"] = self.public_specs([QQ_RECALL_MESSAGE_SPEC])
         if "qq_call" in self.channel_names:
             groups["builtin_calls"] = self.public_specs([QQ_CALL_STATUS_SPEC])
@@ -172,7 +172,7 @@ class ToolSurface:
             "type": "string", "enum": self.channel_names,
             "description": "目标渠道；省略时回复当前消息所在渠道。",
         }
-        if "napcat" in self.channel_names:
+        if "onebot" in self.channel_names:
             reply_spec["description"] += " QQ 文字回复中，Replyer 也能选择戳一戳用户；需要这种互动时在 intent 中说明意图。"
         if not self.voice_enabled:
             reply_spec["input_schema"]["properties"]["mode"]["enum"] = ["text"]

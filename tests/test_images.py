@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 
 from momoi.models import IncomingMessage, AgentReply
 from momoi.storage import Store
-from momoi.channel.napcat.parsing import image_blocks
+from momoi.channel.onebot.parsing import image_blocks
 from momoi.runtime.turn_support import owner_content_blocks, tool_result_block
 from momoi.runtime.transcript.building import build_transcript
 from momoi.integrations.adapters.openai import openai_messages
@@ -30,7 +30,7 @@ def incoming():
                 },
             },
         ),
-        channel="napcat",
+        channel="onebot",
     )
 
 
@@ -140,7 +140,7 @@ def test_legacy_event_gets_durable_reference_on_history_read(tmp_path):
         store._db.execute(
             "UPDATE events SET payload_json=? WHERE id=?",
             (
-                json.dumps({"channel": "napcat", "segments": event.segments}),
+                json.dumps({"channel": "onebot", "segments": event.segments}),
                 event.event_id,
             ),
         )

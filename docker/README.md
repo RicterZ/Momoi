@@ -30,7 +30,7 @@ verifying the upgrade, remove the old encoder container and any `depends_on` ent
 from a custom deployment file. QQ uses the SnowLuma service in the same Compose
 file. After `docker compose up`, open noVNC at `http://127.0.0.1:6081` and scan
 the QQ login code. The remote-desktop password and SnowLuma WebUI password are
-printed once in `docker logs snowluma`. Then enable SnowLuma QQ in Momoi Settings,
+printed once in `docker logs snowluma`. Then enable QQ in Momoi Settings,
 set the owner QQ, and leave the token empty. Compose points Momoi at
 `ws://snowluma:3001/` and reads the OneBot token created on the first SnowLuma
 start. WebUI is at `http://127.0.0.1:5099`. Real-time voice calls are unchanged.

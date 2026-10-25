@@ -304,7 +304,7 @@ class OwnerWorkflow:
         context = batch[-1].delivery_context
         if not channel.context_valid(context):
             raise asyncio.CancelledError()
-        from ....channel.napcat.voice_call.speech import BufferedBubbleAudio
+        from ....channel.onebot.voice_call.speech import BufferedBubbleAudio
         provider = self.bubble_delivery.tts_provider
         prefetch = BufferedBubbleAudio(provider) if callable(getattr(provider, "stream_pcm", None)) else None
         if prefetch:
@@ -403,7 +403,7 @@ class OwnerWorkflow:
                       recognition_wait_ms=round((time.time() - batch[-1].received_at) * 1000))
         self.owner_context_baseline()
         reconciliation_control = self._apply_reconciliation_commands(batch)
-        channel_label = {"dashboard": "网页聊天", "napcat": "QQ 私聊", "weixin": "微信私聊", "qq_call": "QQ 电话"}.get(channel.name, channel.name)
+        channel_label = {"dashboard": "网页聊天", "onebot": "QQ 私聊", "weixin": "微信私聊", "qq_call": "QQ 电话"}.get(channel.name, channel.name)
         directives: list[str] = [
             f"当前消息渠道：{channel.name}（{channel_label}）。"
             "reply 省略 channel 时回复此渠道；历史对话或默认渠道不代表当前消息来源。"

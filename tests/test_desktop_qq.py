@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from aiohttp import web
 
-from momoi.channel.napcat import NapCatChannel, NapCatConfig
+from momoi.channel.onebot import OneBotChannel, OneBotConfig
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -75,8 +75,8 @@ def test_qq_websocket_auth_and_account_identity(tmp_path, access_token, bot_qq, 
         site = web.TCPSite(runner, '127.0.0.1', 0)
         await site.start()
         port = site._server.sockets[0].getsockname()[1]
-        config = NapCatConfig(f'ws://127.0.0.1:{port}', '54321', 1, 60, 30, 30, 1, access_token=access_token, bot_qq=bot_qq)
-        channel = NapCatChannel(config)
+        config = OneBotConfig(f'ws://127.0.0.1:{port}', '54321', 1, 60, 30, 30, 1, access_token=access_token, bot_qq=bot_qq)
+        channel = OneBotChannel(config)
         stop = asyncio.Event()
         async def on_event(event):
             pass
@@ -105,13 +105,13 @@ def test_qq_config_validates_bot_identity_and_masks_token(tmp_path):
     bootstrap(tmp_path / 'config.json')
     manager = ConfigurationManager(tmp_path / 'config.json')
     document = json.loads(manager.path.read_text())
-    document['channels'] = {'primary': 'napcat', 'enabled': {'napcat': {'url': 'ws://127.0.0.1:3001', 'owner_qq': '54321', 'bot_qq': '12345', 'access_token': 'secret'}}}
+    document['channels'] = {'primary': 'onebot', 'enabled': {'onebot': {'url': 'ws://127.0.0.1:3001', 'owner_qq': '54321', 'bot_qq': '12345', 'access_token': 'secret'}}}
     manager.path.write_text(json.dumps(document))
-    assert manager.snapshot()['app']['channels']['enabled']['napcat']['access_token'] == {'$secret': 'keep'}
-    parsed = NapCatConfig.from_mapping(document['channels']['enabled']['napcat'])
+    assert manager.snapshot()['app']['channels']['enabled']['onebot']['access_token'] == {'$secret': 'keep'}
+    parsed = OneBotConfig.from_mapping(document['channels']['enabled']['onebot'])
     assert parsed.bot_qq == '12345' and parsed.access_token == 'secret'
     with pytest.raises(ValueError, match='bot_qq'):
-        NapCatConfig.from_mapping({'owner_qq': '54321', 'url': 'ws://localhost', 'bot_qq': '１２３４５'})
+        OneBotConfig.from_mapping({'owner_qq': '54321', 'url': 'ws://localhost', 'bot_qq': '１２３４５'})
 
 
 def test_runtime_reports_actual_qq_connection(tmp_path):
@@ -120,8 +120,8 @@ def test_runtime_reports_actual_qq_connection(tmp_path):
     from momoi.runtime.supervisor import RuntimeSupervisor
     supervisor = RuntimeSupervisor(SimpleNamespace(revision=lambda: "saved"), factory=lambda _: None)
     assert supervisor.status()["qq_connected"] is False
-    channel = NapCatChannel(NapCatConfig("ws://localhost", "12345", 1, 60, 30, 30, 1))
-    supervisor.daemon = SimpleNamespace(channels={"napcat": channel})
+    channel = OneBotChannel(OneBotConfig("ws://localhost", "12345", 1, 60, 30, 30, 1))
+    supervisor.daemon = SimpleNamespace(channels={"onebot": channel})
     assert supervisor.status()["qq_connected"] is False
     channel._ws = Mock(closed=False)
     channel._ready.set()
@@ -175,18 +175,18 @@ def test_desktop_connection_overrides_user_values_preserving_preferences(tmp_pat
     path = tmp_path / 'managed.json'
     path.write_text(json.dumps({'bridge_url': 'http://127.0.0.1:43210', 'bridge_token': 'a' * 64}))
     monkeypatch.setenv('MOMOI_QQ_CALL_MANAGED', str(path))
-    app = {'channels': {'enabled': {'napcat': {'voice_call': {
+    app = {'channels': {'enabled': {'onebot': {'voice_call': {
         'enabled': True, 'request_timeout_seconds': 12,
         'bridge_url': 'http://other:6112', 'bridge_token': 'user-value',
     }}}}}
-    result = managed_qq_call(app)['channels']['enabled']['napcat']['voice_call']
+    result = managed_qq_call(app)['channels']['enabled']['onebot']['voice_call']
     assert result == {'enabled': True, 'request_timeout_seconds': 12,
                       'bridge_url': 'http://127.0.0.1:43210', 'bridge_token': 'a' * 64}
 
 
 def test_non_desktop_keeps_external_bridge(monkeypatch):
     monkeypatch.delenv('MOMOI_QQ_CALL_MANAGED', raising=False)
-    app = {'channels': {'enabled': {'napcat': {'voice_call': {'bridge_url': 'http://linux:6112'}}}}}
+    app = {'channels': {'enabled': {'onebot': {'voice_call': {'bridge_url': 'http://linux:6112'}}}}}
     assert managed_qq_call(app) == app
 
 

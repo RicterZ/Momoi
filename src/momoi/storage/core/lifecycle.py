@@ -12,8 +12,25 @@ DEFAULT_ACTIVITY = ""
 
 
 class LifecycleStore:
+    def _migrate_qq_channel_name(self) -> None:
+        self._db.execute(
+            "UPDATE events SET kind = 'onebot' || substr(kind, 7) WHERE kind LIKE 'napcat.%'"
+        )
+        self._db.execute(
+            "UPDATE outbox SET target_channel = 'onebot' WHERE target_channel = 'napcat'"
+        )
+        self._db.execute(
+            """UPDATE events SET payload_json = replace(payload_json, '"channel":"napcat"', '"channel":"onebot"')
+               WHERE instr(payload_json, '"channel":"napcat"') > 0"""
+        )
+        self._db.execute(
+            """UPDATE events SET payload_json = replace(payload_json, '"channel": "napcat"', '"channel": "onebot"')
+               WHERE instr(payload_json, '"channel": "napcat"') > 0"""
+        )
+
     def _initialize_database(self) -> None:
         initialize_schema(self._db)
+        self._migrate_qq_channel_name()
         now = time.time()
         self._normalize_goal_schedules(now)
         self._db.execute(

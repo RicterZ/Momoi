@@ -109,7 +109,7 @@ def test_recall_search_reuse_and_errors_are_never_compacted():
 def test_simple_receipts_keep_send_pair_but_remove_successful_end_turn():
     source = [exchange('s', 'send_bubbles', {
         'ok': True, 'error': None, 'truncated': False, 'state': 'committed',
-        'channel': 'napcat', 'bubbles': 3, 'result_ref': 'tr_send',
+        'channel': 'onebot', 'bubbles': 3, 'result_ref': 'tr_send',
         'provenance': {'source': 'runtime'},
     }), exchange('e', 'end_turn', {'ok': True, 'state': 'completed', 'result_ref': 'tr_end'})]
     original = deepcopy(source)

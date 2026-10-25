@@ -527,7 +527,7 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
         write_app_config(path, {
             **default_config(),
             "providers": "providers.yaml",
-            "channels": {"primary": "napcat", "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}}},
+            "channels": {"primary": "onebot", "enabled": {"onebot": {"url": "ws://localhost", "owner_qq": "123"}}},
             "storage": {"database": "usage.sqlite3"},
         })
         daemon = MomoiDaemon(load_config(path))

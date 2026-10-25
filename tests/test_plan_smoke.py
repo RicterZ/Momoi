@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
@@ -46,7 +46,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(directory.cleanup)
         self.daemon = MomoiDaemon(AppConfig(
             providers=provider_catalog(LLMConfig("http://localhost", "test", "model", 100, 0, 1, 0)),
-            channel=NapCatConfig("ws://localhost", "123", 1, 60, 30, 30, 20),
+            channel=OneBotConfig("ws://localhost", "123", 1, 60, 30, 30, 20),
             transcript_turns_min=4, transcript_turns_max=4, episode_unsummarized_tail_turns=2,
             memory_results=2, log_level="INFO",
             system_prompt="Momoi role and voice", database=Path(directory.name) / "store.sqlite3",

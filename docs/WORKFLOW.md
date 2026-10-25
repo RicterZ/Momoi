@@ -256,7 +256,7 @@ Executor parameters use the same schema as Workflow inputs.
 - `${config.owner_id}` — owner identifier provided by the primary Channel
 - `${config.channel_url}` — connection URL provided by the primary Channel, when available
 
-Configured plugins also provide namespaced variables, such as NapCat's `${config.owner_qq}` and `${config.napcat_url}` or Weixin's `${config.weixin_user_id}`.
+Configured plugins also provide namespaced variables, such as QQ's `${config.owner_qq}` and `${config.onebot_url}` (`${config.napcat_url}` still points at the same address) or Weixin's `${config.weixin_user_id}`.
 
 Templates cannot be embedded inside a larger token. Momoi's existing process environment is inherited, so commands can read secrets from environment variables without placing them in Workflow input.
 

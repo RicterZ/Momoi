@@ -65,7 +65,7 @@ def managed_qq_call(app):
             raise ValueError("invalid managed connection")
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         raise ConfigError("desktop voice-call connection metadata is invalid") from None
-    channel = app.get("channels", {}).get("enabled", {}).get("napcat")
+    channel = app.get("channels", {}).get("enabled", {}).get("onebot")
     if isinstance(channel, dict):
         previous = channel.get("voice_call", {})
         channel["voice_call"] = {**previous, "bridge_url": address, "bridge_token": token}
@@ -145,6 +145,8 @@ class ConfigurationManager:
         if not isinstance(raw, dict):
             raise ConfigError("config.json must be an object")
         remove_retired_thinking_stages(raw)
+        from .loading import migrate_qq_channel
+        migrate_qq_channel(raw)
         return managed_qq_call(raw)
 
     def _provider_path(self, raw):

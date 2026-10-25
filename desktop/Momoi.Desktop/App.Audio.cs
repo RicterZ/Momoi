@@ -39,12 +39,13 @@ public partial class App
         {
             using var client = new HttpClient(new HttpClientHandler { UseProxy = false }) { BaseAddress = new Uri(panelConnection.Url), Timeout = TimeSpan.FromSeconds(5) };
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", panelConnection.Token);
-            using var settings = JsonDocument.Parse(await client.GetStringAsync("/api/settings/channels/napcat/voice-call/audio-configuration", lifetime.Token));
+            using var settings = JsonDocument.Parse(await client.GetStringAsync("/api/settings/channels/onebot/voice-call/audio-configuration", lifetime.Token));
             var app = settings.RootElement.GetProperty("app");
             if (!app.TryGetProperty("channels", out var channels) || !channels.TryGetProperty("enabled", out var enabled) ||
-                !enabled.TryGetProperty("napcat", out var napcatOptions) || !napcatOptions.TryGetProperty("voice_call", out var voice) ||
+                !(enabled.TryGetProperty("onebot", out var qqOptions) || enabled.TryGetProperty("napcat", out qqOptions)) ||
+                !qqOptions.TryGetProperty("voice_call", out var voice) ||
                 !voice.TryGetProperty("enabled", out var callEnabled) || callEnabled.ValueKind != JsonValueKind.True) { RestoreAudioRouting(); return; }
-            using var response = await client.GetAsync("/api/settings/channels/napcat/voice-call/devices", lifetime.Token);
+            using var response = await client.GetAsync("/api/settings/channels/onebot/voice-call/devices", lifetime.Token);
             if (!response.IsSuccessStatusCode) return;
             using var catalog = JsonDocument.Parse(await response.Content.ReadAsStringAsync(lifetime.Token));
             string Select(string role, string group, bool input)

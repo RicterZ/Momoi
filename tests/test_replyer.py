@@ -27,8 +27,8 @@ def empty_memory_state():
 
 
 @pytest.mark.parametrize('channel_name, failed, paused', [
-    ('napcat', False, False), ('dashboard', False, False),
-    ('napcat', True, False), ('napcat', False, True),
+    ('onebot', False, False), ('dashboard', False, False),
+    ('onebot', True, False), ('onebot', False, True),
 ])
 @pytest.mark.parametrize('mode', ['text', 'voice'])
 def test_replyer_poke_tool_is_fixed_and_executes_only_on_qq(tmp_path, channel_name, failed, paused, mode):
@@ -59,9 +59,9 @@ def test_replyer_poke_tool_is_fixed_and_executes_only_on_qq(tmp_path, channel_na
     try:
         replyer = Replyer(config, store, SimpleNamespace(complete=complete))
         assert asyncio.run(replyer.generate(ToolCall('reply', 'reply', {'intent': 'test', 'reference': '', 'mode': mode}), request)) == ['你好']
-        assert poke.await_count == 2 * int(channel_name == 'napcat' and not paused)
-        assert store.reply_action_bubbles('poke-turn', 'reply') == ['[动作：戳一戳]'] * (2 * int(channel_name == 'napcat' and not paused and not failed))
-        if channel_name == 'napcat' and not paused:
+        assert poke.await_count == 2 * int(channel_name == 'onebot' and not paused)
+        assert store.reply_action_bubbles('poke-turn', 'reply') == ['[动作：戳一戳]'] * (2 * int(channel_name == 'onebot' and not paused and not failed))
+        if channel_name == 'onebot' and not paused:
             assert store.begin_tool_call('poke-turn', 'reply:poke-action-1', 'qq_poke', {})['ok'] is (not failed)
     finally:
         store.close()
@@ -237,13 +237,13 @@ def test_replyer_channel_history_uses_actual_delivery(tmp_path):
 def test_replyer_generates_with_malformed_legacy_event_payload(tmp_path):
     store = Store(tmp_path / 'db')
     try:
-        for channel in ('napcat', 'dashboard'):
+        for channel in ('onebot', 'dashboard'):
             event = IncomingMessage(channel, channel, channel + ' input', 1, 1, channel=channel)
             store.add_event(event)
             store.begin_turn(channel, 'owner', [event.event_id])
             store.commit_turn([event], event.text, AgentReply([]), turn_id=channel)
         with store._db:
-            store._db.execute("UPDATE events SET payload_json='not-json' WHERE id='napcat'")
+            store._db.execute("UPDATE events SET payload_json='not-json' WHERE id='onebot'")
         config = SimpleNamespace(soul_prompt_path=tmp_path / 'SOUL.md', soul_prompt='测试人格', timezone='UTC', thinking_stages={'replyer': 'low'})
         request = SimpleNamespace(turn_id='dashboard', round_number=1, delivery_channel=SimpleNamespace(name='dashboard'), current_events=[])
         async def complete(system, messages, tools):
@@ -305,13 +305,13 @@ def test_memory_evidence_reads_reply_result_not_intent():
 def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_context, expression, quote):
     from momoi.config.models import AppConfig
     from momoi.integrations.models import LLMConfig
-    from momoi.channel.napcat import NapCatConfig
+    from momoi.channel.onebot import OneBotConfig
     from momoi.runtime import MomoiDaemon
     from tests.support import provider_catalog
 
     daemon = MomoiDaemon(AppConfig(
         providers=provider_catalog(LLMConfig('http://localhost', 'test', 'model', 100, 0, 1, 0)),
-        channel=NapCatConfig('ws://localhost', 'test', 1, 60, 30, 30, 20),
+        channel=OneBotConfig('ws://localhost', 'test', 1, 60, 30, 30, 20),
         transcript_turns_min=8, transcript_turns_max=32, episode_unsummarized_tail_turns=2, memory_results=2,
         soul_prompt='测试人格', system_prompt='测试规则', database=tmp_path / 'db', log_level='INFO'))
     event = IncomingMessage('event', 'event', '测试输入', 1, 1, channel=daemon.channel.name,
@@ -436,7 +436,7 @@ def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
     from unittest.mock import AsyncMock
     from momoi.config.models import AppConfig
     from momoi.integrations.models import LLMConfig
-    from momoi.channel.napcat import NapCatConfig
+    from momoi.channel.onebot import OneBotConfig
     from momoi.integrations.contracts.tts import AudioOutput
     from momoi.runtime import MomoiDaemon
     from tests.support import provider_catalog
@@ -444,7 +444,7 @@ def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
     tts = SimpleNamespace(synthesize=AsyncMock(return_value=AudioOutput(b"audio", "silk")))
     daemon = MomoiDaemon(AppConfig(
         providers=provider_catalog(LLMConfig('http://localhost', 'test', 'model', 100, 0, 1, 0)),
-        channel=NapCatConfig('ws://localhost', 'test', 1, 60, 30, 30, 20),
+        channel=OneBotConfig('ws://localhost', 'test', 1, 60, 30, 30, 20),
         transcript_turns_min=8, transcript_turns_max=32, episode_unsummarized_tail_turns=2, memory_results=2,
         soul_prompt='测试人格', system_prompt='测试规则', database=tmp_path / 'db', log_level='INFO'),
         tts_provider=tts)
@@ -521,22 +521,22 @@ def test_replyer_text_and_voice_have_identical_system_and_history():
 
 
 @pytest.mark.parametrize("channel_name, mode, output, accepted", [
-    ("napcat", "text", "qq://poke", True),
-    ("napcat", "text", "[QQ 动作：戳一戳用户]", False),
-    ("napcat", "voice", "[QQ 动作：戳一戳用户]", False),
+    ("onebot", "text", "qq://poke", True),
+    ("onebot", "text", "[QQ 动作：戳一戳用户]", False),
+    ("onebot", "voice", "[QQ 动作：戳一戳用户]", False),
     ("other", "text", "[QQ 动作：戳一戳用户]", False),
-    ("napcat", "text", "戳回来 [QQ 动作：戳一戳用户]", False),
-    ("napcat", "text", "[戳一戳用户]", False),
-    ("napcat", "voice", "qq://poke", False),
+    ("onebot", "text", "戳回来 [QQ 动作：戳一戳用户]", False),
+    ("onebot", "text", "[戳一戳用户]", False),
+    ("onebot", "voice", "qq://poke", False),
     ("other", "text", "qq://poke", False),
-    ("napcat", "text", "hello qq://poke", False),
+    ("onebot", "text", "hello qq://poke", False),
 ])
 def test_replyer_poke_is_an_action_not_spoken_or_literal_text(channel_name, mode, output, accepted):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt='test', timezone='UTC', thinking_stages={})
     store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
                             transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: '')
     channel = SimpleNamespace(name=channel_name, content_blocks=lambda _: [])
-    if channel_name == 'napcat':
+    if channel_name == 'onebot':
         channel.poke_owner = Mock()
     request = SimpleNamespace(turn_id='turn', round_number=1, delivery_channel=channel, current_events=[])
     async def complete(system, messages, tools):
@@ -552,14 +552,14 @@ def test_replyer_poke_is_an_action_not_spoken_or_literal_text(channel_name, mode
 
 
 def test_optional_qq_quote_targets_selected_message_and_keeps_other_bubbles_plain():
-    from momoi.channel.napcat import NapCatChannel, NapCatConfig
+    from momoi.channel.onebot import OneBotChannel, OneBotConfig
     from momoi.runtime.tool_contracts.reply import REPLY_TOOL_SPEC
     from momoi.tools.validation import validate_tool_arguments
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt='测试', timezone='UTC', thinking_stages={})
     store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: '')
-    channel = NapCatChannel(NapCatConfig('ws://localhost', '20000', 1, 60, 30, 30, 20))
-    events = [IncomingMessage('one', '101', '第一条', 1, 1, channel='napcat'),
-              IncomingMessage('two', '102', '第二条', 2, 2, channel='napcat')]
+    channel = OneBotChannel(OneBotConfig('ws://localhost', '20000', 1, 60, 30, 30, 20))
+    events = [IncomingMessage('one', '101', '第一条', 1, 1, channel='onebot'),
+              IncomingMessage('two', '102', '第二条', 2, 2, channel='onebot')]
     request = SimpleNamespace(delivery_channel=channel, current_events=events, turn_id='quote', round_number=1)
     async def complete(*args):
         return ProviderResponse([{'type': 'text', 'text': '重点回应\n\n后续补充'}], [])

@@ -16,7 +16,7 @@ from tests.support import config
 def test_multiple_natural_endings_continue_one_turn(tmp_path, phone):
     daemon = MomoiDaemon(replace(config(str(tmp_path)), owner_continuation_seconds=.2))
     if phone:
-        from momoi.channel.napcat.voice_call.channel import QQCallChannel
+        from momoi.channel.onebot.voice_call.channel import QQCallChannel
         channel = QQCallChannel(SimpleNamespace(), '123', object(), tts_enabled=True)
         channel.session_id = 'call'
         channel.status = {'phase': 'connected'}

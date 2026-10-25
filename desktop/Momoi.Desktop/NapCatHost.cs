@@ -69,7 +69,8 @@ internal sealed class NapCatHost(string workspace) : IAsyncDisposable
         botQQ = "";
         if (!File.Exists(SettingsPath) || !File.Exists(Path.Combine(workspace, "config.json"))) return false;
         var saved = JsonSerializer.Deserialize<NapCatSettings>(File.ReadAllText(SettingsPath));
-        var channel = JsonNode.Parse(File.ReadAllText(Path.Combine(workspace, "config.json")))?["channels"]?["enabled"]?["napcat"];
+        var enabled = JsonNode.Parse(File.ReadAllText(Path.Combine(workspace, "config.json")))?["channels"]?["enabled"];
+        var channel = enabled?["onebot"] ?? enabled?["napcat"];
         if (saved is null || channel is null) return false;
         botQQ = channel["bot_qq"]?.GetValue<string>() ?? "";
         return botQQ == saved.BotQQ && channel["url"]?.GetValue<string>() == $"ws://127.0.0.1:{saved.SocketPort}"

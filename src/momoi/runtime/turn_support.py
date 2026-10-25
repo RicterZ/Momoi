@@ -187,14 +187,14 @@ def owner_content_blocks(
         if event.delivery_context.get("channel_notice"):
             opening = "<current_messages>\n" if index == 0 else ""
             source = event.channel + ":" + event.delivery_context["channel_notice"]
-            source_attr = "" if source == "napcat:message_recall" else f" source={quoteattr(source)}"
+            source_attr = "" if source in {"napcat:message_recall", "onebot:message_recall"} else f" source={quoteattr(source)}"
             blocks.append({"type": "text", "text":
                 f'{opening}<event{source_attr}>\n{escape(event.text)}\n</event>\n'})
             continue
         received_at = context_timestamp(event.received_at, timezone)
         opening = "<current_messages>\n" if index == 0 else ""
         message_id = (f"[ID:{escape(event.message_id)}]"
-                      if event.channel == "napcat" and event.message_id else "")
+                      if event.channel == "onebot" and event.message_id else "")
         blocks.append({
             "type": "text",
             "text": f'{opening}[{received_at}]{message_id} {escape(event.text.strip())}',

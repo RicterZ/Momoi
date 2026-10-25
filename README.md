@@ -272,7 +272,7 @@ Open `http://127.0.0.1:8788` and sign in with the Dashboard token from the start
 logs. Connect a model in Settings to use web chat. QQ, WeChat and voice are optional and can be configured later.
 
 For QQ, the same Compose file starts SnowLuma. Open `http://127.0.0.1:6081`,
-scan the login code, then enable SnowLuma QQ in Settings and enter the owner QQ.
+scan the login code, then enable QQ in Settings and enter the owner QQ.
 Leave the token empty. Real-time voice calls still use the existing call bridge.
 The image includes BGE and encodes semantic
 memory in the Momoi process; no separate encoder container or port is needed.

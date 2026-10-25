@@ -230,8 +230,8 @@ def test_old_batched_qq_evidence_retains_native_quote_targets_without_new_column
     from momoi.models import IncomingMessage, AgentReply, MessageRecalled
     path = tmp_path / 'quotes.sqlite3'
     store = Store(path)
-    events = [IncomingMessage('old-one', '101', 'synthetic alpha', 1, 1, channel='napcat'),
-              IncomingMessage('old-two', '102', 'synthetic beta', 2, 2, channel='napcat')]
+    events = [IncomingMessage('old-one', '101', 'synthetic alpha', 1, 1, channel='onebot'),
+              IncomingMessage('old-two', '102', 'synthetic beta', 2, 2, channel='onebot')]
     for event in events:
         store.add_event(event)
     store.commit_turn(events, 'synthetic alpha\nsynthetic beta', AgentReply([]), turn_id='old-turn')
@@ -240,8 +240,8 @@ def test_old_batched_qq_evidence_retains_native_quote_targets_without_new_column
     store.close()
     store = Store(path)
     try:
-        expected = [{'channel': 'napcat', 'message_id': '101', 'text': 'synthetic alpha'},
-                    {'channel': 'napcat', 'message_id': '102', 'text': 'synthetic beta'}]
+        expected = [{'channel': 'onebot', 'message_id': '101', 'text': 'synthetic alpha'},
+                    {'channel': 'onebot', 'message_id': '102', 'text': 'synthetic beta'}]
         assert store.qq_quote_target_available('101')
         assert not store.qq_quote_target_available('unknown')
         assert store.message_quote_targets(identifier) == expected
@@ -253,7 +253,7 @@ def test_old_batched_qq_evidence_retains_native_quote_targets_without_new_column
             'matches': [{'id': identifier, 'turn_id': 'old-turn', 'role': 'user', 'content': 'synthetic alpha'}]}], 3000)
         assert 'turns' not in records[0]
         assert store.conversation_episode('e')['messages'][0]['quote_targets'] == expected
-        store.record_message_recall(MessageRecalled('recall-old', '101', 3, 'napcat'))
+        store.record_message_recall(MessageRecalled('recall-old', '101', 3, 'onebot'))
         assert not store.qq_quote_target_available('101')
         assert store.message_quote_targets(identifier) == expected[1:]
     finally:

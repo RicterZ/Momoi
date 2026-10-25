@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage, OwnerInputStatus, MessageRecalled, MessagePoked
@@ -41,7 +41,7 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(row[0] == 'sent' for row in self.store._db.execute('SELECT state FROM outbox')))
 
     async def test_call_interrupt_preserves_reason_in_owner_turn_and_log(self):
-        from momoi.channel.napcat.voice_call.channel import QQCallChannel
+        from momoi.channel.onebot.voice_call.channel import QQCallChannel
         from types import SimpleNamespace
 
         channel = QQCallChannel(SimpleNamespace(), '123', object(), tts_enabled=True)
@@ -83,7 +83,7 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(directory.cleanup)
         self.daemon = MomoiDaemon(AppConfig(
             providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-            channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+            channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
             system_prompt="test",
             transcript_turns_min=4,
             transcript_turns_max=4,
@@ -100,7 +100,7 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.daemon.channel.poke_owner = AsyncMock()
         self.store.begin_turn("poke-turn", "owner", [])
         for _ in range(2):
-            self.store.queue_progress("poke-turn", "reply-once", ["qq://poke"], "napcat")
+            self.store.queue_progress("poke-turn", "reply-once", ["qq://poke"], "onebot")
         rows = self.store.due_outbox()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].kind, "poke")
@@ -117,27 +117,27 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.committed_reply("poke-turn", "reply-once")["bubbles"], ["qq://poke"])
 
     async def test_owner_poke_reaches_planner_without_cancelling_pending_text(self):
-        self.store.queue_progress("previous", "previous", ["pending reply"], "napcat")
-        await self.daemon._receive(MessagePoked("owner-poke", 2, "napcat", "owner", "assistant"))
+        self.store.queue_progress("previous", "previous", ["pending reply"], "onebot")
+        await self.daemon._receive(MessagePoked("owner-poke", 2, "onebot", "owner", "assistant"))
         update = self.daemon.incoming.get_nowait()
         self.assertEqual(update.delivery_context["channel_notice"], "poke")
         self.assertTrue(self.daemon._owner_message_changed.is_set())
         self.assertEqual([row.text for row in self.store.due_outbox()], ["pending reply"])
-        await self.daemon._receive(MessagePoked("bot-poke", 3, "napcat", "assistant", "owner"))
+        await self.daemon._receive(MessagePoked("bot-poke", 3, "onebot", "assistant", "owner"))
         self.assertTrue(self.daemon.incoming.empty())
         rows = self.store.recent_conversation_messages(10, 10000)
         self.assertEqual([row["content"] for row in rows if row["role"] == "event"],
                          ["【QQ 戳一戳】\n用户戳了我一下。", "【QQ 戳一戳】\n我戳了用户一下。"])
 
     async def test_idle_recall_is_offered_to_planner_as_runtime_event(self):
-        message = IncomingMessage("recall-source", "1", "synthetic request", 1, 1, channel="napcat")
+        message = IncomingMessage("recall-source", "1", "synthetic request", 1, 1, channel="onebot")
         await self.daemon._receive(message)
         self.daemon.incoming.get_nowait()
-        await self.daemon._receive(MessageRecalled("recall-new", "1", 2, "napcat"))
+        await self.daemon._receive(MessageRecalled("recall-new", "1", 2, "onebot"))
         update = self.daemon.incoming.get_nowait()
         self.assertEqual(update.delivery_context["channel_notice"], "message_recall")
         self.assertFalse(self.daemon._message_current(message))
-        self.assertTrue(self.store.message_recalled("napcat", "1"))
+        self.assertTrue(self.store.message_recalled("onebot", "1"))
         self.assertEqual(self.store.pending_events(), [])
 
     async def test_recall_interrupts_active_owner_request_with_runtime_event(self):
@@ -145,10 +145,10 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         async def active():
             entered.set()
             await asyncio.Event().wait()
-        self.daemon.start_active_turn(active(), stage="owner", channel="napcat")
+        self.daemon.start_active_turn(active(), stage="owner", channel="onebot")
         try:
             await entered.wait()
-            await self.daemon._receive(MessageRecalled("active-recall", "1", 2, "napcat"))
+            await self.daemon._receive(MessageRecalled("active-recall", "1", 2, "onebot"))
             update = self.daemon.incoming.get_nowait()
             self.assertEqual(update.delivery_context["channel_notice"], "message_recall")
             self.assertTrue(self.daemon._owner_message_changed.is_set())
@@ -158,7 +158,7 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
             self.daemon.finish_active_turn()
 
     async def test_text_gap_sets_typing_and_clears_it_before_send(self):
-        self.store.queue_progress("typing", "typing", ["first", "second"], "napcat")
+        self.store.queue_progress("typing", "typing", ["first", "second"], "onebot")
         stop = asyncio.Event()
         actions = []
         async def typing(active):
@@ -179,7 +179,7 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
     async def test_new_message_cancels_only_existing_queue_on_its_channel(self):
         self.store.commit_turn(
             [], "", AgentReply(["已发送", "未发送"]),
-            turn_id="old", target_channel="napcat",
+            turn_id="old", target_channel="onebot",
         )
         sent = self.store.due_outbox()[0]
         self.store.mark_sending(sent.id)
@@ -195,15 +195,15 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         )], [("已发送", "delivered"), ("未发送", "failed")])
         self.assertFalse(self.store.mark_sending(sent.id + 1))
 
-        self.store.queue_progress("new", "new", ["新的回复"], "napcat")
+        self.store.queue_progress("new", "new", ["新的回复"], "onebot")
         await self.daemon._receive(self.message)  # Transport redelivery is not new input.
-        await self.daemon._receive(OwnerInputStatus(channel="napcat"))
+        await self.daemon._receive(OwnerInputStatus(channel="onebot"))
         self.assertEqual(
             [row.text for row in self.store.due_outbox()], ["其他渠道", "新的回复"]
         )
 
     async def test_new_message_wakes_gap_and_new_reply_can_send_immediately(self):
-        self.store.queue_progress("old", "old", ["第一条", "第二条", "第三条"], "napcat")
+        self.store.queue_progress("old", "old", ["第一条", "第二条", "第三条"], "onebot")
         waiting = asyncio.Event()
         stop = asyncio.Event()
         sent = []
@@ -226,7 +226,7 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
             try:
                 await asyncio.wait_for(waiting.wait(), timeout=1)
                 await self.daemon._receive(self.message)
-                self.store.queue_progress("new", "new", ["新回复"], "napcat")
+                self.store.queue_progress("new", "new", ["新回复"], "onebot")
                 self.daemon.outbox_changed.set()
                 await asyncio.wait_for(worker, timeout=1)
             finally:
@@ -235,12 +235,12 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent, ["第一条", "新回复"])
 
     async def test_new_message_during_voice_synthesis_prevents_delivery(self):
-        self.store.queue_progress("old", "voice", ["旧语音"], "napcat", voice=True)
+        self.store.queue_progress("old", "voice", ["旧语音"], "onebot", voice=True)
         stop = asyncio.Event()
 
         async def synthesize(_text):
             await self.daemon._receive(self.message)
-            self.store.queue_progress("new", "new", ["新回复"], "napcat")
+            self.store.queue_progress("new", "new", ["新回复"], "onebot")
             return AudioOutput(b"audio", "silk")
 
         async def send(_payload):
@@ -258,7 +258,7 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         )], [("旧语音", "superseded"), ("新回复", "sent")])
 
     async def test_in_flight_send_finishes_but_remaining_bubbles_are_cancelled(self):
-        self.store.queue_progress("old", "old", ["发送中", "排队中"], "napcat")
+        self.store.queue_progress("old", "old", ["发送中", "排队中"], "onebot")
         stop = asyncio.Event()
         sent = []
 
@@ -267,7 +267,7 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
             sent.append(text)
             if text == "发送中":
                 await self.daemon._receive(self.message)
-                self.store.queue_progress("new", "new", ["新回复"], "napcat")
+                self.store.queue_progress("new", "new", ["新回复"], "onebot")
             else:
                 stop.set()
             return "sent"

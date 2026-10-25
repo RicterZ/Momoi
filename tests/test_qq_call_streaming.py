@@ -7,7 +7,7 @@ from aiohttp import ClientSession, web
 from aiohttp.test_utils import TestServer
 
 from momoi.integrations.adapters.fish import FishAudioTTSProvider
-from momoi.channel.napcat.voice_call.broker import MediaBroker
+from momoi.channel.onebot.voice_call.broker import MediaBroker
 
 
 def test_fish_yields_audio_before_response_finishes(caplog):
@@ -49,7 +49,7 @@ def test_fish_yields_audio_before_response_finishes(caplog):
 
 
 def test_broker_plays_before_upload_finishes_and_deduplicates(monkeypatch):
-    from momoi.channel.napcat.voice_call import broker as broker_module
+    from momoi.channel.onebot.voice_call import broker as broker_module
     async def observe(*args):
         return 12
     monkeypatch.setattr(broker_module, 'observe_playback_audio', observe)
@@ -113,7 +113,7 @@ def test_broker_plays_before_upload_finishes_and_deduplicates(monkeypatch):
 
 
 def test_broker_keeps_one_player_per_call_and_interrupts_without_respawn(monkeypatch):
-    from momoi.channel.napcat.voice_call import broker as broker_module
+    from momoi.channel.onebot.voice_call import broker as broker_module
     async def observe(*args):
         return None
     monkeypatch.setattr(broker_module, 'observe_playback_audio', observe)
@@ -231,7 +231,7 @@ def test_windows_adapter_reuses_player_and_reports_speaking_only_for_voice(monke
 def test_playback_observer_ignores_silence_and_cleans_up(monkeypatch, capsys):
     import json
     import time
-    from momoi.channel.napcat.voice_call.broker import observe_playback_audio
+    from momoi.channel.onebot.voice_call.broker import observe_playback_audio
 
     async def scenario():
         class Process:
@@ -271,7 +271,7 @@ def test_playback_observer_ignores_silence_and_cleans_up(monkeypatch, capsys):
 
 def test_hangup_cancels_upstream_stream_while_waiting_for_audio():
     async def scenario():
-        from momoi.channel.napcat.voice_call.channel import QQCallChannel
+        from momoi.channel.onebot.voice_call.channel import QQCallChannel
         from momoi.channel import SendInterrupted
         entered, closed = asyncio.Event(), asyncio.Event()
         class Provider:
@@ -307,7 +307,7 @@ def test_hangup_cancels_upstream_stream_while_waiting_for_audio():
 
 def test_channel_sends_bubbles_as_one_ordered_playback_stream():
     async def scenario():
-        from momoi.channel.napcat.voice_call.channel import QQCallChannel
+        from momoi.channel.onebot.voice_call.channel import QQCallChannel
         calls = []
         uploads = []
 
@@ -341,10 +341,10 @@ def test_channel_sends_bubbles_as_one_ordered_playback_stream():
 
 def test_channel_preserves_synthesis_error_in_streaming_failure(monkeypatch):
     from unittest.mock import AsyncMock
-    monkeypatch.setattr('momoi.channel.napcat.voice_call.speech.asyncio.sleep', AsyncMock())
+    monkeypatch.setattr('momoi.channel.onebot.voice_call.speech.asyncio.sleep', AsyncMock())
 
     async def scenario():
-        from momoi.channel.napcat.voice_call.channel import QQCallChannel
+        from momoi.channel.onebot.voice_call.channel import QQCallChannel
         from momoi.channel import SendRejected
         from momoi.integrations.contracts.tts import TTSError
 
@@ -380,10 +380,10 @@ def test_channel_preserves_synthesis_error_in_streaming_failure(monkeypatch):
 
 def test_bubble_tts_retries_three_times_and_continues_other_bubbles(monkeypatch):
     from unittest.mock import AsyncMock
-    from momoi.channel.napcat.voice_call.speech import bubble_pcm
+    from momoi.channel.onebot.voice_call.speech import bubble_pcm
     from momoi.integrations.contracts.tts import TTSError
     delay = AsyncMock()
-    monkeypatch.setattr('momoi.channel.napcat.voice_call.speech.asyncio.sleep', delay)
+    monkeypatch.setattr('momoi.channel.onebot.voice_call.speech.asyncio.sleep', delay)
     attempts = {}
     class Provider:
         async def stream_pcm(self, text):
@@ -403,7 +403,7 @@ def test_bubble_tts_retries_three_times_and_continues_other_bubbles(monkeypatch)
 
 
 def test_bubble_partial_failure_never_replays_audio_and_continues():
-    from momoi.channel.napcat.voice_call.speech import bubble_pcm
+    from momoi.channel.onebot.voice_call.speech import bubble_pcm
     from momoi.integrations.contracts.tts import TTSError
     calls = []
     class Provider:
@@ -421,7 +421,7 @@ def test_bubble_partial_failure_never_replays_audio_and_continues():
 
 
 def test_phone_prefetch_starts_next_paragraph_before_playback_and_cleans_up():
-    from momoi.channel.napcat.voice_call.speech import BufferedBubbleAudio
+    from momoi.channel.onebot.voice_call.speech import BufferedBubbleAudio
     async def run():
         started = []
         closed = []
@@ -450,7 +450,7 @@ def test_phone_prefetch_starts_next_paragraph_before_playback_and_cleans_up():
 
 
 def test_continuous_phone_audio_waits_for_more_paragraphs_and_keeps_duplicates():
-    from momoi.channel.napcat.voice_call.speech import BufferedBubbleAudio
+    from momoi.channel.onebot.voice_call.speech import BufferedBubbleAudio
     async def run():
         class Provider:
             async def stream_pcm(self, text):
@@ -476,7 +476,7 @@ def test_continuous_phone_audio_waits_for_more_paragraphs_and_keeps_duplicates()
 
 def test_stream_reconnects_after_bridge_drop_without_surfacing_failure():
     async def scenario():
-        from momoi.channel.napcat.voice_call.channel import QQCallChannel
+        from momoi.channel.onebot.voice_call.channel import QQCallChannel
         dropped = asyncio.Event()
         utterances = []
         received = []
@@ -514,7 +514,7 @@ def test_stream_reconnects_after_bridge_drop_without_surfacing_failure():
 
 
 def test_stream_rotates_segments_before_bridge_limits(monkeypatch):
-    import momoi.channel.napcat.voice_call.channel as module
+    import momoi.channel.onebot.voice_call.channel as module
     monkeypatch.setattr(module, 'STREAM_SEGMENT_BYTES', 960)
 
     async def scenario():

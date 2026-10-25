@@ -253,7 +253,7 @@ executors:
 - `${config.owner_id}`——primary Channel 提供的主人标识
 - `${config.channel_url}`——primary Channel 提供的连接 URL（如果有）
 
-已配置插件也会提供各自的命名变量，例如 NapCat 的 `${config.owner_qq}`、`${config.napcat_url}`，以及微信的 `${config.weixin_user_id}`。
+已配置插件也会提供各自的命名变量，例如 QQ 的 `${config.owner_qq}`、`${config.onebot_url}`（`${config.napcat_url}` 仍指向同一地址），以及微信的 `${config.weixin_user_id}`。
 
 模板不能嵌入较大的 token 中。执行器会继承 Momoi 现有的进程环境，因此命令可以从环境变量读取 secret，无需把它放入工作流输入。
 

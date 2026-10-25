@@ -188,8 +188,8 @@ class ProviderFieldsTest(unittest.IsolatedAsyncioTestCase):
         self.manager.save_runtime(
             {
                 "channels": {
-                    "primary": "napcat",
-                    "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}},
+                    "primary": "onebot",
+                    "enabled": {"onebot": {"url": "ws://localhost", "owner_qq": "123"}},
                 }
             },
             self.manager.revision(),

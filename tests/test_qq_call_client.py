@@ -4,8 +4,8 @@ import asyncio
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from momoi.channel.napcat.config import QQCallConfig
-from momoi.channel.napcat.voice_call.client import probe
+from momoi.channel.onebot.config import QQCallConfig
+from momoi.channel.onebot.voice_call.client import probe
 
 
 def test_remote_bridge_probe_authentication_and_readiness():

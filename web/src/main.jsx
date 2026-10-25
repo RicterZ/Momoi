@@ -2619,7 +2619,7 @@ function FlowDeliveries({ deliveries = [] }) {
           <div className="flow-delivery-list">{deliveries.map((delivery, index) => <article className="flow-delivery" key={delivery.id}>
             <span className="flow-delivery-index">{String(index + 1).padStart(2, "0")}</span>
             <div className="flow-delivery-body">
-              <div className="flow-delivery-meta"><span>{({napcat: "QQ", weixin: "微信", qq_call: "QQ 通话"})[delivery.target_channel] || delivery.target_channel} · {({text: "文字", image: "图片", voice: "语音", audio: "音频", file: "文件"})[delivery.kind] || delivery.kind}</span>
+              <div className="flow-delivery-meta"><span>{({onebot: "QQ", napcat: "QQ", weixin: "微信", qq_call: "QQ 通话"})[delivery.target_channel] || delivery.target_channel} · {({text: "文字", image: "图片", voice: "语音", audio: "音频", file: "文件"})[delivery.kind] || delivery.kind}</span>
                 <span className={`flow-delivery-state is-${delivery.state}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"发送失败",superseded:"已取消",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span>
               </div>
               <EmotionContent className="message-content flow-delivery-text" text={delivery.text} />

@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig, EpisodeAnnealingConfig, HeartbeatConfig, NotificationConfig
 from momoi.integrations.models import LLMConfig
 from momoi.runtime import (
@@ -261,7 +261,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 0.1, 1, 30, 30, 20),
+                    channel=OneBotConfig("ws://127.0.0.1", "20000", 0.1, 1, 30, 30, 20),
                     system_prompt="test",
                     transcript_turns_min=4,
                     transcript_turns_max=4,
@@ -284,13 +284,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon._complete_batch_turn = complete  # type: ignore[method-assign]
             worker = asyncio.create_task(daemon._agent_worker(stop))
             first = IncomingMessage(
-                "napcat:first", "first", "第一条", 1, 1, channel="napcat"
+                "napcat:first", "first", "第一条", 1, 1, channel="onebot"
             )
             await daemon._receive(first)
-            first_deadline = daemon._owner_quiet_until["napcat"]
+            first_deadline = daemon._owner_quiet_until["onebot"]
             await asyncio.sleep(0.075)
-            await daemon._receive(OwnerInputStatus("napcat"))
-            extended_deadline = daemon._owner_quiet_until["napcat"]
+            await daemon._receive(OwnerInputStatus("onebot"))
+            extended_deadline = daemon._owner_quiet_until["onebot"]
             self.assertGreater(extended_deadline, first_deadline)
             self.assertLess(extended_deadline - first_deadline, 0.075)
             await asyncio.sleep(
@@ -308,7 +308,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig(
+                    channel=OneBotConfig(
                         "ws://127.0.0.1", "20000", 0.05, 1, 30, 30, 20
                     ),
                     system_prompt="test",
@@ -378,7 +378,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             provider = Provider()
             daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             first = IncomingMessage(
-                "napcat:first", "first", "第一条", 1, 1, channel="napcat"
+                "napcat:first", "first", "第一条", 1, 1, channel="onebot"
             )
             daemon.store.add_event(first)
             turn_id = daemon._turn_id(first.event_id)
@@ -387,11 +387,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
 
             await stale_reply_started.wait()
-            await daemon._receive(OwnerInputStatus("napcat"))
+            await daemon._receive(OwnerInputStatus("onebot"))
             await asyncio.sleep(0.01)
             self.assertFalse(stale_reply_cancelled.is_set())
             second = IncomingMessage(
-                "napcat:second", "second", "第二条", 2, 2, channel="napcat"
+                "napcat:second", "second", "第二条", 2, 2, channel="onebot"
             )
             await daemon._receive(second)
             await asyncio.sleep(0.01)
@@ -413,7 +413,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
+                    channel=OneBotConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                     system_prompt="test",
                     transcript_turns_min=4,
                     transcript_turns_max=4,
@@ -556,7 +556,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig(
+                    channel=OneBotConfig(
                         "ws://127.0.0.1", "20000", 0.01, 1, 30, 30, 20
                     ),
                     system_prompt="test",
@@ -585,7 +585,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     raise
 
             daemon._run_episode_annealing_once = anneal  # type: ignore[method-assign]
-            daemon._touch_owner_activity("napcat")
+            daemon._touch_owner_activity("onebot")
             daemon._episode_annealing_dirty = True
             await asyncio.sleep(0.01)
             self.assertFalse(daemon._episode_annealing_ready())
@@ -601,7 +601,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     "新消息优先",
                     1,
                     1,
-                    channel="napcat",
+                    channel="onebot",
                 )
             )
             await asyncio.wait_for(cancelled.wait(), timeout=1)
@@ -622,7 +622,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     providers=provider_catalog(LLMConfig(
                         "http://127.0.0.1", "test", "test", 100, 0, 1, 0
                     )),
-                    channel=NapCatConfig(
+                    channel=OneBotConfig(
                         "ws://127.0.0.1", "20000", 0.01, 1, 30, 30, 20
                     ),
                     system_prompt="test",
@@ -669,7 +669,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test", transcript_turns_min=4, transcript_turns_max=8,
                 episode_unsummarized_tail_turns=2, memory_results=2,
                 database=Path(directory) / "momoi.sqlite3", log_level="INFO",
@@ -687,7 +687,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 try:
                     command = IncomingMessage(
                         "qq:manual-compact", "manual-compact", " /compact ", 10, 10,
-                        channel="napcat",
+                        channel="onebot",
                     )
                     await daemon._receive(command)
                     await daemon._receive(command)
@@ -710,7 +710,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     transcript_turns_min=4,
                     transcript_turns_max=4,
@@ -727,13 +727,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 "/heartbeat",
                 1,
                 1,
-                channel="napcat",
+                channel="onebot",
             )
             await daemon._receive(command)
             await daemon._receive(command)
 
             self.assertEqual(await daemon.autonomous.get(), AutonomousJob.heartbeat())
-            self.assertEqual(daemon._manual_heartbeat_channel, "napcat")
+            self.assertEqual(daemon._manual_heartbeat_channel, "onebot")
             self.assertTrue(daemon.autonomous.empty())
             self.assertEqual(daemon.store.pending_events(), [])
             self.assertIsNotNone(daemon.store.self_state()["heartbeat_claimed_at"])
@@ -746,7 +746,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     transcript_turns_min=4,
                     transcript_turns_max=4,
@@ -764,7 +764,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 "/reflect",
                 1,
                 1,
-                channel="napcat",
+                channel="onebot",
             )
             now = datetime(2026, 9, 11, 4, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
             with patch("momoi.storage.reflection.reflection_schedule.time.time", return_value=now):
@@ -794,7 +794,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "/reflect",
                         2,
                         2,
-                        channel="napcat",
+                        channel="onebot",
                     )
                 )
             self.assertEqual(
@@ -811,7 +811,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig(
+                    channel=OneBotConfig(
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
                     system_prompt="test",
@@ -933,7 +933,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         1,
                         0,
                     )),
-                    channel=NapCatConfig(
+                    channel=OneBotConfig(
                         "ws://127.0.0.1",
                         "20000",
                         1,
@@ -1020,7 +1020,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     transcript_turns_min=4,
                     transcript_turns_max=4,
@@ -1053,7 +1053,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     transcript_turns_min=4,
                     transcript_turns_max=4,
@@ -1147,7 +1147,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     transcript_turns_min=4,
                     transcript_turns_max=4,
@@ -1173,7 +1173,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     transcript_turns_min=4,
                     transcript_turns_max=4,
@@ -1249,7 +1249,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1484,7 +1484,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1526,7 +1526,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1576,7 +1576,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     with tempfile.TemporaryDirectory() as directory:
                         config = AppConfig(
                             providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                            channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                            channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                             system_prompt="You are Momoi.",
                             transcript_turns_min=4,
                             transcript_turns_max=4,
@@ -1657,7 +1657,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1697,7 +1697,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1726,7 +1726,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     break
                 await asyncio.sleep(0.01)
             self.assertEqual(daemon.store.due_outbox()[0].text, "后台检查完成")
-            self.assertEqual(daemon.store.due_outbox()[0].channel, "napcat")
+            self.assertEqual(daemon.store.due_outbox()[0].channel, "onebot")
             stop.set()
             daemon.agenda_changed.set()
             await worker
@@ -1736,7 +1736,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=12,
                 transcript_turns_max=12,
@@ -1748,7 +1748,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(config)
             install_scripted_replyer(daemon)
             daemon.store.queue_progress(
-                "old-napcat-turn", "old-napcat-call", ["仍在排队"], "napcat"
+                "old-napcat-turn", "old-napcat-call", ["仍在排队"], "onebot"
             )
             daemon.store.queue_progress(
                 "old-weixin-turn", "old-weixin-call", ["微信仍在排队"], "weixin"
@@ -1766,7 +1766,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     "SELECT target_channel, state FROM outbox ORDER BY id"
                 ).fetchall()
             }
-            self.assertEqual(states["napcat"], "superseded")
+            self.assertEqual(states["onebot"], "superseded")
             self.assertEqual(states["weixin"], "pending")
             daemon.store.close()
 
@@ -1774,7 +1774,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1874,7 +1874,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -2088,7 +2088,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         timeout_seconds=1,
                         max_retries=0,
                     )),
-                    channel=NapCatConfig(
+                    channel=OneBotConfig(
                         url=str(napcat_server.make_url("/")).replace(
                             "http://", "ws://"
                         ),
