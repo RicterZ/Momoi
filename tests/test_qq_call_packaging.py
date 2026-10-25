@@ -92,8 +92,8 @@ def test_code_zip_ships_windows_bridge_and_portable_media_worker(tmp_path, monke
     module = load_script('build_release')
     paths = {
         'src/momoi/dashboard/static/index.html': '<html></html>',
-        'src/momoi/channel/napcat/voice_call/audio.py': '# Shared PCM processing',
-        'src/momoi/channel/napcat/voice_call/broker.py': '# Portable media worker',
+        'src/momoi/channel/onebot/voice_call/audio.py': '# Shared PCM processing',
+        'src/momoi/channel/onebot/voice_call/broker.py': '# Portable media worker',
         'desktop/python/backend_entry.py': '# Backend entry',
         'desktop/python/momoi_desktop/backend.py': '# Desktop backend',
         'desktop/python/momoi_desktop/default_emotions/happy.png': 'resource',
@@ -114,8 +114,8 @@ def test_code_zip_ships_windows_bridge_and_portable_media_worker(tmp_path, monke
     archive, manifest = module.build_release(tmp_path / 'output', '1.2.3')
     with zipfile.ZipFile(archive) as bundle:
         assert 'app/qq_call_bridge/windows/start-av-host.ps1' in bundle.namelist()
-        assert 'app/momoi/channel/napcat/voice_call/audio.py' in bundle.namelist()
-        assert 'app/momoi/channel/napcat/voice_call/broker.py' in bundle.namelist()
+        assert 'app/momoi/channel/onebot/voice_call/audio.py' in bundle.namelist()
+        assert 'app/momoi/channel/onebot/voice_call/broker.py' in bundle.namelist()
         for name in ('SOUL', 'PLANNER', 'REPLYER'):
             assert bundle.read(f'app/momoi_desktop/default_prompts/{name}.md') == (
                 tmp_path / f'config.example/prompts/{name}.md').read_bytes()
@@ -130,11 +130,11 @@ def test_linux_broker_imports_with_only_voice_call_package(tmp_path):
     import subprocess
 
     root = Path(__file__).resolve().parents[1]
-    destination = tmp_path / 'momoi/channel/napcat/voice_call'
-    shutil.copytree(root / 'src/momoi/channel/napcat/voice_call', destination)
+    destination = tmp_path / 'momoi/channel/onebot/voice_call'
+    shutil.copytree(root / 'src/momoi/channel/onebot/voice_call', destination)
     subprocess.run([sys.executable, '-I', '-c', '''
 import sys
 sys.path.insert(0, sys.argv[1])
-from momoi.channel.napcat.voice_call.broker import MediaBroker
+from momoi.channel.onebot.voice_call.broker import MediaBroker
 assert MediaBroker('x' * 32).status['phase'] == 'unavailable'
 ''', str(tmp_path)], check=True, capture_output=True, text=True)

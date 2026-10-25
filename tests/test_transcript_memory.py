@@ -149,13 +149,13 @@ def test_shared_workflows_replay_identical_prefix_and_changes(tmp_path):
     from momoi.models import IncomingMessage, AgentReply
     from momoi.config.models import AppConfig
     from momoi.integrations.models import LLMConfig
-    from momoi.channel.napcat import NapCatConfig
+    from momoi.channel.onebot import OneBotConfig
     from momoi.runtime import MomoiDaemon
     from tests.support import provider_catalog
 
     daemon = MomoiDaemon(AppConfig(
         providers=provider_catalog(LLMConfig("http://localhost", "test", "model", 100, 0, 1, 0)),
-        channel=NapCatConfig("ws://localhost", "123", 1, 60, 30, 30, 20),
+        channel=OneBotConfig("ws://localhost", "123", 1, 60, 30, 30, 20),
         system_prompt="test", transcript_turns_min=8, transcript_turns_max=16,
         episode_unsummarized_tail_turns=2, memory_results=2,
         database=tmp_path / "shared.sqlite3", log_level="INFO",

@@ -15,7 +15,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from momoi.tools.builtin import BuiltinTools
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig, ThinkingConfig
 from momoi.contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
@@ -190,7 +190,7 @@ class ProvidersToolsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -277,7 +277,7 @@ class ProvidersToolsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1125,7 +1125,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 providers=provider_catalog(LLMConfig(
                     "http://127.0.0.1", "test", "test", 100, 0, 1, 0, "openai"
                 )),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1196,7 +1196,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 providers=provider_catalog(LLMConfig(
                     "http://127.0.0.1", "test", "test", 100, 0, 1, 0, "openai"
                 )),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,

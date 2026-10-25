@@ -142,7 +142,7 @@ class MomoiDaemon(
         for item in config.channel_configs:
             phone = getattr(item, "voice_call", None)
             if phone is not None and phone.enabled:
-                from ..channel.napcat.voice_call.channel import QQCallChannel
+                from ..channel.onebot.voice_call.channel import QQCallChannel
                 self.channels["qq_call"] = QQCallChannel(phone, item.owner_qq, self.services.asr,
                     tts_enabled=self.services.tts is not None, interrupt=self._interrupt_qq_call)
         emotion_channels = [item for item in self.channels.values()
@@ -151,6 +151,7 @@ class MomoiDaemon(
             item.configure_emotions(self.store.list_emotions)
             item.is_message_recalled = self.store.message_recalled
             item.is_quote_target = self.store.qq_quote_target_available
+            item.is_own_outbound = self.store.owns_outbound_message
         def emotions_changed():
             for item in emotion_channels:
                 item.emotions_changed()

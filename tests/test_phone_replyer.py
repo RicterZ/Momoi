@@ -47,7 +47,7 @@ def test_phone_prompt_and_tool_free_completion(tmp_path, output):
 def test_phone_executor_delivery_and_archive(tmp_path, output, stale):
     from unittest.mock import AsyncMock
     from momoi.runtime import MomoiDaemon
-    from momoi.channel.napcat.voice_call.channel import QQCallChannel
+    from momoi.channel.onebot.voice_call.channel import QQCallChannel
     daemon = MomoiDaemon(config(str(tmp_path)))
     channel = QQCallChannel(SimpleNamespace(), '123', object(), tts_enabled=True)
     channel.session_id = 'call'

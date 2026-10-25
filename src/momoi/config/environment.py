@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Any
 
 from .models import ConfigError
@@ -6,6 +7,25 @@ from .models import ConfigError
 
 def _env(name: str) -> str:
     return os.environ.get(name, "").strip()
+
+
+def _token_file(path: str) -> str:
+    if not path:
+        return ""
+
+
+def _required_token_file(path: str) -> str:
+    try:
+        token = Path(path).read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise ConfigError("MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE is unavailable") from exc
+    if len(token.encode()) < 32:
+        raise ConfigError("MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE must contain a token of at least 32 bytes")
+    return token
+    try:
+        return Path(path).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def _env_bool(name: str) -> bool | None:
@@ -25,12 +45,20 @@ def apply_env_overrides(raw: dict[str, Any]) -> None:
         if value := _env("MOMOI_PRIMARY"):
             channels["primary"] = value
         enabled = channels.get("enabled")
-        napcat = enabled.get("napcat") if isinstance(enabled, dict) else None
-        if isinstance(napcat, dict):
-            if value := _env("MOMOI_NAPCAT_URL"):
-                napcat["url"] = value
+        onebot = enabled.get("onebot") if isinstance(enabled, dict) else None
+        if isinstance(onebot, dict):
             if value := _env("MOMOI_OWNER_QQ"):
-                napcat["owner_qq"] = value
+                onebot["owner_qq"] = value
+            if not str(onebot.get("access_token") or "").strip():
+                token = _token_file(_env("MOMOI_ONEBOT_TOKEN_FILE") or _env("MOMOI_NAPCAT_TOKEN_FILE"))
+                if token:
+                    onebot["access_token"] = token
+            if value := _env("MOMOI_ONEBOT_ACCESS_TOKEN") or _env("MOMOI_NAPCAT_ACCESS_TOKEN"):
+                onebot["access_token"] = value
+            if path := _env("MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE"):
+                voice_call = onebot.get("voice_call")
+                if isinstance(voice_call, dict):
+                    voice_call["bridge_token"] = _required_token_file(path)
 
     if value := _env("MOMOI_TIMEZONE"):
         raw["timezone"] = value

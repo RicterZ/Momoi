@@ -289,7 +289,7 @@ class TranscriptStore:
 
     def replyer_dialogue_rows(self, channel: str, *, limit: int = 96, turn_limit: int | None = None):
         """Actual messages, including the active turn; never journal/tool text."""
-        channels = ("napcat", "qq_call") if channel in {"napcat", "qq_call"} else (channel, channel)
+        channels = ("onebot", "qq_call") if channel in {"onebot", "qq_call"} else (channel, channel)
         turn_filter = ""
         turn_args = ()
         if turn_limit:

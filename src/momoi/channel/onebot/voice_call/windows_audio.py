@@ -22,7 +22,7 @@ class DeferredWindowsAudio:
     def read_device_ids(self):
         try:
             value = json.loads(self.config_path.read_text(encoding="utf-8"))
-            options = value.get("channels", {}).get("enabled", {}).get("napcat", {}).get("voice_call", {})
+            options = value.get("channels", {}).get("enabled", {}).get("onebot", {}).get("voice_call", {})
             return {key: options.get(key, "") for key in ("input_device", "output_device")}
         except FileNotFoundError:
             return {}

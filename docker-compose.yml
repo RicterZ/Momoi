@@ -1,8 +1,43 @@
 services:
+  snowluma:
+    image: ${SNOWLUMA_IMAGE:-motricseven7/snowluma:v2.2.0}
+    container_name: ${SNOWLUMA_CONTAINER:-snowluma}
+    restart: unless-stopped
+    shm_size: 1gb
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 1048576
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      VNC_PASSWD: ${VNC_PASSWD:-}
+      SNOWLUMA_UID: ${SNOWLUMA_UID:-1000}
+      SNOWLUMA_GID: ${SNOWLUMA_GID:-1000}
+      SNOWLUMA_WEBUI_HOST: 0.0.0.0
+      SNOWLUMA_WEBUI_PORT: 5099
+      SNOWLUMA_LOG_LEVEL: ${SNOWLUMA_LOG_LEVEL:-info}
+      SNOWLUMA_SCREEN: ${SNOWLUMA_SCREEN:-1920x1080x24}
+      SNOWLUMA_HOOK_AUTOLOAD: ${SNOWLUMA_HOOK_AUTOLOAD:-1}
+      SNOWLUMA_QQ_FLAGS: "${SNOWLUMA_QQ_FLAGS:---disable-gpu --disable-software-rasterizer --disable-gpu-compositing}"
+    ports:
+      - "127.0.0.1:${NOVNC_PORT:-6081}:6081"
+      - "127.0.0.1:${SNOWLUMA_WEBUI_HOST_PORT:-5099}:5099"
+    volumes:
+      - snowluma-data:/app/data
+      - qq-client-config:/app/.config
+      - qq-client-data:/app/.local/share
+
   momoi:
     image: ricterz/momoi:latest
     container_name: momoi
     restart: unless-stopped
+    depends_on:
+      snowluma:
+        condition: service_started
     extra_hosts:
       - host.docker.internal:host-gateway
     environment:
@@ -13,3 +48,8 @@ services:
       - "${MOMOI_DASHBOARD_PORT:-8788}:8788"
     volumes:
       - ${MOMOI_WORKSPACE:-${HOME}/.momoi}:/home/momoi/.momoi
+
+volumes:
+  snowluma-data:
+  qq-client-config:
+  qq-client-data:

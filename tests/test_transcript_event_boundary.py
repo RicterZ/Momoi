@@ -1,7 +1,7 @@
 """Non-LLM events and unfinished episode summaries must not erase context."""
 import json
 
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage
@@ -31,7 +31,7 @@ def add_turn(store, turn_id, text, at, *, native=True, event=False):
 def test_poke_without_exchange_preserves_earlier_native_dialogue(tmp_path):
     daemon = MomoiDaemon(AppConfig(
         providers=provider_catalog(LLMConfig('http://localhost', 'test', 'model', 100, 0, 1, 0)),
-        channel=NapCatConfig('ws://localhost', '123', 1, 60, 30, 30, 20),
+        channel=OneBotConfig('ws://localhost', '123', 1, 60, 30, 30, 20),
         system_prompt='test', transcript_turns_min=8, transcript_turns_max=8,
         episode_unsummarized_tail_turns=2, memory_results=2,
         database=tmp_path / 'store.sqlite3', log_level='INFO',
@@ -88,7 +88,7 @@ def test_episode_index_keeps_pending_and_split_topics_without_duplicate_summarie
 def test_failed_turn_without_exchange_preserves_recent_dialogue(tmp_path):
     daemon = MomoiDaemon(AppConfig(
         providers=provider_catalog(LLMConfig('http://localhost', 'test', 'model', 100, 0, 1, 0)),
-        channel=NapCatConfig('ws://localhost', '123', 1, 60, 30, 30, 20),
+        channel=OneBotConfig('ws://localhost', '123', 1, 60, 30, 30, 20),
         system_prompt='test', transcript_turns_min=8, transcript_turns_max=8,
         episode_unsummarized_tail_turns=2, memory_results=2,
         database=tmp_path / 'store.sqlite3', log_level='INFO',

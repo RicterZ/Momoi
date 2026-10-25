@@ -82,8 +82,8 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 
 ## Fish Audio 语音合成
 
-TTS 默认关闭，关闭时不暴露 `send_voice`。启用后微信和 NapCat 请求使用相同的语音工具 schema，
-保留工具前缀缓存。harness 只允许支持语音发送的频道（目前为 NapCat）执行。不会修改提示词，也不会强制
+TTS 默认关闭，关闭时不暴露 `send_voice`。启用后微信和 QQ（OneBot）请求使用相同的语音工具 schema，
+保留工具前缀缓存。harness 只允许支持语音发送的频道（目前为 QQ OneBot）执行。不会修改提示词，也不会强制
 “语音输入用语音回复”的规则。
 
 合并到工作区 `providers.yaml` 的对应字段：
@@ -142,13 +142,13 @@ Dashboard 模式修改后自动应用，内部可通过 `daemon.bubble_delivery.
 工具等待合成完成后才入队或暂存通知；失败时返回工具错误，建议模型用 `send_bubbles` 降级文字。
 成功调用的返回结构与 `send_bubbles` 一致。
 outbox 只持久化原文和语音投递标记；合成音频通过有容量上限的内存缓存交给投递 worker，
-再以 base64 交给 NapCat。
-Momoi 不保存音频文件或音频数据库字段；NapCat 自身的临时文件行为由其服务实现决定。
+再以 base64 交给 OneBot 网关。
+Momoi 不保存音频文件或音频数据库字段；网关自身的临时文件行为由其实现决定。
 重启或缓存淘汰后，未发送的消息根据原文重新合成；恢复期间合成失败会标记投递失败。
 Weixin 的工具 schema 保持一致，harness 拒绝执行 `send_voice`；直接内部调用返回 `voice_not_supported`。
 Owner、Heartbeat、Webhook、Goal、后续回复工作流均支持语音；Goal 沿用原有通知调度规则。
 
-NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进入数据库和 transcript。
+QQ 和微信的语音转写前统一添加 `[语音消息] `，随后进入数据库和 transcript。
 普通文字不加标记，无法转写的语音占位内容也带此标记。
 
 ## 时区
@@ -167,10 +167,10 @@ NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进�
 
 ## 入站语音识别
 
-NapCat 按消息 ID 调用 `fetch_ptt_text` 转写收到的 QQ 语音，需要支持该接口的版本
-（已验证 4.18.19；[上游实现](https://github.com/NapNeko/NapCatQQ/pull/1837)）。
-QQ 可能异步生成文字，接口拒绝或返回空文字时会分别等待 2、4 秒重试两次，
-整个转写过程受 `send_timeout_seconds` 限制。失败时保留 `[QQ 语音消息暂时无法转写]` 提示。
+QQ 语音按消息 ID 调用 `fetch_ptt_text` 转写。NapCat 4.18.19 起支持
+（[上游实现](https://github.com/NapNeko/NapCatQQ/pull/1837)），SnowLuma 使用同一个动作，
+并在 QQ 推出文字前最多等待 20 秒。Momoi 这次调用至少等待 25 秒，避免和网关同时到点。
+接口拒绝或返回空文字时会分别等待 2、4 秒重试两次。失败时保留 `[QQ 语音消息暂时无法转写]` 提示。
 微信直接使用渠道提供的转写文字。两者均无需单独配置识别服务或凭据，
 语音合成开关只控制发送语音。
 
@@ -179,9 +179,9 @@ QQ 可能异步生成文字，接口拒绝或返回空文字时会分别等待 2
 ```json
 {
   "channels": {
-    "primary": "napcat",
+    "primary": "onebot",
     "enabled": {
-      "napcat": {
+      "onebot": {
         "url": "ws://127.0.0.1:3001",
         "owner_qq": "100000000",
         "quiet_seconds": 6,
@@ -209,11 +209,13 @@ QQ 可能异步生成文字，接口拒绝或返回空文字时会分别等待 2
 | `primary` | 是 | — | 用于出站投递的渠道名称 |
 | `enabled` | 是 | — | 渠道名称与配置对象；dashboard 设置阶段允许为空，否则必须包含 `primary` |
 
-### NapCat
+### OneBot
+
+QQ 渠道键是 `onebot`。已有配置里的 `napcat` 会在读取时改成 `onebot`。Docker 网关是 SnowLuma，Windows 内置组件仍是 NapCat，两边都走这个协议。
 
 | 字段 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `url` | 是 | — | NapCat WebSocket URL |
+| `url` | 是 | — | OneBot WebSocket URL |
 | `owner_qq` | 是 | — | 仅含数字的主人 QQ 号 |
 | `quiet_seconds` | 否 | `1` | 收到主人最新消息后的等待时间 |
 | `max_batch_seconds` | 否 | `60` | 消息批次的最长等待时间 |
@@ -600,8 +602,9 @@ Goal 的 `send_bubbles` / `send_voice` 调用后立即进入通用发送流程�
 
 | 环境变量 | 配置字段 |
 | --- | --- |
-| `MOMOI_NAPCAT_URL` | `channels.enabled.napcat.url` |
-| `MOMOI_OWNER_QQ` | `channels.enabled.napcat.owner_qq` |
+| `MOMOI_OWNER_QQ` | `channels.enabled.onebot.owner_qq` |
+| `MOMOI_ONEBOT_TOKEN_FILE` | `channels.enabled.onebot.access_token`（仅当配置里的令牌为空）。旧名 `MOMOI_NAPCAT_TOKEN_FILE` 仍可用 |
+| `MOMOI_ONEBOT_ACCESS_TOKEN` | `channels.enabled.onebot.access_token`。旧名 `MOMOI_NAPCAT_ACCESS_TOKEN` 仍可用 |
 | `MOMOI_PRIMARY` | `channels.primary` |
 | `MOMOI_TIMEZONE` | `timezone` |
 | `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |

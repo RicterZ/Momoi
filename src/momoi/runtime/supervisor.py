@@ -34,10 +34,10 @@ class RuntimeSupervisor:
         self.budget_guard = None
 
     def status(self):
-        from ..channel.napcat import NapCatChannel
+        from ..channel.onebot import OneBotChannel
 
         channels = getattr(self.daemon, "channels", {})
-        qq = channels.get("napcat")
+        qq = channels.get("onebot")
         return {
             "state": self.state,
             "error": self.error,
@@ -46,7 +46,7 @@ class RuntimeSupervisor:
             "applied_revision": self.applied_revision,
             "observed_revision": self.observed_revision,
             "saved_revision": self.configuration.revision(),
-            "qq_connected": qq.connected if isinstance(qq, NapCatChannel) else False,
+            "qq_connected": qq.connected if isinstance(qq, OneBotChannel) else False,
             "qq_call": self.voice_status(channels),
             "budget": self.budget_status(),
         }

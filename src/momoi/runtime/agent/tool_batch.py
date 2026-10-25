@@ -555,17 +555,17 @@ class ToolBatchExecutor:
                                                     call.arguments, "external_effect")
                 if result is None:
                     try:
-                        if request.delivery_channel.name != "napcat":
+                        if request.delivery_channel.name != "onebot":
                             raise ValueError("此工具仅适用于当前 QQ 私聊")
                         outbox_id, message_id = self.store.recallable_delivery(
-                            "napcat", call.arguments.get("outbox_id"))
-                        if self.store.message_recall_recorded("napcat", message_id):
+                            "onebot", call.arguments.get("outbox_id"))
+                        if self.store.message_recall_recorded("onebot", message_id):
                             result = {"ok": True, "message_id": message_id, "recalled": True}
                         else:
                             await request.delivery_channel.recall_message(message_id)
                             self.store.record_message_recall(MessageRecalled(
-                                f"napcat:sent:recall:{message_id}", message_id, time.time(),
-                                "napcat", "assistant"))
+                                f"onebot:sent:recall:{message_id}", message_id, time.time(),
+                                "onebot", "assistant"))
                             result = {"ok": True, "message_id": message_id, "recalled": True}
                         external_effect = True
                     except Exception as error:

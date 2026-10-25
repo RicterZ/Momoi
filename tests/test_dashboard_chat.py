@@ -60,7 +60,7 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
         for payload in ([], {'text': '', 'id': 'valid_id'}, {'text': 'x' * 10001, 'id': 'valid_id'}, {'text': 'hi', 'id': '../bad'}):
             self.assertEqual((await self.client.post('/api/chat/messages', json=payload)).status, 400)
         now = time.time()
-        for channel in ('dashboard', 'napcat'):
+        for channel in ('dashboard', 'onebot'):
             for index in range(3):
                 self.store.add_event(IncomingMessage(f'{channel}:{index}', str(index), f'{channel} {index}', now, now, channel=channel))
         first = await (await self.client.get('/api/chat/messages?limit=2')).json()
@@ -79,7 +79,7 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
         now = time.time()
         for index, payload in enumerate(("", "not-json", '{"channel":')):
             event_id = f'legacy:{index}'
-            self.store.add_event(IncomingMessage(event_id, str(index), 'legacy', now, now, channel='napcat'))
+            self.store.add_event(IncomingMessage(event_id, str(index), 'legacy', now, now, channel='onebot'))
             self.store._db.execute('UPDATE events SET payload_json=? WHERE id=?', (payload, event_id))
         self.store._db.commit()
         response = await self.client.get('/api/chat/messages')
@@ -147,14 +147,14 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
     async def test_dashboard_replies_use_shared_owner_context(self):
         from dataclasses import replace
         import json
-        from momoi.channel.napcat import NapCatConfig
+        from momoi.channel.onebot import OneBotConfig
         from momoi.integrations.models import LLMConfig
         from momoi.models import ProviderResponse, ToolCall
         from momoi.runtime.daemon import MomoiDaemon
         from tests.support import provider_catalog, reply_call, install_scripted_replyer, with_owner_recall
         config = ConfigurationManager(self.store._workspace / 'config.json').validate()
         config = replace(config, providers=provider_catalog(LLMConfig('http://127.0.0.1', 'test', 'test', 100, 0, 1, 0)),
-                         channel=NapCatConfig('ws://127.0.0.1', '20000', 1, 60, 30, 30, 20))
+                         channel=OneBotConfig('ws://127.0.0.1', '20000', 1, 60, 30, 30, 20))
         daemon = MomoiDaemon(config)
         self.addCleanup(daemon.store.close)
         install_scripted_replyer(daemon)
@@ -164,7 +164,7 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
             async def complete(self, _, messages, tools, **kwargs):
                 self.calls += 1
                 if self.calls == 1:
-                    case.assertIn('当前消息渠道：napcat（QQ 私聊）', json.dumps(messages, ensure_ascii=False))
+                    case.assertIn('当前消息渠道：onebot（QQ 私聊）', json.dumps(messages, ensure_ascii=False))
                 if self.calls == 3:
                     case.assertIn('当前消息渠道：dashboard（网页聊天）', json.dumps(messages, ensure_ascii=False))
                     case.assertIn('昨日在 QQ 聊的游戏', json.dumps(messages, ensure_ascii=False))
@@ -173,7 +173,7 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
                     return ProviderResponse([], [reply_call(f'reply-{self.calls}', bubbles=['老师，我记得！'])])
                 return ProviderResponse([], [ToolCall(f'end-{self.calls}', 'end_turn', {'mood': {'decision': 'unchanged'}})])
         daemon.provider = with_owner_recall(Provider())
-        for index, (channel, text) in enumerate((('napcat', '昨日在 QQ 聊的游戏'), ('dashboard', '接着聊吧'))):
+        for index, (channel, text) in enumerate((('onebot', '昨日在 QQ 聊的游戏'), ('dashboard', '接着聊吧'))):
             stamp = time.time()
             event = IncomingMessage(f'{channel}:context', f'context{index}', text, stamp, stamp, channel=channel)
             daemon.store.add_event(event)

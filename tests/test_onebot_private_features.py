@@ -5,15 +5,15 @@ from unittest.mock import AsyncMock, call
 from zoneinfo import ZoneInfo
 
 from momoi.channel import SendRejected
-from momoi.channel.napcat import NapCatChannel, NapCatConfig
-from momoi.channel.napcat.favorites import FavoriteStickers
+from momoi.channel.onebot import OneBotChannel, OneBotConfig
+from momoi.channel.onebot.favorites import FavoriteStickers
 from momoi.models import AgentReply, IncomingMessage, MessageRecalled
 from momoi.runtime.turn_support import owner_content_blocks
 from momoi.storage.store import Store
 
 
 def channel():
-    return NapCatChannel(NapCatConfig('ws://localhost', '20000', 1, 60, 30, 30, 20))
+    return OneBotChannel(OneBotConfig('ws://localhost', '20000', 1, 60, 30, 30, 20))
 
 
 def test_favorite_sync_uploads_to_napcat_and_reuses_qq_resource(tmp_path):
@@ -129,21 +129,42 @@ def test_only_owner_and_bot_recall_events_are_received():
     asyncio.run(scenario())
 
 
+def test_snowluma_self_recall_uses_sent_receipt_instead_of_peer_user_id():
+    async def scenario():
+        item = channel()
+        receive = AsyncMock()
+        base = {'post_type': 'notice', 'notice_type': 'friend_recall',
+                'self_id': 30000, 'message_id': 123, 'time': 10, 'user_id': 20000}
+        item._sent_message_ids.add('123')
+        await item._handle_payload(base, receive)
+        assert receive.await_args.args[0].author == 'assistant'
+        receive.reset_mock()
+        item._sent_message_ids.clear()
+        item.is_own_outbound = lambda channel, message_id: channel == 'onebot' and message_id == '123'
+        await item._handle_payload(base, receive)
+        assert receive.await_args.args[0].author == 'assistant'
+        receive.reset_mock()
+        item.is_own_outbound = lambda channel, message_id: False
+        await item._handle_payload({**base, 'message_id': 456}, receive)
+        assert receive.await_args.args[0].author == 'owner'
+    asyncio.run(scenario())
+
+
 def test_recall_is_durable_event_without_rewriting_owner_text(tmp_path):
     store = Store(tmp_path / 'store.sqlite3', workspace=tmp_path)
     try:
-        original = IncomingMessage('original', '123', 'synthetic request', 1, 1, channel='napcat')
+        original = IncomingMessage('original', '123', 'synthetic request', 1, 1, channel='onebot')
         store.add_event(original)
         store.commit_turn([original], original.text, AgentReply([]), turn_id='owner-turn')
-        notice = MessageRecalled('recall:123', '123', 2, 'napcat')
+        notice = MessageRecalled('recall:123', '123', 2, 'onebot')
         update = store.record_message_recall(notice)
         assert update is not None
-        assert store.message_recalled('napcat', '123')
+        assert store.message_recalled('onebot', '123')
         assert store.record_message_recall(notice) is None
         rows = store.recent_conversation_messages(10, 10000)
         assert rows[0]['role'] == 'user' and rows[0]['content'] == 'synthetic request'
         assert rows[-1]['role'] == 'event'
-        assert rows[-1]['event_source'] == 'napcat:message_recall'
+        assert rows[-1]['event_source'] == 'onebot:message_recall'
         assert 'synthetic request' not in rows[-1]['content']
         assert '用户撤回了消息' in rows[-1]['content']
         assert '老师' not in rows[-1]['content']
@@ -164,11 +185,11 @@ def test_recall_cancels_only_reply_to_that_message(tmp_path):
     store = Store(tmp_path / 'store.sqlite3', workspace=tmp_path)
     try:
         for num in (1, 2):
-            event = IncomingMessage(f'event-{num}', str(num), 'synthetic', num, num, channel='napcat')
+            event = IncomingMessage(f'event-{num}', str(num), 'synthetic', num, num, channel='onebot')
             store.add_event(event)
             store.commit_turn([event], event.text, AgentReply([f'reply-{num}']),
-                              turn_id=f'turn-{num}', target_channel='napcat')
-        assert store.cancel_pending_outbox('napcat', 'message_recalled', source_message_id='1') == 1
+                              turn_id=f'turn-{num}', target_channel='onebot')
+        assert store.cancel_pending_outbox('onebot', 'message_recalled', source_message_id='1') == 1
         rows = store._db.execute('SELECT text, state FROM outbox ORDER BY id').fetchall()
         assert [tuple(row) for row in rows] == [('reply-1', 'superseded'), ('reply-2', 'pending')]
     finally:
@@ -178,25 +199,25 @@ def test_recall_cancels_only_reply_to_that_message(tmp_path):
 def test_delivery_receipt_identifies_only_bot_messages_on_target_channel(tmp_path):
     store = Store(tmp_path / 'store.sqlite3', workspace=tmp_path)
     try:
-        store.commit_turn([], '', AgentReply(['synthetic reply']), turn_id='sent', target_channel='napcat')
+        store.commit_turn([], '', AgentReply(['synthetic reply']), turn_id='sent', target_channel='onebot')
         row = store.due_outbox()[0]
         store.mark_sending(row.id)
         store.record_delivery_receipt(row.id, '456')
         store.mark_sent(row.id)
-        assert store.recallable_delivery('napcat') == (row.id, '456')
-        assert store.recallable_delivery('napcat', row.id) == (row.id, '456')
+        assert store.recallable_delivery('onebot') == (row.id, '456')
+        assert store.recallable_delivery('onebot', row.id) == (row.id, '456')
         try:
             store.recallable_delivery('other', row.id)
         except ValueError:
             pass
         else:
             raise AssertionError('Cannot recall a message from another channel')
-        notice = MessageRecalled('bot-recall', '456', 3, 'napcat', 'assistant')
+        notice = MessageRecalled('bot-recall', '456', 3, 'onebot', 'assistant')
         assert store.record_message_recall(notice) is not None
-        assert not store.message_recalled('napcat', '456')
-        assert store.message_recall_recorded('napcat', '456')
+        assert not store.message_recalled('onebot', '456')
+        assert store.message_recall_recorded('onebot', '456')
         assert store.record_message_recall(MessageRecalled('duplicate-bot-recall', '456', 4,
-                                                         'napcat', 'assistant')) is None
+                                                         'onebot', 'assistant')) is None
     finally:
         store.close()
 
@@ -247,19 +268,19 @@ def test_poke_is_archived_and_rendered_as_event_without_forcing_a_reply(tmp_path
     from momoi.models import MessagePoked
     store = Store(tmp_path / 'store.sqlite3', workspace=tmp_path)
     try:
-        notice = MessagePoked('poke-1', 3, 'napcat', 'owner', 'assistant')
+        notice = MessagePoked('poke-1', 3, 'onebot', 'owner', 'assistant')
         update = store.record_message_poke(notice)
         assert update.text == '【QQ 戳一戳】\n用户戳了我一下。'
         assert store.record_message_poke(notice) is None
         blocks = owner_content_blocks([update], lambda _: [], ZoneInfo('UTC'))
         text = ''.join(b['text'] for b in blocks)
-        assert '<event source="napcat:poke">' in text
+        assert '<event source="onebot:poke">' in text
         assert '<message ' not in text
         rows = store.recent_conversation_messages(10, 10000)
         assert len(rows) == 1 and rows[0]['role'] == 'event'
-        assert rows[0]['event_source'] == 'napcat:poke'
+        assert rows[0]['event_source'] == 'onebot:poke'
         assert store.pending_events() == []
-        self_poke = store.record_message_poke(MessagePoked('poke-2', 4, 'napcat', 'owner', 'owner'))
+        self_poke = store.record_message_poke(MessagePoked('poke-2', 4, 'onebot', 'owner', 'owner'))
         assert self_poke.text == '【QQ 戳一戳】\n用户戳了自己一下。'
     finally:
         store.close()
@@ -277,7 +298,7 @@ def test_active_poke_calls_private_api_with_configured_owner_only():
 def test_received_file_downloads_to_workspace_and_renders_local_path(tmp_path):
     from aiohttp import web, ClientSession
     from pathlib import Path
-    from momoi.channel.napcat import load_config, render_segments
+    from momoi.channel.onebot import load_config, render_segments
 
     async def scenario():
         app = web.Application()
@@ -291,36 +312,38 @@ def test_received_file_downloads_to_workspace_and_renders_local_path(tmp_path):
         port = site._server.sockets[0].getsockname()[1]
         try:
             config = load_config({'url': 'ws://localhost', 'owner_qq': '20000'}, tmp_path)
-            item = NapCatChannel(config)
+            item = OneBotChannel(config)
             item._request_action = AsyncMock(return_value={'data': {'url': f'http://127.0.0.1:{port}/asset'}})
             async with ClientSession() as session:
                 item._session = session
                 segments = await item._enrich_segments(({'type': 'file', 'data': {
-                    'file': '../../sample.txt', 'file_id': 'synthetic-id'}},))
+                    'file': '../../sample.txt', 'file_id': 'synthetic-id', 'file_hash': 'abc'}},))
                 path = Path(segments[0]['data']['file'])
                 assert path.read_bytes() == b'synthetic text'
                 assert path.suffix == '.txt'
                 assert len(path.stem) == 32
                 assert segments[0]['data']['name'] == 'sample.txt'
-                assert path.is_relative_to(tmp_path / 'channel/napcat/files')
+                assert path.is_relative_to(tmp_path / 'channel/onebot/files')
                 assert str(path) in render_segments(segments)
-                item._request_action.assert_awaited_once_with('get_private_file_url', {'file_id': 'synthetic-id'})
+                item._request_action.assert_awaited_once_with(
+                    'get_private_file_url',
+                    {'file_id': 'synthetic-id', 'user_id': '20000', 'file_hash': 'abc'})
                 for malicious in ('../..', '../../evil.txt:stream', '../../evil.ＴＸＴ', 'evil.abcdefghijk', '/tmp/test.TXT'):
                     received = await item._enrich_segments(({'type': 'file', 'data': {
                         'file': malicious, 'url': f'http://127.0.0.1:{port}/asset'}},))
                     safe_path = Path(received[0]['data']['file'])
-                    assert safe_path.parent == tmp_path / 'channel/napcat/files'
+                    assert safe_path.parent == tmp_path / 'channel/onebot/files'
                     assert len(safe_path.stem) == 32
                     from urllib.parse import unquote
                     assert unquote(safe_path.suffix) == Path(malicious).suffix
                     assert received[0]['data']['original_extension'] == Path(malicious).suffix
                     assert safe_path.read_bytes() == b'synthetic text'
-                before = set((tmp_path / 'channel/napcat/files').iterdir())
+                before = set((tmp_path / 'channel/onebot/files').iterdir())
                 object.__setattr__(config, 'media_max_bytes', 2)
                 failed = await item._enrich_segments(({'type': 'file', 'data': {
                     'file': 'large.txt', 'url': f'http://127.0.0.1:{port}/asset'}},))
                 assert 'source=unavailable' in render_segments(failed)
-                assert set((tmp_path / 'channel/napcat/files').iterdir()) == before
+                assert set((tmp_path / 'channel/onebot/files').iterdir()) == before
         finally:
             await runner.cleanup()
     asyncio.run(scenario())
@@ -344,7 +367,7 @@ def test_video_is_sent_as_file_and_quote_segments_remain_in_same_message(tmp_pat
 
 
 def test_current_qq_messages_expose_quote_ids():
-    events = [IncomingMessage('one', '42', '第一条', 1, 1, channel='napcat'),
-              IncomingMessage('two', '43', '第二条', 2, 2, channel='napcat')]
+    events = [IncomingMessage('one', '42', '第一条', 1, 1, channel='onebot'),
+              IncomingMessage('two', '43', '第二条', 2, 2, channel='onebot')]
     text = ''.join(block['text'] for block in owner_content_blocks(events, lambda _: [], ZoneInfo('UTC')))
     assert '[ID:42]' in text and '[ID:43]' in text

@@ -15,14 +15,14 @@ from momoi.channel import (
     NotConnected,
     SendRejected,
 )
-from momoi.channel.napcat import (
-    NapCatChannel,
-    NapCatConfig,
+from momoi.channel.onebot import (
+    OneBotChannel,
+    OneBotConfig,
     image_blocks,
     incoming_segments,
     render_segments,
 )
-from momoi.channel.napcat.channel import VOICE_UNAVAILABLE_TEXT
+from momoi.channel.onebot.channel import VOICE_UNAVAILABLE_TEXT
 from momoi.channel.weixin import WeixinConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
@@ -47,13 +47,13 @@ from tests.support import with_owner_recall
 class MessagingTest(unittest.TestCase):
     def test_napcat_converts_voice_bubbles_before_emitting_message(self) -> None:
         async def run() -> None:
-            client = NapCatChannel(
-                NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+            client = OneBotChannel(
+                OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
             )
             requests: list[tuple[str, dict[str, object]]] = []
 
             async def request(
-                action: str, params: dict[str, object]
+                action: str, params: dict[str, object], *, timeout: float | None = None
             ) -> dict[str, object]:
                 requests.append((action, params))
                 return {
@@ -88,10 +88,10 @@ class MessagingTest(unittest.TestCase):
                 ({"type": "text", "data": {"text": VOICE_MESSAGE_PREFIX + "语音转写结果"}},),
             )
 
-            disabled = NapCatChannel(
-                NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+            disabled = OneBotChannel(
+                OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             )
-            async def unavailable(action, params):
+            async def unavailable(action, params, *, timeout=None):
                 raise NotConnected("offline")
 
             disabled._request_action = unavailable
@@ -109,8 +109,8 @@ class MessagingTest(unittest.TestCase):
 
     def test_napcat_forwards_only_owner_input_status_notices(self) -> None:
         async def run() -> None:
-            client = NapCatChannel(
-                NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+            client = OneBotChannel(
+                OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             )
             accepted: list[IncomingMessage | OwnerInputStatus] = []
 
@@ -144,7 +144,7 @@ class MessagingTest(unittest.TestCase):
 
             self.assertEqual(
                 accepted,
-                [OwnerInputStatus("napcat"), OwnerInputStatus("napcat")],
+                [OwnerInputStatus("onebot"), OwnerInputStatus("onebot")],
             )
 
         asyncio.run(run())
@@ -194,7 +194,7 @@ class MessagingTest(unittest.TestCase):
         self.assertIn("戳一戳", rendered)
 
     def test_materializes_remote_napcat_images_within_limit(self) -> None:
-        parsed = NapCatConfig.from_mapping(
+        parsed = OneBotConfig.from_mapping(
             {
                 "url": "ws://127.0.0.1",
                 "owner_qq": "20000",
@@ -227,8 +227,8 @@ class MessagingTest(unittest.TestCase):
                 return Response()
 
         async def run() -> None:
-            client = NapCatChannel(
-                NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+            client = OneBotChannel(
+                OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             )
             client._session = Session()  # type: ignore[assignment]
             segments = await client._enrich_segments(
@@ -247,8 +247,8 @@ class MessagingTest(unittest.TestCase):
             )
             self.assertIn("source=embedded", render_segments(segments))
 
-            limited = NapCatChannel(
-                NapCatConfig(
+            limited = OneBotChannel(
+                OneBotConfig(
                     "ws://127.0.0.1",
                     "20000",
                     1,
@@ -334,8 +334,8 @@ class MessagingTest(unittest.TestCase):
 
     def test_napcat_resolves_quoted_message_content_and_images(self) -> None:
         async def run() -> None:
-            client = NapCatChannel(
-                NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+            client = OneBotChannel(
+                OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             )
             accepted: list[IncomingMessage] = []
             case = self
@@ -430,8 +430,8 @@ class MessagingTest(unittest.TestCase):
 
     def test_napcat_resolves_forward_nodes_and_images(self) -> None:
         async def run() -> None:
-            client = NapCatChannel(
-                NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+            client = OneBotChannel(
+                OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             )
             client._ready.set()
 
@@ -491,14 +491,14 @@ class MessagingTest(unittest.TestCase):
                     1,
                     2,
                     segments,
-                    channel="napcat",
+                    channel="onebot",
                 )
             )
             store.close()
             store = Store(path)
             restored = store.pending_events()[0]
             self.assertEqual(restored.segments, segments)
-            self.assertEqual(restored.channel, "napcat")
+            self.assertEqual(restored.channel, "onebot")
             store.close()
 
     def test_validates_terminal_response_tool(self) -> None:
@@ -674,7 +674,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig(
+                    channel=OneBotConfig(
                         "ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20
                     ),
                     system_prompt="You are Momoi.",
@@ -752,7 +752,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig(
+                    channel=OneBotConfig(
                         "ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20
                     ),
                     system_prompt="You are Momoi.",
@@ -837,7 +837,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -892,7 +892,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -946,7 +946,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     transcript_turns_min=4,
                     transcript_turns_max=4,
@@ -1007,7 +1007,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1046,7 +1046,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1159,7 +1159,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             second_asset.write_bytes(b"image")
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1270,7 +1270,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1339,8 +1339,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.close()
 
     async def test_napcat_sends_emotion_as_base64_image_segment(self) -> None:
-        client = NapCatChannel(
-            NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+        client = OneBotChannel(
+            OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
         )
         payloads: list[dict[str, object]] = []
 
@@ -1375,8 +1375,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(base64.b64decode(encoded), b"image-bytes")
 
     async def test_napcat_sends_rich_segments_and_forward_messages(self) -> None:
-        client = NapCatChannel(
-            NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+        client = OneBotChannel(
+            OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
         )
         payloads: list[dict[str, object]] = []
 
@@ -1467,7 +1467,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_channels_share_context_but_reply_to_the_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            napcat = NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+            napcat = OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             weixin = WeixinConfig.from_mapping({}, root)
             daemon = MomoiDaemon(
                 AppConfig(
@@ -1514,7 +1514,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ]
                         case.assertEqual(
                             channel["enum"],  # type: ignore[index]
-                            ["napcat", "weixin", "dashboard"],
+                            ["onebot", "weixin", "dashboard"],
                         )
                         case.assertNotIn("default", channel)
                     if self.calls in {1, 3, 4, 5}:
@@ -1528,7 +1528,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "bubbles": [text],
                         }
                         if self.calls == 3:
-                            arguments["channel"] = "napcat"
+                            arguments["channel"] = "onebot"
                         return ProviderResponse(
                             [],
                             [
@@ -1557,7 +1557,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     "QQ 上说过的事",
                     now,
                     now,
-                    channel="napcat",
+                    channel="onebot",
                 ),
                 IncomingMessage(
                     "weixin:2",
@@ -1579,40 +1579,40 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [(row["text"], row["target_channel"]) for row in rows],
                 [
-                    ("QQ 回复", "napcat"),
-                    ("进度 1", "napcat"),
+                    ("QQ 回复", "onebot"),
+                    ("进度 1", "onebot"),
                     ("进度 2", "weixin"),
                     ("微信回复", "weixin"),
                 ],
             )
             qq_update = IncomingMessage(
-                "napcat:update", "3", "QQ 补充", 3, 3, channel="napcat"
+                "napcat:update", "3", "QQ 补充", 3, 3, channel="onebot"
             )
             weixin_update = IncomingMessage(
                 "weixin:update", "4", "微信另聊", 4, 4, channel="weixin"
             )
             daemon.incoming.put_nowait(qq_update)
             daemon.incoming.put_nowait(weixin_update)
-            self.assertEqual(daemon.owner_updates.drain([], "napcat"), [qq_update])
+            self.assertEqual(daemon.owner_updates.drain([], "onebot"), [qq_update])
             self.assertEqual(daemon._deferred_incoming.popleft(), weixin_update)
 
             older_qq = IncomingMessage(
-                "napcat:older", "5", "较早的 QQ 补充", 5, 5, channel="napcat"
+                "napcat:older", "5", "较早的 QQ 补充", 5, 5, channel="onebot"
             )
             newer_qq = IncomingMessage(
-                "napcat:newer", "6", "较新的 QQ 补充", 6, 6, channel="napcat"
+                "napcat:newer", "6", "较新的 QQ 补充", 6, 6, channel="onebot"
             )
             daemon._deferred_incoming.append(older_qq)
             daemon.incoming.put_nowait(newer_qq)
             self.assertEqual(
-                daemon.owner_updates.drain([], "napcat"), [older_qq, newer_qq]
+                daemon.owner_updates.drain([], "onebot"), [older_qq, newer_qq]
             )
             daemon.store.close()
 
     async def test_disconnected_channel_does_not_block_another_channel(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            napcat = NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+            napcat = OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             weixin = WeixinConfig.from_mapping({}, root)
             daemon = MomoiDaemon(
                 AppConfig(
@@ -1635,7 +1635,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 "",
                 AgentReply(["QQ pending"]),
                 turn_id="qq",
-                target_channel="napcat",
+                target_channel="onebot",
             )
             daemon.store.commit_turn(
                 [],
@@ -1655,7 +1655,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 stop.set()
                 return "sent"
 
-            daemon.channels["napcat"].send_message = offline  # type: ignore[method-assign]
+            daemon.channels["onebot"].send_message = offline  # type: ignore[method-assign]
             daemon.channels["weixin"].send_message = online  # type: ignore[method-assign]
             await daemon._outbox_worker(stop)
 
@@ -1665,5 +1665,5 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     "SELECT target_channel, state FROM outbox"
                 ).fetchall()
             )
-            self.assertEqual(states, {"napcat": "pending", "weixin": "sent"})
+            self.assertEqual(states, {"onebot": "pending", "weixin": "sent"})
             daemon.store.close()

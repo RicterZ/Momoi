@@ -965,9 +965,6 @@
 .settings-secret-input input {
   padding-right: 48px;
 }
-.settings-secret-input.is-saved input {
-  padding-right: 88px;
-}
 .settings-secret-actions {
   position: absolute;
   inset: 5px 5px 5px auto;
@@ -977,9 +974,6 @@
 }
 .settings-secret-actions .settings-reveal {
   position: static;
-}
-.settings-secret-actions .settings-text-button {
-  padding-inline: 2px;
 }
 
 /* Shared footer buttons keep the dashboard's dark outline and blue shadow. */

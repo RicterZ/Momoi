@@ -32,9 +32,9 @@ def _config(directory: Path, thinking: str | None = None) -> Path:
     write_app_config(path, {
                 "providers": "providers.yaml",
                 "channels": {
-                    "primary": "napcat",
+                    "primary": "onebot",
                     "enabled": {
-                        "napcat": {"url": "ws://localhost", "owner_qq": "1"},
+                        "onebot": {"url": "ws://localhost", "owner_qq": "1"},
                     },
                 },
                 "context": {},

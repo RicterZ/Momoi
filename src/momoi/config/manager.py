@@ -65,7 +65,7 @@ def managed_qq_call(app):
             raise ValueError("invalid managed connection")
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         raise ConfigError("desktop voice-call connection metadata is invalid") from None
-    channel = app.get("channels", {}).get("enabled", {}).get("napcat")
+    channel = app.get("channels", {}).get("enabled", {}).get("onebot")
     if isinstance(channel, dict):
         previous = channel.get("voice_call", {})
         channel["voice_call"] = {**previous, "bridge_url": address, "bridge_token": token}
@@ -145,6 +145,8 @@ class ConfigurationManager:
         if not isinstance(raw, dict):
             raise ConfigError("config.json must be an object")
         remove_retired_thinking_stages(raw)
+        from .loading import migrate_qq_channel
+        migrate_qq_channel(raw)
         return managed_qq_call(raw)
 
     def _provider_path(self, raw):
@@ -260,7 +262,7 @@ class ConfigurationManager:
             "desktop_qq_call_managed": bool(os.environ.get("MOMOI_QQ_CALL_MANAGED")),
             "revision": self.revision(),
             "providers": copy.deepcopy(providers),
-            "app": redact(app_values),
+            "app": copy.deepcopy(app_values),
             "app_fields": app_fields,
             "adapters": adapter_schemas(),
             "validation_error": problem,
@@ -279,7 +281,7 @@ class ConfigurationManager:
                 }
                 for capability, binding in providers.get("bindings", {}).items()
             },
-            "model_providers": redact(self.model_providers(providers)),
+            "model_providers": self.model_providers(providers),
             "active_model_provider": providers.get("bindings", {}).get("llm", {}).get("service", ""),
             "image_model_provider": providers.get("bindings", {}).get("vision", {}).get("service", ""),
         }

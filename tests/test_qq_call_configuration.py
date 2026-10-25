@@ -1,11 +1,11 @@
 import pytest
-from momoi.channel.napcat.config import NapCatConfig, QQCallConfig
+from momoi.channel.onebot.config import OneBotConfig, QQCallConfig
 from momoi.config.manager import redact, restore_secrets
 from momoi.integrations.registry import adapter_definition
 
 
 def test_call_settings_default_and_secret_roundtrip():
-    config = NapCatConfig.from_mapping({'url': 'ws://localhost', 'owner_qq': '123456'})
+    config = OneBotConfig.from_mapping({'url': 'ws://localhost', 'owner_qq': '123456'})
     assert not config.voice_call.enabled
     value = {'enabled': True, 'bridge_url': 'http://localhost:6112', 'bridge_token': 'a' * 64}
     parsed = QQCallConfig.from_mapping(value)
@@ -36,7 +36,7 @@ def test_phone_requires_its_own_token_and_preserves_both_secrets():
     channel = {'url': 'ws://localhost', 'owner_qq': '123456', 'access_token': token,
                'voice_call': {'enabled': True, 'bridge_url': 'http://localhost:6112', 'bridge_token': ''}}
     with pytest.raises(ValueError):
-        NapCatConfig.from_mapping(channel)
+        OneBotConfig.from_mapping(channel)
     channel['voice_call']['bridge_token'] = token
     masked = redact(channel)
     assert masked['access_token'] == {'$secret': 'keep'}
@@ -44,4 +44,4 @@ def test_phone_requires_its_own_token_and_preserves_both_secrets():
     assert restore_secrets(masked, channel) == channel
     independent = 'independent-secret-' * 3
     channel['voice_call']['bridge_token'] = independent
-    assert NapCatConfig.from_mapping(channel).voice_call.bridge_token == independent
+    assert OneBotConfig.from_mapping(channel).voice_call.bridge_token == independent

@@ -6,7 +6,7 @@ EN | [中文](./README.zh-CN.md)
 
 Momoi brings conversation, memory, tools, scheduled work, external events, mood,
 and autonomous time into one continuous runtime. It currently connects through
-QQ (NapCat) and WeChat, uses Anthropic Messages-compatible or OpenAI
+QQ (OneBot) and WeChat, uses Anthropic Messages-compatible or OpenAI
 Chat Completions-compatible models, and can extend its abilities through MCP.
 
 Momoi's focus is not merely giving an LLM a character. `SOUL.md` defines who
@@ -52,7 +52,7 @@ background maintenance uses the same database and is scheduled separately.
 flowchart TB
   subgraph triggers["Channels and triggers"]
     direction LR
-    chat["QQ (NapCat) / WeChat"]
+    chat["QQ (OneBot) / WeChat"]
     webhook["Webhook events"]
     clock["Goals / Heartbeats"]
     chat ~~~ webhook ~~~ clock
@@ -236,9 +236,9 @@ edited in the Dashboard.
 
 | Area | Current behavior |
 | --- | --- |
-| Private chat | One owner across QQ (NapCat) and WeChat; replies return to the originating channel and proactive messages use the configured primary channel |
+| Private chat | One owner across QQ (OneBot) and WeChat; replies return to the originating channel and proactive messages use the configured primary channel |
 | Conversation | Message batching, quoted/forwarded content, media handling, natural multi-bubble delivery, optional image reactions, and valid silence |
-| Voice calls | Real-time QQ calls through NapCat, with Sidecar responses and tool execution, streaming speech, and interruption support on Windows and Linux |
+| Voice calls | Real-time QQ calls through the Windows NapCat client, plus an opt-in SnowLuma overlay on Linux, with Sidecar responses and tool execution, streaming speech, and interruption support |
 | Speech recognition | Choose Tencent Cloud ASR or optional local CPU streaming ASR with Sherpa; Linux bundles the model for in-process inference, and Windows installs the model as an optional component |
 | Context | Native shared transcript, on-demand recall, background Episode archiving and relationships, triggered memory injection, and bounded model input |
 | Tools | Built-in file/HTTP tools plus dynamically discovered MCP servers and per-server tool allowlists |
@@ -259,7 +259,7 @@ your model through the first-run Dashboard guide. Message channels are optional;
 
 ### Docker Compose
 
-The published `docker-compose.yml` starts Momoi. No model keys,
+The published `docker-compose.yml` starts Momoi and SnowLuma. No model keys,
 channel configuration, or existing workspace files are required. Install Docker
 with Compose v2, then start:
 
@@ -271,8 +271,10 @@ docker compose -f docker-compose.yml logs momoi
 Open `http://127.0.0.1:8788` and sign in with the Dashboard token from the startup
 logs. Connect a model in Settings to use web chat. QQ, WeChat and voice are optional and can be configured later.
 
-For QQ, deploy NapCat separately and enter its reachable OneBot WebSocket URL
-and the owner QQ in Momoi's Settings. The image includes BGE and encodes semantic
+For QQ, the same Compose file starts SnowLuma. Open `http://127.0.0.1:6081`,
+scan the login code, then enable QQ in Settings, set the OneBot address to `ws://snowluma:3001/`, enter the owner QQ, and paste the OneBot access token from the SnowLuma WebUI.
+The experimental [SnowLuma voice-call overlay](infra/snowluma-call/README.md) reuses the existing media pipeline; native amd64 call verification is still required.
+The image includes BGE and encodes semantic
 memory in the Momoi process; no separate encoder container or port is needed.
 
 The workspace is persisted in `~/.momoi` by default and initialized by `momoi`;

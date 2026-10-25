@@ -1,4 +1,4 @@
-// Configuration snapshots redact stored secrets with {$secret: "keep"}.
+// Accept strings, environment references, and legacy secret placeholders.
 export function hasModelApiKey(data) {
   const key = data?.capabilities?.llm?.options?.api_key;
   return (typeof key === "string" && key.trim().length > 0)
@@ -9,6 +9,6 @@ export function hasMessageChannel(data) {
   const channels = data?.app?.channels;
   const channel = channels?.enabled?.[channels.primary];
   if (!channel) return false;
-  if (channels.primary === "napcat") return Boolean(String(channel.owner_qq || "").trim() && String(channel.url || "").trim());
+  if (channels.primary === "onebot") return Boolean(String(channel.owner_qq || "").trim() && String(channel.url || "").trim());
   return true;
 }

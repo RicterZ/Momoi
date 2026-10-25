@@ -296,19 +296,19 @@ def register_configuration_routes(app, configuration, runtime):
             raise web.HTTPNotFound()
         def read():
             app = configuration.read_app()
-            voice = app.get("channels", {}).get("enabled", {}).get("napcat", {}).get("voice_call", {})
+            voice = app.get("channels", {}).get("enabled", {}).get("onebot", {}).get("voice_call", {})
             # Native routing needs no provider validation, MCP parsing, or credentials.
             options = {key: voice.get(key, default) for key, default in (
                 ("enabled", False), ("input_device", ""), ("output_device", ""))}
             return {"revision": configuration.revision(), "app": {
-                "channels": {"enabled": {"napcat": {"voice_call": options}}}}}
+                "channels": {"enabled": {"onebot": {"voice_call": options}}}}}
         return web.json_response(await asyncio.to_thread(read))
 
     async def qq_call_devices(request):
         if not os.environ.get("MOMOI_QQ_CALL_MANAGED"):
             raise web.HTTPNotFound()
         from pathlib import Path
-        from ..channel.napcat.voice_call.windows_audio import read_device_catalog
+        from ..channel.onebot.voice_call.windows_audio import read_device_catalog
         try:
             return web.json_response(await read_device_catalog(Path(__file__).resolve().parents[2] / "qq_call_bridge"))
         except (OSError, ImportError, RuntimeError) as error:
@@ -322,13 +322,13 @@ def register_configuration_routes(app, configuration, runtime):
         if any(not isinstance(item, str) for item in selected.values()):
             raise web.HTTPBadRequest(text="设备标识无效")
         from pathlib import Path
-        from ..channel.napcat.voice_call.windows_audio import read_device_catalog
+        from ..channel.onebot.voice_call.windows_audio import read_device_catalog
         catalog = await read_device_catalog(Path(__file__).resolve().parents[2] / "qq_call_bridge")
         for key, group in (("input_device", "inputs"), ("output_device", "outputs")):
             if selected[key] and selected[key] not in {item["id"] for item in catalog[group]}:
                 raise web.HTTPBadRequest(text="所选音频设备不可用，请刷新设备列表")
         current = configuration.read_app()
-        channel = current.get("channels", {}).get("enabled", {}).get("napcat")
+        channel = current.get("channels", {}).get("enabled", {}).get("onebot")
         if not isinstance(channel, dict):
             raise web.HTTPBadRequest(text="请先在 QQ 设置中启用 QQ 渠道")
         channel["voice_call"] = {**channel.get("voice_call", {}), **selected}
@@ -342,11 +342,11 @@ def register_configuration_routes(app, configuration, runtime):
         return web.json_response(result)
 
     async def test_qq_call(request):
-        from ..channel.napcat.config import QQCallConfig
+        from ..channel.onebot.config import QQCallConfig
         from ..config.manager import restore_secrets
-        from ..channel.napcat.voice_call.client import probe
+        from ..channel.onebot.voice_call.client import probe
         value = await body(request)
-        channel = configuration.read_app().get("channels", {}).get("enabled", {}).get("napcat", {})
+        channel = configuration.read_app().get("channels", {}).get("enabled", {}).get("onebot", {})
         previous = channel.get("voice_call", {})
         try:
             options = restore_secrets(value, previous)
@@ -393,10 +393,11 @@ def register_configuration_routes(app, configuration, runtime):
     app.router.add_put("/api/settings/providers", save)
     app.router.add_put("/api/settings/model-providers", save)
     app.router.add_patch("/api/settings/configuration/app", save)
-    app.router.add_get("/api/settings/channels/napcat/voice-call/audio-configuration", qq_call_audio_configuration)
-    app.router.add_get("/api/settings/channels/napcat/voice-call/devices", qq_call_devices)
-    app.router.add_put("/api/settings/channels/napcat/voice-call/devices", save_qq_call_devices)
-    app.router.add_post("/api/settings/channels/napcat/voice-call/test", test_qq_call)
+    for channel_name in ("onebot", "napcat"):
+        app.router.add_get(f"/api/settings/channels/{channel_name}/voice-call/audio-configuration", qq_call_audio_configuration)
+        app.router.add_get(f"/api/settings/channels/{channel_name}/voice-call/devices", qq_call_devices)
+        app.router.add_put(f"/api/settings/channels/{channel_name}/voice-call/devices", save_qq_call_devices)
+        app.router.add_post(f"/api/settings/channels/{channel_name}/voice-call/test", test_qq_call)
     app.router.add_get("/api/settings/runtime", status)
     app.router.add_post("/api/settings/apply", apply)
     app.router.add_post("/api/settings/channels/weixin/login", start_login)

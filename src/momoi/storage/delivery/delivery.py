@@ -137,6 +137,18 @@ class DeliveryStore:
             raise ValueError("没有可撤回的已发送消息")
         return int(row['id']), str(json.loads(row['payload_json'])['_delivery_receipt']['message_id'])
 
+    def owns_outbound_message(self, channel: str, message_id: str) -> bool:
+        if not message_id:
+            return False
+        row = self._db.execute(
+            """SELECT 1 FROM outbox
+               WHERE target_channel=? AND state='sent'
+                 AND CAST(json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE 'null' END, '$._delivery_receipt.message_id') AS TEXT)=?
+               LIMIT 1""",
+            (channel, str(message_id)),
+        ).fetchone()
+        return row is not None
+
     def mark_ambiguous(self, outbox_id: int, attempts: int, error: str) -> None:
         state = "ambiguous" if attempts < 2 else "failed"
         with self._db:

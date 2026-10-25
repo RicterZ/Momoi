@@ -92,7 +92,9 @@ def prepare_configured_media(config_path):
         from momoi.config.manager import ConfigurationManager
         manager = ConfigurationManager(config_path)
         app = manager.read_app()
-        voice = app.get("channels", {}).get("enabled", {}).get("napcat", {}).get("voice_call", {})
+        enabled = app.get("channels", {}).get("enabled", {})
+        qq = enabled.get("onebot") or enabled.get("napcat") or {}
+        voice = qq.get("voice_call", {})
         catalog = manager.read_providers()
         binding = catalog.get("bindings", {}).get("tts", {})
         service = catalog.get("services", {}).get(binding.get("service"), {})

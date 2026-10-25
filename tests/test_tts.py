@@ -170,8 +170,8 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
         raw = {
             "providers": "providers.yaml",
             "channels": {
-                "primary": "napcat",
-                "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}},
+                "primary": "onebot",
+                "enabled": {"onebot": {"url": "ws://localhost", "owner_qq": "123"}},
             },
             "context": {},
             "storage": {"database": "data/momoi.sqlite3"},

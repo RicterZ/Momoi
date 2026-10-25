@@ -19,7 +19,7 @@ class QQCallConfig:
     def from_mapping(cls, value):
         if not isinstance(value, dict) or value.keys() - {"enabled", "bridge_url", "bridge_token", "request_timeout_seconds",
                                                           "input_device", "output_device", "half_duplex", "half_duplex_tail_ms"}:
-            raise ValueError("invalid napcat voice_call configuration")
+            raise ValueError("invalid onebot voice_call configuration")
         enabled = value.get("enabled", False)
         if type(enabled) is not bool:
             raise ValueError("voice_call.enabled must be boolean")
@@ -49,8 +49,8 @@ class QQCallConfig:
 
 
 @dataclass(frozen=True)
-class NapCatConfig:
-    plugin: ClassVar[str] = "napcat"
+class OneBotConfig:
+    plugin: ClassVar[str] = "onebot"
     url: str
     owner_qq: str
     quiet_seconds: float
@@ -67,7 +67,7 @@ class NapCatConfig:
     voice_call: QQCallConfig = QQCallConfig()
 
     @classmethod
-    def from_mapping(cls, value: object) -> "NapCatConfig":
+    def from_mapping(cls, value: object) -> "OneBotConfig":
         if not isinstance(value, dict):
             raise ValueError("channel settings must be a table/object")
         owner_qq = str(value.get("owner_qq") or "")

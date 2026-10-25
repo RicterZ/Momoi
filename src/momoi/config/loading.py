@@ -22,6 +22,18 @@ from .models import (
 from .validation import boolean, clock, integer, mapping, nonnegative, positive
 
 
+def migrate_qq_channel(raw: dict) -> None:
+    """The QQ channel is the OneBot protocol, whether the gateway is NapCat or SnowLuma."""
+    channels = raw.get("channels")
+    if not isinstance(channels, dict):
+        return
+    enabled = channels.get("enabled")
+    if isinstance(enabled, dict) and "napcat" in enabled and "onebot" not in enabled:
+        enabled["onebot"] = enabled.pop("napcat")
+    if channels.get("primary") == "napcat":
+        channels["primary"] = "onebot"
+
+
 def remove_retired_thinking_stages(raw: dict) -> None:
     thinking = raw.get("thinking")
     stages = thinking.get("stages") if isinstance(thinking, dict) else None
@@ -67,6 +79,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
 
     if providers is None:
         providers = resolve_provider_config(raw, config_path)
+    migrate_qq_channel(raw)
     apply_env_overrides(raw)
 
     try:

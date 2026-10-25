@@ -9,9 +9,9 @@
   },
   "timezone": "UTC",
   "channels": {
-    "primary": "napcat",
+    "primary": "onebot",
     "enabled": {
-      "napcat": {
+      "onebot": {
         "url": "ws://127.0.0.1:3001",
         "owner_qq": "123456789",
         "bot_qq": "",

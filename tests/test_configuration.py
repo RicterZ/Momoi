@@ -9,10 +9,11 @@ import asyncio
 
 from momoi.__main__ import parse_args
 from momoi.tools.agenda import AgendaTools
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.channel.weixin import WeixinConfig, create_channel as create_weixin_channel
 from momoi.channel.wechaty import WechatyConfig, create_channel as create_wechaty_channel
 from momoi.config.loading import load_config
+from momoi.config.environment import apply_env_overrides
 from momoi.config.models import ConfigError, DashboardConfig
 from momoi.mcp.config import load_mcp_servers
 from momoi.models import (
@@ -24,14 +25,35 @@ from momoi.storage import Store
 
 def _napcat_channels() -> dict[str, object]:
     return {
-        "primary": "napcat",
+        "primary": "onebot",
         "enabled": {
-            "napcat": {"url": "ws://localhost", "owner_qq": "123"},
+            "onebot": {"url": "ws://localhost", "owner_qq": "123"},
         },
     }
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_snowluma_call_token_file_overrides_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            token_file = Path(directory) / "control.token"
+            token_file.write_text("x" * 64)
+            config = _napcat_channels()
+            config["enabled"]["onebot"]["voice_call"] = {
+                "enabled": True,
+                "bridge_url": "http://snowluma:6112",
+                "bridge_token": "old-token-value-that-is-at-least-32-bytes",
+            }
+            with patch.dict("os.environ", {"MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE": str(token_file)}):
+                apply_env_overrides({"channels": config})
+            self.assertEqual(config["enabled"]["onebot"]["voice_call"]["bridge_token"], "x" * 64)
+
+    def test_snowluma_call_token_file_must_exist_and_be_valid(self) -> None:
+        config = _napcat_channels()
+        config["enabled"]["onebot"]["voice_call"] = {"enabled": True}
+        with patch.dict("os.environ", {"MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE": "/missing/token"}):
+            with self.assertRaisesRegex(ConfigError, "MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE is unavailable"):
+                apply_env_overrides({"channels": config})
+
     def test_wechaty_is_an_independent_channel(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = WechatyConfig.from_mapping({"owner_alias": "Momoi主人"}, Path(directory))
@@ -54,9 +76,9 @@ class ConfigurationTest(unittest.TestCase):
             value = {
                 "providers": "providers.yaml",
                 "channels": {
-                    "primary": "napcat",
+                    "primary": "onebot",
                     "enabled": {
-                        "napcat": {"url": "ws://localhost", "owner_qq": "123"},
+                        "onebot": {"url": "ws://localhost", "owner_qq": "123"},
                         "weixin": {},
                     },
                 },
@@ -66,7 +88,7 @@ class ConfigurationTest(unittest.TestCase):
             }
             write_app_config(path, value)
             config = load_config(path)
-            self.assertIsInstance(config.channel, NapCatConfig)
+            self.assertIsInstance(config.channel, OneBotConfig)
             self.assertEqual(config.summary_results, 8)
             self.assertEqual(config.transcript_turns_min, 32)
             self.assertEqual(config.transcript_turns_max, 80)
@@ -80,7 +102,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(config.current_state.max_seconds, 180)
             self.assertEqual(
                 [type(item) for item in config.channel_configs],
-                [NapCatConfig, WeixinConfig],
+                [OneBotConfig, WeixinConfig],
             )
 
             value["context"]["episode_raw_tail_turns"] = 9
@@ -159,7 +181,7 @@ class ConfigurationTest(unittest.TestCase):
                 },
             )
             config = load_config(path)
-            self.assertIsInstance(config.channel, NapCatConfig)
+            self.assertIsInstance(config.channel, OneBotConfig)
             self.assertEqual(config.channel.owner_qq, "123")
             self.assertFalse(config.reflection.enabled)
             self.assertEqual(config.reflection.at, "03:00")
@@ -184,7 +206,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(load_config(path).heartbeat_prompt, "")
 
             legacy = json.loads(path.read_text())
-            legacy["napcat"] = legacy.pop("channels")["enabled"]["napcat"]
+            legacy["onebot"] = legacy.pop("channels")["enabled"]["onebot"]
             write_app_config(path, legacy)
             with self.assertRaisesRegex(ConfigError, "unknown configuration field"):
                 load_config(path)
@@ -221,9 +243,9 @@ class ConfigurationTest(unittest.TestCase):
                 {
                     "providers": "providers.yaml",
                     "channels": {
-                        "primary": "napcat",
+                        "primary": "onebot",
                         "enabled": {
-                            "napcat": {
+                            "onebot": {
                                 "url": "ws://localhost",
                                 "owner_qq": "123",
                             },
@@ -250,6 +272,7 @@ class ConfigurationTest(unittest.TestCase):
                     "MOMOI_LLM_BASE_URL": "https://llm.example",
                     "MOMOI_LLM_API_KEY": "sk-from-env",
                     "MOMOI_LLM_MODEL": "env-model",
+                    "MOMOI_ONEBOT_URL": "ws://snowluma:3001",
                     "MOMOI_NAPCAT_URL": "ws://napcat:3001",
                     "MOMOI_OWNER_QQ": "999",
                     "MOMOI_PRIMARY": "weixin",
@@ -263,11 +286,11 @@ class ConfigurationTest(unittest.TestCase):
             ):
                 config = load_config(path)
             self.assertEqual(config.channel.plugin, "weixin")
-            napcat = next(
-                item for item in config.channel_configs if item.plugin == "napcat"
+            onebot = next(
+                item for item in config.channel_configs if item.plugin == "onebot"
             )
-            self.assertEqual(napcat.url, "ws://napcat:3001")
-            self.assertEqual(napcat.owner_qq, "999")
+            self.assertEqual(onebot.url, "ws://localhost")
+            self.assertEqual(onebot.owner_qq, "999")
             self.assertEqual(config.timezone, "Asia/Shanghai")
             self.assertEqual(config.dashboard.token, "env-dash")
             self.assertTrue(config.webhooks.enabled)

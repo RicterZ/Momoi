@@ -9,7 +9,7 @@ from momoi.storage import Store
 def test_reply_waits_for_partial_delivery_and_cancellation(tmp_path):
     store = Store(tmp_path / 'db')
     store.begin_turn('turn', 'owner', [])
-    store.queue_progress('turn', 'reply', ['第一句', '第二句'], 'napcat')
+    store.queue_progress('turn', 'reply', ['第一句', '第二句'], 'onebot')
     delivery = BubbleDelivery(store, {}, DeliveryPolicy(SimpleNamespace(), store), asyncio.Event())
 
     async def run():
@@ -21,7 +21,7 @@ def test_reply_waits_for_partial_delivery_and_cancellation(tmp_path):
         store.mark_sent(first.id)
         await asyncio.sleep(0)
         assert not task.done()
-        store.cancel_pending_outbox('napcat', 'owner_message_superseded_outbox')
+        store.cancel_pending_outbox('onebot', 'owner_message_superseded_outbox')
         result = await asyncio.wait_for(task, 1)
         assert result['state'] == 'interrupted'
         assert result['bubbles'] == ['第一句']
@@ -36,7 +36,7 @@ def test_reply_waits_for_partial_delivery_and_cancellation(tmp_path):
 def test_reply_uncertain_and_timeout_never_claim_delivery(tmp_path):
     store = Store(tmp_path / 'db')
     store.begin_turn('turn', 'owner', [])
-    store.queue_progress('turn', 'reply', ['不确定的一句'], 'napcat')
+    store.queue_progress('turn', 'reply', ['不确定的一句'], 'onebot')
     delivery = BubbleDelivery(store, {}, DeliveryPolicy(SimpleNamespace(), store), asyncio.Event())
     try:
         result = asyncio.run(delivery.wait_reply('turn', 'reply', timeout=0))

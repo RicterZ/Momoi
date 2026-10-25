@@ -112,7 +112,7 @@ def test_reply_archive_ids_are_local_to_executor_and_include_followups(tmp_path)
         for turn, text in [('owner', '已开始'), ('followup', '已完成')]:
             if turn == 'followup':
                 store.begin_turn(turn, 'reply_followup', ['owner'])
-            store.queue_progress(turn, 'same-id', [text], 'napcat')
+            store.queue_progress(turn, 'same-id', [text], 'onebot')
             outbox = store._db.execute('SELECT id FROM outbox WHERE turn_id=?', (turn,)).fetchone()[0]
             with store._db:
                 store._db.execute("INSERT INTO messages(turn_id,role,content,created_at,source_event_ids_json,outbox_id,delivery_state) VALUES ('owner','assistant',?,2,'[]',?,'delivered')", (text, outbox))

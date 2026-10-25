@@ -126,9 +126,9 @@ class Replyer(ReplyerBase):
             raise ValueError("invalid reply mode")
         quote_id = call.arguments.get("reply_to_message_id")
         if quote_id is not None:
-            if mode != "text" or request.delivery_channel.name != "napcat":
+            if mode != "text" or request.delivery_channel.name != "onebot":
                 raise ValueError("quote replies require QQ text mode")
-            current_target = any(event.message_id == quote_id and event.channel == "napcat"
+            current_target = any(event.message_id == quote_id and event.channel == "onebot"
                        and not event.delivery_context.get("channel_notice")
                        and request.delivery_channel.message_current(event)
                        for event in request.current_events)
@@ -171,7 +171,7 @@ class Replyer(ReplyerBase):
                 for action in response.tool_calls:
                     if action.name != "qq_poke" or action.argument_error or action.arguments:
                         result = {"ok": False, "error": "invalid_poke_call"}
-                    elif request.delivery_channel.name != "napcat":
+                    elif request.delivery_channel.name != "onebot":
                         result = {"ok": True}
                     elif ((getattr(request, "pause_requested", None) and request.pause_requested())
                           or self.store.owner_channel_revision(request.delivery_channel.name) != owner_revision):

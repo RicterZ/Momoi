@@ -9,7 +9,7 @@ from pathlib import Path
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.adapters.anthropic import merge_adjacent_roles
 from momoi.integrations.adapters.openai import OpenAIProvider, openai_messages
@@ -65,7 +65,7 @@ class ReasoningContinuationTest(unittest.IsolatedAsyncioTestCase):
                     str(server.make_url("/v1")), "test", "deepseek-v4-flash", 1000, 0.6, 2, 0,
                     "openai", thinking=ThinkingConfig(effort="high"),
                 )),
-                channel=NapCatConfig("ws://127.0.0.1", "123", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "123", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.", transcript_turns_min=4, transcript_turns_max=4,
                 episode_unsummarized_tail_turns=2, memory_results=2, database=Path(directory)/"momoi.sqlite3",
                 log_level="INFO",

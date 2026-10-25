@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from momoi.channel.napcat import NapCatChannel, NapCatConfig
+from momoi.channel.onebot import OneBotChannel, OneBotConfig
 from momoi.models import ToolCall, AgentReply, IncomingMessage, ProviderResponse, TurnDraft
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
@@ -31,8 +31,8 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         self.audio = AudioOutput(b"\x02#!SILK_V3\nfixture", "silk")
-        self.channel = NapCatChannel(
-            NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+        self.channel = OneBotChannel(
+            OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
         )
         self.store = Store(self.root / "momoi.sqlite3")
         self.addCleanup(self.store.close)
@@ -111,7 +111,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_arguments_do_not_queue(self):
         for arguments in ({}, {"text": " "}, {"text": 1}, {"file": str(self.audio)},
-                          {"text": "hello", "channel": "napcat"}):
+                          {"text": "hello", "channel": "onebot"}):
             with self.subTest(arguments=arguments):
                 self.assertFalse((await self.dispatch(arguments)).result["ok"])
         self.provider.synthesize.assert_not_awaited()
@@ -206,7 +206,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.provider.synthesize.assert_awaited_once_with(self.text)
 
     def test_disabled_voice_is_hidden_and_harness_rejects_it(self):
-        surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {"napcat": self.channel})
+        surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {"onebot": self.channel})
         name = "send_voice"
         self.assertNotIn(name, {tool["name"] for tool in surface.conversation_specs()})
         self.assertEqual(surface.mcp_server_groups(), {})
@@ -223,7 +223,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                 )
 
     def test_enabled_voice_is_available(self):
-        surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {"napcat": self.channel}, voice_enabled=True)
+        surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {"onebot": self.channel}, voice_enabled=True)
         self.assertNotIn("send_voice", {tool["name"] for tool in surface.conversation_specs()})
         self.assertNotIn("send_bubbles", {tool["name"] for tool in surface.conversation_specs()})
         reply = next(tool for tool in surface.conversation_specs() if tool["name"] == "reply")
@@ -231,7 +231,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         for stage in ("owner", "heartbeat", "webhook", "goal"):
             self.assertIn("reply", surface.permitted_names(stage))
             self.assertNotIn("send_voice", surface.permitted_names(stage))
-        unsupported = ToolSurface(SimpleNamespace(tool_specs=[]), {"napcat": SimpleNamespace()}, voice_enabled=True)
+        unsupported = ToolSurface(SimpleNamespace(tool_specs=[]), {"onebot": SimpleNamespace()}, voice_enabled=True)
         unsupported_reply = next(tool for tool in unsupported.conversation_specs() if tool["name"] == "reply")
         self.assertEqual(unsupported_reply["input_schema"]["properties"]["mode"]["enum"], ["text"])
 

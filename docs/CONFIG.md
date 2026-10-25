@@ -89,9 +89,9 @@ No manual container restart is required in dashboard mode.
 ## Fish Audio speech synthesis
 
 TTS is disabled by default and `send_voice` is hidden while disabled. When TTS
-is enabled, both NapCat and Weixin requests include the same `send_voice` schema
+is enabled, both QQ (OneBot) and Weixin requests include the same `send_voice` schema
 to preserve the shared tool prefix for caching. The harness permits execution
-only on channels supporting voice output (currently NapCat).
+only on channels supporting voice output (currently QQ via OneBot).
 Prompts and automatic voice-versus-text reply rules are unchanged.
 
 Merge these entries into your workspace `providers.yaml`:
@@ -155,8 +155,8 @@ text. The tool waits for synthesis before queueing or staging a notification;
 on failure it returns a tool error recommending `send_bubbles` for a text reply.
 Successful calls use the same result structure as `send_bubbles`.
 The outbox persists only the text and a voice delivery marker. A bounded memory
-cache passes the synthesized audio to the worker, which sends it to NapCat as base64. Momoi does
-not persist audio files or audio bytes in SQLite; NapCat controls its own internal
+cache passes the synthesized audio to the worker, which sends it to the OneBot gateway as base64. Momoi does
+not persist audio files or audio bytes in SQLite; the gateway controls its own internal
 temporary-file behavior. Pending messages are synthesized again after a restart
 or cache eviction; failures during this recovery mark delivery failed.
 On Weixin the harness rejects `send_voice` without changing the tool schema;
@@ -164,7 +164,7 @@ direct internal calls return `voice_not_supported`.
 Owner, Heartbeat, Webhook and Goal workflows support voice output.
 Goal voice messages retain the existing notification scheduling.
 
-Incoming voice transcriptions on NapCat and Weixin are prefixed with
+Incoming voice transcriptions on QQ and Weixin are prefixed with
 `[语音消息] ` before storage and transcript assembly. Plain text is unchanged;
 untranscribed voice placeholders are also marked.
 
@@ -184,12 +184,13 @@ See [Provider configuration](./PROVIDERS.md#llm) for options and setup.
 
 ## Inbound speech recognition
 
-NapCat converts incoming QQ voice messages through `fetch_ptt_text` using the
-message ID. This requires a NapCat version providing that action (verified with
-4.18.19; upstream [implementation](https://github.com/NapNeko/NapCatQQ/pull/1837)).
-QQ may generate the text asynchronously, so rejected requests or empty results
-are retried twice after 2 and 4 seconds, within `send_timeout_seconds` overall.
-Failures leave `[QQ 语音消息暂时无法转写]` in place of the recording.
+QQ voice messages are converted through `fetch_ptt_text` and the message ID.
+NapCat supports that action from 4.18.19 (upstream
+[implementation](https://github.com/NapNeko/NapCatQQ/pull/1837)). SnowLuma
+implements the same action and waits up to 20 seconds for QQ to push the text.
+Momoi waits at least 25 seconds for that one call. Rejected requests or empty
+results are retried twice, after 2 and 4 seconds. Failures leave
+`[QQ 语音消息暂时无法转写]` in place of the recording.
 Weixin uses the transcription included by its channel. Neither requires a
 separate recognition provider or credentials. The voice synthesis switch only
 controls outgoing voice messages.
@@ -199,9 +200,9 @@ controls outgoing voice messages.
 ```json
 {
   "channels": {
-    "primary": "napcat",
+    "primary": "onebot",
     "enabled": {
-      "napcat": {
+      "onebot": {
         "url": "ws://127.0.0.1:3001",
         "owner_qq": "100000000",
         "quiet_seconds": 6,
@@ -229,11 +230,13 @@ controls outgoing voice messages.
 | `primary` | Yes | — | Channel name selected for outbound delivery |
 | `enabled` | Yes | — | Channel names and settings; may be empty during dashboard setup; otherwise must contain `primary` |
 
-### NapCat
+### OneBot
+
+The QQ channel key is `onebot`. A stored `napcat` key is renamed when the config is read. Docker uses SnowLuma; the Windows built-in client is still NapCat. Both speak this protocol.
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
-| `url` | Yes | — | NapCat WebSocket URL |
+| `url` | Yes | — | OneBot WebSocket URL |
 | `owner_qq` | Yes | — | Digits-only owner QQ ID |
 | `quiet_seconds` | No | `1` | Wait after the latest owner message |
 | `max_batch_seconds` | No | `60` | Maximum message-batch wait |
@@ -649,8 +652,9 @@ Environment values override `config.json` for the current process.
 
 | Variable | Configuration field |
 | --- | --- |
-| `MOMOI_NAPCAT_URL` | `channels.enabled.napcat.url` |
-| `MOMOI_OWNER_QQ` | `channels.enabled.napcat.owner_qq` |
+| `MOMOI_OWNER_QQ` | `channels.enabled.onebot.owner_qq` |
+| `MOMOI_ONEBOT_TOKEN_FILE` | `channels.enabled.onebot.access_token` when that token is empty. `MOMOI_NAPCAT_TOKEN_FILE` is still accepted |
+| `MOMOI_ONEBOT_ACCESS_TOKEN` | `channels.enabled.onebot.access_token`. `MOMOI_NAPCAT_ACCESS_TOKEN` is still accepted |
 | `MOMOI_PRIMARY` | `channels.primary` |
 | `MOMOI_TIMEZONE` | `timezone` |
 | `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |

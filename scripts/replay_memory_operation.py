@@ -15,7 +15,7 @@ from pathlib import Path
 import tempfile
 import time
 
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig, HeartbeatConfig
 from momoi.integrations.configuration import load_provider_catalog
 from momoi.models import AgentReply, IncomingMessage, TurnDraft
@@ -57,7 +57,7 @@ async def replay(case, catalog, output):
     with tempfile.TemporaryDirectory(prefix='momoi-memory-replay-') as directory:
         workspace = Path(directory)
         config = AppConfig(
-            providers=catalog, channel=NapCatConfig('ws://127.0.0.1:1', 'test', 1, 60, 30, 30, 20),
+            providers=catalog, channel=OneBotConfig('ws://127.0.0.1:1', 'test', 1, 60, 30, 30, 20),
             system_prompt='Synthetic replay; no owner agent is run.',
             transcript_turns_min=4, transcript_turns_max=4, episode_unsummarized_tail_turns=2,
             memory_results=8, database=workspace/'memory.sqlite3', workspace=workspace,

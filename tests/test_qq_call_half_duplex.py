@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from momoi.channel.napcat.config import QQCallConfig
-from momoi.channel.napcat.voice_call.channel import QQCallChannel, audible_end
-from momoi.channel.napcat.voice_call.gate import CaptureGate, detect_half_duplex
+from momoi.channel.onebot.config import QQCallConfig
+from momoi.channel.onebot.voice_call.channel import QQCallChannel, audible_end
+from momoi.channel.onebot.voice_call.gate import CaptureGate, detect_half_duplex
 
 
 class Clock:
@@ -234,7 +234,7 @@ def test_audible_end_adds_measured_loopback_latency():
 def test_broker_measures_loopback_latency_from_capture(monkeypatch, capsys):
     import json
     import time
-    from momoi.channel.napcat.voice_call.broker import MediaBroker
+    from momoi.channel.onebot.voice_call.broker import MediaBroker
 
     async def scenario():
         class Process:
@@ -275,7 +275,7 @@ def test_broker_measures_loopback_latency_from_capture(monkeypatch, capsys):
 def test_broker_arms_loopback_probe_after_leading_quiet_frames(monkeypatch):
     from aiohttp import ClientSession, web
     from aiohttp.test_utils import TestServer
-    from momoi.channel.napcat.voice_call.broker import MediaBroker
+    from momoi.channel.onebot.voice_call.broker import MediaBroker
 
     async def scenario():
         class Process:
@@ -335,7 +335,7 @@ class FakePlayer:
 
 
 def test_windows_player_gets_no_silence_until_device_opens(monkeypatch, capsys):
-    from momoi.channel.napcat.voice_call.broker import SessionPlayback
+    from momoi.channel.onebot.voice_call.broker import SessionPlayback
 
     async def scenario():
         spawned = []
@@ -358,7 +358,7 @@ def test_windows_player_gets_no_silence_until_device_opens(monkeypatch, capsys):
 
 
 def test_linux_player_keeps_immediate_silence_prefill(monkeypatch):
-    from momoi.channel.napcat.voice_call.broker import MediaBroker
+    from momoi.channel.onebot.voice_call.broker import MediaBroker
 
     async def scenario():
         spawned = []

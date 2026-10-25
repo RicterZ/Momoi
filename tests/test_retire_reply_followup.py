@@ -16,7 +16,7 @@ def test_upgrade_cancels_old_followup_and_preserves_history(tmp_path):
     store.mark_sent(owner_outbox)
     for tid in ('delivered', 'queued', 'running', 'uncertain'):
         store.begin_turn(tid, 'reply_followup', [], parent_turn_id='owner')
-        store.queue_progress(tid, 'reply', ['旧跟进'], 'napcat')
+        store.queue_progress(tid, 'reply', ['旧跟进'], 'onebot')
     store._archive_progress_messages('queued', '[]')
     store._archive_progress_messages('uncertain', '[]')
     store._db.execute("UPDATE outbox SET state='ambiguous' WHERE turn_id='uncertain'")

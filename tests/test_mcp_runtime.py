@@ -40,7 +40,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.configuration = ConfigurationManager(self.path)
         snapshot = self.configuration.save_binding("llm", LLM, self.configuration.revision())
         self.configuration.save_runtime({"channels": {
-            "primary": "napcat", "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}},
+            "primary": "onebot", "enabled": {"onebot": {"url": "ws://localhost", "owner_qq": "123"}},
         }}, snapshot["revision"])
         self.runtime = RuntimeSupervisor(self.configuration, factory=MCPDaemon, poll_interval_seconds=0.01)
         self.addAsyncCleanup(self.runtime._retire)

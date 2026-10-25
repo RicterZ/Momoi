@@ -171,8 +171,8 @@ def test_replyer_poke_not_a_planner_tool_and_qq_control_is_permitted(tmp_path):
     store = Store(tmp_path / 'db')
     try:
         current = surface({}, store=store)
-        from momoi.channel.napcat.voice_call.channel import QQCallChannel
-        current.channel_names = ['napcat', QQCallChannel.name]
+        from momoi.channel.onebot.voice_call.channel import QQCallChannel
+        current.channel_names = ['onebot', QQCallChannel.name]
         tools = current.conversation_specs()
         names = [spec['name'] for spec in tools]
         assert 'qq_poke' not in names

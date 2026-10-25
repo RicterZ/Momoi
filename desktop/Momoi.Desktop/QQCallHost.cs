@@ -59,7 +59,9 @@ internal sealed class QQCallHost : IAsyncDisposable
     private bool Enabled()
     {
         var config = JsonNode.Parse(File.ReadAllText(Path.Combine(workspace, "config.json")));
-        return config?["channels"]?["enabled"]?["napcat"]?["voice_call"]?["enabled"]?.GetValue<bool>() == true;
+        var enabled = config?["channels"]?["enabled"];
+        var voice = enabled?["onebot"]?["voice_call"] ?? enabled?["napcat"]?["voice_call"];
+        return voice?["enabled"]?.GetValue<bool>() == true;
     }
     private void Status(string state, string message = "")
     {

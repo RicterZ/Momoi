@@ -70,7 +70,8 @@ internal sealed class AudioDeviceWindow : Window
     private static string Selected(JsonElement app, string key)
     {
         if (app.TryGetProperty("channels", out var channels) && channels.TryGetProperty("enabled", out var enabled) &&
-            enabled.TryGetProperty("napcat", out var napcat) && napcat.TryGetProperty("voice_call", out var voice) && voice.TryGetProperty(key, out var value))
+            (enabled.TryGetProperty("onebot", out var qq) || enabled.TryGetProperty("napcat", out qq)) &&
+            qq.TryGetProperty("voice_call", out var voice) && voice.TryGetProperty(key, out var value))
             return value.GetString() ?? "";
         return "";
     }
@@ -92,8 +93,8 @@ internal sealed class AudioDeviceWindow : Window
         try
         {
             using var client = Client();
-            using var settings = JsonDocument.Parse(await client.GetStringAsync("/api/settings/channels/napcat/voice-call/audio-configuration"));
-            using var response = await client.GetAsync("/api/settings/channels/napcat/voice-call/devices");
+            using var settings = JsonDocument.Parse(await client.GetStringAsync("/api/settings/channels/onebot/voice-call/audio-configuration"));
+            using var response = await client.GetAsync("/api/settings/channels/onebot/voice-call/devices");
             string body = await response.Content.ReadAsStringAsync();
             using var catalog = JsonDocument.Parse(body);
             if (!response.IsSuccessStatusCode)
@@ -131,7 +132,7 @@ internal sealed class AudioDeviceWindow : Window
             LiveLog.Write("audio-route", "shell", $"event=audio_route_selection input={effectiveInput.Name} input_id={effectiveInput.Id} output={effectiveOutput.Name} output_id={effectiveOutput.Id}");
             using var client = Client();
             string payload = JsonSerializer.Serialize(new { input_device = selectedInput.Id, output_device = selectedOutput.Id, revision });
-            using var response = await client.PutAsync("/api/settings/channels/napcat/voice-call/devices", new StringContent(payload, Encoding.UTF8, "application/json"));
+            using var response = await client.PutAsync("/api/settings/channels/onebot/voice-call/devices", new StringContent(payload, Encoding.UTF8, "application/json"));
             string body = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException(response.StatusCode == System.Net.HttpStatusCode.Conflict ? "配置已被修改，请刷新后重新应用。" : response.StatusCode == System.Net.HttpStatusCode.MethodNotAllowed ? "主体程序尚未更新，请先点击检查更新完成升级。" : body);
             savedConfiguration = true;
@@ -156,7 +157,7 @@ internal sealed class AudioDeviceWindow : Window
                 return;
             }
             status.Text = "路由已应用，正在检查语音设备连接…";
-            using var probe = await client.PostAsync("/api/settings/channels/napcat/voice-call/test", new StringContent("{}", Encoding.UTF8, "application/json"));
+            using var probe = await client.PostAsync("/api/settings/channels/onebot/voice-call/test", new StringContent("{}", Encoding.UTF8, "application/json"));
             probe.EnsureSuccessStatusCode();
             using var result = JsonDocument.Parse(await probe.Content.ReadAsStringAsync());
             bool ready = result.RootElement.GetProperty("ok").GetBoolean();

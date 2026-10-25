@@ -33,7 +33,8 @@ RUN mkdir -p /opt/qq-call/upstream /app/napcat/plugins \
     && test -f /opt/QQ/resources/app/avsdk/libAVSDKPlugin.so \
     && test -f /opt/QQ/resources/app/loadNapCat.js
 COPY infra/napcat-call/ /opt/qq-call/infra/
-COPY src/momoi/channel/napcat/voice_call/ /opt/qq-call/python/momoi/channel/napcat/voice_call/
+COPY infra/qq-call/ /opt/qq-call/qq-call/
+COPY src/momoi/channel/onebot/voice_call/ /opt/qq-call/python/momoi/channel/onebot/voice_call/
 RUN python3 /opt/qq-call/infra/prepare.py \
     && bash -n /opt/qq-call/infra/entrypoint.sh /opt/qq-call/infra/bootstrap.sh
 ENV QQ_CALL_ENABLED=0 QQ_CALL_PORT=6112 \

@@ -18,3 +18,29 @@ A Linux Docker image that adds QQ voice calls to NapCat for Momoi. It combines N
 - **Audio broker:** Authenticated connection to Momoi for incoming audio, playback, and call status.
 
 Momoi supplies speech recognition, reply generation, and speech synthesis. This image contains the Linux call infrastructure; it does not provide standalone conversational behavior.
+
+## Build and run
+
+From the repository root:
+
+```sh
+docker compose -f infra/napcat-call/compose.yaml build
+QQ_CALL_ENABLED=1 docker compose -f infra/napcat-call/compose.yaml up -d
+```
+
+The build uses the pinned NapCat image and the SHA256-verified upstream AVSDK
+bridge. The Compose file publishes NapCat WebUI/OneBot and the authenticated
+call broker on loopback. Persistent QQ login/config and call state use the
+`NAPCAT_QQ_DATA`, `NAPCAT_CONFIG`, and `QQ_CALL_DATA` bind mounts (defaults are
+under `./data`). Set Momoi's voice-call bridge URL to an address that can reach
+port `6112`, and use the token in the configured `QQ_CALL_DATA` directory at
+`runtime/control.token`; the call token is separate from the OneBot token.
+
+To disable calling while keeping NapCat messaging, recreate with
+`QQ_CALL_ENABLED=0`. To remove the call service, stop this Compose project; it
+does not affect the separate SnowLuma service.
+
+The pinned bridge patch/readiness handling is shared at
+[`infra/qq-call/bridge_patch.py`](../qq-call/bridge_patch.py). SnowLuma's
+separate image build and opt-in deployment instructions are in
+[`infra/snowluma-call/README.md`](../snowluma-call/README.md).

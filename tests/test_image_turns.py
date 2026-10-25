@@ -9,7 +9,7 @@ from pathlib import Path
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from momoi.channel.napcat import NapCatConfig
+from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
 from momoi.models import IncomingMessage
@@ -92,7 +92,7 @@ class ImageTurnsTest(unittest.IsolatedAsyncioTestCase):
                         "openai",
                     )
                 ),
-                channel=NapCatConfig("ws://127.0.0.1", "123", 1, 60, 30, 30, 20),
+                channel=OneBotConfig("ws://127.0.0.1", "123", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
