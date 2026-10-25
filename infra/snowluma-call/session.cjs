@@ -84,17 +84,26 @@ function observeWrapper(wrapper, onSession, onError) {
 }
 
 function hookPrototype(factory, onSession, onError) {
-  if (typeof factory !== "function" || !factory.prototype || typeof factory.prototype.init !== "function") return;
-  const desc = Object.getOwnPropertyDescriptor(factory, "prototype");
-  if (desc && desc.writable === false && desc.configurable === false) return;
-  const init = factory.prototype.init;
-  const proto = Object.create(factory.prototype);
-  proto.init = function (config, ...rest) {
-    const result = Reflect.apply(init, this, [config, ...rest]);
-    Promise.resolve(result).then(() => onSession(this, config)).catch(onError);
-    return result;
-  };
-  try { factory.prototype = proto; } catch { /* native prototype slot stays in place */ }
+  try {
+    if (typeof factory !== "function" || !factory.prototype || typeof factory.prototype.init !== "function") return;
+    const desc = Object.getOwnPropertyDescriptor(factory, "prototype");
+    if (desc && desc.writable === false && desc.configurable === false) return;
+    const init = factory.prototype.init;
+    const proto = Object.create(factory.prototype);
+    // Assignment cannot shadow a non-writable native init; define the own property.
+    Object.defineProperty(proto, "init", {
+      value(config, ...rest) {
+        const result = Reflect.apply(init, this, [config, ...rest]);
+        Promise.resolve(result).then(() => onSession(this, config)).catch(onError);
+        return result;
+      },
+      writable: true,
+      configurable: true,
+    });
+    factory.prototype = proto;
+  } catch {
+    // The export shim still observes getNTWrapperSession when this slot cannot move.
+  }
 }
 
 function captureExport(module, onSession, onError) {
