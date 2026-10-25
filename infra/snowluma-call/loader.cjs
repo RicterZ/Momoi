@@ -45,11 +45,18 @@ function start() {
       try {
         const native = require("./session_hook.node");
         if (!native.install()) throw new Error("native NT session hook did not install");
+        let announced = false;
         pollTimer = setInterval(() => {
           try {
             if (!native.ready()) return;
             const identity = native.identity();
-            if (!identity?.uid || !identity.uin) return;
+            if (!identity?.uid || !identity.uin) {
+              if (!announced) {
+                announced = true;
+                console.error("[MomoiQQCall] native session waiting", JSON.stringify(native.metrics()));
+              }
+              return;
+            }
             clearInterval(pollTimer);
             console.error("[MomoiQQCall] native session", JSON.stringify(native.metrics()));
             attach(nativeSessionFacade(native), { selfUid: identity.uid, selfUin: identity.uin });

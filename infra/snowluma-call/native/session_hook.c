@@ -21,9 +21,13 @@
 #define NT_START_TEXT_OFF 0x6663c50u
 #define NT_START_TEXT "NTWrapperSession internalStartNT ===="
 #define GET_AVSDK_SLOT (0x2d0u / 8u)
-#define GET_ACCOUNT_SLOT (0xf0u / 8u)
 #define ADD_LISTENER_SLOT (0x10u / 8u)
 #define SET_ACTION_SLOT (0x20u / 8u)
+/* NTWrapperSession fields after internalStartNT, QQ 3.2.32-52194.
+   Slot 0xf0 is an account-path type switch (1/2/3), not getAccountPath(uin). */
+#define NT_UIN_OFF 0x160u
+#define NT_UID_OFF 0x180u
+#define NT_DATA_OFF 0x1b8u
 
 typedef struct {
     uintptr_t lo;
@@ -54,7 +58,7 @@ static struct {
     void *vt;
     uint64_t reserved[4];
 } g_listener;
-static void *g_listener_vt[6];
+static void *g_listener_vt[16];
 
 static int safe_copy(const void *src, void *dst, size_t n) {
     if (!src || !dst || n == 0) return 0;
@@ -147,103 +151,49 @@ static int printable(const char *text, size_t len) {
     return 1;
 }
 
-static int all_digits(const char *text, size_t len) {
-    if (!len || text[0] == '0') return 0;
-    for (size_t i = 0; i < len; i++) {
-        if (text[i] < '0' || text[i] > '9') return 0;
-    }
-    return 1;
-}
-
-static int account_path(void *session, uint32_t uin, char *out, size_t cap, size_t *out_len) {
-    void *fn = vslot(session, GET_ACCOUNT_SLOT);
-    if (!fn) return 0;
-    unsigned char raw[32];
-    memset(raw, 0, sizeof raw);
-    asm volatile(
-        "mov x0, %[obj]\n"
-        "mov w1, %w[uin]\n"
-        "mov x8, %[dst]\n"
-        "blr %[fn]\n"
-        :
-        : [obj] "r"(session), [uin] "r"(uin), [dst] "r"(raw), [fn] "r"(fn)
-        : "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13",
-          "x14", "x15", "x16", "x17", "x30", "memory", "cc");
-    return read_remote_string(raw, out, cap, out_len);
+static int field_string(void *session, uintptr_t off, char *out, size_t cap, size_t *out_len) {
+    unsigned char raw[24];
+    if (!safe_copy((void *)((uintptr_t)session + off), raw, sizeof raw)) return 0;
+    if (!read_remote_string(raw, out, cap, out_len)) return 0;
+    return printable(out, *out_len);
 }
 
 static int resolve_identity(void *session, char *uid, size_t uid_cap, char *uin, size_t uin_cap,
                             char *path, size_t path_cap) {
-    typedef struct {
-        uintptr_t off;
-        char text[96];
-        size_t len;
-        int digits;
-    } Candidate;
-    Candidate found[24];
-    int count = 0;
-    for (uintptr_t off = 0x80; off <= 0x400 && count < 24; off += 8) {
-        unsigned char raw[24];
-        if (!safe_copy((void *)((uintptr_t)session + off), raw, sizeof raw)) continue;
-        char text[96];
-        size_t len = 0;
-        if (!read_remote_string(raw, text, sizeof text, &len)) continue;
-        if (!printable(text, len) || len > 80) continue;
-        found[count].off = off;
-        memcpy(found[count].text, text, len + 1);
-        found[count].len = len;
-        found[count].digits = all_digits(text, len) && len >= 5 && len <= 10;
-        count++;
+    uint32_t uin_value = 0;
+    if (!safe_copy((void *)((uintptr_t)session + NT_UIN_OFF), &uin_value, sizeof uin_value)) return 0;
+    if (uin_value < 10000u) return 0;
+    char uid_buf[96];
+    size_t uid_len = 0;
+    if (!field_string(session, NT_UID_OFF, uid_buf, sizeof uid_buf, &uid_len)) return 0;
+    if (uid_len < 4 || uid_len + 1 > uid_cap || uid_buf[0] != 'u' || uid_buf[1] != '_') return 0;
+    char data_path[512];
+    size_t data_len = 0;
+    const char *suffix = "/nt_data";
+    size_t suffix_len = strlen(suffix);
+    if (!field_string(session, NT_DATA_OFF, data_path, sizeof data_path, &data_len)) return 0;
+    if (data_len <= suffix_len || memcmp(data_path + data_len - suffix_len, suffix, suffix_len) != 0) {
+        return 0;
     }
-    int best = -1;
-    uintptr_t best_dist = UINTPTR_MAX;
-    char best_path[512];
-    size_t best_path_len = 0;
-    const Candidate *best_uid = NULL;
-    for (int i = 0; i < count; i++) {
-        if (!found[i].digits) continue;
-        char scratch[512];
-        size_t path_len = 0;
-        unsigned long value = strtoul(found[i].text, NULL, 10);
-        if (value == 0 || value > 0xfffffffful) continue;
-        if (!account_path(session, (uint32_t)value, scratch, sizeof scratch, &path_len)) continue;
-        if (path_len < 2 || scratch[0] != '/' || path_len >= path_cap) continue;
-        const Candidate *uid_item = NULL;
-        uintptr_t uid_dist = UINTPTR_MAX;
-        for (int j = 0; j < count; j++) {
-            if (j == i || found[j].digits || found[j].len < 4) continue;
-            uintptr_t dist = found[j].off > found[i].off ? found[j].off - found[i].off
-                                                         : found[i].off - found[j].off;
-            if (dist <= 48 && dist < uid_dist) {
-                uid_dist = dist;
-                uid_item = &found[j];
-            }
-        }
-        if (!uid_item || uid_item->len + 1 > uid_cap || found[i].len + 1 > uin_cap) continue;
-        uintptr_t config_dist = found[i].off > 0x160 ? found[i].off - 0x160 : 0x160 - found[i].off;
-        if (config_dist < best_dist) {
-            best = i;
-            best_dist = config_dist;
-            best_uid = uid_item;
-            best_path_len = path_len;
-            memcpy(best_path, scratch, path_len + 1);
-        }
-    }
-    if (best < 0) return 0;
-    memcpy(uid, best_uid->text, best_uid->len + 1);
-    memcpy(uin, found[best].text, found[best].len + 1);
-    memcpy(path, best_path, best_path_len + 1);
+    data_len -= suffix_len;
+    data_path[data_len] = 0;
+    if (data_path[0] != '/' || data_len + 1 > path_cap) return 0;
+    int written = snprintf(uin, uin_cap, "%u", uin_value);
+    if (written <= 0 || (size_t)written >= uin_cap) return 0;
+    memcpy(uid, uid_buf, uid_len + 1);
+    memcpy(path, data_path, data_len + 1);
     return 1;
 }
 
 static void listener_release(void *self) { (void)self; }
 
-static void listener_event(void *self, void *a, void *b, void *c, void *d) {
+static uintptr_t listener_event(void *self, void *a, void *b, void *c, void *d) {
     (void)self;
     (void)a;
     (void)b;
     (void)c;
     (void)d;
+    return 0;
 }
 
 static void capture(void *session) {
@@ -310,7 +260,9 @@ static int install_hook(void) {
     g_trampoline = page;
     g_listener_vt[0] = (void *)listener_release;
     g_listener_vt[1] = (void *)listener_release;
-    for (int i = 2; i < 6; i++) g_listener_vt[i] = (void *)listener_event;
+    for (int i = 2; i < (int)(sizeof g_listener_vt / sizeof g_listener_vt[0]); i++) {
+        g_listener_vt[i] = (void *)listener_event;
+    }
     g_listener.vt = g_listener_vt;
     g_ctrl.vt = NULL;
     g_ctrl.owners = 0x100000;
