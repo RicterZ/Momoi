@@ -65,6 +65,7 @@ function observeWrapper(wrapper, onSession, onError) {
   function call(name) {
     const method = factory[name];
     return function (...args) {
+      console.error("[MomoiQQCall] factory call", name, args.length);
       const session = Reflect.apply(method, factory, args);
       try {
         return hookSession(session);
@@ -76,6 +77,22 @@ function observeWrapper(wrapper, onSession, onError) {
   }
 
   installFactory(wrapper, shimFactory(factory, methods, call));
+  console.error("[MomoiQQCall] factory hooked", methods.join(","));
+  if (!process.versions.electron) return;
+  const probe = () => {
+    if (typeof factory.getNTWrapperSession !== "function") return;
+    for (const id of [0, 1, "0", ""]) {
+      try {
+        const session = factory.getNTWrapperSession(id);
+        const proto = session && Object.getPrototypeOf(session);
+        const names = proto ? Object.getOwnPropertyNames(proto).filter((name) => /init|AV|Account|Uin|Uid|Login|Session/i.test(name)) : [];
+        console.error("[MomoiQQCall] probe", JSON.stringify(id), session ? "session" : "empty", names.join(","));
+      } catch (error) {
+        console.error("[MomoiQQCall] probe failed", JSON.stringify(id), error && error.message);
+      }
+    }
+  };
+  setTimeout(probe, 8000);
 }
 
 function assignInit(session, hooked) {

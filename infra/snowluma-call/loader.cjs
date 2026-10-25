@@ -5,6 +5,7 @@ const { pathToFileURL } = require("node:url");
 const { observeWrapper, sessionContext } = require("./session.cjs");
 
 function start() {
+  console.error("[MomoiQQCall] loader", process.type, process.env.QQ_CALL_ENABLED || "");
   const { app } = require("electron");
   if (process.type !== "browser" || process.env.QQ_CALL_ENABLED !== "1") return;
   if (process.env.MAIBOT_QQ_CALL_AV_HOST === "1") {
