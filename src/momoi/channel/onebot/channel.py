@@ -305,16 +305,24 @@ class OneBotChannel:
             )
         return tuple(converted)
 
+    def _voice_timeout(self) -> float:
+        # SnowLuma holds fetch_ptt_text for up to 20s while QQ pushes the
+        # transcript. The client has to outlive that one wait.
+        return max(self.config.send_timeout_seconds, 25)
+
     async def convert_voice(self, voice: IncomingVoice) -> str | None:
         if not voice.message_id.strip():
             return VOICE_UNAVAILABLE_TEXT
         try:
-            async with asyncio.timeout(self.config.send_timeout_seconds):
+            limit = self._voice_timeout()
+            async with asyncio.timeout(limit):
                 # OneBot can reject the first lookup while QQ generates the text.
                 for attempt in range(3):
                     try:
                         response = await self._request_action(
-                            "fetch_ptt_text", {"message_id": voice.message_id.strip()}
+                            "fetch_ptt_text",
+                            {"message_id": voice.message_id.strip()},
+                            timeout=limit,
                         )
                         data = response.get("data")
                         text = data.get("text") if isinstance(data, dict) else None
@@ -657,12 +665,11 @@ class OneBotChannel:
         return message_id
 
     async def _request_action(
-        self, action: str, params: dict[str, Any]
+        self, action: str, params: dict[str, Any], *, timeout: float | None = None
     ) -> dict[str, Any]:
+        limit = self.config.send_timeout_seconds if timeout is None else timeout
         try:
-            await asyncio.wait_for(
-                self._ready.wait(), timeout=self.config.send_timeout_seconds
-            )
+            await asyncio.wait_for(self._ready.wait(), timeout=limit)
         except TimeoutError as error:
             raise NotConnected("OneBot is not connected") from error
         async with self._send_lock:
@@ -679,9 +686,7 @@ class OneBotChannel:
             }
             try:
                 await ws.send_json(payload)
-                response = await asyncio.wait_for(
-                    future, timeout=self.config.send_timeout_seconds
-                )
+                response = await asyncio.wait_for(future, timeout=limit)
             except (aiohttp.ClientError, asyncio.TimeoutError, AmbiguousSend) as error:
                 self._pending.pop(echo, None)
                 raise AmbiguousSend("OneBot send result is unknown") from error

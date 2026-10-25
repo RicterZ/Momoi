@@ -184,12 +184,13 @@ See [Provider configuration](./PROVIDERS.md#llm) for options and setup.
 
 ## Inbound speech recognition
 
-NapCat converts incoming QQ voice messages through `fetch_ptt_text` using the
-message ID. This requires a NapCat version providing that action (verified with
-4.18.19; upstream [implementation](https://github.com/NapNeko/NapCatQQ/pull/1837)).
-QQ may generate the text asynchronously, so rejected requests or empty results
-are retried twice after 2 and 4 seconds, within `send_timeout_seconds` overall.
-Failures leave `[QQ 语音消息暂时无法转写]` in place of the recording.
+QQ voice messages are converted through `fetch_ptt_text` and the message ID.
+NapCat supports that action from 4.18.19 (upstream
+[implementation](https://github.com/NapNeko/NapCatQQ/pull/1837)). SnowLuma
+implements the same action and waits up to 20 seconds for QQ to push the text.
+Momoi waits at least 25 seconds for that one call. Rejected requests or empty
+results are retried twice, after 2 and 4 seconds. Failures leave
+`[QQ 语音消息暂时无法转写]` in place of the recording.
 Weixin uses the transcription included by its channel. Neither requires a
 separate recognition provider or credentials. The voice synthesis switch only
 controls outgoing voice messages.
