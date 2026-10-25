@@ -2,7 +2,7 @@
 
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { captureExport, hookPrototype, sessionContext } = require("./session.cjs");
+const { hookPrototype, sessionContext } = require("./session.cjs");
 
 function start() {
   console.error("[MomoiQQCall] loader", process.type, process.env.QQ_CALL_ENABLED || "");
@@ -41,10 +41,8 @@ function start() {
   };
   const dlopen = process.dlopen;
   process.dlopen = function (module, filename, ...args) {
-    const wrapper = path.basename(String(filename)) === "wrapper.node";
-    if (wrapper) captureExport(module, attach, report);
     const result = Reflect.apply(dlopen, this, [module, filename, ...args]);
-    if (wrapper) {
+    if (path.basename(String(filename)) === "wrapper.node") {
       try {
         const factory = module.exports && module.exports.NodeIQQNTWrapperSession;
         if (typeof factory === "function") hookPrototype(factory, attach, report);
