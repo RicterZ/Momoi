@@ -27,8 +27,13 @@ runs in the same process, with no encoder port or separate container. Web Settin
 can disable semantic memory or select a remote embedding provider.
 Existing default `embedding:8002` configurations migrate automatically; after
 verifying the upgrade, remove the old encoder container and any `depends_on` entry
-from a custom deployment file. For QQ, deploy NapCat separately and configure its
-reachable OneBot WebSocket URL in Settings.
+from a custom deployment file. QQ uses the SnowLuma service in the same Compose
+file. After `docker compose up`, open noVNC at `http://127.0.0.1:6081` and scan
+the QQ login code. The remote-desktop password and SnowLuma WebUI password are
+printed once in `docker logs snowluma`. Then enable SnowLuma QQ in Momoi Settings,
+set the owner QQ, and leave the token empty. Compose points Momoi at
+`ws://snowluma:3001/` and reads the OneBot token created on the first SnowLuma
+start. WebUI is at `http://127.0.0.1:5099`. Real-time voice calls are unchanged.
 Local Sherpa ASR also runs inside Momoi. Select Sherpa in Settings and leave its
 model path empty; the model loads only when used. Tencent Cloud remains available. The old `http://asr:8003` default
 migrates automatically; remove the old ASR service from custom Compose files after

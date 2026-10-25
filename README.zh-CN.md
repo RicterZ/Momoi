@@ -228,7 +228,7 @@ docker compose -f docker-compose.yml logs momoi
 在设置页连接模型即可使用网页聊天。QQ、微信和语音均为可选配置，可稍后接入。
 
 镜像已包含 BGE 模型，语义记忆默认在 Momoi 进程内编码，无需额外容器或端口。
-QQ 用户单独部署 NapCat，在 Momoi 设置页填写可访问的 OneBot WebSocket 地址和主人 QQ。
+QQ 由同一 Compose 文件里的 SnowLuma 提供。启动后打开 `http://127.0.0.1:6081` 扫码登录，再到 Momoi 设置页启用 SnowLuma QQ 并填写主人 QQ；连接令牌留空。实时电话仍使用原来的通话组件。
 
 工作区默认持久化在 `~/.momoi`，由 `momoi` 初始化，已有文件不覆盖。
 默认只发布 dashboard 的 8788 端口；使用 Webhook 时另行添加端口映射并配置功能。
@@ -265,7 +265,7 @@ uv run --locked python packaging/prepare_asr.py
 docker compose -f compose.yaml up -d --build
 ```
 
-它复用发布栈的默认设置，BGE 模型随 Momoi 镜像一起构建。
+它复用发布栈的默认设置，并同时启动 SnowLuma。BGE 模型随 Momoi 镜像一起构建。
 请明确指定 `-f`：不指定时，Docker Compose 会优先使用 `compose.yaml`，而非 `docker-compose.yml`。
 
 ## 语义召回

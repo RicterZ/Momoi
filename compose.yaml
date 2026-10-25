@@ -7,3 +7,16 @@ services:
     build:
       context: .
       target: release
+  snowluma-config:
+    extends:
+      file: docker-compose.yml
+      service: snowluma-config
+  snowluma:
+    extends:
+      file: docker-compose.yml
+      service: snowluma
+
+volumes:
+  snowluma-data:
+  qq-client-config:
+  qq-client-data:

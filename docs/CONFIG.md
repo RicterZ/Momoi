@@ -651,6 +651,8 @@ Environment values override `config.json` for the current process.
 | --- | --- |
 | `MOMOI_NAPCAT_URL` | `channels.enabled.napcat.url` |
 | `MOMOI_OWNER_QQ` | `channels.enabled.napcat.owner_qq` |
+| `MOMOI_NAPCAT_TOKEN_FILE` | `channels.enabled.napcat.access_token` when that token is empty |
+| `MOMOI_NAPCAT_ACCESS_TOKEN` | `channels.enabled.napcat.access_token` |
 | `MOMOI_PRIMARY` | `channels.primary` |
 | `MOMOI_TIMEZONE` | `timezone` |
 | `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |

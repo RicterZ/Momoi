@@ -602,6 +602,8 @@ Goal 的 `send_bubbles` / `send_voice` 调用后立即进入通用发送流程�
 | --- | --- |
 | `MOMOI_NAPCAT_URL` | `channels.enabled.napcat.url` |
 | `MOMOI_OWNER_QQ` | `channels.enabled.napcat.owner_qq` |
+| `MOMOI_NAPCAT_TOKEN_FILE` | `channels.enabled.napcat.access_token`（仅当配置里的令牌为空） |
+| `MOMOI_NAPCAT_ACCESS_TOKEN` | `channels.enabled.napcat.access_token` |
 | `MOMOI_PRIMARY` | `channels.primary` |
 | `MOMOI_TIMEZONE` | `timezone` |
 | `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |

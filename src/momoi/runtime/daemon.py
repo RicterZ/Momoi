@@ -151,6 +151,7 @@ class MomoiDaemon(
             item.configure_emotions(self.store.list_emotions)
             item.is_message_recalled = self.store.message_recalled
             item.is_quote_target = self.store.qq_quote_target_available
+            item.is_own_outbound = self.store.owns_outbound_message
         def emotions_changed():
             for item in emotion_channels:
                 item.emotions_changed()

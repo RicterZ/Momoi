@@ -1139,7 +1139,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
             <QQCallSettings managed={data.desktop_qq_call_managed} value={callDraft}
               disabled={!napcat || saving || busy} status={qqCall} onTest={testCall}
               onChange={value => { setCallDraft(value); setStatus(null); }} />
-            <p className="settings-channel-note">必须开启 NapCat QQ 才能使用此功能。</p>
+            <p className="settings-channel-note">必须开启 SnowLuma QQ 才能使用此功能。实时电话仍走原来的通话组件。</p>
           </div>}
         </div>
         <SaveBar
@@ -1323,7 +1323,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
 
 const channelOptions = [
   { value: "weixin", label: "微信" },
-  { value: "napcat", label: "Napcat QQ" },
+  { value: "napcat", label: "SnowLuma QQ" },
 ];
 const channelDefaults = (name) =>
   name === "napcat" ? { url: "ws://127.0.0.1:3001", owner_qq: "" } : {};
@@ -1375,8 +1375,8 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
       if (channels.enabled.napcat) {
         if (!/^\d+$/.test(channels.enabled.napcat.owner_qq || "")) throw new Error("请填写主人 QQ 号码，仅包含数字。");
         let url;
-        try { url = new URL(channels.enabled.napcat.url); } catch { throw new Error("请填写有效的 NapCat WebSocket 地址。"); }
-        if (!["ws:", "wss:"].includes(url.protocol)) throw new Error("NapCat 地址需要以 ws:// 或 wss:// 开头。");
+        try { url = new URL(channels.enabled.napcat.url); } catch { throw new Error("请填写有效的 SnowLuma WebSocket 地址。"); }
+        if (!["ws:", "wss:"].includes(url.protocol)) throw new Error("SnowLuma 地址需要以 ws:// 或 wss:// 开头。");
       }
       const result = await save("/api/settings/configuration/app", { channels }, "PATCH");
       setChannels(result.app.channels);
@@ -1437,7 +1437,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                   <Toggle checked={enabled} disabled={busy || loginActive} onChange={value => toggle(key, value)}>启用{label}</Toggle>
                 </header>
                 <p className="settings-channel-description">
-                  {name === "weixin" ? "启用并保存后，扫码登录微信。" : name === "napcat" ? "填写 NapCat 连接信息，保存后自动连接。" : "配置并保存后连接此渠道。"}
+                  {name === "weixin" ? "启用并保存后，扫码登录微信。" : name === "napcat" ? "填写 SnowLuma 的 OneBot 地址和主人 QQ。Docker 里地址是 ws://snowluma:3001/，令牌可留空。" : "配置并保存后连接此渠道。"}
                 </p>
                 <div className="settings-channel-content">
                 {!enabled ? (
@@ -1445,15 +1445,15 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                     <span className="settings-channel-off-icon" aria-hidden="true"><Icon name={name === "weixin" ? "weixin" : name === "napcat" ? "qq" : "chat"} /></span>
                     <div>
                       <strong>{name === "weixin" ? "在微信里和 Momoi 聊天" : name === "napcat" ? "在 QQ 里和 Momoi 聊天" : `连接${label}`}</strong>
-                      <p>{name === "weixin" ? "打开上方开关，保存后扫码登录。" : name === "napcat" ? "打开上方开关，填写 Napcat 连接信息。" : "打开上方开关，接入这个消息渠道。"}</p>
+                      <p>{name === "weixin" ? "打开上方开关，保存后扫码登录。" : name === "napcat" ? "打开上方开关，填写 SnowLuma 连接信息。" : "打开上方开关，接入这个消息渠道。"}</p>
                     </div>
                   </div>
                 ) : name === "napcat" ? (
                   <div>
                   <Fields disabled={busy || loginActive}>
-                    <OptionField name="bot_qq" spec={{ type: "string", label: "机器人 QQ", description: "内置客户端登录的 QQ 号码，与主人 QQ 区分；外部 NapCat 可留空。" }} value={options.bot_qq} onChange={value => edit(name, { ...options, bot_qq: value })} />
-                    <OptionField name="url" spec={{ type: "string", label: "NapCat WebSocket 地址" }} value={options.url} onChange={value => edit(name, { ...options, url: value })} />
-                    <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "内置组件自动生成；外部 NapCat 填写其 WebSocket 令牌。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
+                    <OptionField name="bot_qq" spec={{ type: "string", label: "机器人 QQ", description: "登录 SnowLuma 的 QQ 号码，与主人 QQ 区分；只连一个账号时可留空。" }} value={options.bot_qq} onChange={value => edit(name, { ...options, bot_qq: value })} />
+                    <OptionField name="url" spec={{ type: "string", label: "SnowLuma WebSocket 地址", description: "Docker Compose 会在启动时覆盖为 ws://snowluma:3001/。" }} value={options.url} onChange={value => edit(name, { ...options, url: value })} />
+                    <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "留空时使用 Docker 初始化写入的 OneBot 令牌。自行部署 SnowLuma 时填写 WebUI 里的 access token。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
                     <OptionField name="owner_qq" spec={{ type: "string", label: "主人 QQ" }} value={options.owner_qq} onChange={value => edit(name, { ...options, owner_qq: value })} />
                   </Fields>
                   <DesktopQQ botQQ={options.bot_qq} ownerQQ={options.owner_qq} connected={qqConnected} disabled={busy || loginActive} onConnection={connectDesktopQQ} />

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Any
 
 from .models import ConfigError
@@ -6,6 +7,15 @@ from .models import ConfigError
 
 def _env(name: str) -> str:
     return os.environ.get(name, "").strip()
+
+
+def _token_file(path: str) -> str:
+    if not path:
+        return ""
+    try:
+        return Path(path).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def _env_bool(name: str) -> bool | None:
@@ -31,6 +41,12 @@ def apply_env_overrides(raw: dict[str, Any]) -> None:
                 napcat["url"] = value
             if value := _env("MOMOI_OWNER_QQ"):
                 napcat["owner_qq"] = value
+            if not str(napcat.get("access_token") or "").strip():
+                token = _token_file(_env("MOMOI_NAPCAT_TOKEN_FILE"))
+                if token:
+                    napcat["access_token"] = token
+            if value := _env("MOMOI_NAPCAT_ACCESS_TOKEN"):
+                napcat["access_token"] = value
 
     if value := _env("MOMOI_TIMEZONE"):
         raw["timezone"] = value

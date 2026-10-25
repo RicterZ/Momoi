@@ -50,7 +50,9 @@ class NapCatChannel:
         self._send_lock = asyncio.Lock()
         self._inbound_lock = asyncio.Lock()
         self.favorites = None
+        self._sent_message_ids: set[str] = set()
         self.is_message_recalled = lambda channel, message_id: False
+        self.is_own_outbound = lambda channel, message_id: False
 
     def message_current(self, message):
         return bool(message.delivery_context.get("channel_notice")) or not self.is_message_recalled(
@@ -235,10 +237,16 @@ class NapCatChannel:
             if user_id not in {self.config.owner_qq, bot_id} or not payload.get("message_id"):
                 return
             message_id = str(payload["message_id"])
+            sent_by_momoi = (
+                message_id in self._sent_message_ids
+                or self.is_own_outbound(self.name, message_id)
+            )
+            # SnowLuma reports a bot self-recall with the peer's user_id.
+            author = "assistant" if user_id == bot_id or sent_by_momoi else "owner"
             await on_event(MessageRecalled(
                 f"napcat:{bot_id}:recall:{message_id}", message_id,
                 float(payload.get("time") or time.time()), self.name,
-                "owner" if user_id == self.config.owner_qq else "assistant",
+                author,
             ))
             return
         if (
@@ -397,7 +405,11 @@ class NapCatChannel:
                 file_id = data.get("file_id") or data.get("file")
                 if not file_id:
                     raise ValueError("missing file identifier")
-                response = await self._request_action("get_private_file_url", {"file_id": file_id})
+                params: dict[str, Any] = {"file_id": file_id, "user_id": self.config.owner_qq}
+                file_hash = data.get("file_hash")
+                if isinstance(file_hash, str) and file_hash:
+                    params["file_hash"] = file_hash
+                response = await self._request_action("get_private_file_url", params)
                 source = (response.get("data") or {}).get("url")
             if not isinstance(source, str) or not source.startswith(("http://", "https://")):
                 raise ValueError("no downloadable file URL")
@@ -639,7 +651,10 @@ class NapCatChannel:
         )
         data = response.get("data")
         data = data if isinstance(data, dict) else {}
-        return str(data.get("message_id", ""))
+        message_id = str(data.get("message_id", ""))
+        if message_id:
+            self._sent_message_ids.add(message_id)
+        return message_id
 
     async def _request_action(
         self, action: str, params: dict[str, Any]

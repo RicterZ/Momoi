@@ -129,6 +129,27 @@ def test_only_owner_and_bot_recall_events_are_received():
     asyncio.run(scenario())
 
 
+def test_snowluma_self_recall_uses_sent_receipt_instead_of_peer_user_id():
+    async def scenario():
+        item = channel()
+        receive = AsyncMock()
+        base = {'post_type': 'notice', 'notice_type': 'friend_recall',
+                'self_id': 30000, 'message_id': 123, 'time': 10, 'user_id': 20000}
+        item._sent_message_ids.add('123')
+        await item._handle_payload(base, receive)
+        assert receive.await_args.args[0].author == 'assistant'
+        receive.reset_mock()
+        item._sent_message_ids.clear()
+        item.is_own_outbound = lambda channel, message_id: channel == 'napcat' and message_id == '123'
+        await item._handle_payload(base, receive)
+        assert receive.await_args.args[0].author == 'assistant'
+        receive.reset_mock()
+        item.is_own_outbound = lambda channel, message_id: False
+        await item._handle_payload({**base, 'message_id': 456}, receive)
+        assert receive.await_args.args[0].author == 'owner'
+    asyncio.run(scenario())
+
+
 def test_recall_is_durable_event_without_rewriting_owner_text(tmp_path):
     store = Store(tmp_path / 'store.sqlite3', workspace=tmp_path)
     try:
@@ -296,7 +317,7 @@ def test_received_file_downloads_to_workspace_and_renders_local_path(tmp_path):
             async with ClientSession() as session:
                 item._session = session
                 segments = await item._enrich_segments(({'type': 'file', 'data': {
-                    'file': '../../sample.txt', 'file_id': 'synthetic-id'}},))
+                    'file': '../../sample.txt', 'file_id': 'synthetic-id', 'file_hash': 'abc'}},))
                 path = Path(segments[0]['data']['file'])
                 assert path.read_bytes() == b'synthetic text'
                 assert path.suffix == '.txt'
@@ -304,7 +325,9 @@ def test_received_file_downloads_to_workspace_and_renders_local_path(tmp_path):
                 assert segments[0]['data']['name'] == 'sample.txt'
                 assert path.is_relative_to(tmp_path / 'channel/napcat/files')
                 assert str(path) in render_segments(segments)
-                item._request_action.assert_awaited_once_with('get_private_file_url', {'file_id': 'synthetic-id'})
+                item._request_action.assert_awaited_once_with(
+                    'get_private_file_url',
+                    {'file_id': 'synthetic-id', 'user_id': '20000', 'file_hash': 'abc'})
                 for malicious in ('../..', '../../evil.txt:stream', '../../evil.ＴＸＴ', 'evil.abcdefghijk', '/tmp/test.TXT'):
                     received = await item._enrich_segments(({'type': 'file', 'data': {
                         'file': malicious, 'url': f'http://127.0.0.1:{port}/asset'}},))
