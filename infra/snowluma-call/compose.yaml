@@ -9,5 +9,19 @@ services:
     image: momoi-snowluma-call:local
     environment:
       QQ_CALL_ENABLED: "1"
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /app/data/qq-call/runtime/control.token"]
+      interval: 2s
+      timeout: 1s
+      retries: 30
     ports:
       - "127.0.0.1:${QQ_CALL_PORT:-6112}:6112"
+
+  momoi:
+    depends_on:
+      snowluma:
+        condition: service_healthy
+    environment:
+      MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE: /snowluma-data/qq-call/runtime/control.token
+    volumes:
+      - snowluma-data:/snowluma-data:ro

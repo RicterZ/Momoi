@@ -13,6 +13,7 @@ from momoi.channel.onebot import OneBotConfig
 from momoi.channel.weixin import WeixinConfig, create_channel as create_weixin_channel
 from momoi.channel.wechaty import WechatyConfig, create_channel as create_wechaty_channel
 from momoi.config.loading import load_config
+from momoi.config.environment import apply_env_overrides
 from momoi.config.models import ConfigError, DashboardConfig
 from momoi.mcp.config import load_mcp_servers
 from momoi.models import (
@@ -32,6 +33,27 @@ def _napcat_channels() -> dict[str, object]:
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_snowluma_call_token_file_overrides_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            token_file = Path(directory) / "control.token"
+            token_file.write_text("x" * 64)
+            config = _napcat_channels()
+            config["enabled"]["onebot"]["voice_call"] = {
+                "enabled": True,
+                "bridge_url": "http://snowluma:6112",
+                "bridge_token": "old-token-value-that-is-at-least-32-bytes",
+            }
+            with patch.dict("os.environ", {"MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE": str(token_file)}):
+                apply_env_overrides({"channels": config})
+            self.assertEqual(config["enabled"]["onebot"]["voice_call"]["bridge_token"], "x" * 64)
+
+    def test_snowluma_call_token_file_must_exist_and_be_valid(self) -> None:
+        config = _napcat_channels()
+        config["enabled"]["onebot"]["voice_call"] = {"enabled": True}
+        with patch.dict("os.environ", {"MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE": "/missing/token"}):
+            with self.assertRaisesRegex(ConfigError, "MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE is unavailable"):
+                apply_env_overrides({"channels": config})
+
     def test_wechaty_is_an_independent_channel(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = WechatyConfig.from_mapping({"owner_alias": "Momoi主人"}, Path(directory))

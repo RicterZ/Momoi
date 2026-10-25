@@ -31,10 +31,11 @@ call bridge for the same account. `QQ_CALL_RUNTIME` must remain under `/app/data
 so SnowLuma's startup applies the configured UID/GID to its private state.
 
 1. Log into QQ through the existing noVNC page; configure OneBot as usual.
-2. Read `/app/data/qq-call/runtime/control.token` inside the SnowLuma container
-   privately (for example, `docker compose exec snowluma cat` followed by that
-   path). Paste it into Momoi's QQ voice-call token setting. It is a separate
-   secret from the OneBot token, created once with mode `0600`, never logged.
+2. With this overlay, Compose waits for SnowLuma to create
+   `/app/data/qq-call/runtime/control.token`, then gives Momoi read-only access
+   to the shared volume. Momoi reads the bridge token from that file at startup;
+   no manual copy or committed secret is needed. The token is distinct from the
+   OneBot token, created once with mode `0600`, and never logged.
 3. Set the voice-call bridge URL to `http://snowluma:6112` when Momoi is on the
    same Compose network, or `http://127.0.0.1:6112` for a local host process.
    Only the media broker's authenticated API is published, bound to host loopback;

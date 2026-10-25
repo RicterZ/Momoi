@@ -12,6 +12,16 @@ def _env(name: str) -> str:
 def _token_file(path: str) -> str:
     if not path:
         return ""
+
+
+def _required_token_file(path: str) -> str:
+    try:
+        token = Path(path).read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise ConfigError("MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE is unavailable") from exc
+    if len(token.encode()) < 32:
+        raise ConfigError("MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE must contain a token of at least 32 bytes")
+    return token
     try:
         return Path(path).read_text(encoding="utf-8").strip()
     except OSError:
@@ -45,6 +55,10 @@ def apply_env_overrides(raw: dict[str, Any]) -> None:
                     onebot["access_token"] = token
             if value := _env("MOMOI_ONEBOT_ACCESS_TOKEN") or _env("MOMOI_NAPCAT_ACCESS_TOKEN"):
                 onebot["access_token"] = value
+            if path := _env("MOMOI_QQ_CALL_BRIDGE_TOKEN_FILE"):
+                voice_call = onebot.get("voice_call")
+                if isinstance(voice_call, dict):
+                    voice_call["bridge_token"] = _required_token_file(path)
 
     if value := _env("MOMOI_TIMEZONE"):
         raw["timezone"] = value
