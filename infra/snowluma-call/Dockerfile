@@ -21,7 +21,7 @@ RUN mkdir -p /opt/qq-call/upstream \
 COPY infra/qq-call/ /opt/qq-call/qq-call/
 COPY infra/snowluma-call/ /opt/qq-call/infra/
 COPY src/momoi/channel/onebot/voice_call/ /opt/qq-call/python/momoi/channel/onebot/voice_call/
-RUN gcc -shared -fPIC -O2 -D_GNU_SOURCE -I/usr/local/include/node \
+RUN gcc -shared -fPIC -O2 -fno-stack-protector -D_GNU_SOURCE -I/usr/local/include/node \
         -I/opt/qq-call/infra/native \
         -o /opt/qq-call/infra/session_hook.node \
         /opt/qq-call/infra/native/session_hook.c \

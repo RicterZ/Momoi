@@ -31,6 +31,18 @@ int main(void) {
     memset(raw + 8, 0, 16);
     assert(momoi_cxx_string_view(raw, &data, &len, storage) == 0);
 
+    char span_buf[] = {'a', 'b', 'c'};
+    momoi_span_string_init(raw, span_buf, 3);
+    char *span_data = NULL, *span_end = NULL, *span_cap = NULL;
+    memcpy(&span_data, raw, sizeof span_data);
+    memcpy(&span_end, raw + 8, sizeof span_end);
+    memcpy(&span_cap, raw + 16, sizeof span_cap);
+    assert(span_data == span_buf);
+    assert(span_end == span_buf + 3);
+    assert(span_cap == span_buf + 3);
+    momoi_span_string_init(raw, span_buf, 0);
+    assert(raw[0] == 0 && memcmp(raw, raw + 1, 23) == 0);
+
     puts("cxx string ok");
     return 0;
 }

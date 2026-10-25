@@ -349,23 +349,33 @@ static void post_event(AvEvent *event) {
     fprintf(stderr, "[MomoiQQCall] native AVSDK callback %d bytes=%zu\n", kind, len);
 }
 
-static void action_detour(void *frame) {
-    AvEvent *event = take_event(frame, EV_ACTION, 0x18, 0x20);
-    ((void (*)(void *))g_action_tramp)(frame);
-    post_event(event);
-}
+/* Copy the kernel arguments, then branch to the stolen prologue. A C call would
+   sit on the stack without the original function's unwind tables, and a throw
+   inside QQ becomes std::terminate. x30 stays the caller's return address. */
+#define CAPTURE(name, kind, type_off, str_off)                                          \
+    __attribute__((used, noinline)) static void capture_##name(void *frame) {          \
+        post_event(take_event(frame, (kind), (type_off), (str_off)));                   \
+    }                                                                                   \
+    __attribute__((naked, used)) static void name##_detour(void) {                     \
+        __asm__ volatile("stp x0, x1, [sp, #-80]!\n\t"                                  \
+                         "stp x2, x3, [sp, #16]\n\t"                                    \
+                         "stp x4, x5, [sp, #32]\n\t"                                    \
+                         "stp x6, x7, [sp, #48]\n\t"                                    \
+                         "str x30, [sp, #64]\n\t"                                       \
+                         "bl capture_" #name "\n\t"                                     \
+                         "ldr x30, [sp, #64]\n\t"                                       \
+                         "ldp x6, x7, [sp, #48]\n\t"                                    \
+                         "ldp x4, x5, [sp, #32]\n\t"                                    \
+                         "ldp x2, x3, [sp, #16]\n\t"                                    \
+                         "ldp x0, x1, [sp], #80\n\t"                                    \
+                         "adrp x16, g_" #name "_tramp\n\t"                              \
+                         "ldr x16, [x16, :lo12:g_" #name "_tramp]\n\t"                  \
+                         "br x16\n\t");                                                 \
+    }
 
-static void invite_detour(void *frame) {
-    AvEvent *event = take_event(frame, EV_INVITE, 0x40, 0x48);
-    ((void (*)(void *))g_invite_tramp)(frame);
-    post_event(event);
-}
-
-static void s2c_detour(void *frame) {
-    AvEvent *event = take_event(frame, EV_S2C, 0x18, 0);
-    ((void (*)(void *))g_s2c_tramp)(frame);
-    post_event(event);
-}
+CAPTURE(action, EV_ACTION, 0x18, 0x20)
+CAPTURE(invite, EV_INVITE, 0x40, 0x48)
+CAPTURE(s2c, EV_S2C, 0x18, 0)
 
 static int function_mentions(const void *fn, uint32_t imm) {
     uint8_t buf[0x180];
@@ -655,8 +665,9 @@ static napi_value SetAction(napi_env env, napi_callback_info info) {
         return NULL;
     }
     unsigned char raw[24];
-    momoi_cxx_string_init(raw, payload, len);
+    momoi_span_string_init(raw, payload, len);
     typedef void (*action_fn)(void *, int32_t, void *);
+    fprintf(stderr, "[MomoiQQCall] native setAction command=%d bytes=%zu\n", command, len);
     ((action_fn)fn)(g_service.ptr, command, raw);
     free(payload);
     napi_value undef;

@@ -28,7 +28,7 @@ static int momoi_cxx_string_view(const unsigned char raw[24], const char **data,
     return 2;
 }
 
-static void momoi_cxx_string_init(unsigned char raw[24], const char *bytes, size_t n) {
+__attribute__((unused)) static void momoi_cxx_string_init(unsigned char raw[24], const char *bytes, size_t n) {
     memset(raw, 0, 24);
     if (n <= 22) {
         raw[0] = (unsigned char)(n << 1);
@@ -41,6 +41,18 @@ static void momoi_cxx_string_init(unsigned char raw[24], const char *bytes, size
     memcpy(raw, &cap, sizeof cap);
     memcpy(raw + 8, &size, sizeof size);
     memcpy(raw + 16, &ptr, sizeof ptr);
+}
+
+/* setActionFromAVSDK takes this 24-byte span, not a libc++ std::string.
+   QQ's own JS binding allocates the bytes and stores {data, data+n, data+n}.
+   The caller frees data after the call returns. An empty value is three nulls. */
+static void momoi_span_string_init(unsigned char raw[24], char *bytes, size_t n) {
+    memset(raw, 0, 24);
+    if (!n || !bytes) return;
+    char *end = bytes + n;
+    memcpy(raw, &bytes, sizeof bytes);
+    memcpy(raw + 8, &end, sizeof end);
+    memcpy(raw + 16, &end, sizeof end);
 }
 
 #endif
