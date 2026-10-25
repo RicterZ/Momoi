@@ -81,7 +81,7 @@ function observeWrapper(wrapper, onSession, onError) {
   Object.defineProperty(shim, "__momoiQQCall", { value: true });
   installFactory(wrapper, shim);
   console.error("[MomoiQQCall] factory hooked", methods.join(","));
-  if (!process.versions.electron) return;
+  if (process.env.QQ_CALL_ENABLED !== "1") return;
   setTimeout(() => {
     try {
       const session = factory.getNTWrapperSession(0);
