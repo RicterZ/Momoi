@@ -1,13 +1,12 @@
 """Prepare the pinned QQ entrypoint without modifying SnowLuma's runtime."""
-import importlib.util
 import json
 from pathlib import Path, PurePosixPath
+import sys
 
 
 def prepare(root=Path('/opt/qq-call'), qq=Path('/opt/QQ/resources/app')):
-    spec = importlib.util.spec_from_file_location('bridge_patch', root / 'napcat-call/prepare.py')
-    patch = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(patch)
+    sys.path.insert(0, str(root / 'qq-call'))
+    from bridge_patch import patch_bridge
     package_path = qq / 'package.json'
     package = json.loads(package_path.read_text())
     original = package['main']
@@ -20,7 +19,7 @@ def prepare(root=Path('/opt/qq-call'), qq=Path('/opt/QQ/resources/app')):
             or original == './momoi-call.cjs' or not exists):
         raise ValueError('Unsupported QQ main entry; review the pinned image')
     plugin = root / 'upstream/bridge/napcat-plugin/index.mjs'
-    source = patch.patch_bridge(plugin.read_text())
+    source = patch_bridge(plugin.read_text())
     failure = '    logger.error(`[MaiBotQQCall] bridge startup failed: ${state.listenerError}`);'
     if source.count(failure) != 1:
         raise ValueError('Upstream bridge startup handling changed')

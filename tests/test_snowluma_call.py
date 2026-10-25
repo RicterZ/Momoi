@@ -1,5 +1,6 @@
 """SnowLuma calls reuse QQ's own session and the existing media protocol."""
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 import shutil
@@ -13,6 +14,18 @@ INFRA = ROOT / 'infra/snowluma-call'
 
 def load_script(name):
     spec = importlib.util.spec_from_file_location('snowcall_' + name, INFRA / (name + '.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_napcat_and_snowluma_use_shared_bridge_patcher():
+    module = load_script_from(ROOT / 'infra/napcat-call/prepare.py')
+    assert Path(inspect.getsourcefile(module.patch_bridge)) == ROOT / 'infra/qq-call/bridge_patch.py'
+
+
+def load_script_from(path):
+    spec = importlib.util.spec_from_file_location('infra_' + path.stem, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -37,8 +50,8 @@ def test_prepare_preserves_original_main_and_patches_bridge(tmp_path, main):
     (qq / 'application.asar').write_bytes(b'archive')
     package = {'main': main, 'name': 'QQ'}
     (qq / 'package.json').write_text(json.dumps(package))
-    (root / 'napcat-call').mkdir(parents=True)
-    shutil.copyfile(ROOT / 'infra/napcat-call/prepare.py', root / 'napcat-call/prepare.py')
+    (root / 'qq-call').mkdir(parents=True)
+    shutil.copyfile(ROOT / 'infra/qq-call/bridge_patch.py', root / 'qq-call/bridge_patch.py')
     plugin = root / 'upstream/bridge/napcat-plugin/index.mjs'
     plugin.parent.mkdir(parents=True)
     # Version-checked anchors from the pinned bridge. Missing anchors must fail builds.
@@ -65,8 +78,8 @@ def test_prepare_preserves_original_main_and_patches_bridge(tmp_path, main):
 @pytest.mark.parametrize('main', ['/absolute.js', '../escape.js', './missing.js', './momoi-call.cjs'])
 def test_prepare_rejects_unknown_entry_before_editing(tmp_path, main):
     root = tmp_path / 'call'
-    (root / 'napcat-call').mkdir(parents=True)
-    shutil.copyfile(ROOT / 'infra/napcat-call/prepare.py', root / 'napcat-call/prepare.py')
+    (root / 'qq-call').mkdir(parents=True)
+    shutil.copyfile(ROOT / 'infra/qq-call/bridge_patch.py', root / 'qq-call/bridge_patch.py')
     qq = tmp_path / 'qq'
     qq.mkdir()
     original = json.dumps({'main': main})

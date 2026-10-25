@@ -18,6 +18,7 @@ loopback HTTP protocol remains unchanged.
 From the repository root, use the release Compose file plus the overlay:
 
 ```sh
+docker compose -f docker-compose.yml -f infra/snowluma-call/compose.yaml build snowluma
 docker compose -f docker-compose.yml -f infra/snowluma-call/compose.yaml up -d --build
 ```
 
@@ -72,3 +73,8 @@ The bridge is pinned to `RicterZ/maibot-qq-voice-call` revision
 `22f30c021cd3170f75af9dff66cc959a07ebda4b`; its GPL license and third-party notices
 are retained under `/opt/qq-call/upstream`. SnowLuma's own licensing still applies
 to its base image; this integration does not modify its runtime bundle.
+
+The upstream bridge patch itself lives in shared `infra/qq-call/bridge_patch.py`;
+the NapCat and SnowLuma `prepare.py` files apply it to their own derived image.
+Build/run details for the NapCat adapter are in
+[`infra/napcat-call/README.md`](../napcat-call/README.md).

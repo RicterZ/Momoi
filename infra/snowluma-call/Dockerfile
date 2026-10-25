@@ -18,7 +18,7 @@ RUN mkdir -p /opt/qq-call/upstream \
         maibot-qq-voice-call-${BRIDGE_REV}/bridge/scripts/common.sh \
     && rm /tmp/bridge.tgz \
     && test -f /opt/QQ/resources/app/avsdk/libAVSDKPlugin.so
-COPY infra/napcat-call/prepare.py /opt/qq-call/napcat-call/prepare.py
+COPY infra/qq-call/ /opt/qq-call/qq-call/
 COPY infra/snowluma-call/ /opt/qq-call/infra/
 COPY src/momoi/channel/onebot/voice_call/ /opt/qq-call/python/momoi/channel/onebot/voice_call/
 RUN python3 /opt/qq-call/infra/prepare.py \

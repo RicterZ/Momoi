@@ -1,43 +1,9 @@
 """Apply version-checked upstream additions; preserve its original entrypoint."""
 from pathlib import Path
+import sys
 
-
-def patch_bridge(s):
-    # This addition to the GPL Bridge remains an independently distributed patch.
-    s = s.replace('let acceptTimer = null;', 'let acceptTimer = null;\nlet momoiReady = { ownerUin: "", until: 0 };', 1)
-    needle = '  if (!Array.isArray(activeSDKInvite) || state.call.phase === "ended") return;'
-    assert needle in s
-    s = s.replace(needle, needle + '\n  if (Date.now() >= momoiReady.until || !state.call.callerUin || state.call.callerUin !== momoiReady.ownerUin) return;', 1)
-    needle = '    if (req.method === "GET" && url.pathname === "/v1/status") {'
-    assert needle in s
-    addition = '''    if (req.method === "POST" && url.pathname === "/v1/momoi/ready") {
-      try {
-        const body = await readJsonBody(req);
-        if (typeof body.ownerUin !== "string" || !/^[0-9]+$/.test(body.ownerUin) || typeof body.ready !== "boolean") {
-          return sendJson(res, 400, { code: -1, message: "invalid readiness" });
-        }
-        momoiReady = { ownerUin: body.ownerUin, until: body.ready ? Date.now() + 4000 : 0 };
-        if (body.ready && activeSDKInvite && state.call.phase === "ringing") scheduleAccept(0);
-        return sendJson(res, 200, { code: 0 });
-      } catch { return sendJson(res, 400, { code: -1, message: "invalid readiness" }); }
-    }
-'''
-    s = s.replace(needle, addition + needle, 1)
-    # Native command 20050 carries diagnostic text, including ordinary login logs.
-    # Treating it as expiry repeatedly logs in and prevents invitation processing.
-    needle = '(command === 20050 || command === 120043)'
-    assert s.count(needle) == 1
-    s = s.replace(needle, '(command === 120043)', 1)
-    s = s.replace('    loginPosted: false,', '    loginPosted: false,\n    loginSucceeded: false,', 1)
-    s = s.replace('    state.avHost.loginPosted = false;', '    state.avHost.loginPosted = false;\n    state.avHost.loginSucceeded = false;', 1)
-    needle = '  state.avHost.lastOutputCommand = command;'
-    assert needle in s
-    s = s.replace(needle, needle + "\n  if (command === 1) state.avHost.loginSucceeded = Array.isArray(value) && value[0] === 0;", 1)
-    # Keep only redacted summaries of native results for call diagnosis.
-    needle = '  state.avHost.lastOutputCommand = command;'
-    assert needle in s
-    s = s.replace(needle, needle + "\n  state.avHost.outputCommands ??= {};\n  state.avHost.outputCommands[command] = (state.avHost.outputCommands[command] || 0) + 1;\n  if ([1, 55, 20050, 120043, 20006].includes(command)) {\n    state.avHost.outputResults ??= {};\n    state.avHost.outputResults[command] = summarizeValue(value);\n  }", 1)
-    return s
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'qq-call'))
+from bridge_patch import patch_bridge
 
 
 def prepare():
