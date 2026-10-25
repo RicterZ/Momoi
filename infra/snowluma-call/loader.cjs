@@ -47,7 +47,10 @@ function start() {
     if (wrapper) {
       try {
         const factory = module.exports && module.exports.NodeIQQNTWrapperSession;
-        if (factory && !factory.__momoiQQCall) observeWrapper(module.exports, attach, report);
+        if (factory && !factory.__momoiQQCall) {
+          console.error("[MomoiQQCall] post-dlopen");
+          observeWrapper(module.exports, attach, report);
+        }
       } catch (error) { report(error); }
     }
     return result;

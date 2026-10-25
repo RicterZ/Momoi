@@ -81,6 +81,17 @@ function observeWrapper(wrapper, onSession, onError) {
   Object.defineProperty(shim, "__momoiQQCall", { value: true });
   installFactory(wrapper, shim);
   console.error("[MomoiQQCall] factory hooked", methods.join(","));
+  if (!process.versions.electron) return;
+  setTimeout(() => {
+    try {
+      const session = factory.getNTWrapperSession(0);
+      const proto = session && Object.getPrototypeOf(session);
+      const names = proto ? Object.getOwnPropertyNames(proto).filter((name) => /init|AV|Account|Uin|Uid|Login|Session/i.test(name)) : [];
+      console.error("[MomoiQQCall] existing", session ? "session" : "empty", names.join(","));
+    } catch (error) {
+      console.error("[MomoiQQCall] existing failed", error && error.message);
+    }
+  }, 6000);
 }
 
 function hookPrototype(factory, onSession, onError) {
@@ -117,11 +128,15 @@ function captureExport(module, onSession, onError) {
   };
   module.exports = new Proxy(target, {
     set(obj, prop, value, receiver) {
-      if (prop === "NodeIQQNTWrapperSession") value = wrap(value);
+      if (prop === "NodeIQQNTWrapperSession") {
+        console.error("[MomoiQQCall] export set");
+        value = wrap(value);
+      }
       return Reflect.set(obj, prop, value, receiver);
     },
     defineProperty(obj, prop, desc) {
       if (prop === "NodeIQQNTWrapperSession" && desc && "value" in desc) {
+        console.error("[MomoiQQCall] export define");
         desc = { ...desc, value: wrap(desc.value) };
       }
       return Reflect.defineProperty(obj, prop, desc);
