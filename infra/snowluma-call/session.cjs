@@ -66,7 +66,6 @@ function observeWrapper(wrapper, onSession, onError) {
   function call(name) {
     const method = factory[name];
     return function (...args) {
-      console.error("[MomoiQQCall] factory call", name, args.length);
       const session = Reflect.apply(method, factory, args);
       try {
         return hookSession(session);
@@ -90,25 +89,7 @@ function hookPrototype(factory, onSession, onError) {
     hookedPrototypes.add(factory);
     const desc = Object.getOwnPropertyDescriptor(factory, "prototype");
     const initDesc = Object.getOwnPropertyDescriptor(factory.prototype, "init");
-    console.error("[MomoiQQCall] prototype", JSON.stringify({
-      writable: desc ? desc.writable === true : false,
-      configurable: desc ? desc.configurable === true : false,
-      init: typeof factory.prototype.init,
-      initWritable: initDesc ? initDesc.writable === true : false,
-      initConfigurable: initDesc ? initDesc.configurable === true : false,
-    }));
-    if (process.env.QQ_CALL_ENABLED !== "1" || typeof factory.getNTWrapperSession !== "function") return;
-    setTimeout(() => {
-      try {
-        const session = factory.getNTWrapperSession(0);
-        const proto = session && Object.getPrototypeOf(session);
-        const names = proto ? Object.getOwnPropertyNames(proto).filter((name) => /init|AV|Account|Uin|Uid|Login|Session/i.test(name)) : [];
-        const service = session && session.getAVSDKService?.();
-        console.error("[MomoiQQCall] existing", session ? "session" : "empty", names.join(","), service ? "service" : "no-service");
-      } catch (error) {
-        console.error("[MomoiQQCall] existing failed", error && error.message);
-      }
-    }, 10000);
+    if (!desc || (desc.writable === false && desc.configurable === false) || !initDesc || initDesc.writable === false) return;
   } catch (error) {
     console.error("[MomoiQQCall] prototype failed", error && error.message);
   }

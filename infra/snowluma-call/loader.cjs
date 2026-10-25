@@ -2,10 +2,9 @@
 
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { hookPrototype, sessionContext } = require("./session.cjs");
+const { observeWrapper, sessionContext } = require("./session.cjs");
 
 function start() {
-  console.error("[MomoiQQCall] loader", process.type, process.env.QQ_CALL_ENABLED || "");
   const { app } = require("electron");
   if (process.type !== "browser" || process.env.QQ_CALL_ENABLED !== "1") return;
   if (process.env.MAIBOT_QQ_CALL_AV_HOST === "1") {
@@ -44,8 +43,7 @@ function start() {
     const result = Reflect.apply(dlopen, this, [module, filename, ...args]);
     if (path.basename(String(filename)) === "wrapper.node") {
       try {
-        const factory = module.exports && module.exports.NodeIQQNTWrapperSession;
-        if (typeof factory === "function") hookPrototype(factory, attach, report);
+        observeWrapper(module.exports, attach, report);
       } catch (error) { report(error); }
     }
     return result;
