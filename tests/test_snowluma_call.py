@@ -63,6 +63,9 @@ def test_prepare_preserves_original_main_and_patches_bridge(tmp_path, main):
     state.avHost.loginPosted = false;
   state.avHost.lastOutputCommand = command;
     logger.error(`[MaiBotQQCall] bridge startup failed: ${state.listenerError}`);
+    identityError: uin ? null : errors.join("; ") || "caller identity lookup returned empty",
+  };
+}
 ''')
     load_script('prepare').prepare(root, qq)
     assert (qq / 'main.js').read_text() == '// original'
@@ -73,6 +76,7 @@ def test_prepare_preserves_original_main_and_patches_bridge(tmp_path, main):
     assert 'momoi/ready' in plugin.read_text()
     assert 'loginSucceeded' in plugin.read_text()
     assert 'callerUin !== momoiReady.ownerUin' in plugin.read_text()
+    assert 'if (uin && state.call.phase === "ringing") scheduleAccept(0);' in plugin.read_text()
 
 
 @pytest.mark.parametrize('main', ['/absolute.js', '../escape.js', './missing.js', './momoi-call.cjs'])

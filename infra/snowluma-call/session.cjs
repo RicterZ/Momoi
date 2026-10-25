@@ -194,6 +194,39 @@ function sessionContext(session, config) {
   };
 }
 
+const { execFile } = require("node:child_process");
+
+const UID_PATTERN = /^u_[0-9A-Za-z_-]{4,80}$/;
+
+function uinForUid(uid) {
+  return new Promise((resolve) => {
+    if (!UID_PATTERN.test(uid)) {
+      resolve(null);
+      return;
+    }
+    execFile("python3", ["-c", `
+import sqlite3, sys
+from pathlib import Path
+uid = sys.argv[1]
+root = Path("/app/data")
+if not root.is_dir():
+    raise SystemExit(0)
+for path in root.rglob("snowluma_identity.db"):
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        row = con.execute("select uin from users where uid=? limit 1", (uid,)).fetchone()
+    finally:
+        con.close()
+    if row and str(row[0]) not in {"", "0", "None"}:
+        print(row[0])
+        break
+`, uid], { timeout: 1500 }, (error, stdout) => {
+      const text = error ? "" : String(stdout || "").trim();
+      resolve(/^[1-9][0-9]{4,}$/.test(text) ? text : null);
+    });
+  });
+}
+
 function nativeSessionFacade(bridge) {
   const service = {
     isNull() { return false; },
@@ -212,6 +245,18 @@ function nativeSessionFacade(bridge) {
   };
   return {
     getAVSDKService() { return service; },
+    getUixConvertService() {
+      return {
+        async getUin(uids) {
+          const uinInfo = new Map();
+          for (const uid of Array.isArray(uids) ? uids : []) {
+            const uin = await uinForUid(uid);
+            if (uin) uinInfo.set(uid, uin);
+          }
+          return { uinInfo };
+        },
+      };
+    },
     getAccountPath() {
       const current = bridge.identity();
       if (!current || typeof current.path !== "string" || !current.path) {

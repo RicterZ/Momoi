@@ -52,6 +52,13 @@ def patch_bridge(source):
         needle + "\n  if (command === 1) state.avHost.loginSucceeded = Array.isArray(value) && value[0] === 0;",
         1,
     )
+    needle = '    identityError: uin ? null : errors.join("; ") || "caller identity lookup returned empty",\n  };\n}'
+    assert source.count(needle) == 1
+    source = source.replace(
+        needle,
+        '    identityError: uin ? null : errors.join("; ") || "caller identity lookup returned empty",\n  };\n  if (uin && state.call.phase === "ringing") scheduleAccept(0);\n}',
+        1,
+    )
     source = source.replace(
         needle,
         needle + "\n  state.avHost.outputCommands ??= {};\n  state.avHost.outputCommands[command] = (state.avHost.outputCommands[command] || 0) + 1;\n  if ([1, 55, 20050, 120043, 20006].includes(command)) {\n    state.avHost.outputResults ??= {};\n    state.avHost.outputResults[command] = summarizeValue(value);\n  }",

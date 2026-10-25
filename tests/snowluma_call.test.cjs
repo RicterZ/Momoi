@@ -111,7 +111,7 @@ test("native failures are preserved and rejected init never attaches", async () 
 
 const fs = require("node:fs");
 const vm = require("node:vm");
-test("native session facade keeps the existing bridge context", () => {
+test("native session facade keeps the existing bridge context", async () => {
   const calls = [];
   const bridge = {
     identity: () => ({ uid: "u_test", uin: "123456", path: "/account" }),
@@ -125,6 +125,8 @@ test("native session facade keeps the existing bridge context", () => {
   assert.equal(session.getAVSDKService().addKernelAVSDKListener({}), 1);
   session.getAVSDKService().setActionFromAVSDK(7, "body");
   assert.deepEqual(calls, [[7, "body"]]);
+  const converted = await session.getUixConvertService().getUin(["nope", "u_test"]);
+  assert.equal(converted.uinInfo.size, 0);
   bridge.identity = () => null;
   assert.throws(() => session.getAccountPath(), /account path/);
 });
