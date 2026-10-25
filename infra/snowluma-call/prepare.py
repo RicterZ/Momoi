@@ -4,33 +4,7 @@ from pathlib import Path, PurePosixPath
 import sys
 
 
-QQ_UPDATE_BLOCK = '''# Freeze the bundled QQ version. QQ has two update paths: the "立即更新" full-update
-# dialog (click-gated -> never fires headless) and a SILENT hot-update channel
-# (hotUpdateApi -> qqpatch.gtimg.cn) that swaps QQ files in the background. Only
-# the silent one can change bytes without us, which would break the version-pinned
-# nnphook. Black-hole that single host so the hot-update download can never land.
-# QQ's main-process hot-update resolves via getaddrinfo, which honours /etc/hosts;
-# Docker writes /etc/hosts once at container start and never rewrites it after, so
-# this append is durable for the container's lifetime. Runs as root before QQ.
-if ! grep -q 'qqpatch\\.gtimg\\.cn' /etc/hosts 2>/dev/null; then
-  printf '0.0.0.0 qqpatch.gtimg.cn\\n' >> /etc/hosts
-fi
-'''
-
-
-def remove_qq_update_block(startup=Path('/root/start.sh')):
-    if not startup.exists():
-        return
-    source = startup.read_text()
-    if QQ_UPDATE_BLOCK in source:
-        startup.write_text(source.replace(QQ_UPDATE_BLOCK, '', 1))
-    elif 'qqpatch.gtimg.cn' in source:
-        raise ValueError('SnowLuma QQ update block changed; review before rebuilding')
-
-
-def prepare(root=Path('/opt/qq-call'), qq=Path('/opt/QQ/resources/app'),
-            startup=Path('/root/start.sh')):
-    remove_qq_update_block(startup)
+def prepare(root=Path('/opt/qq-call'), qq=Path('/opt/QQ/resources/app')):
     sys.path.insert(0, str(root / 'qq-call'))
     from bridge_patch import patch_bridge
     package_path = qq / 'package.json'
