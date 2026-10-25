@@ -53,7 +53,7 @@ class MessagingTest(unittest.TestCase):
             requests: list[tuple[str, dict[str, object]]] = []
 
             async def request(
-                action: str, params: dict[str, object]
+                action: str, params: dict[str, object], *, timeout: float | None = None
             ) -> dict[str, object]:
                 requests.append((action, params))
                 return {
@@ -91,7 +91,7 @@ class MessagingTest(unittest.TestCase):
             disabled = OneBotChannel(
                 OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             )
-            async def unavailable(action, params):
+            async def unavailable(action, params, *, timeout=None):
                 raise NotConnected("offline")
 
             disabled._request_action = unavailable

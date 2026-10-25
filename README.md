@@ -273,7 +273,7 @@ logs. Connect a model in Settings to use web chat. QQ, WeChat and voice are opti
 
 For QQ, the same Compose file starts SnowLuma. Open `http://127.0.0.1:6081`,
 scan the login code, then enable QQ in Settings, enter the owner QQ, and paste the OneBot access token from the SnowLuma WebUI.
-Real-time voice calls still use the existing call bridge.
+The experimental [SnowLuma voice-call overlay](infra/snowluma-call/README.md) reuses the existing media pipeline; native amd64 call verification is still required.
 The image includes BGE and encodes semantic
 memory in the Momoi process; no separate encoder container or port is needed.
 

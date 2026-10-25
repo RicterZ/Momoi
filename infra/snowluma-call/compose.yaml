@@ -1,0 +1,13 @@
+# Opt-in overlay; the normal messaging-only deployment is unchanged.
+services:
+  snowluma:
+    build:
+      context: .
+      dockerfile: infra/snowluma-call/Dockerfile
+      args:
+        SNOWLUMA_IMAGE: ${SNOWLUMA_IMAGE:-motricseven7/snowluma:v2.2.0}
+    image: momoi-snowluma-call:local
+    environment:
+      QQ_CALL_ENABLED: "1"
+    ports:
+      - "127.0.0.1:${QQ_CALL_PORT:-6112}:6112"

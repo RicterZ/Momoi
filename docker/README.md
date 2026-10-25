@@ -33,7 +33,7 @@ the QQ login code. The remote-desktop password and SnowLuma WebUI password are
 printed once in `docker logs snowluma`. Then enable QQ in Momoi Settings,
 set the owner QQ, and paste the OneBot access token from the SnowLuma WebUI.
 Compose points Momoi at `ws://snowluma:3001/`. WebUI is at `http://127.0.0.1:5099`.
-Real-time voice calls are unchanged.
+Real-time calls use an opt-in [experimental SnowLuma overlay](../infra/snowluma-call/README.md); native amd64 call verification is still required.
 Local Sherpa ASR also runs inside Momoi. Select Sherpa in Settings and leave its
 model path empty; the model loads only when used. Tencent Cloud remains available. The old `http://asr:8003` default
 migrates automatically; remove the old ASR service from custom Compose files after

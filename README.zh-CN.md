@@ -228,7 +228,7 @@ docker compose -f docker-compose.yml logs momoi
 在设置页连接模型即可使用网页聊天。QQ、微信和语音均为可选配置，可稍后接入。
 
 镜像已包含 BGE 模型，语义记忆默认在 Momoi 进程内编码，无需额外容器或端口。
-QQ 由同一 Compose 文件里的 SnowLuma 提供。启动后打开 `http://127.0.0.1:6081` 扫码登录，再到 Momoi 设置页启用 QQ，填写主人 QQ 和 SnowLuma WebUI 里的 OneBot access token。实时电话仍使用原来的通话组件。
+QQ 由同一 Compose 文件里的 SnowLuma 提供。启动后打开 `http://127.0.0.1:6081` 扫码登录，再到 Momoi 设置页启用 QQ，填写主人 QQ 和 SnowLuma WebUI 里的 OneBot access token。实时电话有可选的 [SnowLuma 接入层](infra/snowluma-call/README.md)，沿用现有音频链路；仍需原生 amd64 真电话验证，默认不启用。
 
 工作区默认持久化在 `~/.momoi`，由 `momoi` 初始化，已有文件不覆盖。
 默认只发布 dashboard 的 8788 端口；使用 Webhook 时另行添加端口映射并配置功能。

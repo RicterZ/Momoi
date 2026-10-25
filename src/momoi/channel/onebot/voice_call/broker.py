@@ -1,4 +1,4 @@
-"""NapCat-side media service. No model, ASR credentials, or private memories."""
+"""QQ-side media service. No model, ASR credentials, or private memories."""
 import asyncio
 import array
 import contextlib
