@@ -37,8 +37,6 @@ def apply_env_overrides(raw: dict[str, Any]) -> None:
         enabled = channels.get("enabled")
         onebot = enabled.get("onebot") if isinstance(enabled, dict) else None
         if isinstance(onebot, dict):
-            if value := _env("MOMOI_ONEBOT_URL") or _env("MOMOI_NAPCAT_URL"):
-                onebot["url"] = value
             if value := _env("MOMOI_OWNER_QQ"):
                 onebot["owner_qq"] = value
             if not str(onebot.get("access_token") or "").strip():

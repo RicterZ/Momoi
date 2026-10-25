@@ -250,6 +250,7 @@ class ConfigurationTest(unittest.TestCase):
                     "MOMOI_LLM_BASE_URL": "https://llm.example",
                     "MOMOI_LLM_API_KEY": "sk-from-env",
                     "MOMOI_LLM_MODEL": "env-model",
+                    "MOMOI_ONEBOT_URL": "ws://snowluma:3001",
                     "MOMOI_NAPCAT_URL": "ws://napcat:3001",
                     "MOMOI_OWNER_QQ": "999",
                     "MOMOI_PRIMARY": "weixin",
@@ -263,11 +264,11 @@ class ConfigurationTest(unittest.TestCase):
             ):
                 config = load_config(path)
             self.assertEqual(config.channel.plugin, "weixin")
-            napcat = next(
+            onebot = next(
                 item for item in config.channel_configs if item.plugin == "onebot"
             )
-            self.assertEqual(napcat.url, "ws://napcat:3001")
-            self.assertEqual(napcat.owner_qq, "999")
+            self.assertEqual(onebot.url, "ws://localhost")
+            self.assertEqual(onebot.owner_qq, "999")
             self.assertEqual(config.timezone, "Asia/Shanghai")
             self.assertEqual(config.dashboard.token, "env-dash")
             self.assertTrue(config.webhooks.enabled)

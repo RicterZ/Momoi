@@ -602,7 +602,6 @@ Goal 的 `send_bubbles` / `send_voice` 调用后立即进入通用发送流程�
 
 | 环境变量 | 配置字段 |
 | --- | --- |
-| `MOMOI_ONEBOT_URL` | `channels.enabled.onebot.url`。旧名 `MOMOI_NAPCAT_URL` 仍可用 |
 | `MOMOI_OWNER_QQ` | `channels.enabled.onebot.owner_qq` |
 | `MOMOI_ONEBOT_TOKEN_FILE` | `channels.enabled.onebot.access_token`（仅当配置里的令牌为空）。旧名 `MOMOI_NAPCAT_TOKEN_FILE` 仍可用 |
 | `MOMOI_ONEBOT_ACCESS_TOKEN` | `channels.enabled.onebot.access_token`。旧名 `MOMOI_NAPCAT_ACCESS_TOKEN` 仍可用 |

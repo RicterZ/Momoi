@@ -652,7 +652,6 @@ Environment values override `config.json` for the current process.
 
 | Variable | Configuration field |
 | --- | --- |
-| `MOMOI_ONEBOT_URL` | `channels.enabled.onebot.url`. `MOMOI_NAPCAT_URL` is still accepted |
 | `MOMOI_OWNER_QQ` | `channels.enabled.onebot.owner_qq` |
 | `MOMOI_ONEBOT_TOKEN_FILE` | `channels.enabled.onebot.access_token` when that token is empty. `MOMOI_NAPCAT_TOKEN_FILE` is still accepted |
 | `MOMOI_ONEBOT_ACCESS_TOKEN` | `channels.enabled.onebot.access_token`. `MOMOI_NAPCAT_ACCESS_TOKEN` is still accepted |
