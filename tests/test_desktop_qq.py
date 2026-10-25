@@ -99,7 +99,7 @@ def test_qq_websocket_auth_and_account_identity(tmp_path, access_token, bot_qq, 
     asyncio.run(check())
 
 
-def test_qq_config_validates_bot_identity_and_masks_token(tmp_path):
+def test_qq_config_validates_bot_identity_and_exposes_editable_token(tmp_path):
     from momoi.config.manager import ConfigurationManager
     from momoi.config.workspace import bootstrap
     bootstrap(tmp_path / 'config.json')
@@ -107,7 +107,7 @@ def test_qq_config_validates_bot_identity_and_masks_token(tmp_path):
     document = json.loads(manager.path.read_text())
     document['channels'] = {'primary': 'onebot', 'enabled': {'onebot': {'url': 'ws://127.0.0.1:3001', 'owner_qq': '54321', 'bot_qq': '12345', 'access_token': 'secret'}}}
     manager.path.write_text(json.dumps(document))
-    assert manager.snapshot()['app']['channels']['enabled']['onebot']['access_token'] == {'$secret': 'keep'}
+    assert manager.snapshot()['app']['channels']['enabled']['onebot']['access_token'] == 'secret'
     parsed = OneBotConfig.from_mapping(document['channels']['enabled']['onebot'])
     assert parsed.bot_qq == '12345' and parsed.access_token == 'secret'
     with pytest.raises(ValueError, match='bot_qq'):

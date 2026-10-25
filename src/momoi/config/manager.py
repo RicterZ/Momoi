@@ -262,7 +262,7 @@ class ConfigurationManager:
             "desktop_qq_call_managed": bool(os.environ.get("MOMOI_QQ_CALL_MANAGED")),
             "revision": self.revision(),
             "providers": copy.deepcopy(providers),
-            "app": redact(app_values),
+            "app": copy.deepcopy(app_values),
             "app_fields": app_fields,
             "adapters": adapter_schemas(),
             "validation_error": problem,
@@ -281,7 +281,7 @@ class ConfigurationManager:
                 }
                 for capability, binding in providers.get("bindings", {}).items()
             },
-            "model_providers": redact(self.model_providers(providers)),
+            "model_providers": self.model_providers(providers),
             "active_model_provider": providers.get("bindings", {}).get("llm", {}).get("service", ""),
             "image_model_provider": providers.get("bindings", {}).get("vision", {}).get("service", ""),
         }

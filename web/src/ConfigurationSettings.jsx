@@ -78,8 +78,6 @@ const fieldHints = {
   dimensions: "需与所选模型的输出维度一致",
 };
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const keepSecret = (value) =>
-  value && typeof value === "object" && value.$secret === "keep";
 
 function Icon({ name, ...props }) {
   const paths = {
@@ -389,52 +387,31 @@ function Fields({ children, as: Container = "fieldset", disabled }) {
 
 function SecretField({ label, value, onChange }) {
   const id = useId();
-  const input = useRef(null);
   const [visible, setVisible] = useState(false);
   const environment = value && typeof value === "object" && "env" in value;
-  const saved = Boolean(keepSecret(value) || environment);
-  useEffect(() => {
-    setVisible(false);
-  }, [saved]);
   return (
     <div className="settings-field">
       <label className="settings-label" htmlFor={id}>
         {label}
       </label>
       <div
-        className={`settings-input-wrap settings-secret-input${saved ? " is-saved" : ""}`}
+        className="settings-input-wrap settings-secret-input"
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget))
             setVisible(false);
         }}
       >
         <input
-          ref={input}
           id={id}
           className="dash-input"
           type={visible ? "text" : "password"}
-          value={saved ? "••••••••" : (value ?? "")}
-          readOnly={saved}
-          placeholder="请输入密钥"
+          value={environment ? "" : (value ?? "")}
+          placeholder={environment ? `来自环境变量 ${value.env}` : "请输入密钥"}
           autoComplete="new-password"
           spellCheck={false}
           onChange={(event) => onChange(event.target.value)}
         />
         <div className="settings-secret-actions">
-          {saved && (
-            <button
-              type="button"
-              className="settings-text-button"
-              aria-label={`替换 ${label}`}
-              onClick={() => {
-                setVisible(false);
-                onChange("");
-                input.current?.focus();
-              }}
-            >
-              替换
-            </button>
-          )}
           <button
             type="button"
             className="settings-reveal"
@@ -851,10 +828,6 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
     setStatus(null);
     try {
       const { adapter, options } = normalizeProvider(testCapability, draft.values[testCapability], data.adapters);
-      const fields = data.adapters.find(item => item.capability === testCapability && item.adapter === adapter)?.fields || {};
-      for (const [key, spec] of Object.entries(fields)) {
-        if (spec.secret && keepSecret(options[key])) throw new Error(`请重新填写${spec.label || key}后测试连接。`);
-      }
       const result = await testProvider(testCapability, { adapter, options });
       if (version === testVersion.current) setTestResult(result);
     } catch (error) {

@@ -1,4 +1,4 @@
-// Configuration snapshots redact stored secrets with {$secret: "keep"}.
+// Accept strings, environment references, and legacy secret placeholders.
 export function hasModelApiKey(data) {
   const key = data?.capabilities?.llm?.options?.api_key;
   return (typeof key === "string" && key.trim().length > 0)

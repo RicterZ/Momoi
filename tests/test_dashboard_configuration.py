@@ -53,7 +53,7 @@ class ConfigurationManagerTest(unittest.TestCase):
              "adapter": profile["adapter"], "options": profile["options"]}, initial["revision"])
         self.assertEqual(named["active_model_provider"], identifier)
         self.assertEqual(self.manager.validate().providers.options_for("llm"), original)
-        self.assertEqual(named["model_providers"][0]["options"]["api_key"], {"$secret": "keep"})
+        self.assertEqual(named["model_providers"][0]["options"]["api_key"], "private-key")
         alternate = {**LLM["options"], "model": "alternate-model", "api_key": "alternate-secret"}
         added = self.manager.save_model_providers(
             {"action": "save", "name": "Alternate", "adapter": "openai", "options": alternate}, named["revision"])
@@ -673,6 +673,24 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status, 200)
         self.assertIn("private-key", await response.text())
+        response = await self.client.get("/api/settings/configuration")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        saved = await response.json()
+        profile = saved["model_providers"][0]
+        self.assertEqual(profile["options"]["api_key"], "private-key")
+        profile["options"]["api_key"] = "edited-key"
+        response = await self.client.put(
+            "/api/settings/model-providers",
+            json={"revision": saved["revision"], "document": {
+                "action": "save", "id": profile["id"], "name": "Edited",
+                "adapter": profile["adapter"], "options": profile["options"],
+            }},
+        )
+        self.assertEqual(response.status, 200, await response.text())
+        saved = await response.json()
+        self.assertEqual(saved["model_providers"][0]["options"]["api_key"], "edited-key")
+        self.assertEqual(self.manager.validate().providers.options_for("llm")["api_key"], "edited-key")
         response = await self.client.put(
             "/api/settings/providers/llm",
             json={"revision": data["revision"], "document": LLM},
