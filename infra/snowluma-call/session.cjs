@@ -13,6 +13,7 @@ function observeWrapper(wrapper, onSession, onError) {
   }
   const methods = FACTORY_METHODS.filter((name) => typeof factory[name] === "function");
   if (!methods.length) throw new Error("QQ session factories are unavailable");
+  hookPrototype(factory, onSession, onError);
   const views = new WeakMap();
 
   function hookSession(session) {
@@ -76,23 +77,47 @@ function observeWrapper(wrapper, onSession, onError) {
     };
   }
 
-  installFactory(wrapper, shimFactory(factory, methods, call));
+  const shim = shimFactory(factory, methods, call);
+  Object.defineProperty(shim, "__momoiQQCall", { value: true });
+  installFactory(wrapper, shim);
   console.error("[MomoiQQCall] factory hooked", methods.join(","));
-  if (!process.versions.electron) return;
-  const probe = () => {
-    if (typeof factory.getNTWrapperSession !== "function") return;
-    for (const id of [0, 1, "0", ""]) {
-      try {
-        const session = factory.getNTWrapperSession(id);
-        const proto = session && Object.getPrototypeOf(session);
-        const names = proto ? Object.getOwnPropertyNames(proto).filter((name) => /init|AV|Account|Uin|Uid|Login|Session/i.test(name)) : [];
-        console.error("[MomoiQQCall] probe", JSON.stringify(id), session ? "session" : "empty", names.join(","));
-      } catch (error) {
-        console.error("[MomoiQQCall] probe failed", JSON.stringify(id), error && error.message);
-      }
-    }
+}
+
+function hookPrototype(factory, onSession, onError) {
+  if (typeof factory !== "function" || !factory.prototype || typeof factory.prototype.init !== "function") return;
+  const desc = Object.getOwnPropertyDescriptor(factory, "prototype");
+  if (desc && desc.writable === false && desc.configurable === false) return;
+  const init = factory.prototype.init;
+  const proto = Object.create(factory.prototype);
+  proto.init = function (config, ...rest) {
+    const result = Reflect.apply(init, this, [config, ...rest]);
+    Promise.resolve(result).then(() => onSession(this, config)).catch(onError);
+    return result;
   };
-  setTimeout(probe, 8000);
+  try { factory.prototype = proto; } catch { /* native prototype slot stays in place */ }
+}
+
+function captureExport(module, onSession, onError) {
+  const target = module.exports && typeof module.exports === "object" ? module.exports : {};
+  const wrap = (factory) => {
+    if (!factory || factory.__momoiQQCall) return factory;
+    const holder = { NodeIQQNTWrapperSession: factory };
+    try { observeWrapper(holder, onSession, onError); }
+    catch (error) { onError(error); return factory; }
+    return holder.NodeIQQNTWrapperSession;
+  };
+  module.exports = new Proxy(target, {
+    set(obj, prop, value, receiver) {
+      if (prop === "NodeIQQNTWrapperSession") value = wrap(value);
+      return Reflect.set(obj, prop, value, receiver);
+    },
+    defineProperty(obj, prop, desc) {
+      if (prop === "NodeIQQNTWrapperSession" && desc && "value" in desc) {
+        desc = { ...desc, value: wrap(desc.value) };
+      }
+      return Reflect.defineProperty(obj, prop, desc);
+    },
+  });
 }
 
 function assignInit(session, hooked) {
@@ -178,4 +203,4 @@ function sessionContext(session, config) {
   };
 }
 
-module.exports = { observeWrapper, sessionContext };
+module.exports = { observeWrapper, captureExport, sessionContext };
