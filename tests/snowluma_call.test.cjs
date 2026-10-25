@@ -14,12 +14,14 @@ function nativeSession() {
 
 test("captures QQ-created session after native init, preserving this and return value", async () => {
   const session = nativeSession();
-  const wrapper = { NodeIQQNTWrapperSession: {
-    create() { assert.equal(this, wrapper.NodeIQQNTWrapperSession); return session; },
-    getNTWrapperSession(name) { assert.equal(name, "nt_1"); return session; },
-  } };
+  const factory = {
+    create() { assert.equal(this, factory); return session; },
+    getNTWrapperSession(name) { assert.equal(this, factory); assert.equal(name, "nt_1"); return session; },
+  };
+  const wrapper = { NodeIQQNTWrapperSession: factory };
   const captured = [];
   observeWrapper(wrapper, (value, identity) => captured.push([value, identity]), assert.fail);
+  assert.notEqual(wrapper.NodeIQQNTWrapperSession, factory);
   assert.equal(wrapper.NodeIQQNTWrapperSession.create(), session);
   wrapper.NodeIQQNTWrapperSession.getNTWrapperSession("nt_1");
   assert.equal(session.init(config), 42);
@@ -29,6 +31,38 @@ test("captures QQ-created session after native init, preserving this and return 
   const ctx = sessionContext(session, config);
   assert.equal(ctx.core.context.session, session);
   assert.deepEqual(ctx.core.selfInfo, { uid: config.selfUid, uin: config.selfUin });
+});
+
+test("read-only native factory and session.init are observed without assignment", async () => {
+  const session = nativeSession();
+  const init = session.init;
+  Object.defineProperty(session, "init", { value: init, writable: false, configurable: false });
+  function NodeIQQNTWrapperSession() {}
+  Object.defineProperty(NodeIQQNTWrapperSession, "getNTWrapperSession", {
+    value(id) {
+      assert.equal(this, NodeIQQNTWrapperSession);
+      assert.equal(id, "nt_1");
+      return session;
+    },
+    writable: false,
+    configurable: false,
+  });
+  const wrapper = { NodeIQQNTWrapperSession };
+  const captured = [];
+  observeWrapper(wrapper, (value, identity) => captured.push([value, identity]), assert.fail);
+  const returned = wrapper.NodeIQQNTWrapperSession.getNTWrapperSession("nt_1");
+  assert.notEqual(returned, session);
+  assert.equal(returned.init(config), 42);
+  assert.equal(session.config, config);
+  assert.equal(returned.getAccountPath(), "/account");
+  await Promise.resolve();
+  assert.deepEqual(captured, [[session, config]]);
+  assert.equal(sessionContext(captured[0][0], config).core.context.session, session);
+  const frozen = {};
+  Object.defineProperty(frozen, "NodeIQQNTWrapperSession", {
+    value: { create: () => session }, writable: false, configurable: false,
+  });
+  assert.throws(() => observeWrapper(frozen, () => {}, assert.fail), /not writable/);
 });
 
 test("invalid identity or missing native service fails closed", () => {

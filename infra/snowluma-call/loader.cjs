@@ -12,7 +12,8 @@ function start() {
     return;
   }
   let plugin, timer, generation = 0, work = Promise.resolve();
-  const report = () => console.error("[MomoiQQCall] session bridge unavailable; check the pinned QQ version");
+  const report = (error) => console.error("[MomoiQQCall] session bridge unavailable",
+    error && (error.stack || error.message || String(error)) || "check the pinned QQ version");
   const attach = (session, config) => {
     const current = ++generation;
     clearTimeout(timer);
@@ -25,12 +26,13 @@ function start() {
         try {
           const ctx = sessionContext(session, config);
           await plugin.plugin_init(ctx);
-        } catch {
+        } catch (error) {
           await plugin.plugin_cleanup();
+          if (attempts === 0) report(error);
           if (++attempts < 60) timer = setTimeout(() => {
             work = work.then(ready).catch(report);
           }, 1000);
-          else report();
+          else report(error);
         }
       };
       await ready();
@@ -40,7 +42,8 @@ function start() {
   process.dlopen = function (module, filename, ...args) {
     const result = Reflect.apply(dlopen, this, [module, filename, ...args]);
     if (path.basename(String(filename)) === "wrapper.node") {
-      try { observeWrapper(module.exports, attach, report); } catch { report(); }
+      try { observeWrapper(module.exports, attach, report); }
+      catch (error) { report(error); }
     }
     return result;
   };
