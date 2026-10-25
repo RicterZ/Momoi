@@ -1437,7 +1437,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                   <Toggle checked={enabled} disabled={busy || loginActive} onChange={value => toggle(key, value)}>启用{label}</Toggle>
                 </header>
                 <p className="settings-channel-description">
-                  {name === "weixin" ? "启用并保存后，扫码登录微信。" : name === "onebot" ? "填写 SnowLuma 的 OneBot 地址和主人 QQ。Docker 里地址是 ws://snowluma:3001/，令牌可留空。" : "配置并保存后连接此渠道。"}
+                  {name === "weixin" ? "启用并保存后，扫码登录微信。" : name === "onebot" ? "填写 OneBot 地址、连接令牌和主人 QQ。Docker 里地址是 ws://snowluma:3001/。" : "配置并保存后连接此渠道。"}
                 </p>
                 <div className="settings-channel-content">
                 {!enabled ? (
@@ -1445,7 +1445,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                     <span className="settings-channel-off-icon" aria-hidden="true"><Icon name={name === "weixin" ? "weixin" : name === "onebot" ? "qq" : "chat"} /></span>
                     <div>
                       <strong>{name === "weixin" ? "在微信里和 Momoi 聊天" : name === "onebot" ? "在 QQ 里和 Momoi 聊天" : `连接${label}`}</strong>
-                      <p>{name === "weixin" ? "打开上方开关，保存后扫码登录。" : name === "onebot" ? "打开上方开关，填写 SnowLuma 连接信息。" : "打开上方开关，接入这个消息渠道。"}</p>
+                      <p>{name === "weixin" ? "打开上方开关，保存后扫码登录。" : name === "onebot" ? "打开上方开关，填写 OneBot 地址和连接令牌。" : "打开上方开关，接入这个消息渠道。"}</p>
                     </div>
                   </div>
                 ) : name === "onebot" ? (
@@ -1453,7 +1453,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                   <Fields disabled={busy || loginActive}>
                     <OptionField name="bot_qq" spec={{ type: "string", label: "机器人 QQ", description: "登录 SnowLuma 的 QQ 号码，与主人 QQ 区分；只连一个账号时可留空。" }} value={options.bot_qq} onChange={value => edit(name, { ...options, bot_qq: value })} />
                     <OptionField name="url" spec={{ type: "string", label: "OneBot WebSocket 地址", description: "Docker Compose 会在启动时覆盖为 ws://snowluma:3001/。" }} value={options.url} onChange={value => edit(name, { ...options, url: value })} />
-                    <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "留空时使用 Docker 初始化写入的 OneBot 令牌。自行部署 SnowLuma 时填写 WebUI 里的 access token。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
+                    <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "填写 SnowLuma WebUI 里 OneBot 的 access token。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
                     <OptionField name="owner_qq" spec={{ type: "string", label: "主人 QQ" }} value={options.owner_qq} onChange={value => edit(name, { ...options, owner_qq: value })} />
                   </Fields>
                   <DesktopQQ botQQ={options.bot_qq} ownerQQ={options.owner_qq} connected={qqConnected} disabled={busy || loginActive} onConnection={connectDesktopQQ} />

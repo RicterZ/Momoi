@@ -1,20 +1,8 @@
 services:
-  snowluma-config:
-    image: alpine:3.22
-    container_name: momoi-snowluma-config
-    restart: "no"
-    volumes:
-      - snowluma-data:/app/data
-      - ./docker/snowluma/init-onebot.sh:/init-onebot.sh:ro
-    entrypoint: ["/bin/sh", "/init-onebot.sh"]
-
   snowluma:
     image: ${SNOWLUMA_IMAGE:-motricseven7/snowluma:v2.2.0}
     container_name: ${SNOWLUMA_CONTAINER:-snowluma}
     restart: unless-stopped
-    depends_on:
-      snowluma-config:
-        condition: service_completed_successfully
     shm_size: 1gb
     ulimits:
       nofile:
@@ -57,12 +45,10 @@ services:
       MOMOI_TIMEZONE: ${TZ:-Asia/Shanghai}
       MOMOI_DASHBOARD_TOKEN: ${MOMOI_DASHBOARD_TOKEN:-}
       MOMOI_ONEBOT_URL: ${MOMOI_ONEBOT_URL:-${MOMOI_NAPCAT_URL:-ws://snowluma:3001/}}
-      MOMOI_ONEBOT_TOKEN_FILE: ${MOMOI_ONEBOT_TOKEN_FILE:-/run/snowluma/config/onebot.token}
     ports:
       - "${MOMOI_DASHBOARD_PORT:-8788}:8788"
     volumes:
       - ${MOMOI_WORKSPACE:-${HOME}/.momoi}:/home/momoi/.momoi
-      - snowluma-data:/run/snowluma:ro
 
 volumes:
   snowluma-data:
