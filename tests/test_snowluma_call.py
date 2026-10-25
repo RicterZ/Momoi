@@ -41,6 +41,17 @@ def test_qq_session_capture():
                    capture_output=True, text=True)
 
 
+def test_prepare_removes_base_image_qq_update_block(tmp_path):
+    module = load_script('prepare')
+    startup = tmp_path / 'start.sh'
+    startup.write_text('#!/bin/bash\n' + module.QQ_UPDATE_BLOCK + 'exec supervisord\n')
+
+    module.remove_qq_update_block(startup)
+
+    assert startup.read_text() == '#!/bin/bash\nexec supervisord\n'
+    module.remove_qq_update_block(startup)
+
+
 @pytest.mark.parametrize("main", ["./main.js", "./application.asar/app_launcher/index.js"])
 def test_prepare_preserves_original_main_and_patches_bridge(tmp_path, main):
     root = tmp_path / 'call'
