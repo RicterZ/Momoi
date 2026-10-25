@@ -199,7 +199,7 @@ function nativeSessionFacade(bridge) {
     isNull() { return false; },
     addKernelAVSDKListener(listener) {
       if (listener && typeof bridge.watch === "function") bridge.watch(listener);
-      const id = bridge.registerListener();
+      const id = bridge.registerListener(listener);
       if (!Number.isInteger(id)) throw new Error("QQ AVSDK listener was not registered");
       return id;
     },

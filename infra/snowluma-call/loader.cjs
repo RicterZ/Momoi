@@ -11,7 +11,7 @@ function start() {
     require("/opt/qq-call/upstream/bridge/av-host/host.cjs");
     return;
   }
-  let plugin, timer, pollTimer, generation = 0, work = Promise.resolve();
+  let plugin, timer, pollTimer, nativeHook, generation = 0, work = Promise.resolve();
   const report = (error) => console.error("[MomoiQQCall] session bridge unavailable",
     error && (error.stack || error.message || String(error)) || "check the pinned QQ version");
   const attach = (session, config) => {
@@ -44,6 +44,7 @@ function start() {
     if (path.basename(String(filename)) === "wrapper.node") {
       try {
         const native = require("./session_hook.node");
+        nativeHook = native;
         if (!native.install()) throw new Error("native NT session hook did not install");
         let announced = false;
         pollTimer = setInterval(() => {
@@ -71,6 +72,7 @@ function start() {
     generation += 1;
     clearInterval(pollTimer);
     clearTimeout(timer);
+    nativeHook?.close?.();
     void work.then(() => plugin?.plugin_cleanup()).catch(report);
   });
 }

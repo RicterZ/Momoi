@@ -6,6 +6,7 @@
 #include <node_api.h>
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,6 +60,30 @@ static struct {
     uint64_t reserved[4];
 } g_listener;
 static void *g_listener_vt[16];
+static napi_threadsafe_function g_tsfn;
+static napi_ref g_listener_ref;
+static void *g_action_tramp;
+static void *g_invite_tramp;
+static void *g_s2c_tramp;
+static int g_callbacks;
+
+/* Djinni entry points in NodeIKernelAVSDKListener.cpp, QQ 3.2.32-52194.
+   These already unpack the kernel call into the values the JS bridge expects. */
+#define AV_ACTION_OFF 0x1a02304u
+#define AV_ACTION_IMM 0xd8du
+#define AV_INVITE_OFF 0x1a02830u
+#define AV_INVITE_IMM 0xd9du
+#define AV_S2C_OFF 0x1a02e44u
+#define AV_S2C_IMM 0xdd4u
+
+enum { EV_ACTION = 1, EV_INVITE = 2, EV_S2C = 3 };
+
+typedef struct {
+    int kind;
+    int32_t type;
+    size_t len;
+    char *payload;
+} AvEvent;
 
 static int safe_copy(const void *src, void *dst, size_t n) {
     if (!src || !dst || n == 0) return 0;
@@ -207,6 +232,206 @@ static void nt_detour(void *session, void *config) {
     capture(session);
 }
 
+static char *copy_cxx_string(const unsigned char raw[24], size_t *out_len) {
+    if ((raw[0] & 1u) == 0) {
+        size_t n = (size_t)raw[0] >> 1;
+        if (n > 22) return NULL;
+        char *text = malloc(n + 1);
+        if (!text) return NULL;
+        if (n) memcpy(text, raw + 1, n);
+        text[n] = 0;
+        *out_len = n;
+        return text;
+    }
+    uint64_t n = 0, ptr = 0;
+    memcpy(&n, raw + 8, sizeof n);
+    memcpy(&ptr, raw + 16, sizeof ptr);
+    if (n > 1024u * 1024u || ptr < 0x1000) return NULL;
+    char *text = malloc((size_t)n + 1);
+    if (!text) return NULL;
+    if (n && !safe_copy((void *)(uintptr_t)ptr, text, (size_t)n)) {
+        free(text);
+        return NULL;
+    }
+    text[n] = 0;
+    *out_len = (size_t)n;
+    return text;
+}
+
+static AvEvent *take_event(void *frame, int kind, uintptr_t type_off, uintptr_t str_off) {
+    if ((uintptr_t)frame < 0x1000) return NULL;
+    int32_t type = 0;
+    if (!safe_copy((void *)((uintptr_t)frame + type_off), &type, sizeof type)) return NULL;
+    char *payload = NULL;
+    size_t len = 0;
+    if (str_off) {
+        unsigned char raw[24];
+        if (!safe_copy((void *)((uintptr_t)frame + str_off), raw, sizeof raw)) return NULL;
+        payload = copy_cxx_string(raw, &len);
+        if (!payload) return NULL;
+    }
+    AvEvent *event = calloc(1, sizeof *event);
+    if (!event) {
+        free(payload);
+        return NULL;
+    }
+    event->kind = kind;
+    event->type = type;
+    event->len = len;
+    event->payload = payload;
+    return event;
+}
+
+static void free_event(AvEvent *event) {
+    if (!event) return;
+    free(event->payload);
+    free(event);
+}
+
+static void js_invoke(napi_env env, napi_value js_callback, void *context, void *data) {
+    AvEvent *event = data;
+    (void)js_callback;
+    (void)context;
+    if (!event) return;
+    napi_value listener = NULL;
+    if (g_listener_ref) napi_get_reference_value(env, g_listener_ref, &listener);
+    napi_valuetype listener_type = napi_undefined;
+    if (listener) napi_typeof(env, listener, &listener_type);
+    if (listener_type == napi_object) {
+        const char *name = event->kind == EV_INVITE ? "OnInviteActionToAVSDK"
+                           : event->kind == EV_S2C  ? "onS2CActionToAVSDK"
+                                                    : "onActionToAVSDK";
+        napi_value method, global, result, args[3];
+        int argc = 0;
+        napi_get_named_property(env, listener, name, &method);
+        napi_valuetype method_type = napi_undefined;
+        napi_typeof(env, method, &method_type);
+        if (method_type == napi_function) {
+            if (event->kind == EV_S2C) {
+                napi_value reason;
+                napi_create_object(env, &args[0]);
+                napi_create_int32(env, event->type, &reason);
+                napi_set_named_property(env, args[0], "destroyReason", reason);
+                argc = 1;
+            } else if (event->kind == EV_INVITE) {
+                napi_create_object(env, &args[0]);
+                napi_create_int32(env, event->type, &args[1]);
+                napi_create_string_utf8(env, event->payload ? event->payload : "", event->len, &args[2]);
+                argc = 3;
+            } else {
+                napi_create_int32(env, event->type, &args[0]);
+                napi_create_string_utf8(env, event->payload ? event->payload : "", event->len, &args[1]);
+                argc = 2;
+            }
+            napi_get_global(env, &global);
+            napi_call_function(env, listener, method, (size_t)argc, args, &result);
+            bool pending = false;
+            napi_is_exception_pending(env, &pending);
+            if (pending) {
+            napi_value exception;
+            napi_get_and_clear_last_exception(env, &exception);
+            (void)exception;
+            }
+        }
+    }
+    free_event(event);
+}
+
+static void post_event(AvEvent *event) {
+    size_t len = event ? event->len : 0;
+    int kind = event ? event->kind : 0;
+    if (!event) return;
+    if (!g_tsfn || napi_call_threadsafe_function(g_tsfn, event, napi_tsfn_nonblocking) != napi_ok) {
+        free_event(event);
+        return;
+    }
+    __atomic_add_fetch(&g_callbacks, 1, __ATOMIC_RELAXED);
+    fprintf(stderr, "[MomoiQQCall] native AVSDK callback %d bytes=%zu\n", kind, len);
+}
+
+static void action_detour(void *frame) {
+    AvEvent *event = take_event(frame, EV_ACTION, 0x18, 0x20);
+    ((void (*)(void *))g_action_tramp)(frame);
+    post_event(event);
+}
+
+static void invite_detour(void *frame) {
+    AvEvent *event = take_event(frame, EV_INVITE, 0x40, 0x48);
+    ((void (*)(void *))g_invite_tramp)(frame);
+    post_event(event);
+}
+
+static void s2c_detour(void *frame) {
+    AvEvent *event = take_event(frame, EV_S2C, 0x18, 0);
+    ((void (*)(void *))g_s2c_tramp)(frame);
+    post_event(event);
+}
+
+static int function_mentions(const void *fn, uint32_t imm) {
+    uint8_t buf[0x180];
+    if (!safe_copy(fn, buf, sizeof buf)) return 0;
+    for (size_t i = 0; i + 4 <= sizeof buf; i += 4) {
+        uint32_t insn = 0;
+        memcpy(&insn, buf + i, sizeof insn);
+        if ((insn & 0xffc00000u) == 0x91000000u && ((insn >> 10) & 0xfffu) == imm) return 1;
+    }
+    return 0;
+}
+
+static int patch_head(uint8_t *target, void *detour, void **tramp_out) {
+    uint8_t prologue[16];
+    if (!safe_copy(target, prologue, sizeof prologue)) return 0;
+    void *page = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (page == MAP_FAILED) return 0;
+    memcpy(page, prologue, sizeof prologue);
+    uint32_t *jump = (uint32_t *)((uint8_t *)page + 16);
+    jump[0] = 0x58000050u;
+    jump[1] = 0xd61f0200u;
+    uint64_t resume = (uint64_t)(uintptr_t)(target + 16);
+    memcpy((uint8_t *)page + 24, &resume, sizeof resume);
+    if (mprotect(page, 4096, PROT_READ | PROT_EXEC) != 0) {
+        munmap(page, 4096);
+        return 0;
+    }
+    __builtin___clear_cache((char *)page, (char *)page + 64);
+    uintptr_t start = (uintptr_t)target & ~(uintptr_t)0xfff;
+    if (mprotect((void *)start, 4096, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        munmap(page, 4096);
+        return 0;
+    }
+    *tramp_out = page;
+    uint32_t hook[2] = {0x58000050u, 0xd61f0200u};
+    uint64_t dest = (uint64_t)(uintptr_t)detour;
+    memcpy(target, hook, sizeof hook);
+    memcpy(target + 8, &dest, sizeof dest);
+    __builtin___clear_cache((char *)target, (char *)target + 16);
+    mprotect((void *)start, 4096, PROT_READ | PROT_EXEC);
+    return 1;
+}
+
+static int install_callback_hook(uintptr_t off, uint32_t imm, const uint8_t prologue[16], void *detour,
+                                 void **tramp_out) {
+    uint8_t *target = (uint8_t *)(g_base + off);
+    uint8_t actual[16];
+    if (!safe_copy(target, actual, sizeof actual) || memcmp(actual, prologue, sizeof actual) != 0 ||
+        !function_mentions(target, imm)) {
+        return 0;
+    }
+    return patch_head(target, detour, tramp_out);
+}
+
+static void install_callback_hooks(void) {
+    const uint8_t shared[] = {0xff, 0x03, 0x02, 0xd1, 0xfd, 0x7b, 0x05, 0xa9,
+                              0xf6, 0x57, 0x06, 0xa9, 0xf4, 0x4f, 0x07, 0xa9};
+    const uint8_t s2c_prologue[] = {0xff, 0xc3, 0x01, 0xd1, 0xfd, 0x7b, 0x04, 0xa9,
+                                    0xf6, 0x57, 0x05, 0xa9, 0xf4, 0x4f, 0x06, 0xa9};
+    int action = install_callback_hook(AV_ACTION_OFF, AV_ACTION_IMM, shared, action_detour, &g_action_tramp);
+    int invite = install_callback_hook(AV_INVITE_OFF, AV_INVITE_IMM, shared, invite_detour, &g_invite_tramp);
+    int s2c = install_callback_hook(AV_S2C_OFF, AV_S2C_IMM, s2c_prologue, s2c_detour, &g_s2c_tramp);
+    if (action && invite && s2c) fprintf(stderr, "[MomoiQQCall] native AVSDK callbacks hooked\n");
+    else fprintf(stderr, "[MomoiQQCall] native AVSDK callback anchor mismatch\n");
+}
+
 static int install_hook(void) {
     if (g_hooked) return 1;
     if (!load_maps()) {
@@ -269,6 +494,7 @@ static int install_hook(void) {
     g_ctrl.weak = 0x100000;
     g_hooked = 1;
     fprintf(stderr, "[MomoiQQCall] native NT session hook installed\n");
+    install_callback_hooks();
     return 1;
 }
 
@@ -337,7 +563,9 @@ static napi_value Metrics(napi_env env, napi_callback_info info) {
     napi_create_int32(env, g_registered, &registered);
     napi_create_int32(env, identified ? (int)strlen(uid) : 0, &uid_len);
     napi_create_int32(env, identified ? (int)strlen(uin) : 0, &uin_len);
+    napi_value callback_count;
     napi_create_int32(env, identified ? (int)strlen(path) : 0, &path_len);
+    napi_create_int32(env, g_callbacks, &callback_count);
     napi_set_named_property(env, obj, "hooked", hooked);
     napi_set_named_property(env, obj, "fires", fires);
     napi_set_named_property(env, obj, "ready", ready);
@@ -346,11 +574,34 @@ static napi_value Metrics(napi_env env, napi_callback_info info) {
     napi_set_named_property(env, obj, "uidLen", uid_len);
     napi_set_named_property(env, obj, "uinLen", uin_len);
     napi_set_named_property(env, obj, "pathLen", path_len);
+    napi_set_named_property(env, obj, "callbacks", callback_count);
     return obj;
 }
 
+static int ensure_tsfn(napi_env env) {
+    if (g_tsfn) return 1;
+    napi_value name;
+    napi_create_string_utf8(env, "momoi-avsdk", NAPI_AUTO_LENGTH, &name);
+    if (napi_create_threadsafe_function(env, NULL, NULL, name, 0, 1, NULL, NULL, NULL, js_invoke,
+                                        &g_tsfn) != napi_ok) {
+        fprintf(stderr, "[MomoiQQCall] native AVSDK callback queue unavailable\n");
+        return 0;
+    }
+    return 1;
+}
+
 static napi_value RegisterListener(napi_env env, napi_callback_info info) {
-    (void)info;
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+    if (argc >= 1) {
+        napi_valuetype type = napi_undefined;
+        napi_typeof(env, args[0], &type);
+        if (type == napi_object && ensure_tsfn(env)) {
+            if (g_listener_ref) napi_delete_reference(env, g_listener_ref);
+            napi_create_reference(env, args[0], 1, &g_listener_ref);
+        }
+    }
     napi_value result;
     if (g_registered) {
         napi_create_int32(env, 1, &result);
@@ -413,6 +664,21 @@ static napi_value SetAction(napi_env env, napi_callback_info info) {
     return undef;
 }
 
+static napi_value Close(napi_env env, napi_callback_info info) {
+    (void)info;
+    if (g_tsfn) {
+        napi_release_threadsafe_function(g_tsfn, napi_tsfn_release);
+        g_tsfn = NULL;
+    }
+    if (g_listener_ref) {
+        napi_delete_reference(env, g_listener_ref);
+        g_listener_ref = NULL;
+    }
+    napi_value undef;
+    napi_get_undefined(env, &undef);
+    return undef;
+}
+
 static void export_fn(napi_env env, napi_value exports, const char *name, napi_callback cb) {
     napi_value fn;
     napi_create_function(env, name, NAPI_AUTO_LENGTH, cb, NULL, &fn);
@@ -426,5 +692,6 @@ NAPI_MODULE_INIT() {
     export_fn(env, exports, "metrics", Metrics);
     export_fn(env, exports, "registerListener", RegisterListener);
     export_fn(env, exports, "setAction", SetAction);
+    export_fn(env, exports, "close", Close);
     return exports;
 }
