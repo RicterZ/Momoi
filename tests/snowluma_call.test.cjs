@@ -1,7 +1,7 @@
 "use strict";
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { observeWrapper, captureExport, hookPrototype, sessionContext } = require("../infra/snowluma-call/session.cjs");
+const { observeWrapper, captureExport, hookPrototype, sessionContext, nativeSessionFacade } = require("../infra/snowluma-call/session.cjs");
 
 const config = { selfUid: "u_test", selfUin: "123456" };
 function nativeSession() {
@@ -111,7 +111,25 @@ test("native failures are preserved and rejected init never attaches", async () 
 
 const fs = require("node:fs");
 const vm = require("node:vm");
-function loadPreload({ enabled = "1", avHost = false, type = "browser" } = {}) {
+test("native session facade keeps the existing bridge context", () => {
+  const calls = [];
+  const bridge = {
+    identity: () => ({ uid: "u_test", uin: "123456", path: "/account" }),
+    registerListener: () => 1,
+    setAction(command, payload) { calls.push([command, payload]); },
+  };
+  const session = nativeSessionFacade(bridge);
+  const ctx = sessionContext(session, config);
+  assert.equal(ctx.core.context.session, session);
+  assert.equal(ctx.core.dataPath, "/account");
+  assert.equal(session.getAVSDKService().addKernelAVSDKListener({}), 1);
+  session.getAVSDKService().setActionFromAVSDK(7, "body");
+  assert.deepEqual(calls, [[7, "body"]]);
+  bridge.identity = () => null;
+  assert.throws(() => session.getAccountPath(), /account path/);
+});
+
+function loadPreload({ enabled = "1", avHost = false, type = "browser", native = null } = {}) {
   const loaded = [], listeners = new Map();
   const original = function (module, filename) {
     assert.equal(this, proc);
@@ -122,9 +140,10 @@ function loadPreload({ enabled = "1", avHost = false, type = "browser" } = {}) {
     MAIBOT_QQ_CALL_AV_HOST: avHost ? "1" : "0" }, dlopen: original };
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(require.resolve("../infra/snowluma-call/loader.cjs"), "utf8"), {
-    module, process: proc, console, clearTimeout, setTimeout,
+    module, process: proc, console, clearTimeout, setTimeout, clearInterval, setInterval,
     require(name) {
-      if (name === "./session.cjs") return { observeWrapper, captureExport, hookPrototype, sessionContext };
+      if (name === "./session.cjs") return { observeWrapper, captureExport, hookPrototype, sessionContext, nativeSessionFacade };
+      if (name === "./session_hook.node") return native;
       if (name === "electron") return { app: { on: (name, fn) => listeners.set(name, fn) } };
       if (name.endsWith("/av-host/host.cjs")) { loaded.push(name); return {}; }
       return require(name);
@@ -147,6 +166,19 @@ test("AV-only process loads host without observing another NT session", () => {
   const { proc, original, loaded } = loadPreload({ avHost: true });
   assert.equal(proc.dlopen, original);
   assert.deepEqual(loaded, ["/opt/qq-call/upstream/bridge/av-host/host.cjs"]);
+});
+
+test("wrapper load installs the native hook without editing the module exports", () => {
+  const native = {
+    installed: false,
+    install() { this.installed = true; return true; },
+    ready() { return false; },
+  };
+  const { proc } = loadPreload({ native });
+  const module = {};
+  assert.equal(proc.dlopen(module, "/opt/QQ/resources/app/wrapper.node"), 19);
+  assert.equal(native.installed, true);
+  assert.deepEqual(module.exports, { filename: "/opt/QQ/resources/app/wrapper.node" });
 });
 
 test("QQ preload preserves unrelated native module loading", () => {

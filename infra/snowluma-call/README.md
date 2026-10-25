@@ -6,10 +6,11 @@ It does **not** load NapCat, install a NapCat plugin, replace SnowLuma's native
 hook, or create a second logged-in QQ session. Windows packaging is unchanged.
 
 QQ's main entry loads a small observer before its original entry. The observer
-captures the session returned by QQ's own `NodeIQQNTWrapperSession.create()` /
-`getNTWrapperSession()` and its `init` identity. Once ready, the existing bridge
-registers `getAVSDKService().addKernelAVSDKListener` and sends kernel replies
-through `setActionFromAVSDK`. A separate QQ/Electron **AV host only** loads the
+hooks `NTWrapperSession::internalStartNT` inside the already loaded `wrapper.node`
+and reads that native session. It does not replace the JS session constructor.
+Once the native session can return an account path, the existing bridge registers
+an `IKernelAVSDKListener` and sends kernel replies through `setActionFromAVSDK`.
+A separate QQ/Electron **AV host only** loads the
 bundled `libAVSDKPlugin.so`; PulseAudio carries audio. The existing authenticated
 loopback HTTP protocol remains unchanged.
 

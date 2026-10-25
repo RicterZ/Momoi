@@ -2,7 +2,7 @@
 
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { observeWrapper, sessionContext } = require("./session.cjs");
+const { nativeSessionFacade, sessionContext } = require("./session.cjs");
 
 function start() {
   const { app } = require("electron");
@@ -11,7 +11,7 @@ function start() {
     require("/opt/qq-call/upstream/bridge/av-host/host.cjs");
     return;
   }
-  let plugin, timer, generation = 0, work = Promise.resolve();
+  let plugin, timer, pollTimer, generation = 0, work = Promise.resolve();
   const report = (error) => console.error("[MomoiQQCall] session bridge unavailable",
     error && (error.stack || error.message || String(error)) || "check the pinned QQ version");
   const attach = (session, config) => {
@@ -43,13 +43,26 @@ function start() {
     const result = Reflect.apply(dlopen, this, [module, filename, ...args]);
     if (path.basename(String(filename)) === "wrapper.node") {
       try {
-        observeWrapper(module.exports, attach, report);
+        const native = require("./session_hook.node");
+        if (!native.install()) throw new Error("native NT session hook did not install");
+        pollTimer = setInterval(() => {
+          try {
+            if (!native.ready()) return;
+            const identity = native.identity();
+            if (!identity?.uid || !identity.uin) return;
+            clearInterval(pollTimer);
+            console.error("[MomoiQQCall] native session", JSON.stringify(native.metrics()));
+            attach(nativeSessionFacade(native), { selfUid: identity.uid, selfUin: identity.uin });
+          } catch (error) { report(error); }
+        }, 1000);
+        pollTimer.unref?.();
       } catch (error) { report(error); }
     }
     return result;
   };
   app.on("before-quit", () => {
     generation += 1;
+    clearInterval(pollTimer);
     clearTimeout(timer);
     void work.then(() => plugin?.plugin_cleanup()).catch(report);
   });

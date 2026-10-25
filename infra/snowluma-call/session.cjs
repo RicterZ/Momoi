@@ -194,4 +194,32 @@ function sessionContext(session, config) {
   };
 }
 
-module.exports = { observeWrapper, captureExport, hookPrototype, sessionContext };
+function nativeSessionFacade(bridge) {
+  const service = {
+    isNull() { return false; },
+    addKernelAVSDKListener(listener) {
+      if (listener && typeof bridge.watch === "function") bridge.watch(listener);
+      const id = bridge.registerListener();
+      if (!Number.isInteger(id)) throw new Error("QQ AVSDK listener was not registered");
+      return id;
+    },
+    removeKernelAVSDKListener(id) {
+      if (typeof bridge.removeListener === "function") bridge.removeListener(id);
+    },
+    setActionFromAVSDK(command, payload) {
+      return bridge.setAction(command, typeof payload === "string" ? payload : String(payload ?? ""));
+    },
+  };
+  return {
+    getAVSDKService() { return service; },
+    getAccountPath() {
+      const current = bridge.identity();
+      if (!current || typeof current.path !== "string" || !current.path) {
+        throw new Error("QQ account path is unavailable");
+      }
+      return current.path;
+    },
+  };
+}
+
+module.exports = { observeWrapper, captureExport, hookPrototype, sessionContext, nativeSessionFacade };
