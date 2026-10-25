@@ -1375,8 +1375,8 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
       if (channels.enabled.onebot) {
         if (!/^\d+$/.test(channels.enabled.onebot.owner_qq || "")) throw new Error("请填写主人 QQ 号码，仅包含数字。");
         let url;
-        try { url = new URL(channels.enabled.onebot.url); } catch { throw new Error("请填写有效的 SnowLuma WebSocket 地址。"); }
-        if (!["ws:", "wss:"].includes(url.protocol)) throw new Error("SnowLuma 地址需要以 ws:// 或 wss:// 开头。");
+        try { url = new URL(channels.enabled.onebot.url); } catch { throw new Error("请填写有效的 OneBot WebSocket 地址。"); }
+        if (!["ws:", "wss:"].includes(url.protocol)) throw new Error("OneBot 地址需要以 ws:// 或 wss:// 开头。");
       }
       const result = await save("/api/settings/configuration/app", { channels }, "PATCH");
       setChannels(result.app.channels);
@@ -1452,7 +1452,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
                   <div>
                   <Fields disabled={busy || loginActive}>
                     <OptionField name="bot_qq" spec={{ type: "string", label: "机器人 QQ", description: "登录 SnowLuma 的 QQ 号码，与主人 QQ 区分；只连一个账号时可留空。" }} value={options.bot_qq} onChange={value => edit(name, { ...options, bot_qq: value })} />
-                    <OptionField name="url" spec={{ type: "string", label: "SnowLuma WebSocket 地址", description: "Docker Compose 会在启动时覆盖为 ws://snowluma:3001/。" }} value={options.url} onChange={value => edit(name, { ...options, url: value })} />
+                    <OptionField name="url" spec={{ type: "string", label: "OneBot WebSocket 地址", description: "Docker Compose 会在启动时覆盖为 ws://snowluma:3001/。" }} value={options.url} onChange={value => edit(name, { ...options, url: value })} />
                     <OptionField name="access_token" spec={{ type: "string", secret: true, label: "连接令牌", description: "留空时使用 Docker 初始化写入的 OneBot 令牌。自行部署 SnowLuma 时填写 WebUI 里的 access token。" }} value={options.access_token} onChange={value => edit(name, { ...options, access_token: value })} />
                     <OptionField name="owner_qq" spec={{ type: "string", label: "主人 QQ" }} value={options.owner_qq} onChange={value => edit(name, { ...options, owner_qq: value })} />
                   </Fields>
