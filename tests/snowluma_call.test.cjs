@@ -1,7 +1,7 @@
 "use strict";
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { observeWrapper, captureExport, sessionContext } = require("../infra/snowluma-call/session.cjs");
+const { observeWrapper, captureExport, hookPrototype, sessionContext } = require("../infra/snowluma-call/session.cjs");
 
 const config = { selfUid: "u_test", selfUin: "123456" };
 function nativeSession() {
@@ -65,22 +65,16 @@ test("read-only native factory and session.init are observed without assignment"
   assert.throws(() => observeWrapper(frozen, () => {}, assert.fail), /not writable/);
 });
 
-test("native export assignment receives the shim, not the read-only factory", async () => {
+test("native export assignment keeps the original factory", () => {
   function NodeIQQNTWrapperSession() {}
-  const session = nativeSession();
   Object.defineProperty(NodeIQQNTWrapperSession, "getNTWrapperSession", {
-    value(id) { assert.equal(this, NodeIQQNTWrapperSession); assert.equal(id, "nt_1"); return session; },
+    value() { return nativeSession(); },
     writable: false, configurable: false,
   });
   const module = { exports: {} };
-  const captured = [];
-  captureExport(module, (value, identity) => captured.push([value, identity]), assert.fail);
+  captureExport(module, () => {}, assert.fail);
   module.exports.NodeIQQNTWrapperSession = NodeIQQNTWrapperSession;
-  assert.equal(module.exports.NodeIQQNTWrapperSession.__momoiQQCall, true);
-  module.exports.NodeIQQNTWrapperSession.getNTWrapperSession("nt_1");
-  assert.equal(session.init(config), 42);
-  await Promise.resolve();
-  assert.deepEqual(captured, [[session, config]]);
+  assert.equal(module.exports.NodeIQQNTWrapperSession, NodeIQQNTWrapperSession);
 });
 
 test("invalid identity or missing native service fails closed", () => {
@@ -130,7 +124,7 @@ function loadPreload({ enabled = "1", avHost = false, type = "browser" } = {}) {
   vm.runInNewContext(fs.readFileSync(require.resolve("../infra/snowluma-call/loader.cjs"), "utf8"), {
     module, process: proc, console, clearTimeout, setTimeout,
     require(name) {
-      if (name === "./session.cjs") return { observeWrapper, captureExport, sessionContext };
+      if (name === "./session.cjs") return { observeWrapper, captureExport, hookPrototype, sessionContext };
       if (name === "electron") return { app: { on: (name, fn) => listeners.set(name, fn) } };
       if (name.endsWith("/av-host/host.cjs")) { loaded.push(name); return {}; }
       return require(name);

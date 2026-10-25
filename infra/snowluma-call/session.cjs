@@ -80,28 +80,26 @@ function observeWrapper(wrapper, onSession, onError) {
   const shim = shimFactory(factory, methods, call);
   Object.defineProperty(shim, "__momoiQQCall", { value: true });
   installFactory(wrapper, shim);
-  console.error("[MomoiQQCall] factory hooked", methods.join(","));
-  if (process.env.QQ_CALL_ENABLED !== "1") return;
-  setTimeout(() => {
-    try {
-      const session = factory.getNTWrapperSession(0);
-      const proto = session && Object.getPrototypeOf(session);
-      const names = proto ? Object.getOwnPropertyNames(proto).filter((name) => /init|AV|Account|Uin|Uid|Login|Session/i.test(name)) : [];
-      console.error("[MomoiQQCall] existing", session ? "session" : "empty", names.join(","));
-    } catch (error) {
-      console.error("[MomoiQQCall] existing failed", error && error.message);
-    }
-  }, 6000);
 }
+
+const hookedPrototypes = new WeakSet();
 
 function hookPrototype(factory, onSession, onError) {
   try {
-    if (typeof factory !== "function" || !factory.prototype || typeof factory.prototype.init !== "function") return;
+    if (typeof factory !== "function" || hookedPrototypes.has(factory) || !factory.prototype) return;
+    hookedPrototypes.add(factory);
     const desc = Object.getOwnPropertyDescriptor(factory, "prototype");
-    if (desc && desc.writable === false && desc.configurable === false) return;
+    const initDesc = Object.getOwnPropertyDescriptor(factory.prototype, "init");
+    console.error("[MomoiQQCall] prototype", JSON.stringify({
+      writable: desc ? desc.writable === true : false,
+      configurable: desc ? desc.configurable === true : false,
+      init: typeof factory.prototype.init,
+      initWritable: initDesc ? initDesc.writable === true : false,
+      initConfigurable: initDesc ? initDesc.configurable === true : false,
+    }));
+    if (!desc || (desc.writable === false && desc.configurable === false) || typeof factory.prototype.init !== "function") return;
     const init = factory.prototype.init;
     const proto = Object.create(factory.prototype);
-    // Assignment cannot shadow a non-writable native init; define the own property.
     Object.defineProperty(proto, "init", {
       value(config, ...rest) {
         const result = Reflect.apply(init, this, [config, ...rest]);
@@ -112,32 +110,22 @@ function hookPrototype(factory, onSession, onError) {
       configurable: true,
     });
     factory.prototype = proto;
-  } catch {
-    // The export shim still observes getNTWrapperSession when this slot cannot move.
+    console.error("[MomoiQQCall] prototype replaced");
+  } catch (error) {
+    console.error("[MomoiQQCall] prototype failed", error && error.message);
   }
 }
 
 function captureExport(module, onSession, onError) {
   const target = module.exports && typeof module.exports === "object" ? module.exports : {};
-  const wrap = (factory) => {
-    if (!factory || factory.__momoiQQCall) return factory;
-    const holder = { NodeIQQNTWrapperSession: factory };
-    try { observeWrapper(holder, onSession, onError); }
-    catch (error) { onError(error); return factory; }
-    return holder.NodeIQQNTWrapperSession;
-  };
   module.exports = new Proxy(target, {
     set(obj, prop, value, receiver) {
-      if (prop === "NodeIQQNTWrapperSession") {
-        console.error("[MomoiQQCall] export set");
-        value = wrap(value);
-      }
+      if (prop === "NodeIQQNTWrapperSession") hookPrototype(value, onSession, onError);
       return Reflect.set(obj, prop, value, receiver);
     },
     defineProperty(obj, prop, desc) {
-      if (prop === "NodeIQQNTWrapperSession" && desc && "value" in desc) {
-        console.error("[MomoiQQCall] export define");
-        desc = { ...desc, value: wrap(desc.value) };
+      if (prop === "NodeIQQNTWrapperSession" && desc && typeof desc.value === "function") {
+        hookPrototype(desc.value, onSession, onError);
       }
       return Reflect.defineProperty(obj, prop, desc);
     },
@@ -227,4 +215,4 @@ function sessionContext(session, config) {
   };
 }
 
-module.exports = { observeWrapper, captureExport, sessionContext };
+module.exports = { observeWrapper, captureExport, hookPrototype, sessionContext };
