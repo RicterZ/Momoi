@@ -2330,59 +2330,62 @@ function ThinkingLayout({
   }, [allowAuto, hasMore, items.length]);
 
   return (
-    <section className="record-layout">
-      <div
-        className="record-list"
-        aria-label="轨迹 Turn"
-        ref={listRef}
-        onScroll={() => {
-          allowAuto.current = true;
-        }}
-      >
-        {items.map((item) => (
-          <button
-            className={`record-item ${item.id === activeId ? "active" : ""}`}
-            type="button"
-            key={item.id}
-            onClick={() => onSelect(item.id)}
-          >
-            <h3>{thinkingFlowTitle(item)}</h3>
-            <p>{item.excerpt || "这次没有可见推理。"}</p>
-            <time>
-              {formatDate(item.updated_at || item.created_at)}
-              {item.call_count > 1 ? ` · ${item.call_count} 次调用` : ""}
-            </time>
-          </button>
-        ))}
-        {hasMore || loadingMore ? (
-          <button
-            className="record-list-more"
-            type="button"
-            ref={moreRef}
-            disabled={loadingMore}
-            onClick={onLoadOlder}
-          >
-            {loadingMore ? "正在加载…" : "更早的轨迹"}
-          </button>
-        ) : null}
-      </div>
-      <div className="conversation">
-        {detail.loading && <Loading>正在读取轨迹…</Loading>}
-        {detail.error && <ErrorState error={detail.error} />}
-        {detail.data && (
-          <TrajectoryDetail
-            item={{
-              ...active,
-              episode_id: detail.data.episode_id || active.episode_id,
-              episode_title: detail.data.episode_title || active.episode_title,
-              plan: detail.data.plan || active.plan,
-            }}
-            calls={detail.data.items || (detail.data.item ? [detail.data.item] : [])}
-            recall={detail.data.recall}
-            flowData={detail.data.flow || {}}
-          />
-        )}
-      </div>
+    <section
+      className="trajectory-feed"
+      aria-label="轨迹时间线"
+      ref={listRef}
+      onScroll={() => {
+        allowAuto.current = true;
+      }}
+    >
+      {items.map((item) => {
+        const open = item.id === activeId;
+        return (
+          <article className={`trajectory-feed-item ${open ? "is-open" : ""}`} key={item.id}>
+            <button
+              className="trajectory-feed-head"
+              type="button"
+              aria-expanded={open}
+              onClick={() => onSelect(item.id)}
+            >
+              <time>{formatDate(item.updated_at || item.created_at)}</time>
+              <strong>{thinkingFlowTitle(item)}</strong>
+              <span>{item.excerpt || "这次没有可见推理。"}</span>
+              {item.call_count > 1 ? <em>{item.call_count} 次调用</em> : null}
+            </button>
+            {open ? (
+              <div className="trajectory-feed-body">
+                {detail.loading && <Loading>正在读取轨迹…</Loading>}
+                {detail.error && <ErrorState error={detail.error} />}
+                {detail.data && (
+                  <TrajectoryDetail
+                    item={{
+                      ...active,
+                      episode_id: detail.data.episode_id || active.episode_id,
+                      episode_title: detail.data.episode_title || active.episode_title,
+                      plan: detail.data.plan || active.plan,
+                    }}
+                    calls={detail.data.items || (detail.data.item ? [detail.data.item] : [])}
+                    recall={detail.data.recall}
+                    flowData={detail.data.flow || {}}
+                  />
+                )}
+              </div>
+            ) : null}
+          </article>
+        );
+      })}
+      {hasMore || loadingMore ? (
+        <button
+          className="record-list-more"
+          type="button"
+          ref={moreRef}
+          disabled={loadingMore}
+          onClick={onLoadOlder}
+        >
+          {loadingMore ? "正在加载…" : "更早的轨迹"}
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -2715,62 +2718,110 @@ function buildTrajectory(flow, flowData = {}) {
   return { inputs, steps };
 }
 
-function TrajectoryTiming({ steps, activeStep, onPick }) {
-  const total = steps.reduce((sum, step) => sum + step.duration, 0);
-  if (!steps.length) return null;
-  return (
-    <div className="trajectory-timing" aria-label="耗时概览">
-      {steps.map((step) => {
-        const share = total > 0 ? (step.duration / total) * 100 : 100 / steps.length;
-        return (
-          <button
-            type="button"
-            key={step.call.call_id}
-            className={`trajectory-timing-block is-${trajectoryStageTone(step.call.stage)}${step.index === activeStep ? " is-active" : ""}`}
-            style={{ flexGrow: Math.max(share, 4) }}
-            title={`${thinkingStageLabel(step.call.stage)} · ${(step.duration / 1000).toFixed(2)}s`}
-            onClick={() => onPick(step)}
-          >
-            <span>{thinkingStageCode(step.call.stage)}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function trajectoryStageTone(stage) {
   if (stage === "replyer") return "reply";
   if (plannerStages.has(stage)) return "planner";
   return "workflow";
 }
 
-function TrajectoryRecordRow({ record, active, onSelect }) {
+function trajectorySeconds(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number") return value;
+  const time = new Date(String(value).replace(" ", "T")).valueOf();
+  return Number.isNaN(time) ? null : time / 1000;
+}
+
+function trajectoryOffset(seconds) {
+  if (seconds === null) return "";
+  const total = Math.max(0, Math.round(seconds));
+  return `+${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function trajectoryClock(seconds) {
+  const total = Math.max(0, Math.round(seconds));
+  if (total < 60) return `${total}s`;
+  return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, "0")}s`;
+}
+
+function trajectoryDuration(ms) {
+  if (!ms) return "";
+  return ms < 100 ? "<0.1s" : `${(ms / 1000).toFixed(1)}s`;
+}
+
+const trajectoryIcons = { input: "›", reasoning: "◎", assistant: "≡", reply: "✎", tool: "⌘", delivery: "↗", end: "■" };
+const trajectoryFilterKinds = ["input", "reasoning", "tool", "reply", "delivery"];
+
+function trajectoryRowLabel(record) {
+  if (record.kind === "tool") return record.action?.name || "tool";
+  if (record.kind === "end") return "end_turn";
+  return { input: "输入", reasoning: "思考", assistant: "正文", reply: "发言", delivery: "投递" }[record.kind] || record.kind;
+}
+
+// Model calls on one lane, tool calls as ticks on another, both on a shared time axis.
+function TrajectoryLanes({ steps, start, span, activeCallId, onPick }) {
+  if (!steps.length) return null;
+  const tickStep = span > 600 ? 300 : span > 180 ? 60 : span > 60 ? 30 : span > 20 ? 10 : 5;
+  const ticks = [];
+  for (let value = 0; value <= span; value += tickStep) ticks.push(value);
+  const toolCount = steps.reduce((sum, step) => sum + step.records.filter((record) => record.kind === "tool").length, 0);
+  const modelMs = steps.reduce((sum, step) => sum + step.duration, 0);
+  const left = (seconds) => `${Math.min(100, Math.max(0, (seconds / span) * 100))}%`;
+  return (
+    <div className="trajectory-lanes" aria-label="耗时概览">
+      <div className="trajectory-lane-label" />
+      <div className="trajectory-axis">
+        {ticks.map((value) => <span key={value} style={{ left: left(value) }}>{trajectoryClock(value)}</span>)}
+      </div>
+      <div className="trajectory-lane-label"><strong>模型</strong><span>{trajectoryClock(modelMs / 1000)}</span></div>
+      <div className="trajectory-lane">
+        {steps.map((step) => {
+          const offset = step.start - start;
+          const width = Math.max((step.duration / 1000 / span) * 100, 0.6);
+          return (
+            <button
+              type="button"
+              key={step.call.call_id}
+              className={`trajectory-lane-bar is-${trajectoryStageTone(step.call.stage)}${step.call.call_id === activeCallId ? " is-active" : ""}`}
+              style={{ left: left(offset), width: `${width}%` }}
+              title={`${thinkingStageLabel(step.call.stage)} · ${trajectoryDuration(step.duration) || "未记录耗时"}`}
+              onClick={() => onPick(step)}
+            />
+          );
+        })}
+      </div>
+      <div className="trajectory-lane-label"><strong>工具</strong><span>{toolCount} 次</span></div>
+      <div className="trajectory-lane">
+        {steps.flatMap((step) => step.records.filter((record) => record.kind === "tool").map((record) => (
+          <span key={record.id} className="trajectory-lane-tick" style={{ left: left(step.start - start + step.duration / 1000) }} title={record.action?.name} />
+        )))}
+      </div>
+    </div>
+  );
+}
+
+function TrajectoryRow({ record, offset, open, onToggle }) {
   const meta = trajectoryKindMeta(record.kind);
   const result = record.action?.result;
+  const mono = record.kind === "tool" || record.kind === "end";
+  const isReply = record.kind === "reply";
+  const duration = record.kind === "reasoning" || isReply ? trajectoryDuration(Number(record.call?.request_metrics?.duration_ms || 0)) : "";
   return (
-    <button
-      type="button"
-      className={`trajectory-record is-${meta.tone}${active ? " is-active" : ""}`}
-      onClick={() => onSelect(record)}
-    >
-      <span className="trajectory-record-badge" aria-hidden="true">{meta.code}</span>
-      <span className="trajectory-record-main">
-        <span className="trajectory-record-title">
-          {record.title}
-          {result ? <span className={`trajectory-result ${result.ok === false ? "is-error" : "is-ok"}`}>{result.ok === false ? "失败" : "成功"}</span> : null}
-        </span>
-        <span className="trajectory-record-summary">{record.summary || "（无内容）"}</span>
-      </span>
-    </button>
+    <li id={`trajectory-row-${record.id}`} className={`trajectory-row is-${meta.tone}${open ? " is-open" : ""}${result?.ok === false ? " is-error" : ""}`}>
+      <button type="button" className="trajectory-row-head" aria-expanded={open} onClick={onToggle}>
+        <time className="trajectory-row-time">{trajectoryOffset(offset)}</time>
+        <span className="trajectory-row-icon" aria-hidden="true">{trajectoryIcons[record.kind] || "·"}</span>
+        <span className="trajectory-row-label">{trajectoryRowLabel(record)}</span>
+        <span className={`trajectory-row-summary${mono ? " is-mono" : ""}${isReply ? " is-reply" : ""}`}>{record.summary || "（无内容）"}</span>
+        {result?.ok === false ? <span className="trajectory-result is-error">失败</span> : null}
+        <span className="trajectory-row-duration">{duration || (mono ? "—" : "")}</span>
+      </button>
+      {open ? <TrajectoryInspector record={record} /> : null}
+    </li>
   );
 }
 
 function TrajectoryInspector({ record }) {
   const [tab, setTab] = useState("overview");
-  useEffect(() => { setTab("overview"); }, [record?.id]);
-  if (!record) return <div className="trajectory-inspector-empty"><p>选中左侧任意一步，查看详情。</p></div>;
-  const meta = trajectoryKindMeta(record.kind);
   const call = record.call;
   const metrics = call?.request_metrics;
   const rawPayload = record.action || record.delivery || record.payload || { reasoning: record.text };
@@ -2778,17 +2829,11 @@ function TrajectoryInspector({ record }) {
   if (metrics) tabs.push(["usage", "用量"]);
   return (
     <div className="trajectory-inspector">
-      <header className="trajectory-inspector-head">
-        <span className={`trajectory-record-badge is-${meta.tone}`} aria-hidden="true">{meta.code}</span>
-        <div>
-          <strong>{record.title}</strong>
-          <p>{meta.label}{call ? ` · ${thinkingStageLabel(call.stage)}` : ""}{record.time ? ` · ${formatDate(record.time)}` : ""}</p>
-        </div>
-      </header>
       <nav className="trajectory-tabs" aria-label="详情视图">
         {tabs.map(([id, label]) => (
           <button type="button" key={id} className={tab === id ? "is-active" : ""} onClick={() => setTab(id)}>{label}</button>
         ))}
+        <span className="trajectory-tabs-meta">{record.title}{call ? ` · ${thinkingStageLabel(call.stage)} · 第 ${call.round || 1} 轮` : ""}{record.time ? ` · ${formatDate(record.time)}` : ""}</span>
       </nav>
       <div className="trajectory-inspector-body">
         {tab === "overview" && <TrajectoryOverview record={record} />}
@@ -2850,7 +2895,6 @@ function TrajectoryOverview({ record }) {
   if (record.kind === "input") {
     return <div className="trajectory-overview"><p className="message-content trajectory-text">{record.summary}</p></div>;
   }
-  // reasoning / assistant / reply
   return (
     <div className="trajectory-overview">
       <EmotionContent className="message-content trajectory-text" text={record.text || record.summary} />
@@ -2863,18 +2907,38 @@ function TrajectoryDetail({ item, calls, recall, flowData = {} }) {
     const time = Number(left.created_at || 0) - Number(right.created_at || 0);
     return time !== 0 ? time : Number(left.round || 0) - Number(right.round || 0);
   });
-  const { inputs, steps } = buildTrajectory(flow, flowData);
-  const allRecords = [...inputs, ...steps.flatMap((step) => step.records)];
-  const [selectedId, setSelectedId] = useState(allRecords[0]?.id || null);
-  useEffect(() => { setSelectedId(allRecords[0]?.id || null); }, [item?.id]);
+  const built = buildTrajectory(flow, flowData);
+  const steps = built.steps.map((step) => ({ ...step, start: trajectorySeconds(step.call.created_at) }));
+  const [openIds, setOpenIds] = useState(() => new Set());
+  const [query, setQuery] = useState("");
+  const [hidden, setHidden] = useState(() => new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
+  useEffect(() => { setOpenIds(new Set()); }, [item?.id]);
   if (!flow.length) return <Empty text="这个轨迹还没有记录。" />;
-  const selected = allRecords.find((record) => record.id === selectedId) || allRecords[0] || null;
-  const activeStep = selected?.call ? steps.find((step) => step.call.call_id === selected.call.call_id)?.index ?? -1 : -1;
+
+  const starts = [...built.inputs.map((record) => trajectorySeconds(record.time)), ...steps.map((step) => step.start)].filter((value) => value !== null);
+  const start = starts.length ? Math.min(...starts) : 0;
+  const end = Math.max(start, ...steps.map((step) => (step.start ?? start) + step.duration / 1000));
+  const span = Math.max(end - start, 1);
+  const records = [
+    ...built.inputs.map((record) => ({ record, at: trajectorySeconds(record.time) })),
+    ...steps.flatMap((step) => step.records.map((record) => ({
+      record,
+      at: (step.start ?? start) + (["tool", "end", "delivery", "reply"].includes(record.kind) ? step.duration / 1000 : 0),
+    }))),
+  ].map((entry, order) => ({ ...entry, order })).sort((left, right) => (left.at ?? start) - (right.at ?? start) || left.order - right.order);
+
+  const needle = query.trim().toLowerCase();
+  const filterKind = (kind) => (kind === "assistant" ? "reasoning" : kind === "end" ? "tool" : kind);
+  const visible = records.filter(({ record }) => !hidden.has(filterKind(record.kind))
+    && (!needle || `${trajectoryRowLabel(record)} ${record.title} ${record.summary}`.toLowerCase().includes(needle)));
 
   const toolCalls = steps.reduce((sum, step) => sum + (step.call.actions || []).length, 0);
-  const totalTokens = steps.reduce((sum, step) => sum + Number(step.metrics?.input_tokens || 0) + Number(step.metrics?.output_tokens || 0), 0);
-  const totalDuration = steps.reduce((sum, step) => sum + step.duration, 0);
+  const inputTokens = steps.reduce((sum, step) => sum + Number(step.metrics?.input_tokens || 0), 0);
+  const outputTokens = steps.reduce((sum, step) => sum + Number(step.metrics?.output_tokens || 0), 0);
   const deliveries = flowData.deliveries?.length || 0;
+  const failed = steps.some((step) => step.records.some((record) => record.action?.result?.ok === false));
+  const activeCallId = [...openIds].map((id) => records.find(({ record }) => record.id === id)?.record.call?.call_id).find(Boolean);
 
   const episodeId = item?.episode_id;
   const episodeTitle = item?.episode_title || "查看聊天记录";
@@ -2884,75 +2948,86 @@ function TrajectoryDetail({ item, calls, recall, flowData = {} }) {
     ? item
     : { stages: flow.map((call) => call.stage) };
   const recallHasEvidence = Boolean(recall && (recall.memories?.length || recall.reflections?.length || recall.episodes?.length));
+  const models = [...new Set(flow.map((call) => call.model).filter(Boolean))];
 
-  function pickFirstOfStep(step) {
-    setSelectedId(step.records[0]?.id || selectedId);
+  function toggle(id) {
+    setOpenIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function pickStep(step) {
+    const first = step.records[0];
+    if (!first) return;
+    setOpenIds(new Set([first.id]));
+    document.getElementById(`trajectory-row-${first.id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  function toggleKind(kind) {
+    setHidden((current) => {
+      const next = new Set(current);
+      if (next.has(kind)) next.delete(kind); else next.add(kind);
+      return next;
+    });
   }
 
   return (
-    <>
-      <header className="conversation-head trajectory-head">
-        <div className="trajectory-head-main">
-          <span className="panel-label">MOMOI // TRAJECTORY</span>
-          <h2>{thinkingFlowTitle(titleItem)}</h2>
-          {episodeId ? (
-            <a className="tag thinking-conversation" href={`#conversations/episode/${encodeURIComponent(episodeId)}`}>{episodeTitle}</a>
-          ) : null}
-        </div>
-        <dl className="trajectory-stats">
-          <div><dt>步骤</dt><dd>{steps.length}</dd></div>
-          <div><dt>工具调用</dt><dd>{toolCalls}</dd></div>
-          <div><dt>投递</dt><dd>{deliveries}</dd></div>
-          <div><dt>用量</dt><dd>{totalTokens.toLocaleString()} tk</dd></div>
-          <div><dt>耗时</dt><dd>{(totalDuration / 1000).toFixed(1)}s</dd></div>
-          {flowData.running ? <div className="is-live"><dt>状态</dt><dd>执行中</dd></div> : null}
-        </dl>
+    <div className="trajectory">
+      <header className="trajectory-head">
+        <span className={`trajectory-status ${flowData.running ? "is-live" : failed ? "is-error" : "is-ok"}`}>
+          {flowData.running ? "执行中" : failed ? "有失败" : "已完成"}
+        </span>
+        <h2>{thinkingFlowTitle(titleItem)}</h2>
+        <span className="trajectory-head-meta">
+          {models.length ? models.join(" / ") : "模型未记录"} · 用时 {trajectoryClock(span)}
+        </span>
+        <span className="trajectory-head-usage">{(inputTokens + outputTokens).toLocaleString()} tk</span>
       </header>
 
-      <TrajectoryTiming steps={steps} activeStep={activeStep} onPick={pickFirstOfStep} />
+      <div className="trajectory-outputs">
+        <span className="trajectory-outputs-label">产出</span>
+        <span className="trajectory-chip">{steps.length} 次模型调用</span>
+        <span className="trajectory-chip">{toolCalls} 次工具</span>
+        <span className="trajectory-chip">{deliveries} 条投递</span>
+        {episodeId ? <a className="trajectory-chip is-link" href={`#conversations/episode/${encodeURIComponent(episodeId)}`}>{episodeTitle}</a> : null}
+      </div>
+
+      <TrajectoryLanes steps={steps.filter((step) => step.start !== null)} start={start} span={span} activeCallId={activeCallId} onPick={pickStep} />
 
       {recall && !recallHasEvidence ? <RecallDetail recall={recall} /> : null}
 
-      <div className="trajectory-body">
-        <ol className="trajectory-ledger">
-          {inputs.length ? (
-            <li className="trajectory-input-group">
-              {inputs.map((record) => (
-                <TrajectoryRecordRow key={record.id} record={record} active={record.id === selectedId} onSelect={(value) => setSelectedId(value.id)} />
+      <div className="trajectory-toolbar">
+        <input type="search" className="trajectory-search" placeholder="搜索这次运行…" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <span className="trajectory-count">{visible.length} 个步骤</span>
+        <div className="trajectory-filter">
+          <button type="button" className={hidden.size ? "is-active" : ""} aria-expanded={filterOpen} onClick={() => setFilterOpen((value) => !value)}>筛选{hidden.size ? ` · ${trajectoryFilterKinds.length - hidden.size}` : ""}</button>
+          {filterOpen ? (
+            <div className="trajectory-filter-menu">
+              {trajectoryFilterKinds.map((kind) => (
+                <label key={kind}>
+                  <input type="checkbox" checked={!hidden.has(kind)} onChange={() => toggleKind(kind)} />
+                  {trajectoryKindMeta(kind).label}
+                </label>
               ))}
-            </li>
+            </div>
           ) : null}
-          {steps.map((step) => {
-            const metrics = step.metrics;
-            return (
-              <li className={`trajectory-step is-${trajectoryStageTone(step.call.stage)}${step.index === activeStep ? " is-active" : ""}`} key={step.call.call_id}>
-                {step.call.plan_step_id ? <div className="trajectory-plan-step"><span>STEP {step.call.plan_step_id}</span><strong>{step.call.plan_step_task || "执行计划步骤"}</strong></div> : null}
-                <header className="trajectory-step-head">
-                  <span className="trajectory-step-index" aria-hidden="true">{String(step.index + 1).padStart(2, "0")}</span>
-                  <strong>{thinkingStageLabel(step.call.stage)}</strong>
-                  <span className="trajectory-step-round">第 {step.call.round || 1} 轮</span>
-                  <time>{formatDate(step.call.created_at)}</time>
-                </header>
-                <div className="trajectory-step-meta">
-                  <span>{step.call.model || "模型未记录"}</span>
-                  {metrics ? <span>{Number(metrics.input_tokens || 0).toLocaleString()} 输入 / {Number(metrics.output_tokens || 0).toLocaleString()} 输出 · {(Number(metrics.duration_ms || 0) / 1000).toFixed(2)}s</span> : null}
-                </div>
-                <div className="trajectory-record-list">
-                  {step.records.length ? step.records.map((record) => (
-                    <TrajectoryRecordRow key={record.id} record={record} active={record.id === selectedId} onSelect={(value) => setSelectedId(value.id)} />
-                  )) : <p className="trajectory-empty">这一步没有可见记录。</p>}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-        <aside className="trajectory-inspector-pane">
-          <TrajectoryInspector record={selected} />
-        </aside>
+        </div>
+        <button type="button" className="trajectory-expand" onClick={() => setOpenIds(openIds.size ? new Set() : new Set(visible.map(({ record }) => record.id)))}>
+          {openIds.size ? "全部收起" : "全部展开"}
+        </button>
       </div>
 
+      <ol className="trajectory-timeline">
+        {visible.map(({ record, at }) => (
+          <TrajectoryRow key={record.id} record={record} offset={at === null ? null : at - start} open={openIds.has(record.id)} onToggle={() => toggle(record.id)} />
+        ))}
+        {!visible.length ? <li className="trajectory-empty">没有匹配的步骤。</li> : null}
+      </ol>
+
       {recall && recallHasEvidence ? <RecallDetail recall={recall} /> : null}
-    </>
+    </div>
   );
 }
 
