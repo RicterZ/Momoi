@@ -180,34 +180,37 @@
 /* Timing lanes */
 .trajectory-lanes {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
   row-gap: 6px;
-  column-gap: 10px;
-  padding: 10px 18px 14px;
+  padding: 10px 18px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--canvas);
 }
-.trajectory-lane-label { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted); }
-.trajectory-lane-label strong { font-weight: 500; color: var(--ink); }
 .trajectory-axis { position: relative; height: 14px; }
 .trajectory-axis span { position: absolute; font-size: 10px; color: var(--soft); transform: translateX(-2px); white-space: nowrap; }
-.trajectory-lane { position: relative; height: 14px; border-radius: 4px; background: var(--wash); }
-.trajectory-lane-bar {
+.trajectory-lane { position: relative; height: 20px; overflow: hidden; border-radius: 4px; background: var(--wash); }
+.trajectory-lane-segment {
   position: absolute;
   top: 0;
   bottom: 0;
-  min-width: 4px;
-  border: 0;
-  padding: 0;
-  border-radius: 3px;
-  cursor: pointer;
-  background: var(--soft);
-  opacity: .75;
+  display: grid;
+  place-items: center;
+  min-width: 2px;
+  overflow: hidden;
+  box-shadow: inset -1px 0 0 var(--canvas);
+  color: var(--surface);
+  font-size: 10px;
+  white-space: nowrap;
 }
-.trajectory-lane-bar.is-planner { background: var(--blue); }
-.trajectory-lane-bar.is-reply { background: var(--pink); }
-.trajectory-lane-bar:hover, .trajectory-lane-bar.is-active { opacity: 1; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--ink); }
-.trajectory-lane-tick { position: absolute; top: 1px; bottom: 1px; width: 3px; margin-left: -1px; border-radius: 2px; background: var(--blue); }
+.trajectory-lane-segment.is-model, .trajectory-lane-legend i.is-model { background: var(--blue); }
+.trajectory-lane-segment.is-tool, .trajectory-lane-legend i.is-tool { background: var(--pink); }
+.trajectory-lane-segment.is-wait, .trajectory-lane-legend i.is-wait { background: var(--line); color: var(--muted); }
+.trajectory-lane-segment.is-unknown, .trajectory-lane-legend i.is-unknown {
+  background: repeating-linear-gradient(135deg, var(--soft) 0 4px, var(--line) 4px 8px);
+  color: var(--ink);
+}
+.trajectory-lane-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 11px; color: var(--muted); }
+.trajectory-lane-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.trajectory-lane-legend i { width: 10px; height: 10px; border-radius: 2px; }
 
 .trajectory-text { font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
 .trajectory-delivery-meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; margin-bottom: 8px; }

@@ -2286,19 +2286,25 @@ function trajectoryGroup(item, data) {
     return time !== 0 ? time : Number(left.round || 0) - Number(right.round || 0);
   });
   const flow = data.flow || {};
-  const steps = calls.map((call, index) => ({
-    id: call.call_id || `${item.id}-${index}`,
-    index,
-    call,
-    start: trajectorySeconds(call.created_at),
-    duration: Number(call.request_metrics?.duration_ms || 0),
-    deliveries: (flow.deliveries || []).filter((delivery) => (call.actions || []).some((action) => action.id && action.id === delivery.tool_call_id)),
-    records: (call.actions || []).map((action, actionIndex) => ({ id: `${call.call_id}-act-${action.id || actionIndex}`, kind: "tool", action })),
-  }));
+  // A call is recorded when its response arrives, so created_at marks the end of the request.
+  const steps = calls.map((call, index) => {
+    const end = trajectorySeconds(call.created_at);
+    const duration = Number(call.request_metrics?.duration_ms || 0);
+    return {
+      id: call.call_id || `${item.id}-${index}`,
+      index,
+      call,
+      start: end === null ? null : end - duration / 1000,
+      end,
+      duration,
+      deliveries: (flow.deliveries || []).filter((delivery) => (call.actions || []).some((action) => action.id && action.id === delivery.tool_call_id)),
+      records: (call.actions || []).map((action, actionIndex) => ({ id: `${call.call_id}-act-${action.id || actionIndex}`, kind: "tool", action })),
+    };
+  });
   const inputs = flow.inputs || [];
   const starts = [...inputs.map((input) => trajectorySeconds(input.occurred_at)), ...steps.map((step) => step.start)].filter((value) => value !== null);
   const start = starts.length ? Math.min(...starts) : 0;
-  const end = Math.max(start, ...steps.map((step) => (step.start ?? start) + step.duration / 1000));
+  const end = Math.max(start, ...steps.map((step) => step.end ?? start));
   return {
     id: item.id,
     item,
@@ -2337,7 +2343,7 @@ function TrajectoryGroupHead({ group }) {
           {lanesOpen ? "收起耗时" : "耗时"}
         </button>
       </div>
-      {lanesOpen ? <TrajectoryLanes steps={steps.filter((step) => step.start !== null)} start={group.start} span={group.span} onPick={() => {}} /> : null}
+      {lanesOpen ? <TrajectoryLanes steps={steps.filter((step) => step.end !== null)} start={group.start} span={group.span} /> : null}
     </li>
   );
 }
@@ -2599,43 +2605,61 @@ function trajectoryDuration(ms) {
   return ms < 100 ? "<0.1s" : `${(ms / 1000).toFixed(1)}s`;
 }
 
-// Model calls on one lane, tool calls as ticks on another, both on a shared time axis.
-function TrajectoryLanes({ steps, start, span, activeCallId, onPick }) {
+// Splits a turn into back-to-back segments: each model request, then the tool or wait time until the next request.
+function trajectorySegments(steps, start) {
+  const segments = [];
+  let cursor = start;
+  steps.forEach((step, index) => {
+    const previous = steps[index - 1];
+    const gapKind = !previous ? "wait" : previous.records.length ? "tool" : "wait";
+    const gapLabel = gapKind === "tool" ? previous.records.map((record) => record.action?.name).filter(Boolean).join(" / ") || "工具" : index ? "等待" : "排队";
+    if (step.duration) {
+      const modelStart = Math.max(cursor, step.end - step.duration / 1000);
+      if (modelStart > cursor) segments.push({ key: `${step.id}-gap`, kind: gapKind, label: gapLabel, from: cursor, to: modelStart });
+      segments.push({ key: step.id, kind: "model", label: thinkingStageLabel(step.call.stage), from: modelStart, to: step.end });
+    } else if (step.end > cursor) {
+      segments.push({ key: step.id, kind: "unknown", label: `${index ? `${gapLabel} + ` : ""}${thinkingStageLabel(step.call.stage)}（未记录拆分）`, from: cursor, to: step.end });
+    }
+    cursor = Math.max(cursor, step.end);
+  });
+  return segments;
+}
+
+const trajectorySegmentNames = { model: "模型", tool: "工具", wait: "等待", unknown: "未拆分" };
+
+function TrajectoryLanes({ steps, start, span }) {
   if (!steps.length) return null;
   const tickStep = span > 600 ? 300 : span > 180 ? 60 : span > 60 ? 30 : span > 20 ? 10 : 5;
   const ticks = [];
   for (let value = 0; value <= span; value += tickStep) ticks.push(value);
-  const toolCount = steps.reduce((sum, step) => sum + step.records.filter((record) => record.kind === "tool").length, 0);
-  const modelMs = steps.reduce((sum, step) => sum + step.duration, 0);
+  const segments = trajectorySegments(steps, start);
+  const totals = segments.reduce((sum, segment) => ({ ...sum, [segment.kind]: (sum[segment.kind] || 0) + segment.to - segment.from }), {});
   const left = (seconds) => `${Math.min(100, Math.max(0, (seconds / span) * 100))}%`;
   return (
     <div className="trajectory-lanes" aria-label="耗时概览">
-      <div className="trajectory-lane-label" />
       <div className="trajectory-axis">
         {ticks.map((value) => <span key={value} style={{ left: left(value) }}>{trajectoryClock(value)}</span>)}
       </div>
-      <div className="trajectory-lane-label"><strong>模型</strong><span>{trajectoryClock(modelMs / 1000)}</span></div>
       <div className="trajectory-lane">
-        {steps.map((step) => {
-          const offset = step.start - start;
-          const width = Math.max((step.duration / 1000 / span) * 100, 0.6);
+        {segments.map((segment) => {
+          const seconds = segment.to - segment.from;
+          const width = (seconds / span) * 100;
           return (
-            <button
-              type="button"
-              key={step.call.call_id}
-              className={`trajectory-lane-bar is-${trajectoryStageTone(step.call.stage)}${step.call.call_id === activeCallId ? " is-active" : ""}`}
-              style={{ left: left(offset), width: `${width}%` }}
-              title={`${thinkingStageLabel(step.call.stage)} · ${trajectoryDuration(step.duration) || "未记录耗时"}`}
-              onClick={() => onPick(step)}
-            />
+            <span
+              key={segment.key}
+              className={`trajectory-lane-segment is-${segment.kind}`}
+              style={{ left: left(segment.from - start), width: `${width}%` }}
+              title={`+${trajectoryClock(segment.from - start)} · ${segment.label} · ${seconds.toFixed(1)}s`}
+            >
+              {width > 6 ? `${seconds.toFixed(seconds < 10 ? 1 : 0)}s` : ""}
+            </span>
           );
         })}
       </div>
-      <div className="trajectory-lane-label"><strong>工具</strong><span>{toolCount} 次</span></div>
-      <div className="trajectory-lane">
-        {steps.flatMap((step) => step.records.filter((record) => record.kind === "tool").map((record) => (
-          <span key={record.id} className="trajectory-lane-tick" style={{ left: left(step.start - start + step.duration / 1000) }} title={record.action?.name} />
-        )))}
+      <div className="trajectory-lane-legend">
+        {Object.keys(trajectorySegmentNames).filter((kind) => totals[kind]).map((kind) => (
+          <span key={kind}><i className={`is-${kind}`} />{trajectorySegmentNames[kind]} {trajectoryClock(totals[kind])}</span>
+        ))}
       </div>
     </div>
   );
