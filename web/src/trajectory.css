@@ -44,15 +44,7 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.trajectory-group-trigger {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-  font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.trajectory-group-spacer { flex: 1; }
 .trajectory-group-stats { color: var(--muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .trajectory-group-title .trajectory-chip,
 .trajectory-lanes-toggle {

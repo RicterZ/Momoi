@@ -2301,9 +2301,8 @@ function trajectoryGroup(item, data) {
   const end = Math.max(start, ...steps.map((step) => (step.start ?? start) + step.duration / 1000));
   return {
     id: item.id,
-    item: { ...item, episode_id: data.episode_id || item.episode_id, episode_title: data.episode_title || item.episode_title, plan: data.plan || item.plan },
+    item,
     steps,
-    inputs,
     running: Boolean(flow.running),
     start,
     span: Math.max(end - start, 1),
@@ -2325,17 +2324,15 @@ function TrajectoryGroupHead({ group }) {
   const models = [...new Set(steps.map((step) => step.call.model).filter(Boolean))];
   const tokens = steps.reduce((sum, step) => sum + Number(step.call.request_metrics?.input_tokens || 0) + Number(step.call.request_metrics?.output_tokens || 0), 0);
   const toolCalls = steps.reduce((sum, step) => sum + (step.call.actions || []).length, 0);
-  const trigger = group.inputs.map((input) => input.content).filter(Boolean).join(" / ");
   return (
     <li className="trajectory-group-head">
       <div className="trajectory-group-title">
         <time>{formatDate(item.updated_at || item.created_at)}</time>
         {group.running ? <span className="trajectory-status is-live">执行中</span> : failed ? <span className="trajectory-status is-error">有失败</span> : null}
-        <span className="trajectory-group-trigger">{trigger}</span>
+        <span className="trajectory-group-spacer" />
         <span className="trajectory-group-stats">
           {steps.length} step · {toolCalls} 工具 · {tokens.toLocaleString()} tk · {trajectoryClock(group.span)}{models.length ? ` · ${models.join(" / ")}` : ""}
         </span>
-        {item.episode_id ? <a className="trajectory-chip is-link" href={`#conversations/episode/${encodeURIComponent(item.episode_id)}`}>{item.episode_title || "聊天记录"}</a> : null}
         <button type="button" className="trajectory-lanes-toggle" aria-expanded={lanesOpen} onClick={() => setLanesOpen((value) => !value)}>
           {lanesOpen ? "收起耗时" : "耗时"}
         </button>
@@ -2384,12 +2381,6 @@ function TrajectoryStepPanel({ group, step, onClose }) {
         <button type="button" aria-label="关闭" onClick={onClose}>×</button>
       </header>
       <div className="trajectory-panel-body">
-        {step.index === 0 && group.inputs.length ? (
-          <section>
-            <h4>输入</h4>
-            {group.inputs.map((input, index) => <p className="trajectory-text" key={input.id || index}>{input.content}</p>)}
-          </section>
-        ) : null}
         {call.reasoning || call.excerpt ? (
           <section>
             <h4>思考</h4>
