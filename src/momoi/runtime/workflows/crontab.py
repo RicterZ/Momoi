@@ -35,6 +35,14 @@ class GoalWorkflow:
             "goal", goal_id, goal.get("next_review_at") if goal else "missing"
         )
         state = self.store.begin_turn(turn_id, "goal", [f"goal:{goal_id}"])
+        # A retry that ran ahead of the slot reuses the slot's Turn ID; the slot itself still has to run.
+        if (
+            state in {"completed", "cancelled"}
+            and goal and goal.get("next_review_at") is not None
+            and self.store.turn_started_before(turn_id, float(goal["next_review_at"]))
+        ):
+            turn_id = self._turn_id("goal", goal_id, goal["next_review_at"], "slot")
+            state = self.store.begin_turn(turn_id, "goal", [f"goal:{goal_id}"])
         if state in {"completed", "cancelled"}:
             self.store.skip_goal_review(goal_id)
             return

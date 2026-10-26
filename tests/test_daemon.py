@@ -1168,6 +1168,61 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
+    async def test_goal_slot_runs_after_an_early_retry_and_finished_slots_move_on(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
+                    channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    system_prompt="test",
+                    transcript_turns_min=4,
+                    transcript_turns_max=4,
+                    episode_unsummarized_tail_turns=2,
+                    memory_results=2,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            now = time.time()
+            slot = now - 1
+            daemon.store._db.execute(
+                """INSERT INTO goals (id, title, success_criteria, source_event_id, status,
+                       plan_json, next_action, waiting_for, blocked_reason, latest_result,
+                       schedule_json, next_review_at, failure_count, created_at, updated_at)
+                   VALUES ('daily', '睡前提醒', '每天提醒', 'event', 'active', '[]', '提醒',
+                           '', '', '', ?, ?, 0, ?, ?)""",
+                (json.dumps({"kind": "daily", "times": ["23:30"]}), slot, now, now),
+            )
+            early = daemon._turn_id("goal", "daily", slot)
+            daemon.store.begin_turn(early, "goal", ["goal:daily"])
+            daemon.store._db.execute(
+                "UPDATE turns SET state='completed', started_at=? WHERE id=?", (slot - 3600, early)
+            )
+            daemon.store._db.commit()
+            ran: list[str] = []
+
+            async def complete(goal_id: str, turn_id: str) -> None:
+                ran.append(turn_id)
+                daemon.store._db.execute(
+                    "UPDATE turns SET state='completed' WHERE id=?", (turn_id,)
+                )
+                daemon.store._db.commit()
+
+            daemon._complete_goal = complete  # type: ignore[method-assign]
+            self.assertEqual(daemon.store.claim_due_goal()["id"], "daily")
+            await daemon._complete_goal_turn("daily", asyncio.Event())
+            self.assertEqual(len(ran), 1)
+            self.assertNotEqual(ran[0], early)
+
+            daemon.store._db.execute("UPDATE goals SET review_claimed_at=NULL WHERE id='daily'")
+            daemon.store._db.commit()
+            self.assertEqual(daemon.store.claim_due_goal()["id"], "daily")
+            await daemon._complete_goal_turn("daily", asyncio.Event())
+            self.assertEqual(len(ran), 1)
+            self.assertGreater(float(daemon.store.goal("daily")["next_review_at"]), now)
+            self.assertIsNone(daemon.store.claim_due_goal())
+            daemon.store.close()
+
     async def test_goal_provider_failure_retries_same_occurrence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(

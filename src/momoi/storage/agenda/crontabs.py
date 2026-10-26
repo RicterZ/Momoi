@@ -198,6 +198,10 @@ class GoalStore:
                     "UPDATE goals SET review_claimed_at=NULL WHERE id=?", (goal_id,)
                 )
 
+    def turn_started_before(self, turn_id: str, at: float) -> bool:
+        row = self._db.execute("SELECT started_at FROM turns WHERE id=?", (turn_id,)).fetchone()
+        return row is not None and float(row["started_at"]) < at
+
     def skip_goal_review(self, goal_id: str) -> None:
         """Move past a review slot whose Turn already finished, so it is not claimed again."""
         now = time.time()
