@@ -13,6 +13,7 @@ class DaemonPolicy:
     message_gap_max_seconds: float = 7.0
     message_gap_min_chars: int = 4
     message_gap_saturation_chars: int = 60
+    delivery_disconnect_give_up_seconds: float = 60.0
 
 
 @dataclass(frozen=True)

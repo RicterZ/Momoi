@@ -6,6 +6,7 @@ import json
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1607,6 +1608,50 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 daemon.owner_updates.drain([], "onebot"), [older_qq, newer_qq]
             )
+            daemon.store.close()
+
+    async def test_disconnected_delivery_is_abandoned_and_noticed_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            napcat = OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+            daemon = MomoiDaemon(
+                AppConfig(
+                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
+                    channel=napcat,
+                    system_prompt="test",
+                    transcript_turns_min=4,
+                    transcript_turns_max=4,
+                    episode_unsummarized_tail_turns=2,
+                    memory_results=2,
+                    database=root / "momoi.sqlite3",
+                    log_level="INFO",
+                    workspace=root,
+                )
+            )
+            install_scripted_replyer(daemon)
+            daemon.daemon_policy = replace(daemon.daemon_policy, delivery_disconnect_give_up_seconds=0)
+            for turn_id, text in (("first", "第一条"), ("second", "第二条")):
+                daemon.store.commit_turn([], "", AgentReply([text]), turn_id=turn_id, target_channel="onebot")
+            stop = asyncio.Event()
+            attempts: list[str] = []
+
+            async def offline(payload: dict[str, object]) -> str:
+                attempts.append(payload["segments"][0]["data"]["text"])  # type: ignore[index]
+                if len(attempts) == 2:
+                    stop.set()
+                raise NotConnected("offline")
+
+            daemon.channels["onebot"].send_message = offline  # type: ignore[method-assign]
+            await daemon._outbox_worker(stop)
+
+            self.assertEqual(attempts, ["第一条", "第二条"])
+            states = [row[0] for row in daemon.store._db.execute("SELECT state FROM outbox ORDER BY id")]
+            self.assertEqual(states, ["failed", "failed"])
+            notices = daemon.store._db.execute(
+                "SELECT content FROM messages WHERE role='event'"
+            ).fetchall()
+            self.assertEqual(len(notices), 1)
+            self.assertIn("「第一条」", notices[0][0])
             daemon.store.close()
 
     async def test_disconnected_channel_does_not_block_another_channel(self) -> None:

@@ -44,6 +44,8 @@ class OutboxWorker:
 
     async def _outbox_worker(self, stop: asyncio.Event) -> None:
         previous_delivery: tuple[str, str] | None = None
+        disconnected_since: dict[int, float] = {}
+        abandoned_channels: set[str] = set()
         while not stop.is_set():
             self.outbox_changed.clear()
             rows = self.store.due_outbox()
@@ -161,6 +163,26 @@ class OutboxWorker:
                             }
                         )
                 except NotConnected as error:
+                    first_failure = disconnected_since.setdefault(row.id, send_started)
+                    give_up = self.daemon_policy.delivery_disconnect_give_up_seconds
+                    if row.channel in abandoned_channels or monotonic() - first_failure >= give_up:
+                        disconnected_since.pop(row.id, None)
+                        self.store.mark_failed(row.id, "NotConnected retry limit exceeded")
+                        if row.channel not in abandoned_channels:
+                            abandoned_channels.add(row.channel)
+                            self.store.record_delivery_abandoned(row.channel, row.id, row.text)
+                        log_event(
+                            logger,
+                            logging.WARNING,
+                            "outbox_abandoned",
+                            stage="delivery",
+                            turn_id=row.turn_id,
+                            channel=channel.name,
+                            outbox_id=row.id,
+                            attempt=attempt,
+                            error_type=type(error).__name__,
+                        )
+                        continue
                     self.store.mark_not_dispatched(row.id, type(error).__name__)
                     log_event(
                         logger,
@@ -220,6 +242,8 @@ class OutboxWorker:
                     if isinstance(native_message_id, str) and native_message_id:
                         self.store.record_delivery_receipt(row.id, native_message_id)
                     self.store.mark_sent(row.id)
+                    disconnected_since.pop(row.id, None)
+                    abandoned_channels.discard(row.channel)
                     previous_delivery = delivery
                     log_event(
                         logger,

@@ -167,6 +167,15 @@ class DeliveryStore:
             )
             self._sync_outbox_message(outbox_id, "failed")
 
+    def record_delivery_abandoned(self, channel: str, outbox_id: int, text: str) -> None:
+        notice = (f"【消息投递失败】\n{channel} 连接中断，以下消息多次重试仍未送达，已放弃；"
+                  f"恢复连接前发往该渠道的消息也会直接放弃：\n「{text}」")
+        event_id = f"delivery_failed:{outbox_id}"
+        self._record_channel_notice(
+            event_id, event_id, channel, time.time(), notice,
+            {"channel": channel, "notice_type": "delivery_failed", "outbox_id": outbox_id},
+        )
+
     def mark_sent(self, outbox_id: int) -> None:
         with self._db:
             self._db.execute(
