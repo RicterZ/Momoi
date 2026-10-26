@@ -2325,29 +2325,21 @@ function TrajectoryGroupHead({ group }) {
   const models = [...new Set(steps.map((step) => step.call.model).filter(Boolean))];
   const tokens = steps.reduce((sum, step) => sum + Number(step.call.request_metrics?.input_tokens || 0) + Number(step.call.request_metrics?.output_tokens || 0), 0);
   const toolCalls = steps.reduce((sum, step) => sum + (step.call.actions || []).length, 0);
-  const titleItem = item.plan_id || item.plan
-    ? { ...item, stages: ["plan_step"], excerpt: item.title || item.excerpt }
-    : item.stages?.length || item.stage ? item : { stages: steps.map((step) => step.call.stage) };
   const trigger = group.inputs.map((input) => input.content).filter(Boolean).join(" / ");
   return (
     <li className="trajectory-group-head">
       <div className="trajectory-group-title">
-        <span className={`trajectory-status ${group.running ? "is-live" : failed ? "is-error" : "is-ok"}`}>
-          {group.running ? "执行中" : failed ? "有失败" : "已完成"}
-        </span>
-        <strong>{thinkingFlowTitle(titleItem)}</strong>
-        <span className="trajectory-group-meta">
-          {formatDate(item.updated_at || item.created_at)} · {models.length ? models.join(" / ") : "模型未记录"} · 用时 {trajectoryClock(group.span)}
-        </span>
+        <time>{formatDate(item.updated_at || item.created_at)}</time>
+        {group.running ? <span className="trajectory-status is-live">执行中</span> : failed ? <span className="trajectory-status is-error">有失败</span> : null}
+        <span className="trajectory-group-trigger">{trigger}</span>
         <span className="trajectory-group-stats">
-          {steps.length} step · {toolCalls} 工具 · {tokens.toLocaleString()} tk
+          {steps.length} step · {toolCalls} 工具 · {tokens.toLocaleString()} tk · {trajectoryClock(group.span)}{models.length ? ` · ${models.join(" / ")}` : ""}
         </span>
         {item.episode_id ? <a className="trajectory-chip is-link" href={`#conversations/episode/${encodeURIComponent(item.episode_id)}`}>{item.episode_title || "聊天记录"}</a> : null}
         <button type="button" className="trajectory-lanes-toggle" aria-expanded={lanesOpen} onClick={() => setLanesOpen((value) => !value)}>
           {lanesOpen ? "收起耗时" : "耗时"}
         </button>
       </div>
-      {trigger ? <p className="trajectory-group-trigger"><span>触发</span>{trigger}</p> : null}
       {lanesOpen ? <TrajectoryLanes steps={steps.filter((step) => step.start !== null)} start={group.start} span={group.span} onPick={() => {}} /> : null}
     </li>
   );

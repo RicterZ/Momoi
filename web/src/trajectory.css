@@ -19,39 +19,32 @@
 .trajectory-log { list-style: none; margin: 0; padding: 0 0 12px; }
 
 .trajectory-group-head {
-  margin-top: 14px;
-  padding: 10px 16px 8px;
+  margin-top: 12px;
+  padding: 6px 16px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   background: var(--canvas);
 }
 .trajectory-log > .trajectory-group-head:first-child { margin-top: 0; }
-.trajectory-group-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.trajectory-group-title strong { font-size: 14px; }
-.trajectory-group-meta, .trajectory-group-stats { font-size: 12px; color: var(--muted); }
-.trajectory-group-stats { margin-left: auto; }
-.trajectory-group-title .trajectory-chip { padding: 2px 8px; }
+.trajectory-group-title { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 12px; }
+.trajectory-group-title time { color: var(--ink); font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.trajectory-group-title .trajectory-status { padding: 1px 8px; font-size: 11px; }
+.trajectory-group-trigger { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trajectory-group-stats { color: var(--muted); white-space: nowrap; }
+.trajectory-group-title .trajectory-chip { padding: 1px 8px; font-size: 11px; white-space: nowrap; }
 .trajectory-lanes-toggle {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   color: var(--muted);
   font: inherit;
-  font-size: 12px;
-  padding: 2px 8px;
+  font-size: 11px;
+  padding: 1px 8px;
   cursor: pointer;
 }
 .trajectory-lanes-toggle[aria-expanded="true"] { color: var(--ink); border-color: var(--ink); }
-.trajectory-group-trigger {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.trajectory-group-trigger span { color: var(--muted); margin-right: 8px; }
-.trajectory-group-head .trajectory-lanes { margin: 8px -16px -8px; border-bottom: 0; }
+.has-panel .trajectory-group-stats { display: none; }
+.trajectory-group-head .trajectory-lanes { margin: 6px -16px -6px; border-bottom: 0; }
 
 .trajectory-step {
   display: grid;
