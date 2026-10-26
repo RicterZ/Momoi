@@ -12,12 +12,54 @@ function previewCurrentState() {
   ] };
 }
 
+// Synthetic history so the step stream has enough rows to page through.
+function previewHistoryCalls(day) {
+  const tools = [
+    ["recall", { query: "最近的约定" }, { ok: true, hits: 3 }],
+    ["web_search", { query: "明天上海天气" }, { ok: true, results: 5 }],
+    ["exec", { command: "ls ~/Downloads | head" }, { ok: false, error: "timeout", exit_code: 124 }],
+    ["memory_write", { content: "主人周末想去看展" }, { ok: true }],
+    ["reply", { intent: "简短回应并确认" }, { ok: true }],
+  ];
+  const prompts = ["今天好累", "帮我查下明天天气", "提醒我八点开会", "这个文件放哪了", "周末有什么安排", "刚刚那首歌叫什么"];
+  const calls = [];
+  const base = Math.floor(day.getTime() / 1000) - 3600;
+  for (let turn = 0; turn < 60; turn += 1) {
+    const start = base - turn * 1800;
+    const steps = 1 + ((turn * 7) % 5);
+    for (let index = 0; index < steps; index += 1) {
+      const last = index === steps - 1;
+      const [name, args, result] = tools[(turn + index) % (last ? 1 : tools.length)];
+      const action = last
+        ? { id: `h${turn}-${index}`, name: "end_turn", arguments: {} }
+        : { id: `h${turn}-${index}`, name, arguments: args, result };
+      calls.push({
+        turn_id: `preview-history-${turn}`,
+        call_id: `preview-history-${turn}-${index}`,
+        created_at: start + index * 9,
+        stage: index === steps - 1 && steps > 2 ? "replyer" : "owner",
+        round: index + 1,
+        model: "deepseek-v4-flash",
+        tools: [action.name],
+        reasoning_chars: 40,
+        excerpt: index === 0 ? `主人说「${prompts[turn % prompts.length]}」，先判断要不要查资料。` : "",
+        reasoning: index === 0 ? `主人说「${prompts[turn % prompts.length]}」。先看上下文，再决定调用哪个工具。` : `根据上一步 ${name} 的结果继续推进。`,
+        assistant_text: steps > 2 && last ? "好，我记下了，晚点提醒你。" : "",
+        actions: [action],
+        request_metrics: { duration_ms: 600 + ((turn * 13 + index * 31) % 40) * 150, input_tokens: 3200 + index * 400, output_tokens: 120 + index * 30 },
+      });
+    }
+  }
+  return calls;
+}
+
 function previewThinkingCalls() {
   const day = new Date();
   day.setHours(21, 1, 49, 0);
   const at = (minutes, seconds = 0) =>
     Math.floor(day.getTime() / 1000) + minutes * 60 + seconds;
   return [
+    ...previewHistoryCalls(day),
     {
       turn_id: "preview-state", call_id: "preview-state-1",
       created_at: at(8), stage: "current_state_maintenance", round: 1,
@@ -89,6 +131,15 @@ function previewThinkingCalls() {
         "主人在问为什么衣服洗好了却没提醒，先召回这次 Webhook 的历史证据。",
       reasoning:
         "当前意图依赖刚才 Webhook 的处理记录。提交洗衣完成、提醒和静默处理的历史 scope；Episode 继续当天的洗衣事件。",
+      request_metrics: { input_tokens: 8421, output_tokens: 312, duration_ms: 2140 },
+      actions: [
+        {
+          id: "act-recall-1",
+          name: "recall",
+          arguments: { intent: "核对洗衣完成后的提醒约定与 Webhook 处理记录", scope: "webhook" },
+          result: { ok: true, hits: 2, episodes: ["洗衣完成后的提醒"] },
+        },
+      ],
     },
     {
       turn_id: "9d5db6937f765921b2d6cbe0773e5111",
@@ -98,12 +149,35 @@ function previewThinkingCalls() {
       stage: "owner",
       round: 1,
       model: "deepseek-v4-flash",
-      tools: ["send_bubbles"],
+      tools: ["reply"],
       reasoning_chars: 2557,
       excerpt:
         "先核对 outbox。那次 webhook 只调了 end_turn，没有 send_bubbles，所以老师确实没收到。",
       reasoning:
-        "先看事实，不看旧笔记。\n\n那次 webhook 的工具只有 end_turn，outbox 是空的。thinking 里写过「烘干结束提醒并非老师要求」，那是当时的判断，不能当成现行禁令。\n\n老师现在明确在问为什么没提醒。结论：衣服洗好这件事到了，我评估后选择了静默，所以没有发出去。接下来用 send_bubbles 把这件事说清楚，不要假装已经提醒过。",
+        "先看事实，不看旧笔记。\n\n那次 webhook 的工具只有 end_turn，outbox 是空的。thinking 里写过「烘干结束提醒并非老师要求」，那是当时的判断，不能当成现行禁令。\n\n老师现在明确在问为什么没提醒。结论：衣服洗好这件事到了，我评估后选择了静默，所以没有发出去。接下来派发 Replyer 把这件事说清楚，不要假装已经提醒过。",
+      request_metrics: { input_tokens: 9023, output_tokens: 540, duration_ms: 3380 },
+      actions: [
+        {
+          id: "act-reply-1",
+          name: "reply",
+          arguments: { intent: "说明那次确实没发出提醒并解释原因", reference: "outbox 为空，仅 end_turn" },
+          result: { ok: true },
+        },
+      ],
+    },
+    {
+      turn_id: "9d5db6937f765921b2d6cbe0773e5111",
+      call_id: "replyer-laundry-1",
+      created_at: at(0, 12),
+      stage: "replyer",
+      round: 1,
+      model: "deepseek-v4-flash",
+      tools: [],
+      reasoning_chars: 120,
+      assistant_text:
+        "啊……对不起老师，我刚才查了一下，那次衣服洗好的时候我其实没有发提醒。\n当时按旧笔记选择了静默，是我判断失误了，之后衣服洗好我都会第一时间叫你。",
+      trace: { parent_call_id: "d8afbd8f275440d0", tool_call_id: "act-reply-1" },
+      request_metrics: { input_tokens: 5120, output_tokens: 180, duration_ms: 1560 },
     },
     {
       turn_id: "9d5db6937f765921b2d6cbe0773e5111",
@@ -140,6 +214,8 @@ function previewThinkingCalls() {
       reasoning_chars: 46,
       excerpt: "已经说明原因，这轮可以收束。",
       reasoning: "已经说明原因，这轮可以收束。",
+      request_metrics: { input_tokens: 4301, output_tokens: 24, duration_ms: 600 },
+      actions: [{ id: "act-end-1", name: "end_turn", arguments: {}, result: { ok: true } }],
     },
     {
       turn_id: "ef8c470b3ea15ca2a0a77d02cfcb33d9",
@@ -964,11 +1040,35 @@ function previewUsageApi() {
             json(res, { error: "thinking not found" }, 404);
             return;
           }
+          const flow = turnId === "9d5db6937f765921b2d6cbe0773e5111"
+            ? {
+                running: false,
+                inputs: [
+                  {
+                    id: "input-laundry",
+                    occurred_at: previewNow() - 900,
+                    content: "衣服洗好了怎么没提醒我？",
+                  },
+                ],
+                deliveries: [
+                  {
+                    id: "deliv-laundry-1",
+                    turn_id: turnId,
+                    tool_call_id: "act-reply-1",
+                    target_channel: "onebot",
+                    kind: "text",
+                    state: "sent",
+                    text: "啊……对不起老师，那次衣服洗好的时候我其实没发提醒，是我判断失误了，之后洗好我都会第一时间叫你。",
+                  },
+                ],
+              }
+            : null;
           json(res, {
             ok: true,
             items,
             count: items.length,
             ...(previewRecall(turnId) ? { recall: previewRecall(turnId) } : {}),
+            ...(flow ? { flow } : {}),
           });
           return;
         }
@@ -1043,7 +1143,7 @@ function previewUsageApi() {
 
 export default defineConfig({
   root: "web",
-  plugins: [react(), previewUsageApi()],
+  plugins: [react(), ...(process.env.MOMOI_API_URL ? [] : [previewUsageApi()])],
   server: {
     proxy: {
       "/api": process.env.MOMOI_API_URL || "http://127.0.0.1:8788",
