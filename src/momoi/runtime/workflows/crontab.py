@@ -36,7 +36,7 @@ class GoalWorkflow:
         )
         state = self.store.begin_turn(turn_id, "goal", [f"goal:{goal_id}"])
         if state in {"completed", "cancelled"}:
-            self.store.release_goal_claim(goal_id)
+            self.store.skip_goal_review(goal_id)
             return
         if state == "needs_reconciliation":
             self.store.commit_autonomous_turn(goal_id, _goal_reconciliation_draft(turn_id), turn_id=turn_id)

@@ -198,6 +198,29 @@ class GoalStore:
                     "UPDATE goals SET review_claimed_at=NULL WHERE id=?", (goal_id,)
                 )
 
+    def skip_goal_review(self, goal_id: str) -> None:
+        """Move past a review slot whose Turn already finished, so it is not claimed again."""
+        now = time.time()
+        with self._db:
+            row = self._db.execute(
+                "SELECT schedule_json, next_review_at FROM goals WHERE id=?", (goal_id,)
+            ).fetchone()
+            if row is None:
+                return
+            after = max(now, float(row["next_review_at"] or 0))
+            next_review = (
+                next_schedule_at(json.loads(str(row["schedule_json"])), self._timezone, after)
+                if row["schedule_json"] else now + 900
+            )
+            self._db.execute(
+                """UPDATE goals SET review_claimed_at=NULL, next_review_at=?, retry_at=NULL
+                   WHERE id=? AND status IN ('active', 'waiting')""",
+                (next_review, goal_id),
+            )
+            self._db.execute(
+                "UPDATE goals SET review_claimed_at=NULL WHERE id=?", (goal_id,)
+            )
+
     def defer_goal_failure(self, goal_id: str) -> float | None:
         row = self._db.execute(
             "SELECT failure_count FROM goals WHERE id=?", (goal_id,)

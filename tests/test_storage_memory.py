@@ -2283,6 +2283,32 @@ class StorageMemoryTest(unittest.TestCase):
                 )
             daemon.store.close()
 
+    def test_skipping_a_finished_goal_review_moves_to_the_next_scheduled_slot(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            store._db.execute(
+                """INSERT INTO goals (id, title, success_criteria, source_event_id, status,
+                       plan_json, next_action, waiting_for, blocked_reason, latest_result,
+                       schedule_json, next_review_at, failure_count, created_at, updated_at)
+                   VALUES ('daily', '睡前提醒', '每天提醒', 'event', 'active', '[]', '提醒',
+                           '', '', '', ?, ?, 0, ?, ?)""",
+                (json.dumps({"kind": "daily", "times": ["23:30"]}), now - 1, now, now),
+            )
+            store._db.commit()
+            self.assertEqual(store.claim_due_goal()["id"], "daily")
+
+            store.skip_goal_review("daily")
+
+            self.assertIsNone(store.claim_due_goal())
+            row = store._db.execute(
+                "SELECT next_review_at, review_claimed_at FROM goals WHERE id='daily'"
+            ).fetchone()
+            self.assertIsNone(row["review_claimed_at"])
+            self.assertGreater(row["next_review_at"], now)
+            self.assertLessEqual(row["next_review_at"], now + 86400)
+            store.close()
+
     def test_goal_is_persisted_claimed_and_rescheduled_with_direct_messages(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
