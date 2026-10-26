@@ -2314,7 +2314,7 @@ function trajectoryStepSummary(call) {
   const text = call.assistant_text || call.reasoning || call.excerpt || "";
   if (text) return text.replace(/\s+/g, " ").trim();
   const actions = call.actions || [];
-  if (actions.length) return actions.map((action) => `${action.name}(${trajectoryActionSummary(action)})`).join(" · ");
+  if (actions.length) return actions.map(trajectoryActionSummary).join(" · ");
   return "（无内容）";
 }
 
@@ -2358,11 +2358,11 @@ function TrajectoryStepRow({ group, step, active, onSelect }) {
       >
         <time>{trajectoryOffset(step.start === null ? null : step.start - group.start)}</time>
         <span className="trajectory-step-stage">{thinkingStageLabel(call.stage)}</span>
-        <span className="trajectory-step-summary">{trajectoryStepSummary(call)}</span>
         <span className="trajectory-step-tools">
           {tools.slice(0, 3).map((name, index) => <code key={`${name}-${index}`}>{name}</code>)}
           {tools.length > 3 ? <code>+{tools.length - 3}</code> : null}
         </span>
+        <span className="trajectory-step-summary">{trajectoryStepSummary(call)}</span>
         <span className="trajectory-step-duration">{trajectoryDuration(step.duration) || "—"}</span>
       </button>
     </li>
@@ -2372,13 +2372,6 @@ function TrajectoryStepRow({ group, step, active, onSelect }) {
 function TrajectoryStepPanel({ group, step, onClose }) {
   const call = step.call;
   const metrics = call.request_metrics;
-  const [copied, setCopied] = useState(false);
-  function copy() {
-    navigator.clipboard?.writeText(JSON.stringify(call, null, 2)).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    });
-  }
   return (
     <aside className="trajectory-panel" aria-label="Step 详情">
       <header className="trajectory-panel-head">
@@ -2388,7 +2381,6 @@ function TrajectoryStepPanel({ group, step, onClose }) {
           {step.duration ? ` · ${trajectoryDuration(step.duration)}` : ""}
           {` · 第 ${call.round || step.index + 1} 轮`}
         </span>
-        <button type="button" onClick={copy}>{copied ? "已复制" : "复制"}</button>
         <button type="button" aria-label="关闭" onClick={onClose}>×</button>
       </header>
       <div className="trajectory-panel-body">
@@ -2453,7 +2445,6 @@ function ThinkingLayout({ items: olderItems, token, hasMore, loadingMore, onLoad
   const [loaded, setLoaded] = useState(() => new Map());
   const [liveItems, setLiveItems] = useState([]);
   const [target, setTarget] = useState(TRAJECTORY_PAGE_STEPS);
-  const [error, setError] = useState(null);
   const [fetching, setFetching] = useState(false);
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -2478,10 +2469,7 @@ function ThinkingLayout({ items: olderItems, token, hasMore, loadingMore, onLoad
     setFetching(true);
     api(trajectoryTurnPath(pending), { token })
       .then((data) => setLoaded((current) => new Map(current).set(pending.id, trajectoryGroup(pending, data))))
-      .catch((reason) => {
-        setError(reason);
-        setLoaded((current) => new Map(current).set(pending.id, trajectoryGroup(pending, {})));
-      })
+      .catch(() => setLoaded((current) => new Map(current).set(pending.id, trajectoryGroup(pending, {}))))
       .finally(() => setFetching(false));
   }, [token, fetching, stepCount, target, pending, hasMore, loadingMore, liveItems, loaded]);
 
@@ -2551,7 +2539,6 @@ function ThinkingLayout({ items: olderItems, token, hasMore, loadingMore, onLoad
         {ready ? <p className="trajectory-stream-edge">
           {busy ? "正在加载更早的 step…" : exhausted ? "没有更早的轨迹了" : "上滑加载更早的 step"}
         </p> : null}
-        {error ? <ErrorState error={error} /> : null}
         <ol className="trajectory-log" hidden={!ready}>
           {groups.map((group) => (
             <Fragment key={group.id}>

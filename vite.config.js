@@ -1143,7 +1143,7 @@ function previewUsageApi() {
 
 export default defineConfig({
   root: "web",
-  plugins: [react(), previewUsageApi()],
+  plugins: [react(), ...(process.env.MOMOI_API_URL ? [] : [previewUsageApi()])],
   server: {
     proxy: {
       "/api": process.env.MOMOI_API_URL || "http://127.0.0.1:8788",
