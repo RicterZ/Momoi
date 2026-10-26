@@ -15,7 +15,6 @@
 .trajectory-page.has-panel { grid-template-columns: minmax(0, 1fr) 400px; }
 .trajectory-stream { min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
 .has-panel .trajectory-step { grid-template-columns: 48px 120px minmax(0, 1fr) 48px; }
-.has-panel .trajectory-step-summary { grid-column: 3; }
 .has-panel .trajectory-step-tools, .has-panel .trajectory-group-stats { display: none; }
 .trajectory-stream-edge {
   margin: 0;
@@ -66,7 +65,7 @@
 
 .trajectory-step {
   display: grid;
-  grid-template-columns: 52px 150px auto minmax(0, 1fr) 56px;
+  grid-template-columns: 52px 150px minmax(0, 1fr) 170px 56px;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -96,7 +95,7 @@
 .trajectory-step.is-reply .trajectory-step-stage { color: var(--pink); }
 .trajectory-step.is-error .trajectory-step-stage { color: var(--pink); }
 .trajectory-step-summary { overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.trajectory-step-tools { display: flex; gap: 6px; }
+.trajectory-step-tools { display: flex; justify-content: flex-start; gap: 6px; min-width: 0; overflow: hidden; }
 .trajectory-step-tools code {
   padding: 0 6px;
   border: 1.5px solid var(--ink);

@@ -2355,11 +2355,11 @@ function TrajectoryStepRow({ group, step, active, onSelect }) {
       >
         <time>{trajectoryOffset(step.start === null ? null : step.start - group.start)}</time>
         <span className="trajectory-step-stage">{thinkingStageLabel(call.stage)}</span>
+        <span className="trajectory-step-summary">{trajectoryStepSummary(call)}</span>
         <span className="trajectory-step-tools">
           {tools.slice(0, 3).map((name, index) => <code key={`${name}-${index}`}>{name}</code>)}
           {tools.length > 3 ? <code>+{tools.length - 3}</code> : null}
         </span>
-        <span className="trajectory-step-summary">{trajectoryStepSummary(call)}</span>
         <span className="trajectory-step-duration">{trajectoryDuration(step.duration) || "—"}</span>
       </button>
     </li>
