@@ -2,6 +2,7 @@ import { hasModelApiKey } from "./setupGuide.js";
 import { Fragment, StrictMode, createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import "./trajectory.css";
 import Chat from "./Chat.jsx";
 import RequestMetrics from "./RequestMetrics.jsx";
 import Loading from "./Loading.jsx";
@@ -23,7 +24,7 @@ const pages = {
   memories: ["记忆", "MOMOI // MEMORY"],
   emotions: ["表情", "MOMOI // STICKERS"],
   goals: ["任务", "MOMOI // QUESTS"],
-  thinking: ["思考记录", "MOMOI // THINKING"],
+  thinking: ["执行轨迹", "MOMOI // TRAJECTORY"],
   metrics: ["请求监控", "MOMOI // METRICS"],
   tools: ["工具", "MOMOI // TOOLBOX"],
   settings: ["设置", "MOMOI // SETTINGS"],
@@ -33,7 +34,7 @@ const navItems = [
   ["overview", "01", "主页"],
   ["chat", "02", "聊天"],
   ["conversations", "03", "话题"],
-  ["thinking", "04", "思考"],
+  ["thinking", "04", "轨迹"],
   ["reflections", "05", "复盘"],
   ["memories", "06", "记忆"],
   ["emotions", "07", "表情"],
@@ -2234,9 +2235,9 @@ function Thinking({ refreshKey, token, routeParam }) {
     }
   }
 
-  if (status.loading) return <Loading>正在读取思考…</Loading>;
+  if (status.loading) return <Loading>正在读取轨迹…</Loading>;
   if (status.error) return <ErrorState error={status.error} />;
-  if (!items.length) return <Empty text="还没有思考记录。" />;
+  if (!items.length) return <Empty text="还没有轨迹记录。" />;
   const active =
     items.find((item) => item.id === selectedId) ||
     (selectedId ? { id: selectedId, turn_id: selectedId, stages: [] } : items[0]);
@@ -2332,7 +2333,7 @@ function ThinkingLayout({
     <section className="record-layout">
       <div
         className="record-list"
-        aria-label="思考 Turn"
+        aria-label="轨迹 Turn"
         ref={listRef}
         onScroll={() => {
           allowAuto.current = true;
@@ -2361,15 +2362,15 @@ function ThinkingLayout({
             disabled={loadingMore}
             onClick={onLoadOlder}
           >
-            {loadingMore ? "正在加载…" : "更早的思考"}
+            {loadingMore ? "正在加载…" : "更早的轨迹"}
           </button>
         ) : null}
       </div>
       <div className="conversation">
-        {detail.loading && <Loading>正在读取思考…</Loading>}
+        {detail.loading && <Loading>正在读取轨迹…</Loading>}
         {detail.error && <ErrorState error={detail.error} />}
         {detail.data && (
-          <ThinkingDetail
+          <TrajectoryDetail
             item={{
               ...active,
               episode_id: detail.data.episode_id || active.episode_id,
@@ -2613,89 +2614,268 @@ function RecallDetail({ recall }) {
 // Keep retired follow-up records readable in historical thinking logs.
 const plannerStages = new Set(["owner", "heartbeat", "webhook", "goal", "plan_step", "reply_followup"]);
 
-function FlowDeliveries({ deliveries = [] }) {
-  return deliveries.length > 0 && <section className="flow-deliveries">
-          <header className="flow-deliveries-head"><h3>实际投递</h3><span>{deliveries.length} 条</span></header>
-          <div className="flow-delivery-list">{deliveries.map((delivery, index) => <article className="flow-delivery" key={delivery.id}>
-            <span className="flow-delivery-index">{String(index + 1).padStart(2, "0")}</span>
-            <div className="flow-delivery-body">
-              <div className="flow-delivery-meta"><span>{({onebot: "QQ", napcat: "QQ", weixin: "微信", qq_call: "QQ 通话"})[delivery.target_channel] || delivery.target_channel} · {({text: "文字", image: "图片", voice: "语音", audio: "音频", file: "文件"})[delivery.kind] || delivery.kind}</span>
-                <span className={`flow-delivery-state is-${delivery.state}`}>{({pending:"排队中",sending:"发送中",sent:"已送达",failed:"发送失败",superseded:"已取消",cancelled:"已取消",ambiguous:"结果不确定"})[delivery.state] || delivery.state}</span>
-              </div>
-              <EmotionContent className="message-content flow-delivery-text" text={delivery.text} />
-              {delivery.last_error && ["failed", "ambiguous"].includes(delivery.state) && <details className="flow-action-data"><summary>投递详情</summary><pre className="flow-json">{delivery.last_error}</pre></details>}
-            </div>
-          </article>)}</div>
-        </section>;
+// The per-Turn flow is now rendered by TrajectoryDetail (see below), which
+// reframes these calls/actions/deliveries as an ordered trajectory ledger.
+
+// --- Trajectory page -------------------------------------------------------
+// Replaces the old "思考" detail view. Inspired by DeepSeek Harness's
+// ui-trajectory (a turn-aware ledger + record inspector + timing overview) and
+// the flow-graph viewers (Multigo / zoetrope / AeroGraph). The same
+// /api/thinking payload is reframed as an ordered trajectory of records:
+// input → reasoning → tool call → tool result → reply → delivery → end.
+
+const trajectoryKinds = {
+  input: { label: "用户输入", code: "IN", tone: "input" },
+  reasoning: { label: "模型推理", code: "THINK", tone: "reason" },
+  assistant: { label: "内部正文", code: "NOTE", tone: "reason" },
+  reply: { label: "生成发言", code: "REPLY", tone: "reply" },
+  tool: { label: "工具调用", code: "TOOL", tone: "tool" },
+  delivery: { label: "实际投递", code: "SEND", tone: "deliver" },
+  end: { label: "结束本轮", code: "END", tone: "end" },
+};
+
+function trajectoryKindMeta(kind) {
+  return trajectoryKinds[kind] || { label: kind, code: "·", tone: "tool" };
 }
 
-function ThinkingCall({ call, children = [], nested = false }) {
-  const replyer = call.stage === "replyer";
-  const affinityChecker = call.stage === "affinity_checker";
-  let affinityDecision = null;
-  if (affinityChecker && call.assistant_text) {
-    try {
-      const value = JSON.parse(call.assistant_text);
-      if (typeof value.allowed === "boolean" && typeof value.reason === "string") affinityDecision = value;
-    } catch { /* Keep malformed responses visible as raw output. */ }
-  }
-  const planner = plannerStages.has(call.stage);
-  const metrics = call.request_metrics;
-  return <article className={`flow-call ${replyer ? "is-replyer" : planner ? "is-planner" : "is-workflow"}${nested ? " is-nested" : ""}`}>
-    <header className="flow-call-head">
-      <strong>{replyer ? "发言生成 · Replyer" : planner ? "行为规划 · Planner" : thinkingStageLabel(call.stage)}</strong>
-      <span>{replyer ? "由 reply 派发" : affinityChecker ? "独立审批" : `第 ${call.round || 1} 轮`}</span>
-      <time>{formatDate(call.created_at)}</time>
-    </header>
-    <div className="flow-call-meta"><span>{call.model || "模型未记录"}</span><code>{call.call_id}</code>
-      {planner && call.stage !== "owner" && <span>{thinkingStageLabel(call.stage)}</span>}
-      {metrics && <span>{Number(metrics.input_tokens || 0).toLocaleString()} 输入 / {Number(metrics.output_tokens || 0).toLocaleString()} 输出 · {(Number(metrics.duration_ms || 0) / 1000).toFixed(2)}s</span>}
+function trajectoryActionTitle(action) {
+  if (action.name === "reply") return "决定回应 → 派发 Replyer";
+  if (action.name === "end_turn") return "结束本轮";
+  return `调用 ${action.name}`;
+}
+
+function trajectoryActionSummary(action) {
+  if (action.name === "reply") return action.arguments?.intent || "派发发言生成";
+  if (action.name === "end_turn") return "本轮无需继续，收束流程。";
+  const args = action.arguments || {};
+  const keys = Object.keys(args);
+  if (!keys.length) return "无调用参数";
+  return keys.map((key) => `${key}: ${JSON.stringify(args[key])}`).join(" · ");
+}
+
+const trajectoryDeliveryChannel = { onebot: "QQ", napcat: "QQ", weixin: "微信", qq_call: "QQ 通话" };
+const trajectoryDeliveryKind = { text: "文字", image: "图片", voice: "语音", audio: "音频", file: "文件" };
+const trajectoryDeliveryState = { pending: "排队中", sending: "发送中", sent: "已送达", failed: "发送失败", superseded: "已取消", cancelled: "已取消", ambiguous: "结果不确定" };
+
+// Flatten the per-Turn calls into an ordered list of trajectory records,
+// grouped into steps (one step per model call).
+function buildTrajectory(flow, flowData = {}) {
+  const inputs = (flowData.inputs || []).map((input, index) => ({
+    id: `input-${input.id || index}`,
+    kind: "input",
+    title: "用户输入",
+    summary: input.content || "",
+    time: input.occurred_at,
+    payload: input,
+  }));
+  const steps = flow.map((call, index) => {
+    const records = [];
+    const stageIsReply = call.stage === "replyer";
+    if (call.reasoning || call.excerpt) {
+      const text = call.reasoning || call.excerpt;
+      records.push({ id: `${call.call_id}-reason`, kind: "reasoning", title: "模型推理", summary: text, text, time: call.created_at, call });
+    }
+    if (call.assistant_text) {
+      records.push({
+        id: `${call.call_id}-assistant`,
+        kind: stageIsReply ? "reply" : "assistant",
+        title: stageIsReply ? "生成发言" : "内部正文",
+        summary: call.assistant_text,
+        text: call.assistant_text,
+        time: call.created_at,
+        call,
+      });
+    }
+    (call.actions || []).forEach((action, actionIndex) => {
+      records.push({
+        id: `${call.call_id}-act-${action.id || actionIndex}`,
+        kind: action.name === "end_turn" ? "end" : "tool",
+        title: trajectoryActionTitle(action),
+        summary: trajectoryActionSummary(action),
+        time: call.created_at,
+        call,
+        action,
+      });
+      if (action.name === "reply") {
+        (flowData.deliveries || [])
+          .filter((delivery) => delivery.turn_id === call.turn_id && delivery.tool_call_id === action.id)
+          .forEach((delivery, deliveryIndex) => records.push({
+            id: `delivery-${delivery.id || deliveryIndex}`,
+            kind: "delivery",
+            title: "实际投递",
+            summary: delivery.text || "",
+            time: call.created_at,
+            call,
+            delivery,
+          }));
+      }
+    });
+    return { index, call, metrics: call.request_metrics, duration: Number(call.request_metrics?.duration_ms || 0), records };
+  });
+  return { inputs, steps };
+}
+
+function TrajectoryTiming({ steps, activeStep, onPick }) {
+  const total = steps.reduce((sum, step) => sum + step.duration, 0);
+  if (!steps.length) return null;
+  return (
+    <div className="trajectory-timing" aria-label="耗时概览">
+      {steps.map((step) => {
+        const share = total > 0 ? (step.duration / total) * 100 : 100 / steps.length;
+        return (
+          <button
+            type="button"
+            key={step.call.call_id}
+            className={`trajectory-timing-block is-${trajectoryStageTone(step.call.stage)}${step.index === activeStep ? " is-active" : ""}`}
+            style={{ flexGrow: Math.max(share, 4) }}
+            title={`${thinkingStageLabel(step.call.stage)} · ${(step.duration / 1000).toFixed(2)}s`}
+            onClick={() => onPick(step)}
+          >
+            <span>{thinkingStageCode(step.call.stage)}</span>
+          </button>
+        );
+      })}
     </div>
-    <div className="thinking-call-content">
-      {call.reasoning || call.excerpt ? <section className="thinking-part reasoning-part">
-        <h4>模型推理 <span>接口返回的 reasoning</span></h4>
-        <p className="message-content thinking-body">{call.reasoning || call.excerpt}</p>
-      </section> : <p className="thinking-empty">{affinityChecker ? "接口未返回可见推理；审批返回见下方。" : "接口未返回可见推理；可以从实际工具调用查看决策。"}</p>}
-      {affinityDecision && <section className="thinking-part assistant-part">
-        <h4>审批结果 <span>{affinityDecision.allowed ? "允许调整" : "拒绝调整"}</span></h4>
-        <p className="message-content thinking-body">{affinityDecision.reason}</p>
-      </section>}
-      {call.assistant_text && !affinityDecision && (replyer ? <details className="thinking-part assistant-part flow-generated">
-        <summary>生成的发言</summary>
-        <EmotionContent className="message-content thinking-body" text={call.assistant_text} />
-      </details> : <section className="thinking-part assistant-part">
-        <h4>{affinityChecker ? "审批返回" : "内部正文"}</h4>
-        <EmotionContent className="message-content thinking-body" text={call.assistant_text} />
-      </section>)}
-    </div>
-    {(call.actions || []).map((action, index) => <section className="flow-action" key={action.id || index}>
-      <div className="flow-action-head"><strong>{action.name === "reply" ? "决定回应 → 派发 Replyer" : action.name === "end_turn" ? "结束本轮" : `调用 ${action.name}`}</strong>
-        <span className={`flow-result-state ${action.result?.ok === false ? "is-error" : ""}`}>{action.result ? action.result.ok ? "执行成功" : "执行失败" : "执行结果未记录"}</span>
+  );
+}
+
+function trajectoryStageTone(stage) {
+  if (stage === "replyer") return "reply";
+  if (plannerStages.has(stage)) return "planner";
+  return "workflow";
+}
+
+function TrajectoryRecordRow({ record, active, onSelect }) {
+  const meta = trajectoryKindMeta(record.kind);
+  const result = record.action?.result;
+  return (
+    <button
+      type="button"
+      className={`trajectory-record is-${meta.tone}${active ? " is-active" : ""}`}
+      onClick={() => onSelect(record)}
+    >
+      <span className="trajectory-record-badge" aria-hidden="true">{meta.code}</span>
+      <span className="trajectory-record-main">
+        <span className="trajectory-record-title">
+          {record.title}
+          {result ? <span className={`trajectory-result ${result.ok === false ? "is-error" : "is-ok"}`}>{result.ok === false ? "失败" : "成功"}</span> : null}
+        </span>
+        <span className="trajectory-record-summary">{record.summary || "（无内容）"}</span>
+      </span>
+    </button>
+  );
+}
+
+function TrajectoryInspector({ record }) {
+  const [tab, setTab] = useState("overview");
+  useEffect(() => { setTab("overview"); }, [record?.id]);
+  if (!record) return <div className="trajectory-inspector-empty"><p>选中左侧任意一步，查看详情。</p></div>;
+  const meta = trajectoryKindMeta(record.kind);
+  const call = record.call;
+  const metrics = call?.request_metrics;
+  const rawPayload = record.action || record.delivery || record.payload || { reasoning: record.text };
+  const tabs = [["overview", "概览"], ["raw", "原始 JSON"]];
+  if (metrics) tabs.push(["usage", "用量"]);
+  return (
+    <div className="trajectory-inspector">
+      <header className="trajectory-inspector-head">
+        <span className={`trajectory-record-badge is-${meta.tone}`} aria-hidden="true">{meta.code}</span>
+        <div>
+          <strong>{record.title}</strong>
+          <p>{meta.label}{call ? ` · ${thinkingStageLabel(call.stage)}` : ""}{record.time ? ` · ${formatDate(record.time)}` : ""}</p>
+        </div>
+      </header>
+      <nav className="trajectory-tabs" aria-label="详情视图">
+        {tabs.map(([id, label]) => (
+          <button type="button" key={id} className={tab === id ? "is-active" : ""} onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </nav>
+      <div className="trajectory-inspector-body">
+        {tab === "overview" && <TrajectoryOverview record={record} />}
+        {tab === "raw" && <pre className="flow-json">{JSON.stringify(rawPayload, null, 2)}</pre>}
+        {tab === "usage" && metrics && (
+          <dl className="trajectory-usage">
+            <div><dt>模型</dt><dd>{call.model || "未记录"}</dd></div>
+            <div><dt>输入 tokens</dt><dd>{Number(metrics.input_tokens || 0).toLocaleString()}</dd></div>
+            <div><dt>输出 tokens</dt><dd>{Number(metrics.output_tokens || 0).toLocaleString()}</dd></div>
+            <div><dt>耗时</dt><dd>{(Number(metrics.duration_ms || 0) / 1000).toFixed(2)}s</dd></div>
+            <div><dt>调用 ID</dt><dd><code>{call.call_id}</code></dd></div>
+          </dl>
+        )}
       </div>
-      {action.name === "reply" ? <dl className="flow-dispatch">
-        <dt>回应意图</dt><dd>{action.arguments?.intent || "未记录"}</dd>
-        <dt>必要参考</dt><dd>{action.arguments?.reference || "无额外参考"}</dd>
-        {action.arguments?.mode === "voice" && <><dt>发言方式</dt><dd>语音</dd></>}
-      </dl> : <details className="flow-action-data"><summary>决策参数</summary><pre className="flow-json">{JSON.stringify(action.arguments || {}, null, 2)}</pre></details>}
-      {children.filter(child => child.trace?.tool_call_id === action.id).map(child => <ThinkingCall key={child.call_id} call={child} nested />)}
-      {action.result && <details className="flow-action-data"><summary>工具结果{action.result.error ? ` · ${action.result.error}` : ""}</summary><pre className="flow-json">{JSON.stringify(action.result, null, 2)}</pre></details>}
-    </section>)}
-    {!call.actions?.length && call.tools?.length > 0 && <p className="flow-note">旧记录仅保存工具名称：{call.tools.join(" / ")}；没有可核对的参数与结果。</p>}
-    {children.filter(child => !(call.actions || []).some(action => action.id === child.trace?.tool_call_id)).map(child => <ThinkingCall key={child.call_id} call={child} nested />)}
-  </article>;
+    </div>
+  );
 }
 
-function ThinkingDetail({ item, calls, recall, flowData = {} }) {
+function TrajectoryOverview({ record }) {
+  if (record.kind === "tool" || record.kind === "end") {
+    const action = record.action || {};
+    const result = action.result;
+    return (
+      <div className="trajectory-overview">
+        {action.name === "reply" ? (
+          <dl className="flow-dispatch">
+            <dt>回应意图</dt><dd>{action.arguments?.intent || "未记录"}</dd>
+            <dt>必要参考</dt><dd>{action.arguments?.reference || "无额外参考"}</dd>
+            {action.arguments?.mode === "voice" && <><dt>发言方式</dt><dd>语音</dd></>}
+          </dl>
+        ) : (
+          <section className="trajectory-part">
+            <h4>决策参数</h4>
+            <pre className="flow-json">{JSON.stringify(action.arguments || {}, null, 2)}</pre>
+          </section>
+        )}
+        {result && (
+          <section className="trajectory-part">
+            <h4>工具结果{result.error ? ` · ${result.error}` : ""}</h4>
+            <pre className="flow-json">{JSON.stringify(result, null, 2)}</pre>
+          </section>
+        )}
+      </div>
+    );
+  }
+  if (record.kind === "delivery") {
+    const delivery = record.delivery || {};
+    return (
+      <div className="trajectory-overview">
+        <div className="trajectory-delivery-meta">
+          <span>{trajectoryDeliveryChannel[delivery.target_channel] || delivery.target_channel} · {trajectoryDeliveryKind[delivery.kind] || delivery.kind}</span>
+          <span className={`flow-delivery-state is-${delivery.state}`}>{trajectoryDeliveryState[delivery.state] || delivery.state}</span>
+        </div>
+        <EmotionContent className="message-content trajectory-text" text={delivery.text} />
+        {delivery.last_error && ["failed", "ambiguous"].includes(delivery.state) && <pre className="flow-json">{delivery.last_error}</pre>}
+      </div>
+    );
+  }
+  if (record.kind === "input") {
+    return <div className="trajectory-overview"><p className="message-content trajectory-text">{record.summary}</p></div>;
+  }
+  // reasoning / assistant / reply
+  return (
+    <div className="trajectory-overview">
+      <EmotionContent className="message-content trajectory-text" text={record.text || record.summary} />
+    </div>
+  );
+}
+
+function TrajectoryDetail({ item, calls, recall, flowData = {} }) {
   const flow = [...calls].sort((left, right) => {
     const time = Number(left.created_at || 0) - Number(right.created_at || 0);
     return time !== 0 ? time : Number(left.round || 0) - Number(right.round || 0);
   });
-  if (!flow.length) return <Empty text="这个 Turn 还没有思考记录。" />;
-  const knownIds = new Set(flow.map(call => call.call_id));
-  const roots = flow.filter(call => !call.trace?.parent_call_id || !knownIds.has(call.trace.parent_call_id));
-  const childrenFor = (call) => flow.filter(child => child.trace?.parent_call_id === call.call_id);
-  const replyKeys = new Set(flow.flatMap(call => (call.actions || []).filter(action => action.name === "reply").map(action => JSON.stringify([call.turn_id, action.id]))));
-  const unlinkedDeliveries = (flowData.deliveries || []).filter(delivery => !replyKeys.has(JSON.stringify([delivery.turn_id, delivery.tool_call_id])));
+  const { inputs, steps } = buildTrajectory(flow, flowData);
+  const allRecords = [...inputs, ...steps.flatMap((step) => step.records)];
+  const [selectedId, setSelectedId] = useState(allRecords[0]?.id || null);
+  useEffect(() => { setSelectedId(allRecords[0]?.id || null); }, [item?.id]);
+  if (!flow.length) return <Empty text="这个轨迹还没有记录。" />;
+  const selected = allRecords.find((record) => record.id === selectedId) || allRecords[0] || null;
+  const activeStep = selected?.call ? steps.find((step) => step.call.call_id === selected.call.call_id)?.index ?? -1 : -1;
+
+  const toolCalls = steps.reduce((sum, step) => sum + (step.call.actions || []).length, 0);
+  const totalTokens = steps.reduce((sum, step) => sum + Number(step.metrics?.input_tokens || 0) + Number(step.metrics?.output_tokens || 0), 0);
+  const totalDuration = steps.reduce((sum, step) => sum + step.duration, 0);
+  const deliveries = flowData.deliveries?.length || 0;
+
   const episodeId = item?.episode_id;
   const episodeTitle = item?.episode_title || "查看聊天记录";
   const titleItem = item?.plan_id || item?.plan
@@ -2703,56 +2883,75 @@ function ThinkingDetail({ item, calls, recall, flowData = {} }) {
     : item?.stages?.length || item?.stage
     ? item
     : { stages: flow.map((call) => call.stage) };
-  // A recall can be recorded even when every candidate is filtered out. Keep
-  // that decision visible before the timeline so an empty result is not
-  // mistaken for missing data at the bottom of the scroll area.
-  const recallHasEvidence = Boolean(
-    recall && (
-      recall.memories?.length ||
-      recall.reflections?.length ||
-      recall.episodes?.length
-    ),
-  );
-  // Recall is persisted once per Turn; place that single panel after the
-  // complete CUES sequence instead of duplicating it for each CUES call.
-  const lastCuesIndex = flow.reduce(
-    (last, call, index) =>
-      ["topic_selection", "episode_cue_admit"].includes(call.stage) ? index : last,
-    -1,
-  );
+  const recallHasEvidence = Boolean(recall && (recall.memories?.length || recall.reflections?.length || recall.episodes?.length));
+
+  function pickFirstOfStep(step) {
+    setSelectedId(step.records[0]?.id || selectedId);
+  }
+
   return (
     <>
-      <header className={`conversation-head${recall ? " has-recall" : ""}`}>
-        <h2>{thinkingFlowTitle(titleItem)}</h2>
-        {episodeId ? (
-          <a
-            className="tag thinking-conversation"
-            href={`#conversations/episode/${encodeURIComponent(episodeId)}`}
-          >
-            {episodeTitle}
-          </a>
-        ) : null}
+      <header className="conversation-head trajectory-head">
+        <div className="trajectory-head-main">
+          <span className="panel-label">MOMOI // TRAJECTORY</span>
+          <h2>{thinkingFlowTitle(titleItem)}</h2>
+          {episodeId ? (
+            <a className="tag thinking-conversation" href={`#conversations/episode/${encodeURIComponent(episodeId)}`}>{episodeTitle}</a>
+          ) : null}
+        </div>
+        <dl className="trajectory-stats">
+          <div><dt>步骤</dt><dd>{steps.length}</dd></div>
+          <div><dt>工具调用</dt><dd>{toolCalls}</dd></div>
+          <div><dt>投递</dt><dd>{deliveries}</dd></div>
+          <div><dt>用量</dt><dd>{totalTokens.toLocaleString()} tk</dd></div>
+          <div><dt>耗时</dt><dd>{(totalDuration / 1000).toFixed(1)}s</dd></div>
+          {flowData.running ? <div className="is-live"><dt>状态</dt><dd>执行中</dd></div> : null}
+        </dl>
       </header>
-      {recall && !recallHasEvidence ? <RecallDetail recall={recall} /> : null}
-      <div className="chat-thinking-flow">
-        <div className="flow-overview"><strong>聊天决策流</strong>{flowData.running && <span>执行中 · 自动更新</span>}<span>{flow.filter(call => plannerStages.has(call.stage)).length} 次行为规划</span><span>{flow.filter(call => call.stage === "replyer").length} 次发言生成</span><span>{flowData.deliveries?.length || 0} 条投递记录</span></div>
-        {!!flowData.inputs?.length && <section className="flow-input"><h3>本轮输入</h3>{flowData.inputs.map(input => <div key={input.id}><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></div>)}</section>}
-        {roots.map(call => <Fragment key={call.call_id}>
-          {call.plan_step_id && <div className="plan-step-marker"><span>STEP {call.plan_step_id}</span><strong>{call.plan_step_task || "执行计划步骤"}</strong></div>}
-          {(flowData.interjections || []).filter(input => input.before_call_id === call.call_id).map(input => <section className="flow-input" key={input.id}><h3>用户中途插话</h3><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></section>)}
-          <ThinkingCall call={call} children={childrenFor(call).filter(child => child.stage !== "replyer")} />
-          {(call.actions || []).filter(action => action.name === "reply").map(action => <Fragment key={action.id}>
-            {childrenFor(call).filter(child => child.stage === "replyer" && child.trace?.tool_call_id === action.id).map(child => <ThinkingCall key={child.call_id} call={child} />)}
-            <FlowDeliveries deliveries={(flowData.deliveries || []).filter(delivery => delivery.turn_id === call.turn_id && delivery.tool_call_id === action.id)} />
-          </Fragment>)}
-          {childrenFor(call).filter(child => child.stage === "replyer" && !(call.actions || []).some(action => action.name === "reply" && action.id === child.trace?.tool_call_id)).map(child => <ThinkingCall key={child.call_id} call={child} />)}
-          {recall && recallHasEvidence && ["topic_selection", "episode_cue_admit"].includes(call.stage) && flow.indexOf(call) === lastCuesIndex ? <RecallDetail recall={recall} /> : null}
-        </Fragment>)}
-        {(flowData.interjections || []).filter(input => !input.before_call_id).map(input => <section className="flow-input" key={input.id}><h3>用户中途插话</h3><time>{formatDate(input.occurred_at)}</time><p className="message-content">{input.content}</p></section>)}
-        {recall && recallHasEvidence && lastCuesIndex < 0 ? <RecallDetail recall={recall} /> : null}
-        {!!unlinkedDeliveries.length && <details className="flow-action-data"><summary>未关联到 reply 的历史投递</summary><FlowDeliveries deliveries={unlinkedDeliveries} /></details>}
 
+      <TrajectoryTiming steps={steps} activeStep={activeStep} onPick={pickFirstOfStep} />
+
+      {recall && !recallHasEvidence ? <RecallDetail recall={recall} /> : null}
+
+      <div className="trajectory-body">
+        <ol className="trajectory-ledger">
+          {inputs.length ? (
+            <li className="trajectory-input-group">
+              {inputs.map((record) => (
+                <TrajectoryRecordRow key={record.id} record={record} active={record.id === selectedId} onSelect={(value) => setSelectedId(value.id)} />
+              ))}
+            </li>
+          ) : null}
+          {steps.map((step) => {
+            const metrics = step.metrics;
+            return (
+              <li className={`trajectory-step is-${trajectoryStageTone(step.call.stage)}${step.index === activeStep ? " is-active" : ""}`} key={step.call.call_id}>
+                {step.call.plan_step_id ? <div className="trajectory-plan-step"><span>STEP {step.call.plan_step_id}</span><strong>{step.call.plan_step_task || "执行计划步骤"}</strong></div> : null}
+                <header className="trajectory-step-head">
+                  <span className="trajectory-step-index" aria-hidden="true">{String(step.index + 1).padStart(2, "0")}</span>
+                  <strong>{thinkingStageLabel(step.call.stage)}</strong>
+                  <span className="trajectory-step-round">第 {step.call.round || 1} 轮</span>
+                  <time>{formatDate(step.call.created_at)}</time>
+                </header>
+                <div className="trajectory-step-meta">
+                  <span>{step.call.model || "模型未记录"}</span>
+                  {metrics ? <span>{Number(metrics.input_tokens || 0).toLocaleString()} 输入 / {Number(metrics.output_tokens || 0).toLocaleString()} 输出 · {(Number(metrics.duration_ms || 0) / 1000).toFixed(2)}s</span> : null}
+                </div>
+                <div className="trajectory-record-list">
+                  {step.records.length ? step.records.map((record) => (
+                    <TrajectoryRecordRow key={record.id} record={record} active={record.id === selectedId} onSelect={(value) => setSelectedId(value.id)} />
+                  )) : <p className="trajectory-empty">这一步没有可见记录。</p>}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+        <aside className="trajectory-inspector-pane">
+          <TrajectoryInspector record={selected} />
+        </aside>
       </div>
+
+      {recall && recallHasEvidence ? <RecallDetail recall={recall} /> : null}
     </>
   );
 }
