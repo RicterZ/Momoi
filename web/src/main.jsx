@@ -2449,24 +2449,28 @@ function TrajectoryStepPanel({ group, step, onClose }) {
 
 // Step-level log stream: Turns stay as groups, steps inside them are rows, oldest
 // at the top. Scrolling to the top pulls the next 100 older steps.
-function ThinkingLayout({ items, token, hasMore, loadingMore, onLoadOlder }) {
+function ThinkingLayout({ items: olderItems, token, hasMore, loadingMore, onLoadOlder }) {
   const [loaded, setLoaded] = useState(() => new Map());
+  const [liveItems, setLiveItems] = useState([]);
   const [target, setTarget] = useState(TRAJECTORY_PAGE_STEPS);
   const [error, setError] = useState(null);
   const [fetching, setFetching] = useState(false);
+  const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState(null);
   const scrollRef = useRef(null);
   const anchor = useRef(null);
-  const initialScroll = useRef(false);
+  const atBottom = useRef(true);
   const loadOlderRef = useRef(onLoadOlder);
   loadOlderRef.current = onLoadOlder;
 
+  const seen = new Set(liveItems.map((item) => item.id));
+  const items = [...liveItems, ...olderItems.filter((item) => !seen.has(item.id))];
   const stepCount = [...loaded.values()].reduce((sum, group) => sum + group.steps.length, 0);
   const pending = items.find((item) => !loaded.has(item.id));
   const exhausted = !pending && !hasMore;
 
   useEffect(() => {
-    if (!token || fetching || stepCount >= target) return;
+    if (!token || fetching || (stepCount >= target && !liveItems.some((item) => !loaded.has(item.id)))) return;
     if (!pending) {
       if (hasMore && !loadingMore) loadOlderRef.current();
       return;
@@ -2479,24 +2483,51 @@ function ThinkingLayout({ items, token, hasMore, loadingMore, onLoadOlder }) {
         setLoaded((current) => new Map(current).set(pending.id, trajectoryGroup(pending, {})));
       })
       .finally(() => setFetching(false));
-  }, [token, fetching, stepCount, target, pending, hasMore, loadingMore]);
+  }, [token, fetching, stepCount, target, pending, hasMore, loadingMore, liveItems, loaded]);
+
+  useEffect(() => {
+    if (!ready && (stepCount >= target || exhausted)) setReady(true);
+  }, [ready, stepCount, target, exhausted]);
+
+  // New Turns and still-running Turns are polled; they land at the bottom.
+  const loadedRef = useRef(loaded);
+  loadedRef.current = loaded;
+  useEffect(() => {
+    if (!token || !ready) return undefined;
+    const timer = window.setInterval(async () => {
+      try {
+        const data = await api("/api/thinking?limit=64", { token });
+        const known = new Set([...loadedRef.current.keys()]);
+        const fresh = (data.items || []).filter((item) => item?.id && !known.has(item.id));
+        if (fresh.length) setLiveItems((current) => mergeThinkingItems(fresh, current));
+        const running = [...loadedRef.current.values()].filter((group) => group.running);
+        for (const group of running) {
+          const detail = await api(trajectoryTurnPath(group.item), { token });
+          setLoaded((current) => new Map(current).set(group.id, trajectoryGroup(group.item, detail)));
+        }
+      } catch {
+        // Polling failures are retried on the next tick.
+      }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [token, ready]);
 
   const busy = fetching || loadingMore;
-  const groups = items.filter((item) => loaded.get(item.id)?.steps.length).map((item) => loaded.get(item.id)).reverse();
+  const groups = items
+    .filter((item) => loaded.get(item.id)?.steps.length)
+    .map((item) => loaded.get(item.id))
+    .sort((left, right) => left.start - right.start);
 
   useLayoutEffect(() => {
     const root = scrollRef.current;
-    if (!root) return;
-    if (!initialScroll.current && groups.length && (stepCount >= target || exhausted)) {
-      initialScroll.current = true;
-      root.scrollTop = root.scrollHeight;
-      return;
-    }
+    if (!root || !ready) return;
     if (anchor.current !== null) {
       root.scrollTop += root.scrollHeight - anchor.current;
       anchor.current = root.scrollHeight;
+    } else if (atBottom.current) {
+      root.scrollTop = root.scrollHeight;
     }
-  }, [loaded, groups.length, stepCount, target, exhausted]);
+  }, [loaded, ready]);
 
   useEffect(() => {
     if (!busy && stepCount >= target) anchor.current = null;
@@ -2504,7 +2535,8 @@ function ThinkingLayout({ items, token, hasMore, loadingMore, onLoadOlder }) {
 
   function onScroll(event) {
     const root = event.currentTarget;
-    if (!initialScroll.current || busy || exhausted || stepCount < target || root.scrollTop > 60) return;
+    atBottom.current = root.scrollHeight - root.scrollTop - root.clientHeight < 40;
+    if (busy || exhausted || stepCount < target || root.scrollTop > 60) return;
     anchor.current = root.scrollHeight;
     setTarget(stepCount + TRAJECTORY_PAGE_STEPS);
   }
@@ -2515,11 +2547,12 @@ function ThinkingLayout({ items, token, hasMore, loadingMore, onLoadOlder }) {
   return (
     <section className={`trajectory-page${active ? " has-panel" : ""}`}>
       <div className="trajectory-stream" ref={scrollRef} onScroll={onScroll}>
-        <p className="trajectory-stream-edge">
+        {!ready ? <Loading>正在读取轨迹…</Loading> : null}
+        {ready ? <p className="trajectory-stream-edge">
           {busy ? "正在加载更早的 step…" : exhausted ? "没有更早的轨迹了" : "上滑加载更早的 step"}
-        </p>
+        </p> : null}
         {error ? <ErrorState error={error} /> : null}
-        <ol className="trajectory-log">
+        <ol className="trajectory-log" hidden={!ready}>
           {groups.map((group) => (
             <Fragment key={group.id}>
               <TrajectoryGroupHead group={group} />
@@ -2535,7 +2568,7 @@ function ThinkingLayout({ items, token, hasMore, loadingMore, onLoadOlder }) {
             </Fragment>
           ))}
         </ol>
-        {!groups.length && !busy ? <Empty text="还没有轨迹记录。" /> : null}
+        {ready && !groups.length && !busy ? <Empty text="还没有轨迹记录。" /> : null}
       </div>
       {active ? <TrajectoryStepPanel key={active.id} group={activeGroup} step={active} onClose={() => setSelected(null)} /> : null}
     </section>
