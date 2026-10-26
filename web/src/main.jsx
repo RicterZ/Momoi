@@ -1,5 +1,5 @@
 import { hasModelApiKey } from "./setupGuide.js";
-import { Fragment, StrictMode, createContext, useContext, useEffect, useId, useRef, useState } from "react";
+import { Fragment, StrictMode, createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import "./trajectory.css";
@@ -2271,381 +2271,287 @@ function thinkingHasMore(state) {
   return state.cursor != null || olderMonths(state.available, state.month).length > 0;
 }
 
-function ThinkingLayout({
-  items,
-  active,
-  detail,
-  token,
-  hasMore,
-  loadingMore,
-  allowAuto,
-  onLoadOlder,
-  onSelect,
-  setDetail,
-}) {
-  const turnId = String(active?.plan_id ? `plan:${active.plan_id}` : active?.turn_id || "").trim();
-  const activeId = String(active?.id || "");
-  const listRef = useRef(null);
-  const moreRef = useRef(null);
+const TRAJECTORY_PAGE_STEPS = 100;
+
+function trajectoryTurnPath(item) {
+  const turnId = String(item?.plan_id ? `plan:${item.plan_id}` : item?.turn_id || "").trim();
+  if (turnId) return `/api/thinking/${encodeURIComponent(turnId)}`;
+  return `/api/thinking/calls/${encodeURIComponent(String(item?.id || "").replace(/^call:/, ""))}`;
+}
+
+// One step per LLM request. A Turn is a group of one or more steps.
+function trajectoryGroup(item, data) {
+  const calls = [...(data.items || (data.item ? [data.item] : []))].sort((left, right) => {
+    const time = (trajectorySeconds(left.created_at) ?? 0) - (trajectorySeconds(right.created_at) ?? 0);
+    return time !== 0 ? time : Number(left.round || 0) - Number(right.round || 0);
+  });
+  const flow = data.flow || {};
+  const steps = calls.map((call, index) => ({
+    id: call.call_id || `${item.id}-${index}`,
+    index,
+    call,
+    start: trajectorySeconds(call.created_at),
+    duration: Number(call.request_metrics?.duration_ms || 0),
+    deliveries: (flow.deliveries || []).filter((delivery) => (call.actions || []).some((action) => action.id && action.id === delivery.tool_call_id)),
+    records: (call.actions || []).map((action, actionIndex) => ({ id: `${call.call_id}-act-${action.id || actionIndex}`, kind: "tool", action })),
+  }));
+  const inputs = flow.inputs || [];
+  const starts = [...inputs.map((input) => trajectorySeconds(input.occurred_at)), ...steps.map((step) => step.start)].filter((value) => value !== null);
+  const start = starts.length ? Math.min(...starts) : 0;
+  const end = Math.max(start, ...steps.map((step) => (step.start ?? start) + step.duration / 1000));
+  return {
+    id: item.id,
+    item: { ...item, episode_id: data.episode_id || item.episode_id, episode_title: data.episode_title || item.episode_title, plan: data.plan || item.plan },
+    steps,
+    inputs,
+    running: Boolean(flow.running),
+    start,
+    span: Math.max(end - start, 1),
+  };
+}
+
+function trajectoryStepSummary(call) {
+  const text = call.assistant_text || call.reasoning || call.excerpt || "";
+  if (text) return text.replace(/\s+/g, " ").trim();
+  const actions = call.actions || [];
+  if (actions.length) return actions.map((action) => `${action.name}(${trajectoryActionSummary(action)})`).join(" · ");
+  return "（无内容）";
+}
+
+function TrajectoryGroupHead({ group }) {
+  const [lanesOpen, setLanesOpen] = useState(false);
+  const { item, steps } = group;
+  const failed = steps.some((step) => (step.call.actions || []).some((action) => action.result?.ok === false));
+  const models = [...new Set(steps.map((step) => step.call.model).filter(Boolean))];
+  const tokens = steps.reduce((sum, step) => sum + Number(step.call.request_metrics?.input_tokens || 0) + Number(step.call.request_metrics?.output_tokens || 0), 0);
+  const toolCalls = steps.reduce((sum, step) => sum + (step.call.actions || []).length, 0);
+  const titleItem = item.plan_id || item.plan
+    ? { ...item, stages: ["plan_step"], excerpt: item.title || item.excerpt }
+    : item.stages?.length || item.stage ? item : { stages: steps.map((step) => step.call.stage) };
+  const trigger = group.inputs.map((input) => input.content).filter(Boolean).join(" / ");
+  return (
+    <li className="trajectory-group-head">
+      <div className="trajectory-group-title">
+        <span className={`trajectory-status ${group.running ? "is-live" : failed ? "is-error" : "is-ok"}`}>
+          {group.running ? "执行中" : failed ? "有失败" : "已完成"}
+        </span>
+        <strong>{thinkingFlowTitle(titleItem)}</strong>
+        <span className="trajectory-group-meta">
+          {formatDate(item.updated_at || item.created_at)} · {models.length ? models.join(" / ") : "模型未记录"} · 用时 {trajectoryClock(group.span)}
+        </span>
+        <span className="trajectory-group-stats">
+          {steps.length} step · {toolCalls} 工具 · {tokens.toLocaleString()} tk
+        </span>
+        {item.episode_id ? <a className="trajectory-chip is-link" href={`#conversations/episode/${encodeURIComponent(item.episode_id)}`}>{item.episode_title || "聊天记录"}</a> : null}
+        <button type="button" className="trajectory-lanes-toggle" aria-expanded={lanesOpen} onClick={() => setLanesOpen((value) => !value)}>
+          {lanesOpen ? "收起耗时" : "耗时"}
+        </button>
+      </div>
+      {trigger ? <p className="trajectory-group-trigger"><span>触发</span>{trigger}</p> : null}
+      {lanesOpen ? <TrajectoryLanes steps={steps.filter((step) => step.start !== null)} start={group.start} span={group.span} onPick={() => {}} /> : null}
+    </li>
+  );
+}
+
+function TrajectoryStepRow({ group, step, active, onSelect }) {
+  const call = step.call;
+  const failed = (call.actions || []).some((action) => action.result?.ok === false);
+  const tools = (call.actions || []).map((action) => action.name);
+  return (
+    <li>
+      <button
+        type="button"
+        className={`trajectory-step is-${trajectoryStageTone(call.stage)}${active ? " is-active" : ""}${failed ? " is-error" : ""}`}
+        onClick={onSelect}
+      >
+        <time>{trajectoryOffset(step.start === null ? null : step.start - group.start)}</time>
+        <span className="trajectory-step-stage">{thinkingStageLabel(call.stage)}</span>
+        <span className="trajectory-step-summary">{trajectoryStepSummary(call)}</span>
+        <span className="trajectory-step-tools">
+          {tools.slice(0, 3).map((name, index) => <code key={`${name}-${index}`}>{name}</code>)}
+          {tools.length > 3 ? <code>+{tools.length - 3}</code> : null}
+        </span>
+        <span className="trajectory-step-duration">{trajectoryDuration(step.duration) || "—"}</span>
+      </button>
+    </li>
+  );
+}
+
+function TrajectoryStepPanel({ group, step, onClose }) {
+  const call = step.call;
+  const metrics = call.request_metrics;
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard?.writeText(JSON.stringify(call, null, 2)).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    });
+  }
+  return (
+    <aside className="trajectory-panel" aria-label="Step 详情">
+      <header className="trajectory-panel-head">
+        <strong>{thinkingStageLabel(call.stage)}</strong>
+        <span>
+          {trajectoryOffset(step.start === null ? null : step.start - group.start)}
+          {step.duration ? ` · ${trajectoryDuration(step.duration)}` : ""}
+          {` · 第 ${call.round || step.index + 1} 轮`}
+        </span>
+        <button type="button" onClick={copy}>{copied ? "已复制" : "复制"}</button>
+        <button type="button" aria-label="关闭" onClick={onClose}>×</button>
+      </header>
+      <div className="trajectory-panel-body">
+        {step.index === 0 && group.inputs.length ? (
+          <section>
+            <h4>输入</h4>
+            {group.inputs.map((input, index) => <p className="trajectory-text" key={input.id || index}>{input.content}</p>)}
+          </section>
+        ) : null}
+        {call.reasoning || call.excerpt ? (
+          <section>
+            <h4>思考</h4>
+            <EmotionContent className="message-content trajectory-text" text={call.reasoning || call.excerpt} />
+          </section>
+        ) : null}
+        {call.assistant_text ? (
+          <section>
+            <h4>{call.stage === "replyer" ? "发言" : "正文"}</h4>
+            <EmotionContent className="message-content trajectory-text" text={call.assistant_text} />
+          </section>
+        ) : null}
+        {(call.actions || []).map((action, index) => (
+          <section key={action.id || index}>
+            <h4>工具 · <code>{action.name}</code>{action.result?.ok === false ? " · 失败" : ""}</h4>
+            <pre className="flow-json">{JSON.stringify(action.arguments || {}, null, 2)}</pre>
+            {action.result ? (
+              <>
+                <h4>结果</h4>
+                <pre className="flow-json">{JSON.stringify(action.result, null, 2)}</pre>
+              </>
+            ) : null}
+          </section>
+        ))}
+        {step.deliveries.map((delivery, index) => (
+          <section key={delivery.id || index}>
+            <h4>
+              投递 · {trajectoryDeliveryChannel[delivery.target_channel] || delivery.target_channel} · {trajectoryDeliveryKind[delivery.kind] || delivery.kind} · {trajectoryDeliveryState[delivery.state] || delivery.state}
+            </h4>
+            <EmotionContent className="message-content trajectory-text" text={delivery.text} />
+            {delivery.last_error && ["failed", "ambiguous"].includes(delivery.state) ? <pre className="flow-json">{delivery.last_error}</pre> : null}
+          </section>
+        ))}
+        {metrics ? (
+          <section>
+            <h4>用量</h4>
+            <dl className="trajectory-usage">
+              <div><dt>模型</dt><dd>{call.model || "未记录"}</dd></div>
+              <div><dt>输入 tokens</dt><dd>{Number(metrics.input_tokens || 0).toLocaleString()}</dd></div>
+              <div><dt>输出 tokens</dt><dd>{Number(metrics.output_tokens || 0).toLocaleString()}</dd></div>
+              <div><dt>调用 ID</dt><dd><code>{call.call_id}</code></dd></div>
+            </dl>
+          </section>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
+// Step-level log stream: Turns stay as groups, steps inside them are rows, oldest
+// at the top. Scrolling to the top pulls the next 100 older steps.
+function ThinkingLayout({ items, token, hasMore, loadingMore, onLoadOlder }) {
+  const [loaded, setLoaded] = useState(() => new Map());
+  const [target, setTarget] = useState(TRAJECTORY_PAGE_STEPS);
+  const [error, setError] = useState(null);
+  const [fetching, setFetching] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const scrollRef = useRef(null);
+  const anchor = useRef(null);
+  const initialScroll = useRef(false);
   const loadOlderRef = useRef(onLoadOlder);
   loadOlderRef.current = onLoadOlder;
+
+  const stepCount = [...loaded.values()].reduce((sum, group) => sum + group.steps.length, 0);
+  const pending = items.find((item) => !loaded.has(item.id));
+  const exhausted = !pending && !hasMore;
+
   useEffect(() => {
-    if (!token || !activeId) {
-      setDetail({});
-      return undefined;
+    if (!token || fetching || stepCount >= target) return;
+    if (!pending) {
+      if (hasMore && !loadingMore) loadOlderRef.current();
+      return;
     }
-    const controller = new AbortController();
-    setDetail({ loading: true });
-    const path = turnId
-      ? `/api/thinking/${encodeURIComponent(turnId)}`
-      : `/api/thinking/calls/${encodeURIComponent(activeId.replace(/^call:/, ""))}`;
-    let timer;
-    const load = () => api(path, { signal: controller.signal, token })
-      .then((data) => {
-        setDetail({ data });
-        if (data.flow?.running && !controller.signal.aborted) timer = window.setTimeout(load, 3000);
+    setFetching(true);
+    api(trajectoryTurnPath(pending), { token })
+      .then((data) => setLoaded((current) => new Map(current).set(pending.id, trajectoryGroup(pending, data))))
+      .catch((reason) => {
+        setError(reason);
+        setLoaded((current) => new Map(current).set(pending.id, trajectoryGroup(pending, {})));
       })
-      .catch((error) => {
-        if (error.name !== "AbortError") setDetail({ error });
-      });
-    load();
-    return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [activeId, setDetail, token, turnId]);
+      .finally(() => setFetching(false));
+  }, [token, fetching, stepCount, target, pending, hasMore, loadingMore]);
+
+  const busy = fetching || loadingMore;
+  const groups = items.filter((item) => loaded.get(item.id)?.steps.length).map((item) => loaded.get(item.id)).reverse();
+
+  useLayoutEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    if (!initialScroll.current && groups.length && (stepCount >= target || exhausted)) {
+      initialScroll.current = true;
+      root.scrollTop = root.scrollHeight;
+      return;
+    }
+    if (anchor.current !== null) {
+      root.scrollTop += root.scrollHeight - anchor.current;
+      anchor.current = root.scrollHeight;
+    }
+  }, [loaded, groups.length, stepCount, target, exhausted]);
 
   useEffect(() => {
-    const root = listRef.current;
-    const target = moreRef.current;
-    if (!root || !target || !hasMore) return undefined;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        if (!allowAuto.current) return;
-        allowAuto.current = false;
-        loadOlderRef.current();
-      },
-      { root, rootMargin: "80px" },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [allowAuto, hasMore, items.length]);
+    if (!busy && stepCount >= target) anchor.current = null;
+  }, [busy, stepCount, target]);
+
+  function onScroll(event) {
+    const root = event.currentTarget;
+    if (!initialScroll.current || busy || exhausted || stepCount < target || root.scrollTop > 60) return;
+    anchor.current = root.scrollHeight;
+    setTarget(stepCount + TRAJECTORY_PAGE_STEPS);
+  }
+
+  const active = selected && groups.find((group) => group.id === selected.group)?.steps.find((step) => step.id === selected.step);
+  const activeGroup = active && groups.find((group) => group.id === selected.group);
 
   return (
-    <section
-      className="trajectory-feed"
-      aria-label="轨迹时间线"
-      ref={listRef}
-      onScroll={() => {
-        allowAuto.current = true;
-      }}
-    >
-      {items.map((item) => {
-        const open = item.id === activeId;
-        return (
-          <article className={`trajectory-feed-item ${open ? "is-open" : ""}`} key={item.id}>
-            <button
-              className="trajectory-feed-head"
-              type="button"
-              aria-expanded={open}
-              onClick={() => onSelect(item.id)}
-            >
-              <time>{formatDate(item.updated_at || item.created_at)}</time>
-              <strong>{thinkingFlowTitle(item)}</strong>
-              <span>{item.excerpt || "这次没有可见推理。"}</span>
-              {item.call_count > 1 ? <em>{item.call_count} 次调用</em> : null}
-            </button>
-            {open ? (
-              <div className="trajectory-feed-body">
-                {detail.loading && <Loading>正在读取轨迹…</Loading>}
-                {detail.error && <ErrorState error={detail.error} />}
-                {detail.data && (
-                  <TrajectoryDetail
-                    item={{
-                      ...active,
-                      episode_id: detail.data.episode_id || active.episode_id,
-                      episode_title: detail.data.episode_title || active.episode_title,
-                      plan: detail.data.plan || active.plan,
-                    }}
-                    calls={detail.data.items || (detail.data.item ? [detail.data.item] : [])}
-                    recall={detail.data.recall}
-                    flowData={detail.data.flow || {}}
-                  />
-                )}
-              </div>
-            ) : null}
-          </article>
-        );
-      })}
-      {hasMore || loadingMore ? (
-        <button
-          className="record-list-more"
-          type="button"
-          ref={moreRef}
-          disabled={loadingMore}
-          onClick={onLoadOlder}
-        >
-          {loadingMore ? "正在加载…" : "更早的轨迹"}
-        </button>
-      ) : null}
-    </section>
-  );
-}
-
-function RecallEvidenceGroup({ title, items, renderItem, tone = "memory" }) {
-  const [showAll, setShowAll] = useState(false);
-  const visibleItems = showAll ? items : items.slice(0, 4);
-  const hiddenCount = items.length - visibleItems.length;
-  return (
-    <section className={`recall-evidence-group is-${tone}`}>
-      <div className="recall-evidence-group-head">
-        <h4>{title}</h4>
-        <span>{items.length} 条</span>
-      </div>
-      <ul>
-        {visibleItems.map(renderItem)}
-      </ul>
-      {hiddenCount > 0 ? (
-        <button
-          className="recall-evidence-more"
-          type="button"
-          onClick={() => setShowAll(true)}
-        >
-          查看其余 {hiddenCount} 条
-          <span aria-hidden="true">＋</span>
-        </button>
-      ) : null}
-    </section>
-  );
-}
-
-function RecallDetail({ recall }) {
-  const [showEvidence, setShowEvidence] = useState(false);
-  if (!recall) return null;
-  const units = recall.units || [];
-  const memories = [
-    ...(recall.memories || []).map((item) => ({ ...item, source: "memory" })),
-    ...(recall.reflections || []).map((item) => ({ ...item, source: "reflection" })),
-  ];
-  const episodes = recall.episodes || [];
-  const evidenceCount = memories.length + episodes.length;
-  const searchCount = units.filter((unit) => unit.mode === "search").length;
-  const reuseCount = units.filter((unit) => unit.mode === "reuse").length;
-  const skipCount = units.filter((unit) => unit.mode === "skip").length;
-  const allSkipped = units.length > 0 && skipCount === units.length;
-  const fallbackReason = recall.semantic?.fallback_reason;
-  return (
-    <details className="recall-panel">
-      <summary className="recall-panel-head">
-        <div className="recall-panel-title">
-          <span className="panel-label">MOMOI // MEMORY LOAD</span>
-          <h3>本轮载入的记忆</h3>
-          <p>{allSkipped ? "当前上下文已足够，无需额外召回" : evidenceCount ? "已为这轮思考准备好相关上下文" : "本轮未召回相关记录"}</p>
-        </div>
-        <div className="recall-panel-summary" aria-label="召回摘要">
-          {searchCount ? <span>{searchCount} 个检索</span> : null}
-          {reuseCount ? <span>{reuseCount} 个沿用</span> : null}
-          {skipCount && !allSkipped ? <span>{skipCount} 个无需检索</span> : null}
-          {evidenceCount ? <span>{evidenceCount} 条依据</span> : null}
-          {!evidenceCount ? <span className="is-empty">无</span> : null}
-        </div>
-        <span className="recall-panel-toggle" aria-hidden="true" />
-      </summary>
-      <div className="recall-panel-body">
-        <div className="recall-units">
-          {units.map((unit, unitIndex) => (
-            <article className="recall-unit" key={unit.id}>
-              <header className="recall-unit-head">
-                <span className="recall-unit-index" aria-hidden="true">
-                  SLOT {String(unitIndex + 1).padStart(2, "0")}
-                </span>
-                <span className={`recall-mode ${unit.mode === "skip" ? "is-skip" : unit.mode === "reuse" ? "is-reuse" : "is-search"}`}>
-                  {unit.mode === "skip" ? "无需检索" : unit.mode === "reuse" ? "沿用" : unit.mode === "search" ? "检索" : "召回"}
-                </span>
-              </header>
-              <div className="recall-unit-body">
-                {unit.mode !== "skip" && !unit.queries?.length && !unit.reused_from && (
-                  <p>{unit.intent || "按筛选条件获取记忆，不进行语义检索"}</p>
-                )}
-                {unit.mode === "skip" ? (
-                  <div className="recall-skip">
-                    <p>{unit.intent || "当前上下文已足够"}</p>
-                    <span>使用已有上下文</span>
-                  </div>
-                ) : null}
-                {unit.reused_from ? (
-                  <div className="recall-source">
-                    <span>沿用上一轮已经确认的召回范围</span>
-                    <a href={`#thinking/${encodeURIComponent(unit.reused_from)}`}>
-                      查看来源思考 <span aria-hidden="true">↗</span>
-                    </a>
-                  </div>
-                ) : null}
-                {!!unit.queries?.length && (
-                  <div className="recall-queries">
-                    {unit.queries.map((query, index) => (
-                      <div className="recall-query" key={`${unit.id}:${index}`}>
-                        {query.semantic ? <p>{query.semantic}</p> : null}
-                        {!!query.keywords?.length && (
-                          <ul className="recall-keywords" aria-label="检索关键词">
-                            {query.keywords.map((keyword) => (
-                              <li key={keyword}>{keyword}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {unit.filters?.scope || unit.filters?.kinds?.length || unit.filters?.tags_any?.length ? (
-                  <ul className="recall-keywords" aria-label="记忆筛选条件">
-                    {unit.filters.scope ? <li>范围：{unit.filters.scope}</li> : null}
-                    {(unit.filters.kinds || []).map((kind) => <li key={`kind:${kind}`}>性质：{memoryKindLabel(kind)}</li>)}
-                    {(unit.filters.tags_any || []).map((tag) => <li key={`tag:${tag}`}>标签：{tag}</li>)}
-                  </ul>
-                ) : null}
-              </div>
-            </article>
+    <section className={`trajectory-page${active ? " has-panel" : ""}`}>
+      <div className="trajectory-stream" ref={scrollRef} onScroll={onScroll}>
+        <p className="trajectory-stream-edge">
+          {busy ? "正在加载更早的 step…" : exhausted ? "没有更早的轨迹了" : "上滑加载更早的 step"}
+        </p>
+        {error ? <ErrorState error={error} /> : null}
+        <ol className="trajectory-log">
+          {groups.map((group) => (
+            <Fragment key={group.id}>
+              <TrajectoryGroupHead group={group} />
+              {group.steps.map((step) => (
+                <TrajectoryStepRow
+                  key={step.id}
+                  group={group}
+                  step={step}
+                  active={active === step}
+                  onSelect={() => setSelected({ group: group.id, step: step.id })}
+                />
+              ))}
+            </Fragment>
           ))}
-        </div>
-        {!!recall.episode_actions?.length || !!evidenceCount ? (
-          <div
-            className={`recall-panel-footer${
-              recall.episode_actions?.length ? " has-archive" : ""
-            }${evidenceCount ? " has-evidence" : ""}`}
-          >
-            {!!recall.episode_actions?.length && (
-              <section className="recall-archive" aria-labelledby="recall-archive-title">
-                <div className="recall-archive-head">
-                  <span className="recall-section-label" id="recall-archive-title">SAVE DATA // 对话归档</span>
-                </div>
-                {recall.episode_actions.map((action, index) => (
-                  <div className="recall-episode-action" key={`${action.action}:${action.episode_id || index}`}>
-                    <span>{action.action === "continue" ? "继续记录" : action.action === "new" ? "新建记录" : "关联记录"}</span>
-                    {action.episode_id ? (
-                      <a href={`#conversations/episode/${encodeURIComponent(action.episode_id)}`}>
-                        {action.title || "查看聊天记录"} <span aria-hidden="true">↗</span>
-                      </a>
-                    ) : (
-                      <strong>{action.title || "未命名聊天记录"}</strong>
-                    )}
-                  </div>
-                ))}
-              </section>
-            )}
-            {!!evidenceCount && (
-              <button
-                className="recall-evidence-toggle"
-                type="button"
-                aria-expanded={showEvidence}
-                onClick={() => setShowEvidence((current) => !current)}
-              >
-                  <span className="recall-evidence-kicker">ARCHIVE // 召回依据</span>
-                  <span>{evidenceCount} 条资料</span>
-                  <svg
-                    className="sort-toggle-icon recall-evidence-toggle-icon"
-                    viewBox="0 0 16 16"
-                    width="20"
-                    height="20"
-                    aria-hidden="true"
-                    focusable="false"
-                  >
-                    <path
-                      d="M3.2 6.2 L8 11 l4.8-4.8"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="square"
-                      strokeLinejoin="miter"
-                    />
-                  </svg>
-              </button>
-            )}
-            {showEvidence && (
-                <div className="recall-evidence-body">
-                  {!!memories.length && (
-                    <RecallEvidenceGroup
-                      title="记忆与复盘"
-                      items={memories}
-                      tone="memory"
-                      renderItem={(item, index) => (
-                        <li key={`${item.source}:${item.kind}:${item.key || index}`}>
-                          <div className="recall-evidence-meta">
-                            <span>{memoryKindLabel(item.kind)}</span>
-                            {item.local_date ? <time>{item.local_date}</time> : null}
-                          </div>
-                          <p>{item.content || "这条记录没有正文。"}</p>
-                        </li>
-                      )}
-                    />
-                  )}
-                  {!!episodes.length && (
-                    <RecallEvidenceGroup
-                      title="相关聊天"
-                      items={episodes}
-                      tone="episode"
-                      renderItem={(item) => (
-                        <li key={item.id}>
-                          <a className="recall-evidence-link" href={`#conversations/episode/${encodeURIComponent(item.id)}`}>
-                            {item.title || "未命名聊天记录"} <span aria-hidden="true">↗</span>
-                          </a>
-                          {item.summary ? <p>{item.summary}</p> : null}
-                          {Array.isArray(item.cues) && item.cues.length > 0 ? (
-                            <div className="recall-cues">
-                              <span className="recall-cues-label">CUES · 检索线索</span>
-                              <div className="recall-cues-list">
-                                {item.cues.map((cue, index) => <span key={index}>{cue}</span>)}
-                              </div>
-                            </div>
-                          ) : null}
-                        </li>
-                      )}
-                    />
-                  )}
-                </div>
-            )}
-          </div>
-        ) : null}
-        {searchCount > 0 && fallbackReason && fallbackReason !== "disabled" ? (
-          <p className="recall-warning">
-            向量召回降级：{fallbackReason}
-          </p>
-        ) : null}
+        </ol>
+        {!groups.length && !busy ? <Empty text="还没有轨迹记录。" /> : null}
       </div>
-    </details>
+      {active ? <TrajectoryStepPanel key={active.id} group={activeGroup} step={active} onClose={() => setSelected(null)} /> : null}
+    </section>
   );
 }
 
 // Keep retired follow-up records readable in historical thinking logs.
 const plannerStages = new Set(["owner", "heartbeat", "webhook", "goal", "plan_step", "reply_followup"]);
-
-// The per-Turn flow is now rendered by TrajectoryDetail (see below), which
-// reframes these calls/actions/deliveries as an ordered trajectory ledger.
-
-// --- Trajectory page -------------------------------------------------------
-// Replaces the old "思考" detail view. Inspired by DeepSeek Harness's
-// ui-trajectory (a turn-aware ledger + record inspector + timing overview) and
-// the flow-graph viewers (Multigo / zoetrope / AeroGraph). The same
-// /api/thinking payload is reframed as an ordered trajectory of records:
-// input → reasoning → tool call → tool result → reply → delivery → end.
-
-const trajectoryKinds = {
-  input: { label: "用户输入", code: "IN", tone: "input" },
-  reasoning: { label: "模型推理", code: "THINK", tone: "reason" },
-  assistant: { label: "内部正文", code: "NOTE", tone: "reason" },
-  reply: { label: "生成发言", code: "REPLY", tone: "reply" },
-  tool: { label: "工具调用", code: "TOOL", tone: "tool" },
-  delivery: { label: "实际投递", code: "SEND", tone: "deliver" },
-  end: { label: "结束本轮", code: "END", tone: "end" },
-};
-
-function trajectoryKindMeta(kind) {
-  return trajectoryKinds[kind] || { label: kind, code: "·", tone: "tool" };
-}
-
-function trajectoryActionTitle(action) {
-  if (action.name === "reply") return "决定回应 → 派发 Replyer";
-  if (action.name === "end_turn") return "结束本轮";
-  return `调用 ${action.name}`;
-}
 
 function trajectoryActionSummary(action) {
   if (action.name === "reply") return action.arguments?.intent || "派发发言生成";
@@ -2659,64 +2565,6 @@ function trajectoryActionSummary(action) {
 const trajectoryDeliveryChannel = { onebot: "QQ", napcat: "QQ", weixin: "微信", qq_call: "QQ 通话" };
 const trajectoryDeliveryKind = { text: "文字", image: "图片", voice: "语音", audio: "音频", file: "文件" };
 const trajectoryDeliveryState = { pending: "排队中", sending: "发送中", sent: "已送达", failed: "发送失败", superseded: "已取消", cancelled: "已取消", ambiguous: "结果不确定" };
-
-// Flatten the per-Turn calls into an ordered list of trajectory records,
-// grouped into steps (one step per model call).
-function buildTrajectory(flow, flowData = {}) {
-  const inputs = (flowData.inputs || []).map((input, index) => ({
-    id: `input-${input.id || index}`,
-    kind: "input",
-    title: "用户输入",
-    summary: input.content || "",
-    time: input.occurred_at,
-    payload: input,
-  }));
-  const steps = flow.map((call, index) => {
-    const records = [];
-    const stageIsReply = call.stage === "replyer";
-    if (call.reasoning || call.excerpt) {
-      const text = call.reasoning || call.excerpt;
-      records.push({ id: `${call.call_id}-reason`, kind: "reasoning", title: "模型推理", summary: text, text, time: call.created_at, call });
-    }
-    if (call.assistant_text) {
-      records.push({
-        id: `${call.call_id}-assistant`,
-        kind: stageIsReply ? "reply" : "assistant",
-        title: stageIsReply ? "生成发言" : "内部正文",
-        summary: call.assistant_text,
-        text: call.assistant_text,
-        time: call.created_at,
-        call,
-      });
-    }
-    (call.actions || []).forEach((action, actionIndex) => {
-      records.push({
-        id: `${call.call_id}-act-${action.id || actionIndex}`,
-        kind: action.name === "end_turn" ? "end" : "tool",
-        title: trajectoryActionTitle(action),
-        summary: trajectoryActionSummary(action),
-        time: call.created_at,
-        call,
-        action,
-      });
-      if (action.name === "reply") {
-        (flowData.deliveries || [])
-          .filter((delivery) => delivery.turn_id === call.turn_id && delivery.tool_call_id === action.id)
-          .forEach((delivery, deliveryIndex) => records.push({
-            id: `delivery-${delivery.id || deliveryIndex}`,
-            kind: "delivery",
-            title: "实际投递",
-            summary: delivery.text || "",
-            time: call.created_at,
-            call,
-            delivery,
-          }));
-      }
-    });
-    return { index, call, metrics: call.request_metrics, duration: Number(call.request_metrics?.duration_ms || 0), records };
-  });
-  return { inputs, steps };
-}
 
 function trajectoryStageTone(stage) {
   if (stage === "replyer") return "reply";
@@ -2746,15 +2594,6 @@ function trajectoryClock(seconds) {
 function trajectoryDuration(ms) {
   if (!ms) return "";
   return ms < 100 ? "<0.1s" : `${(ms / 1000).toFixed(1)}s`;
-}
-
-const trajectoryIcons = { input: "›", reasoning: "◎", assistant: "≡", reply: "✎", tool: "⌘", delivery: "↗", end: "■" };
-const trajectoryFilterKinds = ["input", "reasoning", "tool", "reply", "delivery"];
-
-function trajectoryRowLabel(record) {
-  if (record.kind === "tool") return record.action?.name || "tool";
-  if (record.kind === "end") return "end_turn";
-  return { input: "输入", reasoning: "思考", assistant: "正文", reply: "发言", delivery: "投递" }[record.kind] || record.kind;
 }
 
 // Model calls on one lane, tool calls as ticks on another, both on a shared time axis.
@@ -2795,238 +2634,6 @@ function TrajectoryLanes({ steps, start, span, activeCallId, onPick }) {
           <span key={record.id} className="trajectory-lane-tick" style={{ left: left(step.start - start + step.duration / 1000) }} title={record.action?.name} />
         )))}
       </div>
-    </div>
-  );
-}
-
-function TrajectoryRow({ record, offset, open, onToggle }) {
-  const meta = trajectoryKindMeta(record.kind);
-  const result = record.action?.result;
-  const mono = record.kind === "tool" || record.kind === "end";
-  const isReply = record.kind === "reply";
-  const duration = record.kind === "reasoning" || isReply ? trajectoryDuration(Number(record.call?.request_metrics?.duration_ms || 0)) : "";
-  return (
-    <li id={`trajectory-row-${record.id}`} className={`trajectory-row is-${meta.tone}${open ? " is-open" : ""}${result?.ok === false ? " is-error" : ""}`}>
-      <button type="button" className="trajectory-row-head" aria-expanded={open} onClick={onToggle}>
-        <time className="trajectory-row-time">{trajectoryOffset(offset)}</time>
-        <span className="trajectory-row-icon" aria-hidden="true">{trajectoryIcons[record.kind] || "·"}</span>
-        <span className="trajectory-row-label">{trajectoryRowLabel(record)}</span>
-        <span className={`trajectory-row-summary${mono ? " is-mono" : ""}${isReply ? " is-reply" : ""}`}>{record.summary || "（无内容）"}</span>
-        {result?.ok === false ? <span className="trajectory-result is-error">失败</span> : null}
-        <span className="trajectory-row-duration">{duration || (mono ? "—" : "")}</span>
-      </button>
-      {open ? <TrajectoryInspector record={record} /> : null}
-    </li>
-  );
-}
-
-function TrajectoryInspector({ record }) {
-  const [tab, setTab] = useState("overview");
-  const call = record.call;
-  const metrics = call?.request_metrics;
-  const rawPayload = record.action || record.delivery || record.payload || { reasoning: record.text };
-  const tabs = [["overview", "概览"], ["raw", "原始 JSON"]];
-  if (metrics) tabs.push(["usage", "用量"]);
-  return (
-    <div className="trajectory-inspector">
-      <nav className="trajectory-tabs" aria-label="详情视图">
-        {tabs.map(([id, label]) => (
-          <button type="button" key={id} className={tab === id ? "is-active" : ""} onClick={() => setTab(id)}>{label}</button>
-        ))}
-        <span className="trajectory-tabs-meta">{record.title}{call ? ` · ${thinkingStageLabel(call.stage)} · 第 ${call.round || 1} 轮` : ""}{record.time ? ` · ${formatDate(record.time)}` : ""}</span>
-      </nav>
-      <div className="trajectory-inspector-body">
-        {tab === "overview" && <TrajectoryOverview record={record} />}
-        {tab === "raw" && <pre className="flow-json">{JSON.stringify(rawPayload, null, 2)}</pre>}
-        {tab === "usage" && metrics && (
-          <dl className="trajectory-usage">
-            <div><dt>模型</dt><dd>{call.model || "未记录"}</dd></div>
-            <div><dt>输入 tokens</dt><dd>{Number(metrics.input_tokens || 0).toLocaleString()}</dd></div>
-            <div><dt>输出 tokens</dt><dd>{Number(metrics.output_tokens || 0).toLocaleString()}</dd></div>
-            <div><dt>耗时</dt><dd>{(Number(metrics.duration_ms || 0) / 1000).toFixed(2)}s</dd></div>
-            <div><dt>调用 ID</dt><dd><code>{call.call_id}</code></dd></div>
-          </dl>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TrajectoryOverview({ record }) {
-  if (record.kind === "tool" || record.kind === "end") {
-    const action = record.action || {};
-    const result = action.result;
-    return (
-      <div className="trajectory-overview">
-        {action.name === "reply" ? (
-          <dl className="flow-dispatch">
-            <dt>回应意图</dt><dd>{action.arguments?.intent || "未记录"}</dd>
-            <dt>必要参考</dt><dd>{action.arguments?.reference || "无额外参考"}</dd>
-            {action.arguments?.mode === "voice" && <><dt>发言方式</dt><dd>语音</dd></>}
-          </dl>
-        ) : (
-          <section className="trajectory-part">
-            <h4>决策参数</h4>
-            <pre className="flow-json">{JSON.stringify(action.arguments || {}, null, 2)}</pre>
-          </section>
-        )}
-        {result && (
-          <section className="trajectory-part">
-            <h4>工具结果{result.error ? ` · ${result.error}` : ""}</h4>
-            <pre className="flow-json">{JSON.stringify(result, null, 2)}</pre>
-          </section>
-        )}
-      </div>
-    );
-  }
-  if (record.kind === "delivery") {
-    const delivery = record.delivery || {};
-    return (
-      <div className="trajectory-overview">
-        <div className="trajectory-delivery-meta">
-          <span>{trajectoryDeliveryChannel[delivery.target_channel] || delivery.target_channel} · {trajectoryDeliveryKind[delivery.kind] || delivery.kind}</span>
-          <span className={`flow-delivery-state is-${delivery.state}`}>{trajectoryDeliveryState[delivery.state] || delivery.state}</span>
-        </div>
-        <EmotionContent className="message-content trajectory-text" text={delivery.text} />
-        {delivery.last_error && ["failed", "ambiguous"].includes(delivery.state) && <pre className="flow-json">{delivery.last_error}</pre>}
-      </div>
-    );
-  }
-  if (record.kind === "input") {
-    return <div className="trajectory-overview"><p className="message-content trajectory-text">{record.summary}</p></div>;
-  }
-  return (
-    <div className="trajectory-overview">
-      <EmotionContent className="message-content trajectory-text" text={record.text || record.summary} />
-    </div>
-  );
-}
-
-function TrajectoryDetail({ item, calls, recall, flowData = {} }) {
-  const flow = [...calls].sort((left, right) => {
-    const time = Number(left.created_at || 0) - Number(right.created_at || 0);
-    return time !== 0 ? time : Number(left.round || 0) - Number(right.round || 0);
-  });
-  const built = buildTrajectory(flow, flowData);
-  const steps = built.steps.map((step) => ({ ...step, start: trajectorySeconds(step.call.created_at) }));
-  const [openIds, setOpenIds] = useState(() => new Set());
-  const [query, setQuery] = useState("");
-  const [hidden, setHidden] = useState(() => new Set());
-  const [filterOpen, setFilterOpen] = useState(false);
-  useEffect(() => { setOpenIds(new Set()); }, [item?.id]);
-  if (!flow.length) return <Empty text="这个轨迹还没有记录。" />;
-
-  const starts = [...built.inputs.map((record) => trajectorySeconds(record.time)), ...steps.map((step) => step.start)].filter((value) => value !== null);
-  const start = starts.length ? Math.min(...starts) : 0;
-  const end = Math.max(start, ...steps.map((step) => (step.start ?? start) + step.duration / 1000));
-  const span = Math.max(end - start, 1);
-  const records = [
-    ...built.inputs.map((record) => ({ record, at: trajectorySeconds(record.time) })),
-    ...steps.flatMap((step) => step.records.map((record) => ({
-      record,
-      at: (step.start ?? start) + (["tool", "end", "delivery", "reply"].includes(record.kind) ? step.duration / 1000 : 0),
-    }))),
-  ].map((entry, order) => ({ ...entry, order })).sort((left, right) => (left.at ?? start) - (right.at ?? start) || left.order - right.order);
-
-  const needle = query.trim().toLowerCase();
-  const filterKind = (kind) => (kind === "assistant" ? "reasoning" : kind === "end" ? "tool" : kind);
-  const visible = records.filter(({ record }) => !hidden.has(filterKind(record.kind))
-    && (!needle || `${trajectoryRowLabel(record)} ${record.title} ${record.summary}`.toLowerCase().includes(needle)));
-
-  const toolCalls = steps.reduce((sum, step) => sum + (step.call.actions || []).length, 0);
-  const inputTokens = steps.reduce((sum, step) => sum + Number(step.metrics?.input_tokens || 0), 0);
-  const outputTokens = steps.reduce((sum, step) => sum + Number(step.metrics?.output_tokens || 0), 0);
-  const deliveries = flowData.deliveries?.length || 0;
-  const failed = steps.some((step) => step.records.some((record) => record.action?.result?.ok === false));
-  const activeCallId = [...openIds].map((id) => records.find(({ record }) => record.id === id)?.record.call?.call_id).find(Boolean);
-
-  const episodeId = item?.episode_id;
-  const episodeTitle = item?.episode_title || "查看聊天记录";
-  const titleItem = item?.plan_id || item?.plan
-    ? { ...item, stages: ["plan_step"], excerpt: item.title || item.excerpt }
-    : item?.stages?.length || item?.stage
-    ? item
-    : { stages: flow.map((call) => call.stage) };
-  const recallHasEvidence = Boolean(recall && (recall.memories?.length || recall.reflections?.length || recall.episodes?.length));
-  const models = [...new Set(flow.map((call) => call.model).filter(Boolean))];
-
-  function toggle(id) {
-    setOpenIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
-
-  function pickStep(step) {
-    const first = step.records[0];
-    if (!first) return;
-    setOpenIds(new Set([first.id]));
-    document.getElementById(`trajectory-row-${first.id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }
-
-  function toggleKind(kind) {
-    setHidden((current) => {
-      const next = new Set(current);
-      if (next.has(kind)) next.delete(kind); else next.add(kind);
-      return next;
-    });
-  }
-
-  return (
-    <div className="trajectory">
-      <header className="trajectory-head">
-        <span className={`trajectory-status ${flowData.running ? "is-live" : failed ? "is-error" : "is-ok"}`}>
-          {flowData.running ? "执行中" : failed ? "有失败" : "已完成"}
-        </span>
-        <h2>{thinkingFlowTitle(titleItem)}</h2>
-        <span className="trajectory-head-meta">
-          {models.length ? models.join(" / ") : "模型未记录"} · 用时 {trajectoryClock(span)}
-        </span>
-        <span className="trajectory-head-usage">{(inputTokens + outputTokens).toLocaleString()} tk</span>
-      </header>
-
-      <div className="trajectory-outputs">
-        <span className="trajectory-outputs-label">产出</span>
-        <span className="trajectory-chip">{steps.length} 次模型调用</span>
-        <span className="trajectory-chip">{toolCalls} 次工具</span>
-        <span className="trajectory-chip">{deliveries} 条投递</span>
-        {episodeId ? <a className="trajectory-chip is-link" href={`#conversations/episode/${encodeURIComponent(episodeId)}`}>{episodeTitle}</a> : null}
-      </div>
-
-      <TrajectoryLanes steps={steps.filter((step) => step.start !== null)} start={start} span={span} activeCallId={activeCallId} onPick={pickStep} />
-
-      {recall && !recallHasEvidence ? <RecallDetail recall={recall} /> : null}
-
-      <div className="trajectory-toolbar">
-        <input type="search" className="trajectory-search" placeholder="搜索这次运行…" value={query} onChange={(event) => setQuery(event.target.value)} />
-        <span className="trajectory-count">{visible.length} 个步骤</span>
-        <div className="trajectory-filter">
-          <button type="button" className={hidden.size ? "is-active" : ""} aria-expanded={filterOpen} onClick={() => setFilterOpen((value) => !value)}>筛选{hidden.size ? ` · ${trajectoryFilterKinds.length - hidden.size}` : ""}</button>
-          {filterOpen ? (
-            <div className="trajectory-filter-menu">
-              {trajectoryFilterKinds.map((kind) => (
-                <label key={kind}>
-                  <input type="checkbox" checked={!hidden.has(kind)} onChange={() => toggleKind(kind)} />
-                  {trajectoryKindMeta(kind).label}
-                </label>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <button type="button" className="trajectory-expand" onClick={() => setOpenIds(openIds.size ? new Set() : new Set(visible.map(({ record }) => record.id)))}>
-          {openIds.size ? "全部收起" : "全部展开"}
-        </button>
-      </div>
-
-      <ol className="trajectory-timeline">
-        {visible.map(({ record, at }) => (
-          <TrajectoryRow key={record.id} record={record} offset={at === null ? null : at - start} open={openIds.has(record.id)} onToggle={() => toggle(record.id)} />
-        ))}
-        {!visible.length ? <li className="trajectory-empty">没有匹配的步骤。</li> : null}
-      </ol>
-
-      {recall && recallHasEvidence ? <RecallDetail recall={recall} /> : null}
     </div>
   );
 }

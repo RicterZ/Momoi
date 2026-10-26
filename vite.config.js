@@ -12,12 +12,54 @@ function previewCurrentState() {
   ] };
 }
 
+// Synthetic history so the step stream has enough rows to page through.
+function previewHistoryCalls(day) {
+  const tools = [
+    ["recall", { query: "最近的约定" }, { ok: true, hits: 3 }],
+    ["web_search", { query: "明天上海天气" }, { ok: true, results: 5 }],
+    ["exec", { command: "ls ~/Downloads | head" }, { ok: false, error: "timeout", exit_code: 124 }],
+    ["memory_write", { content: "主人周末想去看展" }, { ok: true }],
+    ["reply", { intent: "简短回应并确认" }, { ok: true }],
+  ];
+  const prompts = ["今天好累", "帮我查下明天天气", "提醒我八点开会", "这个文件放哪了", "周末有什么安排", "刚刚那首歌叫什么"];
+  const calls = [];
+  const base = Math.floor(day.getTime() / 1000) - 3600;
+  for (let turn = 0; turn < 60; turn += 1) {
+    const start = base - turn * 1800;
+    const steps = 1 + ((turn * 7) % 5);
+    for (let index = 0; index < steps; index += 1) {
+      const last = index === steps - 1;
+      const [name, args, result] = tools[(turn + index) % (last ? 1 : tools.length)];
+      const action = last
+        ? { id: `h${turn}-${index}`, name: "end_turn", arguments: {} }
+        : { id: `h${turn}-${index}`, name, arguments: args, result };
+      calls.push({
+        turn_id: `preview-history-${turn}`,
+        call_id: `preview-history-${turn}-${index}`,
+        created_at: start + index * 9,
+        stage: index === steps - 1 && steps > 2 ? "replyer" : "owner",
+        round: index + 1,
+        model: "deepseek-v4-flash",
+        tools: [action.name],
+        reasoning_chars: 40,
+        excerpt: index === 0 ? `主人说「${prompts[turn % prompts.length]}」，先判断要不要查资料。` : "",
+        reasoning: index === 0 ? `主人说「${prompts[turn % prompts.length]}」。先看上下文，再决定调用哪个工具。` : `根据上一步 ${name} 的结果继续推进。`,
+        assistant_text: steps > 2 && last ? "好，我记下了，晚点提醒你。" : "",
+        actions: [action],
+        request_metrics: { duration_ms: 600 + ((turn * 13 + index * 31) % 40) * 150, input_tokens: 3200 + index * 400, output_tokens: 120 + index * 30 },
+      });
+    }
+  }
+  return calls;
+}
+
 function previewThinkingCalls() {
   const day = new Date();
   day.setHours(21, 1, 49, 0);
   const at = (minutes, seconds = 0) =>
     Math.floor(day.getTime() / 1000) + minutes * 60 + seconds;
   return [
+    ...previewHistoryCalls(day),
     {
       turn_id: "preview-state", call_id: "preview-state-1",
       created_at: at(8), stage: "current_state_maintenance", round: 1,
