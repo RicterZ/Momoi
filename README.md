@@ -121,7 +121,7 @@ receive your speech together. The Replyer responds naturally while the executor
 decides whether to retrieve information or use tools. When there is a result,
 the Replyer follows up; ordinary conversation does not trigger an extra result
 announcement. The initial response does not wait for background work to finish.
-Text chat keeps the existing Planner / Replyer collaboration.
+Text chat uses Planner / Replyer collaboration.
 
 Calls support streaming speech, continuous paragraph playback, interruption, and
 recent complete conversation turns for continuity. The Dashboard offers a separate
@@ -218,19 +218,14 @@ turns off both daily and weekly automatic scheduling.
 
 ### Trigger phrases
 
-A trigger answers: “When the user says this, what should it remind me of?” It is
-an everyday conversational entry point, not a keyword extracted from a summary.
-Models normally choose one stable phrase, at most two, and may leave the list empty.
-Generic forms of address, filler words, and changing measurements are unsuitable.
-Memory operations, daily review, and weekly review share this definition: daily
-review selects triggers using the user's words and surrounding conversation;
-weekly review consolidates and trims them.
+A trigger links a phrase in your messages to a relevant recall memory. Use stable,
+specific phrases that naturally occur in conversation. Recall memory triggers can
+be edited in the Dashboard.
 
 The runtime matches literal phrases in owner messages and injects matching recall
 memories within count and token limits, without requiring a search tool call.
 Long-term and scoped memories use their own injection rules. A match supplies
-context, not a conclusion about current intent. Recall memory triggers can be
-edited in the Dashboard.
+context, not a conclusion about current intent.
 
 ## Capabilities
 
@@ -253,8 +248,7 @@ edited in the Dashboard.
 ### Windows desktop
 
 Download the installer from [GitHub Releases](https://github.com/RicterZ/Momoi/releases).
-The release workflow builds and tests the installer before attaching it. The
-app includes a local backend, default prompts and six emotion assets; configure
+The app includes a local backend, default prompts and six emotion assets; configure
 your model through the first-run Dashboard guide. Message channels are optional; skip them to use web chat.
 
 ### Docker Compose
@@ -273,7 +267,8 @@ logs. Connect a model in Settings to use web chat. QQ, WeChat and voice are opti
 
 For QQ, the same Compose file starts SnowLuma. Open `http://127.0.0.1:6081`,
 scan the login code, then enable QQ in Settings, set the OneBot address to `ws://snowluma:3001/`, enter the owner QQ, and paste the OneBot access token from the SnowLuma WebUI.
-The experimental [SnowLuma voice-call overlay](infra/snowluma-call/README.md) reuses the existing media pipeline; native amd64 call verification is still required.
+QQ voice calls are available through the optional experimental
+[SnowLuma voice-call overlay](infra/snowluma-call/README.md), which is disabled by default.
 The image includes BGE and encodes semantic
 memory in the Momoi process; no separate encoder container or port is needed.
 
@@ -324,10 +319,7 @@ Compose prefers `compose.yaml` over `docker-compose.yml`.
 
 The default is in-process BGE (512 dimensions), shared by Windows desktop and Linux.
 Desktop manages the encoder automatically; Web Settings can disable semantic memory
-or select a remote OpenAI-compatible provider. The old default `embedding:8002`
-configuration migrates to local calls; custom remote endpoints are preserved.
-After verifying an upgraded Docker deployment, remove the old encoder container
-and its `depends_on` entry from your deployment configuration.
+or select a remote OpenAI-compatible provider.
 
 For a source checkout, prepare the offline model once:
 
@@ -358,11 +350,9 @@ Keyword recall remains available during indexing. See
 
 ### External API services
 
-LLM, TTS, ASR, embedding and account balance use capability interfaces, registered
-adapters and a shared composition/lifecycle layer. Service endpoints and credentials
-live in `providers.yaml`; `config.json` references that file. A service can bind to
-multiple supported capabilities. Balance queries are independent of local token
-accounting. Add adapters through registered Python plugins.
+Configure LLM, TTS, ASR, embedding and account balance services in `providers.yaml`;
+`config.json` references that file. One provider can supply multiple capabilities.
+Balance queries are independent of local token accounting.
 See [Provider configuration and extension](./docs/PROVIDERS.md).
 
 ### Tools

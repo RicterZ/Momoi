@@ -101,7 +101,7 @@ Planner 理解当前对话、检索相关记忆，并调用工具完成工作。
 
 QQ 语音电话采用 **Sidecar 模式**：电话回复器与后台执行者同时接收你的发言，回复器先自然接话，
 执行者负责判断是否需要检索或操作工具。有实际结果时，回复器再补充告知；普通聊天不会额外插入
-一轮结果播报。电话回复无需等待后台操作完成，文字聊天仍使用原有的 Planner / Replyer 协作方式。
+一轮结果播报。电话回复无需等待后台操作完成，文字聊天使用 Planner / Replyer 协作方式。
 
 电话支持流式语音回复、连续分段播放和打断，并保留近期完整对话轮次以衔接话题。
 可在 Dashboard 中单独编辑电话提示词、调整电话模型的思考强度，默认关闭思考。
@@ -181,14 +181,12 @@ flowchart TB
 
 ### 触发词
 
-“看到用户说这个词，就会想起来的事情。”触发词是日常聊天的入口，不是摘要关键词。
-模型通常选择 1 个，最多 2 个稳定的词；没有合适入口可以为空，不使用称呼、虚词或易变数值
-凑数。记忆操作、每日复盘与周复盘共用同一定义：每日结合用户原话与附近上下文选择，周复盘
-再整理、剪裁。
+触发词将主人消息中的词语与相关召回记忆关联起来。选择日常对话中自然出现、稳定且具体的
+词语即可；正式召回记忆的触发词可在 Dashboard 编辑。
 
 运行时按主人消息中的字面词语匹配召回记忆，并在数量和 token 预算内自动注入，无需先调用
 搜索工具。长期和领域记忆按各自规则注入，不依赖触发词；命中只提供参考，当前意图仍由
-上下文判断。正式召回记忆的触发词可在 Dashboard 编辑。
+上下文判断。
 
 ## 当前能力
 
@@ -211,7 +209,7 @@ flowchart TB
 ### Windows 桌面版
 
 从 [GitHub Releases](https://github.com/RicterZ/Momoi/releases) 下载安装包。
-发布工作流完成构建和测试后自动附加安装包。桌面版包含本地后端、默认人格提示词和六张表情；
+桌面版包含本地后端、默认人格提示词和六张表情；
 首次启动后通过 Dashboard 引导配置模型。消息渠道可跳过，直接使用网页聊天。
 
 ### Docker Compose
@@ -228,7 +226,8 @@ docker compose -f docker-compose.yml logs momoi
 在设置页连接模型即可使用网页聊天。QQ、微信和语音均为可选配置，可稍后接入。
 
 镜像已包含 BGE 模型，语义记忆默认在 Momoi 进程内编码，无需额外容器或端口。
-QQ 由同一 Compose 文件里的 SnowLuma 提供。启动后打开 `http://127.0.0.1:6081` 扫码登录，再到 Momoi 设置页启用 QQ，OneBot 地址填写 `ws://snowluma:3001/`，并填写主人 QQ 和 SnowLuma WebUI 里的 OneBot access token。实时电话有可选的 [SnowLuma 接入层](infra/snowluma-call/README.md)，沿用现有音频链路；仍需原生 amd64 真电话验证，默认不启用。
+QQ 由同一 Compose 文件里的 SnowLuma 提供。启动后打开 `http://127.0.0.1:6081` 扫码登录，再到 Momoi 设置页启用 QQ，OneBot 地址填写 `ws://snowluma:3001/`，并填写主人 QQ 和 SnowLuma WebUI 里的 OneBot access token。
+实时电话可通过实验性的 [SnowLuma 接入层](infra/snowluma-call/README.md) 启用，默认关闭。
 
 工作区默认持久化在 `~/.momoi`，由 `momoi` 初始化，已有文件不覆盖。
 默认只发布 dashboard 的 8788 端口；使用 Webhook 时另行添加端口映射并配置功能。
@@ -271,9 +270,7 @@ docker compose -f compose.yaml up -d --build
 ## 语义召回
 
 默认使用进程内 BGE（512 维），Windows 客户端和 Linux 镜像共用同一编码实现。
-客户端自动维护编码配置；Web 设置页仍可关闭语义记忆或切换远程 OpenAI 兼容接口。
-旧的默认 `embedding:8002` 配置自动迁移为本地调用，自定义远程地址不变。
-升级既有 Docker 部署时，可在确认新版本正常运行后删除旧的 Embedding 容器及其 `depends_on`。
+客户端自动维护编码配置；Web 设置页可关闭语义记忆或切换远程 OpenAI 兼容接口。
 
 从源码直接运行时，先准备一次离线模型：
 
@@ -299,10 +296,8 @@ Momoi 会在后台构建索引，覆盖完整后自动激活，期间关键词�
 
 ### 外部 API 服务
 
-LLM、TTS、ASR、embedding 和账户余额通过能力接口、注册式适配器与统一的服务组装层接入。
-端点、凭据和服务参数放在 `providers.yaml`，`config.json` 只引用该文件。
-同一服务可绑定多项能力；余额查询与本地 token 统计独立。
-通过 Python 插件注册新适配器，无需修改业务代码。
+在 `providers.yaml` 中配置 LLM、TTS、ASR、embedding 和账户余额服务的端点、凭据与参数，
+`config.json` 引用该文件。同一服务可提供多项能力；余额查询与本地 token 统计独立。
 详见 [Provider 配置与扩展](./docs/PROVIDERS.zh-CN.md)。
 
 ### 工具
