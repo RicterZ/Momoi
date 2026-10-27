@@ -220,3 +220,17 @@ def test_mcp_references_survive_restart_and_structured_content(tmp_path):
         assert result["truncated"]
     finally:
         store.close()
+
+
+def test_trace_redaction_preserves_tool_schema_and_pairing():
+    schema = {"properties": {"tool_call_id": {"type": "string"}}}
+    payload = {"tools": [schema], "messages": [
+        {"role": "assistant", "tool_calls": [{"id": "a", "function": {"name": "mcp__example__login"}}]},
+        {"role": "tool", "tool_call_id": "a", "content": "Cookie: fake; Bearer fake; https://example.invalid/qr-login"},
+    ]}
+    redacted = redact_mcp_tool_data(payload)
+    assert redacted["tools"] == [schema]
+    assert redacted["messages"][1]["tool_call_id"] == "a"
+    assert "fake" not in str(redacted)
+    assert "qr-login" not in str(redacted)
+    assert "fake" in str(payload)

@@ -101,18 +101,22 @@ def redact_mcp_tool_data(payload: Any) -> Any:
     """
     identifiers = set()
 
+    def remember(identifier):
+        if isinstance(identifier, str):
+            identifiers.add(identifier)
+
     def collect(value):
         if isinstance(value, list):
             for item in value:
                 collect(item)
         elif isinstance(value, dict):
             if value.get("type") == "tool_use" and str(value.get("name", "")).startswith("mcp__"):
-                identifiers.add(value.get("id"))
+                remember(value.get("id"))
             if value.get("type") == "function_call" and str(value.get("name", "")).startswith("mcp__"):
-                identifiers.add(value.get("call_id"))
+                remember(value.get("call_id"))
             function = value.get("function")
             if isinstance(function, dict) and str(function.get("name", "")).startswith("mcp__"):
-                identifiers.add(value.get("id"))
+                remember(value.get("id"))
             for item in value.values():
                 collect(item)
 
@@ -123,7 +127,7 @@ def redact_mcp_tool_data(payload: Any) -> Any:
             return value
         result = {key: redact(item) for key, item in value.items()}
         identifier = value.get("tool_use_id") or value.get("tool_call_id") or value.get("call_id")
-        if identifier in identifiers:
+        if isinstance(identifier, str) and identifier in identifiers:
             if value.get("type") == "function_call_output":
                 result["output"] = "[omitted untrusted MCP tool data]"
             elif value.get("type") == "tool_result" or value.get("role") == "tool":
@@ -131,5 +135,4 @@ def redact_mcp_tool_data(payload: Any) -> Any:
         return result
 
     collect(payload)
-    identifiers.discard(None)
     return redact(payload)
