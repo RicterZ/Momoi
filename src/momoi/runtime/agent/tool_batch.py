@@ -13,6 +13,7 @@ from ...channel import Channel, ChannelMessage
 from ...storage.core.timestamps import context_timestamp
 from ...observability.context import log_context
 from ...models import MessageRecalled, AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
+from ...mcp.content import attachment_blocks
 from ...observability.events import TRACE, log_event
 from ...observability.values import safe_preview
 from ..turn_support import (
@@ -142,6 +143,7 @@ class ToolBatchExecutor:
         )
         results: list[dict[str, Any]] = []
         image_blocks: list[dict[str, Any]] = []
+        image_references: list[dict[str, Any]] = []
         owner_updates: list[IncomingMessage] = []
         completed_calls: list[tuple[str, bool]] = []
         allowed_tool_names = {str(spec["name"]) for spec in request.request_tools}
@@ -710,6 +712,16 @@ class ToolBatchExecutor:
                 trace, call, recall_result if recall_result is not None else result, request.draft,
             )
             results.append(tool_result_block(call.id, result))
+            if source == "mcp":
+                if result.get("image_warning"):
+                    warning = {"type": "text", "text": f"[tool_call_id={call.id}] {result['image_warning']}"}
+                    image_blocks.append(warning)
+                    image_references.append(warning)
+                image_blocks.extend(attachment_blocks(self.store, call.id, result.get("image_ids", [])))
+                image_references.extend({"type": "text", "text": (
+                    f"[MCP image attachment; tool_call_id={call.id}; image_id={identifier}; "
+                    "use read_image to inspect visual details.]"
+                )} for identifier in result.get("image_ids", []))
             if result.get("error") not in {"paused_for_owner", "superseded_by_owner_update"}:
                 completed_calls.append((call.name, bool(result.get("ok"))))
             previous_tool_name = call.name
@@ -819,7 +831,7 @@ class ToolBatchExecutor:
                     "call_id": request.call_id,
                     "round": request.round_number,
                     "content": assistant_history_message(request.response.content)["content"],
-                    "results": results,
+                    "results": [*results, *image_references],
                 },
                 trust="runtime",
             )

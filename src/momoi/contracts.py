@@ -22,6 +22,8 @@ class GoalMutation(TypedDict):
 
 
 class ToolResult(TypedDict, total=False):
+    image_ids: list[str]
+    image_warning: str
     ok: bool
     error: str | None
     message: str

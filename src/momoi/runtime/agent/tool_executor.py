@@ -7,6 +7,7 @@ from typing import Any
 
 from ...tools.presentation import fit_result, present_result
 from ...contracts import ToolResult
+from ...mcp.content import store_content_images
 from ...observability.events import log_event
 from ...observability.values import compact_log_value, safe_preview
 from ...tools.contracts.memory import MEMORY_TOOL_SPECS
@@ -210,7 +211,8 @@ class ToolExecutor:
             else None
         )
         compact_result = compact_log_value(
-            result,
+            ({key: result[key] for key in ("ok", "error", "result_ref") if key in result}
+             if trace.source == "mcp" else result),
             string_limit=800,
             item_limit=30,
         )
@@ -266,6 +268,20 @@ class ToolExecutor:
             )
     def normalize(self, call: ToolCall, result: object, source: str) -> ToolResult:
         raw = dict(result) if isinstance(result, dict) else {"value": result}
+        image_ids = []
+        if source == "mcp":
+            raw, image_ids = store_content_images(raw, self.store)
+            if image_ids:
+                raw["image_ids"] = image_ids
+        normalized = self._normalize(call, raw, source)
+        if image_ids:
+            # Keep references outside text truncation, never persist bytes in results.
+            normalized["image_ids"] = image_ids
+        if raw.get("image_warning"):
+            normalized["image_warning"] = raw["image_warning"]
+        return normalized
+
+    def _normalize(self, call: ToolCall, raw: dict, source: str) -> ToolResult:
         ok = raw.get("ok") is True
         error = None if ok else str(raw.get("error") or "tool_failed")
         payload = {
