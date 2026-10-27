@@ -297,3 +297,19 @@ The default directory is `models/asr/`; override it with `MOMOI_ASR_MODEL_PATH`
 or the model path in Settings. Obsolete Sherpa endpoint and network timeout options are discarded while
 preserving enabled state, thread count and silence settings.
 See [model preparation](../models/README.md) before building images.
+
+Standard MCP `image` content blocks are sent as model image inputs alongside the
+text returned by the same tool call. JPEG, PNG, GIF and WebP are supported, with a
+20 MiB limit per image. Invalid encoding, mismatched formats and oversized images
+produce an explicit unavailable-image notice.
+
+This uses the existing Anthropic Messages, OpenAI Chat Completions and OpenAI
+Responses adapters; the selected model must support vision. With `multimodal:
+false`, the existing image recognition model route applies. Without a recognition
+model, the request explicitly says that the image was not supplied and must not
+be described as viewed.
+
+Images use the local image store. Tool results and history retain image IDs;
+the current tool exchange carries images, while reloaded history can use
+`read_image` to inspect them again or `save_image_summary` to retain observations.
+Images follow the existing persistence policy and do not automatically expire.

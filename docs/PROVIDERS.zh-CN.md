@@ -278,3 +278,12 @@ Linux 镜像自带依赖与模型，Windows 使用可选 ASR 组件。模型按�
 再从仓库根目录启动。模型默认位于 `models/asr/`，可用 `MOMOI_ASR_MODEL_PATH` 或设置中的模型目录覆盖。
 旧 Sherpa 地址及网络超时配置移除，统一使用内置调用，保留启停状态、线程数与断句参数。
 构建前的模型准备步骤见 [models/README.md](../models/README.md)。
+
+MCP 工具返回的标准 `image` 内容块会作为图片输入传给模型，同次返回的文字也会保留。
+支持 JPEG、PNG、GIF、WebP，每张图片最多 20 MiB；无效编码、格式不匹配或超限会返回明确的图片不可用提示。
+图片通过现有 Anthropic Messages、OpenAI Chat Completions、OpenAI Responses 适配器发送，
+实际模型仍需支持视觉。`multimodal: false` 时沿用已有图片识别模型路由；没有可用识别模型时，
+请求会明确提示图片未传入，不能声称已查看图片。
+
+图片存入本地图片库，工具结果与历史仅保存图片 ID；当前工具轮次附图，历史重载后可调用
+`read_image` 再查看，也可用 `save_image_summary` 保存摘要。图片沿用现有持久化策略，不自动过期。
