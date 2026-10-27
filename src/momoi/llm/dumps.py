@@ -80,7 +80,7 @@ def redact_dump_media(value: Any) -> Any:
         return [redact_dump_media(item) for item in value]
     if isinstance(value, dict):
         redacted = {key: redact_dump_media(item) for key, item in value.items()}
-        if redacted.get("type") in {"base64", "image"} and isinstance(redacted.get("data"), str):
+        if redacted.get("type") in ("base64", "image") and isinstance(redacted.get("data"), str):
             redacted["data"] = f"[omitted {len(redacted['data'])} base64 chars]"
         return redacted
     if (
