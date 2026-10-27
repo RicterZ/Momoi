@@ -9,6 +9,7 @@ from ...channel import (
 )
 from .emotions import emotion_slug
 from .actions import QQ_POKE_MARKER
+from ..core.integrity import decode_stored_json
 
 
 class OutboxStore:
@@ -48,9 +49,10 @@ class OutboxStore:
                 **({"error": "reply_delivery_failed"} if failed else {})}
 
     def reply_delivery(self, turn_id: str, tool_call_id: str) -> dict[str, object] | None:
-        """Report only confirmed speech, with uncertainty kept separate."""
+        """Report confirmed content and per-message channel delivery evidence."""
         rows = self._db.execute(
-            """SELECT p.text, o.target_channel, o.state, o.possible_duplicate
+            """SELECT p.text, o.id, o.kind, o.payload_json, o.last_error,
+                      o.target_channel, o.state, o.possible_duplicate
                FROM turn_progress p JOIN outbox o ON
                o.dedupe_key = 'turn:' || p.turn_id || ':progress:' || p.tool_call_id || ':' || p.part_index
                WHERE p.turn_id=? AND p.tool_call_id=? ORDER BY p.part_index""",
@@ -65,9 +67,26 @@ class OutboxStore:
         failed = sum(row['state'] == 'failed' and not row['possible_duplicate'] for row in rows)
         state = ('pending' if pending else 'uncertain' if uncertain else 'interrupted' if cancelled
                  else 'failed' if failed else 'sent')
+        deliveries = []
+        for row in rows:
+            payload = decode_stored_json(
+                row['payload_json'] or '{}', entity='outbox', record_id=row['id'],
+                field='payload_json', expected_type=dict, fallback={},
+            )
+            receipt = payload.get('_delivery_receipt') or {}
+            deliveries.append({
+                'outbox_id': row['id'], 'kind': row['kind'],
+                'state': ('uncertain' if row['state'] != 'sent' and
+                          (row['possible_duplicate'] or row['state'] == 'sending')
+                          else row['state']),
+                'segment_types': [segment['type'] for segment in payload.get('segments', [])],
+                **({'message_id': receipt['message_id']} if receipt.get('message_id') else {}),
+                **({'error': row['last_error']} if row['last_error'] and row['state'] != 'sent' else {}),
+            })
         return {'ok': state in {'sent', 'interrupted'}, 'state': state,
                 'channel': rows[0]['target_channel'],
                 'bubbles': [row['text'] for row in rows if row['state'] == 'sent'],
+                'deliveries': deliveries,
                 'pending': pending, 'cancelled': cancelled, 'failed': failed,
                 **({'uncertain_bubbles': uncertain} if uncertain else {})}
 

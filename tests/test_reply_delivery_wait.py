@@ -1,6 +1,8 @@
 import asyncio
 from types import SimpleNamespace
 
+import pytest
+
 from momoi.models import IncomingMessage
 from momoi.runtime.agent.delivery import BubbleDelivery, DeliveryPolicy
 from momoi.storage import Store
@@ -26,6 +28,7 @@ def test_reply_waits_for_partial_delivery_and_cancellation(tmp_path):
         assert result['state'] == 'interrupted'
         assert result['bubbles'] == ['第一句']
         assert result['cancelled'] == 1 and result['pending'] == 0
+        assert [item['state'] for item in result['deliveries']] == ['sent', 'superseded']
         assert '第二句' not in str(result)
     try:
         asyncio.run(run())
@@ -41,15 +44,110 @@ def test_reply_uncertain_and_timeout_never_claim_delivery(tmp_path):
     try:
         result = asyncio.run(delivery.wait_reply('turn', 'reply', timeout=0))
         assert result['error'] == 'reply_delivery_timeout' and result['bubbles'] == []
+        assert result['deliveries'][0]['state'] == 'pending'
         row = store.due_outbox()[0]
         store.mark_sending(row.id)
         store.mark_ambiguous(row.id, 2, 'lost_receipt')
         result = asyncio.run(delivery.wait_reply('turn', 'reply'))
         assert result['state'] == 'uncertain' and result['bubbles'] == []
         assert result['uncertain_bubbles'] == ['不确定的一句']
+        assert result['deliveries'][0]['state'] == 'uncertain'
+        assert 'message_id' not in result['deliveries'][0]
         store.mark_sent(row.id)
         result = asyncio.run(delivery.wait_reply('turn', 'reply'))
         assert result['state'] == 'sent' and result['bubbles'] == ['不确定的一句']
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize('source', ['local', 'remote'])
+def test_real_worker_media_receipt_reaches_planner(tmp_path, source):
+    import json
+    from unittest.mock import patch
+    from momoi.runtime import MomoiDaemon
+    from momoi.models import ProviderResponse, ToolCall
+    from tests.support import config, install_scripted_replyer, reply_call, with_owner_recall
+
+    daemon = MomoiDaemon(config(str(tmp_path)))
+    install_scripted_replyer(daemon)
+    daemon.bubble_delivery.wait_reply = BubbleDelivery.wait_reply.__get__(daemon.bubble_delivery)
+    image = str(tmp_path / 'photo.png') if source == 'local' else 'https://example.com/photo.png'
+    media = {'segments': [{'type': 'image', 'data': {'file': image}}]}
+    sent = []
+    observed = []
+    stop = asyncio.Event()
+    event = IncomingMessage('image-request', 'image-request', '发图', 1, 1, channel='onebot')
+
+    async def send(payload):
+        sent.append(payload)
+        return f'qq-{len(sent)}'
+
+    async def complete(system, messages, tools, **kwargs):
+        if not sent:
+            call = reply_call('media-reply', bubbles=['给你', media])
+        else:
+            results = [block for message in messages if isinstance(message.get('content'), list)
+                       for block in message['content'] if block.get('type') == 'tool_result'
+                       and block.get('tool_use_id') == 'media-reply']
+            result = json.loads(results[0]['content'])
+            assert result['state'] == 'sent'
+            assert [item['kind'] for item in result['deliveries']] == ['text', 'image']
+            attachment = result['deliveries'][1]
+            assert attachment['state'] == 'sent'
+            assert attachment['segment_types'] == ['image']
+            assert attachment['message_id'] == 'qq-2'
+            assert sent[1]['segments'] == media['segments']
+            assert result['bubbles'][1].startswith('[image:')
+            observed.append(result)
+            call = ToolCall('end', 'end_turn', {'mood': {'decision': 'unchanged'}})
+        return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name,
+                                  'input': call.arguments}], [call])
+
+    async def run():
+        daemon.provider = with_owner_recall(SimpleNamespace(complete=complete))
+        daemon.store.add_event(event)
+        worker = asyncio.create_task(daemon._outbox_worker(stop))
+        try:
+            with patch.object(daemon.channel, 'send_message', side_effect=send), patch(
+                    'momoi.runtime.dispatch.delivery.random.uniform', return_value=0):
+                await asyncio.wait_for(daemon._complete_batch_turn([event], stop, 'media-turn'), 3)
+            assert len(observed) == 1
+            # Replaying the same committed call retains the channel evidence.
+            replayed = await daemon.bubble_delivery.wait_reply('media-turn', 'media-reply')
+            assert replayed['ok'] is True
+            for key in ('state', 'bubbles', 'deliveries'):
+                assert replayed[key] == observed[0][key]
+        finally:
+            stop.set()
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+    try:
+        asyncio.run(run())
+    finally:
+        daemon.store.close()
+
+
+def test_partial_media_failure_receipt_distinguishes_literal_text(tmp_path):
+    store = Store(tmp_path / 'db')
+    store.begin_turn('turn', 'owner', [])
+    store.queue_progress('turn', 'reply', [
+        '[image: this is literal text]',
+        {'segments': [{'type': 'text', 'data': {'text': '附件说明'}},
+                      {'type': 'file', 'data': {'file': 'https://example.com/report.pdf'}}]},
+    ], 'onebot')
+    try:
+        text = store.due_outbox()[0]
+        store.mark_sent(text.id)
+        attachment = store.due_outbox()[0]
+        store.mark_failed(attachment.id, 'attachment rejected')
+        result = store.reply_delivery('turn', 'reply')
+        assert result['state'] == 'failed' and result['ok'] is False
+        assert result['bubbles'] == ['[image: this is literal text]']
+        assert result['deliveries'][0]['segment_types'] == ['text']
+        assert result['deliveries'][1] == {
+            'outbox_id': attachment.id, 'kind': 'message', 'state': 'failed',
+            'segment_types': ['text', 'file'], 'error': 'attachment rejected',
+        }
     finally:
         store.close()
 

@@ -12,7 +12,7 @@ MEDIA_BUBBLE_SCHEMA[0]["properties"]["segments"]["contains"] = {
 
 REPLY_TOOL_SPEC = {
     "name": "reply",
-    "description": "把本次回应意图和必要依据交给 Replyer 生成并发送实际发言；等待发送完成或被打断后返回；bubbles 只含确认发出的内容，未确认投递单列。发送超时仍可能在队列中，不要重复发送。",
+    "description": "把本次回应意图和必要依据交给 Replyer 生成并发送实际发言；等待发送完成或被打断后返回。bubbles 只含确认发出的内容，其 [image: …]、[file: …] 等是媒体摘要，不代表发送了路径文字。deliveries 逐条返回 outbox_id、kind、segment_types、state 及频道返回的 message_id（如有）；sent 表示频道确认发送，不能据此判断对方已查看或图片具体内容；failed/superseded 为失败/取消，uncertain 为投递不确定，pending/ambiguous 仍可能排队重试。发送超时仍可能在队列中，不要重复发送。",
     "input_schema": {
         "type": "object",
         "properties": {
