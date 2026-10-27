@@ -39,7 +39,7 @@ def _redact(value: Any, key: str = "") -> Any:
         except (TypeError, ValueError):
             return "[redacted-url]"
     if isinstance(value, Mapping):
-        if value.get("type") in {"base64", "image"} and isinstance(value.get("data"), str):
+        if value.get("type") in ("base64", "image") and isinstance(value.get("data"), str):
             return {
                 str(item_key): (
                     f"[omitted {len(str(item_value))} base64 chars]"
