@@ -255,6 +255,7 @@ def test_owner_injects_episode_title_in_current_message(daemon):
     assert '<triggered_episodes>' in content[0]['text']
     root = ElementTree.fromstring('<input>' + ''.join(b.get('text', '') for b in content) + '</input>')
     episode = root.find('triggered_episodes/episode')
-    assert episode.attrib == {'id': 'gift'}
+    assert episode.attrib['id'] == 'gift'
+    assert set(episode.attrib) == {'id', 'status', 'updated_at'}
     assert episode.text == '老师答应送我礼物'
     assert all('triggered_episodes' not in str(m) for m in messages[:-1])

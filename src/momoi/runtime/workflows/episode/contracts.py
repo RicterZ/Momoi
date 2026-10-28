@@ -48,6 +48,7 @@ _CONTINUE_SCHEMA: dict[str, Any] = {
     "properties": {
         "action": {"type": "string", "enum": ["continue"]},
         "episode_id": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
         "turn_ids": _TURN_IDS_SCHEMA,
         "topics": _TOPICS_SCHEMA,
         "entities": _TAGS_SCHEMA,
@@ -56,6 +57,7 @@ _CONTINUE_SCHEMA: dict[str, Any] = {
     "required": [
         "action",
         "episode_id",
+        "title",
         "turn_ids",
         "topics",
         "entities",

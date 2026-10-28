@@ -56,7 +56,7 @@ def test_deterministic_matching_limits_and_persistence(tmp_path):
     try:
         matched = store.triggered_episodes('時之笛预购：ＳＷＩＴＣＨ ２')
         assert len(matched) == 4
-        assert set(matched[0]) == {'id', 'title'}
+        assert set(matched[0]) == {'id', 'title', 'status', 'updated_at'}
         assert len(store.triggered_episodes('时之笛', limit=1)) == 1
         assert store.triggered_episodes('邮箱检查') == []
         assert store.triggered_episodes('时之笛', limit=0) == []
@@ -74,7 +74,7 @@ def test_episode_triggers_are_literal_and_limited(tmp_path):
         with store._db:
             store._db.execute("UPDATE conversation_episodes SET narrative_summary='summary' WHERE id='literal'")
         assert store.triggered_episodes('axb') == []
-        assert store.triggered_episodes('a.b')[0] == {'id': 'literal', 'title': 'literal'}
+        assert store.triggered_episodes('a.b')[0]['title'] == 'literal'
         assert store.triggered_episodes('switch')[0]['id'] == 'literal'
         with pytest.raises(ValueError):
             store.set_episode_triggers('literal', ['a', 'b', 'c'])
@@ -90,7 +90,7 @@ def test_topic_results_are_capped_at_five_without_summary(tmp_path):
             store.set_episode_triggers(str(i), ['对象'])
         results = store.triggered_episodes('对象', limit=100)
         assert len(results) == 5
-        assert all(set(row) == {'id', 'title'} for row in results)
+        assert all(set(row) == {'id', 'title', 'status', 'updated_at'} for row in results)
     finally:
         store.close()
 
@@ -111,7 +111,7 @@ def test_reply_trigger_routing_and_dedupe(tmp_path, stage):
                 lookup.assert_not_called()
                 assert 'triggered_episodes' not in result
             else:
-                assert result['triggered_episodes'] == [{'id': 'gift', 'title': '答应送我的礼物'}]
+                assert [(row['id'], row['title'], row['status']) for row in result['triggered_episodes']] == [('gift', '答应送我的礼物', 'open')]
                 again = {'bubbles': ['时之笛']}
                 attach_reply_episode_triggers(store, again, stage=stage, seen=seen)
                 assert 'triggered_episodes' not in again
@@ -129,7 +129,9 @@ def test_owner_episode_context_escapes_titles_and_ignores_notices(tmp_path):
         store.set_episode_triggers('gift', ['时之笛'])
         event = IncomingMessage('owner', 'owner', '时之笛', 1, 1)
         node = ElementTree.fromstring(triggered_episode_context(store, [event]))
-        assert node.find('episode').attrib == {'id': 'gift'}
+        attrib = node.find('episode').attrib
+        assert (attrib['id'], attrib['status']) == ('gift', 'open')
+        assert attrib['updated_at']
         assert node.find('episode').text == '送我的礼物 <fake/>'
         assert node.find('.//fake') is None
         notice = IncomingMessage('notice', 'owner', '时之笛', 1, 1, delivery_context={'channel_notice': 'recall'})

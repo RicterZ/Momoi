@@ -311,6 +311,7 @@ class EpisodeConsolidationStore:
                     "continue": {
                         "action",
                         "episode_id",
+                        "title",
                         "turn_ids",
                         "topics",
                         "entities",
@@ -373,6 +374,9 @@ class EpisodeConsolidationStore:
                 loops = self._consolidation_strings(
                     decision["open_loops"], "open loops", 8, 500
                 )
+                title = str(decision["title"]).strip()
+                if not title or len(title) > 200:
+                    raise ValueError("invalid consolidation title")
                 if action == "continue":
                     episode_id = str(decision["episode_id"])
                     if (
@@ -393,9 +397,6 @@ class EpisodeConsolidationStore:
                         uuid.NAMESPACE_URL,
                         f"momoi:consolidated-episode:{decision_turns[0]}:{key}",
                     ).hex
-                    title = str(decision["title"]).strip()
-                    if not title or len(title) > 200:
-                        raise ValueError("invalid consolidation title")
                 raw_text = "\n".join(
                     str(row["content"])
                     for turn_id in decision_turns
@@ -441,11 +442,12 @@ class EpisodeConsolidationStore:
                     )[:20]
                     self._db.execute(
                         """UPDATE conversation_episodes
-                           SET topics_json=?, entities_json=?,
+                           SET title=?, topics_json=?, entities_json=?,
                                open_loops_json=?,
                                status=?, closed_at=NULL, updated_at=?
                            WHERE id=?""",
                         (
+                            title,
                             json.dumps(selected_topics, ensure_ascii=False),
                             json.dumps(merged_entities, ensure_ascii=False),
                             json.dumps(loops, ensure_ascii=False),

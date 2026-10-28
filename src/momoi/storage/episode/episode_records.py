@@ -8,7 +8,7 @@ import uuid
 from .episode_cues import cue_texts
 from ...memory.metadata import validate_episode_triggers, normalize_trigger
 from ..core.integrity import decode_stored_json
-from ..core.timestamps import add_context_timestamps
+from ..core.timestamps import add_context_timestamps, context_timestamp
 
 EPISODE_IDLE_CLOSE_SECONDS = 4 * 60 * 60
 
@@ -118,7 +118,7 @@ class EpisodeRecordStore:
         return self.episode(episode_id)
 
     def triggered_episodes(self, text: str, *, limit: int = 5) -> list[dict[str, str]]:
-        """Literal topic lookup; return only titles and IDs, never full archives."""
+        """Literal topic lookup; return titles, IDs and freshness, never full archives."""
         if not isinstance(text, str):
             raise ValueError("trigger input must be a string")
         if not text.strip() or limit <= 0:
@@ -126,15 +126,19 @@ class EpisodeRecordStore:
         normalized_text = normalize_trigger(text)
         matches = []
         for row in self._db.execute(
-            "SELECT id,title,triggers_json,updated_at FROM conversation_episodes "
+            "SELECT id,title,status,triggers_json,updated_at FROM conversation_episodes "
             "WHERE triggers_json!='[]' AND archive_kind IS NULL"
         ):
             words = [normalize_trigger(word) for word in json.loads(row["triggers_json"]) if word]
             lengths = [len(word) for word in words if word in normalized_text]
             if lengths:
-                matches.append((max(lengths), row["updated_at"], row["id"], row["title"]))
+                matches.append((max(lengths), row["updated_at"], row["id"], row["title"], row["status"]))
         matches.sort(reverse=True)
-        return [{"id": item[2], "title": item[3]} for item in matches[:min(limit, 5)]]
+        return [
+            {"id": item[2], "title": item[3], "status": item[4],
+             "updated_at": context_timestamp(item[1], self._timezone)}
+            for item in matches[:min(limit, 5)]
+        ]
 
     def create_episode(
         self,

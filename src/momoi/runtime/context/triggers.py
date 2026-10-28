@@ -34,7 +34,9 @@ def triggered_episode_context(store, events, *, wrapped=True):
         return ""
     node = Element("triggered_episodes")
     for row in rows:
-        SubElement(node, "episode", {"id": row["id"]}).text = row["title"]
+        SubElement(node, "episode", {
+            "id": row["id"], "status": row["status"], "updated_at": row["updated_at"],
+        }).text = row["title"]
     return (tostring(node, encoding="unicode") if wrapped else
             "\n".join(tostring(child, encoding="unicode") for child in node))
 

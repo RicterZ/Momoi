@@ -702,6 +702,7 @@ class StorageMemoryTest(unittest.TestCase):
             decision = {
                 "action": "continue",
                 "episode_id": "old-game",
+                "title": "继续昨晚的旧游戏",
                 "turn_ids": ["turn-1"],
                 "topics": [],
                 "entities": [],
@@ -714,6 +715,7 @@ class StorageMemoryTest(unittest.TestCase):
                 store.apply_episode_consolidation(["turn-1"], [decision], ["old-game"]),
                 (1, 0),
             )
+            self.assertEqual(store.episode("old-game")["title"], "继续昨晚的旧游戏")
             store.close()
 
     def test_episode_consolidation_topics_remain_short_labels(self) -> None:
@@ -731,7 +733,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.create_episode("午餐记录", episode_id="lunch", topics=["旧标签", "枝节标签"])
             store.commit_turn([], "食堂午餐", AgentReply([]), turn_id="lunch-turn")
             decision = {
-                "action": "continue", "episode_id": "lunch",
+                "action": "continue", "episode_id": "lunch", "title": "午餐记录",
                 "turn_ids": ["lunch-turn"], "topics": ["食堂午餐"],
                 "entities": [], "open_loops": [],
             }
@@ -1001,6 +1003,7 @@ class StorageMemoryTest(unittest.TestCase):
                 decision = {
                     "action": "continue",
                     "episode_id": archive_id,
+                    "title": store.episode(archive_id)["title"],
                     "turn_ids": ["owner-pending"],
                     "topics": [],
                     "entities": [],
@@ -1214,6 +1217,7 @@ class StorageMemoryTest(unittest.TestCase):
                         {
                             "action": "continue",
                             "episode_id": "playing-game",
+                            "title": "玩游戏",
                             "turn_ids": ["first"],
                             "topics": ["游戏"],
                             "entities": ["塞尔达"],
@@ -1363,6 +1367,7 @@ class StorageMemoryTest(unittest.TestCase):
                         {
                             "action": "continue",
                             "episode_id": "playing-game",
+                            "title": "玩游戏",
                             "turn_ids": ["earlier"],
                             "topics": ["游戏"],
                             "entities": ["塞尔达"],
