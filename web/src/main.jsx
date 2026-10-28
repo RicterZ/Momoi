@@ -1477,7 +1477,10 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
               {group.map((item) => (
                 <article className="reflection-card" key={item.identity}>
                   <div className="card-head">
-                    <h2>{memoryKindLabel(item.kind)}</h2>
+                    <h2 className="memory-card-title">
+                      <span className="memory-card-id">#{item.id}</span>
+                      <span>{memoryKindLabel(item.kind)}</span>
+                    </h2>
                     <div className="memory-badges">
                       <span className="status">
                         {candidateMode ? `${item.count} 次独立观察${item.status === "blocked" ? " · 存在冲突" : ""}` : labels[item.activation] || item.activation}

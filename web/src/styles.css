@@ -1267,6 +1267,18 @@ a.tag:hover {
   font-size: 20px;
   font-weight: 800;
 }
+.memory-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.memory-card-id {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
 .reflection-card .summary {
   margin: 18px 0 0;
   white-space: pre-wrap;
