@@ -250,34 +250,127 @@ def _episode_context(
     return rendered
 
 
+_REVISION_HOPS = 2
+_INJECTED_SUMMARY_TOKENS = 80
+_FOLLOWED_BY_LIMIT = 2
+# Trimmed first to last when a record exceeds its share; revision fields are never dropped.
+_OPTIONAL_RELATION_FIELDS = ("context", "followed_by", "follows_up")
+
+
+def _latest_reviser(store, episode_id, neighbors, excluded):
+    """Follow incoming revises edges to the newest valid version, at most two hops."""
+    current, chain = episode_id, []
+    for _ in range(_REVISION_HOPS):
+        related = neighbors.get(current)
+        if related is None:
+            related = store.episode_relation_neighbors([current], per_episode=5).get(current, [])
+            neighbors[current] = related
+        reviser = next((
+            item for item in related
+            if item["direction"] == "incoming" and item["type"] == "revises"
+            and item["episode_id"] not in excluded and item["episode_id"] not in chain
+        ), None)
+        if reviser is None:
+            break
+        chain.append(reviser["episode_id"])
+        current = reviser["episode_id"]
+    return chain[-1] if chain else None
+
+
+def _relation_fields(related, selected_ids):
+    fields: dict[str, list[dict[str, str]]] = {}
+
+    def add(name, value, limit=None):
+        items = fields.setdefault(name, [])
+        if limit is None or len(items) < limit:
+            items.append(value)
+
+    for item in related:
+        pointer = {"id": item["episode_id"], "title": item["title"]}
+        outgoing = item["direction"] == "outgoing"
+        if item["type"] == "revises":
+            if outgoing:
+                add("revises", pointer)
+            else:
+                add("revised_by", {**pointer, "explanation": item["explanation"]})
+        elif item["type"] == "follows_up":
+            if outgoing:
+                add("follows_up", pointer)
+            elif item["episode_id"] not in selected_ids:
+                add("followed_by", pointer, _FOLLOWED_BY_LIMIT)
+        elif item["episode_id"] not in selected_ids or outgoing:
+            add("context", {**pointer, "direction": item["direction"]})
+    return fields
+
+
+def _order_after_targets(records):
+    """Place injected revisers and follow-ups after the recalled topics they point to."""
+    ordered = []
+    pending = list(records)
+    while pending:
+        placed = {record["id"] for record in ordered}
+        waiting = {record["id"] for record in pending}
+        for index, record in enumerate(pending):
+            targets = {
+                item["id"] for name in ("revises", "follows_up")
+                for item in record.get(name, [])
+            }
+            if not targets & (waiting - placed - {record["id"]}):
+                ordered.append(pending.pop(index))
+                break
+        else:
+            ordered.append(pending.pop(0))
+    return ordered
+
+
 def episode_recall_records(store, episodes, budget):
     """Return topic summaries and relation pointers; details live in episode_read."""
-    records = []
     selected = [e for e in episodes or [] if not e.get("is_new")]
-    neighbors = store.episode_relation_neighbors(
-        [str(item["episode_id"]) for item in selected], per_episode=5
-    )
-    per_episode = max(1, budget // max(1, len(selected)))
-    for item in selected:
-        episode = store.episode(str(item["episode_id"]))
+    selected_ids = [str(item["episode_id"]) for item in selected]
+    excluded = {str(item["episode_id"]) for item in episodes or [] if item.get("is_new")}
+    neighbors = store.episode_relation_neighbors(selected_ids, per_episode=5)
+    injected: dict[str, str] = {}
+    for episode_id in selected_ids:
+        reviser = _latest_reviser(store, episode_id, neighbors, excluded)
+        if reviser and reviser not in selected_ids and reviser not in injected:
+            injected[reviser] = episode_id
+    if injected:
+        neighbors.update(store.episode_relation_neighbors(list(injected), per_episode=5))
+    visible = {*selected_ids, *injected}
+    per_episode = max(1, budget // max(1, len(selected_ids) + len(injected)))
+    records = []
+    order = [
+        value for episode_id in selected_ids
+        for value in (episode_id, *(r for r, base in injected.items() if base == episode_id))
+    ]
+    for episode_id in order:
+        episode = store.episode(episode_id)
         if not episode:
             continue
         summary, _ = _episode_summary(episode)
+        fields = _relation_fields(neighbors.get(episode_id, []), visible)
+        summary_tokens = per_episode // 3
+        if episode_id in injected:
+            summary_tokens = min(_INJECTED_SUMMARY_TOKENS, summary_tokens)
+        elif fields.get("revised_by"):
+            summary_tokens //= 3
         record = {"id": episode["id"], "title": episode["title"],
-                  "summary": truncate_tokens(summary, max(1, per_episode // 3)),
-                  "details_omitted": True,
-                  "relations": [
-                      {key: relation[key] for key in ("episode_id", "title", "type", "direction")}
-                      for relation in neighbors.get(episode["id"], [])
-                  ]}
+                  "summary": truncate_tokens(summary, max(1, summary_tokens)),
+                  "details_omitted": True}
+        if episode_id in injected:
+            record["injected"] = "revises"
+        record.update(fields)
         while estimate_tokens(json.dumps(record, ensure_ascii=False)) > per_episode:
-            if record["relations"]:
-                record["relations"].pop()
+            name = next((key for key in _OPTIONAL_RELATION_FIELDS if record.get(key)), None)
+            if name:
+                record[name].pop()
+                if not record[name]:
+                    del record[name]
                 continue
             record["summary"] = truncate_tokens(record["summary"], max(1, per_episode // 8))
             break
         records.append(record)
-    return records
+    return _order_after_targets(records)
 
 
 def assemble_main_context(
