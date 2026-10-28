@@ -150,7 +150,7 @@ def test_recalled_reviser_is_not_duplicated():
             records = _recall(store, "b", "a")
             assert [record["id"] for record in records] == ["a", "b"]
             assert "injected" not in records[1]
-            assert records[1]["revises"] == [{"id": "a", "title": "旧"}]
+            assert records[1]["revises"] == [{"id": "a"}]
         finally:
             store.close()
 
@@ -165,7 +165,7 @@ def test_follow_up_within_results_is_written_once_and_ordered():
             records = _recall(store, "b", "a")
             assert [record["id"] for record in records] == ["a", "b"]
             assert "followed_by" not in records[0]
-            assert records[1]["follows_up"] == [{"id": "a", "title": "起因"}]
+            assert records[1]["follows_up"] == [{"id": "a"}]
         finally:
             store.close()
 
@@ -202,6 +202,29 @@ def test_tight_budget_drops_pointers_before_revisions():
             assert "followed_by" not in records[0]
         finally:
             store.close()
+
+
+def test_summaries_shrink_before_pointers_are_dropped():
+    with tempfile.TemporaryDirectory() as directory:
+        store = Store(Path(directory) / "db")
+        try:
+            ids = [f"e{index}" for index in range(6)]
+            for index, episode_id in enumerate(ids):
+                _summarize(store, episode_id, f"话题{index}", "很长的经过" * 300, index + 1)
+            for source, target in zip(ids[1:], ids):
+                _relate(store, source, target, "follows_up")
+            budget = 300
+            records = _recall(store, *ids, budget=budget)
+            assert all(record.get("follows_up") for record in records[1:])
+            assert sum(rendering_tokens(record) for record in records) <= budget
+        finally:
+            store.close()
+
+
+def rendering_tokens(record):
+    from momoi.runtime.context import rendering
+
+    return rendering._record_tokens(record)
 
 
 def test_stale_revision_is_ignored():

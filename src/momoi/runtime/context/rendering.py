@@ -253,6 +253,7 @@ def _episode_context(
 _REVISION_HOPS = 2
 _INJECTED_SUMMARY_TOKENS = 80
 _FOLLOWED_BY_LIMIT = 2
+_CONTEXT_LIMIT = 1
 # Trimmed first to last when a record exceeds its share; revision fields are never dropped.
 _OPTIONAL_RELATION_FIELDS = ("context", "followed_by", "follows_up")
 
@@ -286,7 +287,9 @@ def _relation_fields(related, selected_ids):
             items.append(value)
 
     for item in related:
-        pointer = {"id": item["episode_id"], "title": item["title"]}
+        pointer = {"id": item["episode_id"]}
+        if item["episode_id"] not in selected_ids:
+            pointer["title"] = item["title"]
         outgoing = item["direction"] == "outgoing"
         if item["type"] == "revises":
             if outgoing:
@@ -299,7 +302,7 @@ def _relation_fields(related, selected_ids):
             elif item["episode_id"] not in selected_ids:
                 add("followed_by", pointer, _FOLLOWED_BY_LIMIT)
         elif item["episode_id"] not in selected_ids or outgoing:
-            add("context", {**pointer, "direction": item["direction"]})
+            add("context", {**pointer, "direction": item["direction"]}, _CONTEXT_LIMIT)
     return fields
 
 
@@ -338,7 +341,7 @@ def episode_recall_records(store, episodes, budget):
         neighbors.update(store.episode_relation_neighbors(list(injected), per_episode=5))
     visible = {*selected_ids, *injected}
     per_episode = max(1, budget // max(1, len(selected_ids) + len(injected)))
-    records = []
+    records, summaries, shares = [], [], []
     order = [
         value for episode_id in selected_ids
         for value in (episode_id, *(r for r, base in injected.items() if base == episode_id))
@@ -354,23 +357,58 @@ def episode_recall_records(store, episodes, budget):
             summary_tokens = min(_INJECTED_SUMMARY_TOKENS, summary_tokens)
         elif fields.get("revised_by"):
             summary_tokens //= 3
-        record = {"id": episode["id"], "title": episode["title"],
-                  "summary": truncate_tokens(summary, max(1, summary_tokens)),
+        record = {"id": episode["id"], "title": episode["title"], "summary": "",
                   "details_omitted": True}
         if episode_id in injected:
             record["injected"] = "revises"
         record.update(fields)
-        while estimate_tokens(json.dumps(record, ensure_ascii=False)) > per_episode:
-            name = next((key for key in _OPTIONAL_RELATION_FIELDS if record.get(key)), None)
-            if name:
+        records.append(record)
+        summaries.append(summary)
+        shares.append(min(max(1, summary_tokens), estimate_tokens(summary)))
+    # Pointers are small and carry the relation signal, so summaries yield first.
+    available = budget - sum(_record_tokens(record) for record in records)
+    scale = min(1.0, max(0, available) / max(1, sum(shares)))
+    for record, summary, share in zip(records, summaries, shares):
+        record["summary"] = truncate_tokens(summary, max(1, int(share * scale)))
+    dropped, shortened = _fit_records(records, budget, per_episode)
+    if scale < 1 or dropped or shortened:
+        log_event(
+            logger, logging.INFO, "episode_recall_records_fitted", stage="context_recall",
+            records=len(records), budget=budget, summary_scale=round(scale, 3),
+            pointers_dropped=dropped, summaries_shortened=shortened,
+        )
+    return _order_after_targets(records)
+
+
+def _record_tokens(record):
+    return estimate_tokens(json.dumps(record, ensure_ascii=False))
+
+
+def _fit_records(records, budget, per_episode):
+    """Trim only when the whole result exceeds the budget, lowest-ranked records first."""
+    sizes = [_record_tokens(record) for record in records]
+    if sum(sizes) <= budget:
+        return 0, 0
+    dropped = shortened = 0
+    for name in _OPTIONAL_RELATION_FIELDS:
+        for index in reversed(range(len(records))):
+            record = records[index]
+            while record.get(name) and sum(sizes) > budget:
                 record[name].pop()
                 if not record[name]:
                     del record[name]
-                continue
-            record["summary"] = truncate_tokens(record["summary"], max(1, per_episode // 8))
+                sizes[index] = _record_tokens(record)
+                dropped += 1
+            if sum(sizes) <= budget:
+                break
+    for index in reversed(range(len(records))):
+        if sum(sizes) <= budget:
             break
-        records.append(record)
-    return _order_after_targets(records)
+        record = records[index]
+        record["summary"] = truncate_tokens(record["summary"], max(1, per_episode // 8))
+        sizes[index] = _record_tokens(record)
+        shortened += 1
+    return dropped, shortened
 
 
 def assemble_main_context(
