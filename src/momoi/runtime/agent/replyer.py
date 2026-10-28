@@ -139,15 +139,15 @@ class Replyer(ReplyerBase):
         emotions = self.store.emotion_context()
         if emotions.strip():
             system += "\n\n<emotion_catalog>\n" + emotions + "\n</emotion_catalog>\n" + EMOTION_REACTION_POLICY
-            system += "\n文字模式选用表情时，将 emotion:// 标识单独作为一个气泡，用空行与文字分隔；只能使用目录中的标识。语音模式只生成朗读文本，不输出表情。"
+            system += "\n文字模式选用表情时，将 emotion:// 标识单独作为一个气泡，用空行与文字分隔；只能使用目录中的标识。语音模式只生成朗读文本。"
         expression = (
-            "只输出适合朗读的实际发言，用空行分隔气泡；使用自然口语，不包含 Markdown、颜文字、表情标记、动作标记或媒体路径。"
-            if mode == "voice" else "只输出实际发言，用空行分隔气泡。"
+            "只输出适合朗读的实际发言：自然口语，只含文字和普通标点，按停顿用空行分段。"
+            if mode == "voice" else "只输出实际发言，用空行分隔气泡，气泡内部不换行。"
         )
         tail = (
             f"当前时间：{datetime.now(ZoneInfo(str(self.config.timezone))).isoformat()}\n"
             f"发送形式：{'语音' if mode == 'voice' else '文字'}\n本次回应意图：{call.arguments['intent']}\n必要参考：{call.arguments['reference']}\n"
-            "只回应 <to_reply> 内的消息；<history> 仅供衔接，不回应、不重演、不补发。没有 <to_reply> 时按本次意图执行自主发言。\n"
+            "只回应 <to_reply> 内的消息；<history> 仅供衔接，其中内容视为已经回应过。没有 <to_reply> 时按本次意图执行自主发言。\n"
             + expression
         )
         if call.arguments.get("attachments"):
