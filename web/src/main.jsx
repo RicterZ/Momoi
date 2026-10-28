@@ -1478,8 +1478,8 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                 <article className="reflection-card" key={item.identity}>
                   <div className="card-head">
                     <h2 className="memory-card-title">
-                      <span className="memory-card-id">#{item.id}</span>
                       <span>{memoryKindLabel(item.kind)}</span>
+                      <span className="memory-card-id">#{item.id}</span>
                     </h2>
                     <div className="memory-badges">
                       <span className="status">
