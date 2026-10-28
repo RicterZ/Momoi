@@ -52,6 +52,7 @@
 | `<event>` | 历史 Webhook 输入；是否已告知用户，要看后续消息。 |
 | `<goal>` | 当时的 Goal review 结果和状态，后续记录可能更新它。 |
 | `<heartbeat>` | 当时的自主活动和结果，不保证现在仍在进行。 |
+| `<triggered_episodes>`、Episode 标题与 `open_loops` | 助手事后整理的旧话题线索，可能含误解，`updated_at` 是最后更新时间；不能当作当前事实或用户确认，库存等可核实状态以工具结果和当前对话为准。 |
 | `[message][时间][user][turn:T-21]` | `turn` 与 `<recent_episodes>.turns` 对应，用来关联历史轮次。 |
 | 历史 assistant 文本、工具调用和工具结果 | 当时的判断与行动记录。 |
 | `<self_state>` | 当前时间、情绪和最近一次心跳；情绪不改变人物设定，状态也不要求逐项向用户报告。 |
