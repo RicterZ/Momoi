@@ -2271,7 +2271,7 @@ function thinkingHasMore(state) {
   return state.cursor != null || olderMonths(state.available, state.month).length > 0;
 }
 
-const TRAJECTORY_PAGE_STEPS = 100;
+const TRAJECTORY_PAGE_STEPS = 50;
 
 function trajectoryTurnPath(item) {
   const turnId = String(item?.plan_id ? `plan:${item.plan_id}` : item?.turn_id || "").trim();
@@ -2437,7 +2437,8 @@ function TrajectoryStepPanel({ group, step, onClose }) {
 }
 
 // Step-level log stream: Turns stay as groups, steps inside them are rows, oldest
-// at the top. Scrolling to the top pulls the next 100 older steps.
+// at the top. Initial loading and scrolling up each target TRAJECTORY_PAGE_STEPS
+// steps, keeping the final Turn group intact even if it exceeds that target.
 function ThinkingLayout({ items: olderItems, token, hasMore, loadingMore, onLoadOlder }) {
   const [loaded, setLoaded] = useState(() => new Map());
   const [liveItems, setLiveItems] = useState([]);
