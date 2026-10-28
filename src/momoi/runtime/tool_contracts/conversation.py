@@ -28,7 +28,7 @@ CHANNEL_BUBBLE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                '将换行分隔的文本放入独立的气泡中。emotion:// 的值必须精确匹配 <emotion_catalog> 中列出的 emotion://<listed-slug>；它将发送一个独立的反应图像。'
+                '每个字符串作为一个独立气泡发送。emotion:// 的值必须精确匹配 <emotion_catalog> 中列出的 emotion://<listed-slug>；它将发送一个独立的反应图像。'
             ),
         },
         {

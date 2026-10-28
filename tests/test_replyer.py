@@ -630,7 +630,7 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
         assert 'event_id=' not in text
         assert 'image-event' not in text and 'new-event' not in text
         assert '只回应 <to_reply>' in text
-        assert '不重新回应旧消息或旧图片' in system
+        assert '旧消息、旧图片和已经演过的情节视为已经回应过' in system
         channel.content_blocks.assert_not_called()
         return ProviderResponse([{'type': 'text', 'text': 'Continue latest'}], [])
 
