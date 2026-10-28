@@ -33,8 +33,9 @@ class ReplyerBase:
 class Replyer(ReplyerBase):
     async def generate(self, call, request):
         soul = self.expression_prompt()
-        guide = prompt_text(self.config, "REPLYER.md", files("momoi").joinpath("prompts/replyer.md").read_text(encoding="utf-8"))
-        system = soul + "\n\n" + guide
+        guide = files("momoi").joinpath("prompts/replyer.md").read_text(encoding="utf-8")
+        custom = prompt_text(self.config, "REPLYER.md", "")
+        system = "\n\n".join(part for part in (soul, custom, guide) if part)
         rows = self.store.replyer_history_rows(getattr(request.delivery_channel, "dialogue_channel", request.delivery_channel.name))
         # Active inputs/progress are not archived until commit_turn. Project them
         # here without changing the persisted history window or commit lifecycle.

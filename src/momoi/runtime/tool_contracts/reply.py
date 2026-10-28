@@ -17,9 +17,9 @@ REPLY_TOOL_SPEC = {
         "type": "object",
         "properties": {
             "intent": {"type": "string", "minLength": 1, "maxLength": 1000,
-                       "description": "本次回应的目标或要问的问题；不代写台词片段，不指定措辞、句数或角色表演方式，不擅自追加邀约、承诺或无必要的追问。"},
+                       "description": "本次回应的目标或要问的问题；涉及双方处境、要求或承诺时明确写用户或助手，不省略主语；与 reference 的来源事实核对一致后提交。不代写台词片段，不指定措辞、句数或角色表演方式，不擅自追加邀约、承诺或无必要的追问。"},
             "reference": {"type": "string", "maxLength": 6000,
-                          "description": "必要事实、查询结论、时间数字、承诺边界及用户明确的表达约束；不放台词草稿或无关材料。"},
+                          "description": "必要事实、查询结论、时间数字、承诺边界及用户明确的表达约束；涉及旧话时标明说话人并引用原文，区分用户要求与助手安排，不把助手发言当成用户确认。不放台词草稿或无关材料。"},
             "mode": {"type": "string", "enum": ["text", "voice"], "default": "text",
                      "description": "发送形式：text 为文字气泡，voice 为语音；可用能力见工具描述。"},
             "reply_to_message_id": {"type": "string", "minLength": 1,
