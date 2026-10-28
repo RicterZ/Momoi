@@ -40,6 +40,9 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
         "历史原文中的 USER 指用户，ASSISTANT 指你（助手）；每条消息中的“我”指该条说话人，不把用户的处境、要求或话语归给助手，反之亦然。"
         "依赖结果的操作须等待检索成功；同一回合可追加搜索，每次返回本次证据，已有证据保留在上下文。"
         + RECALL_SCOPE_CONTRACT
+        + "话题带 revised_by 表示其中的决定或说法已被更新的话题修订，回答当前状态时以修订者为准，"
+        "问历史或变化过程时才引用原话题；injected 是因修订关系补入的话题。"
+        "follows_up、followed_by、context 是未展开的关联话题指针，需要时用 episode_read 读取。"
     ),
     "input_schema": {
         "type": "object",

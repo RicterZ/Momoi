@@ -85,7 +85,7 @@ def test_relation_recall_shape_includes_both_directions():
                 )
             selected = [{"episode_id": "new", "matched_keywords": []}]
             records = rendering.episode_recall_records(store, selected, 6000)
-            assert records[0]["relations"][0]["episode_id"] == "old"
+            assert records[0]["follows_up"] == [{"id": "old", "title": "项目启动"}]
             assert store.episode_relation_neighbors(["new"])["new"] == [{
                 "direction": "outgoing", "type": "follows_up", "episode_id": "old",
                 "title": "项目启动", "summary": "团队确认项目启动", "explanation": "同一项目继续推进",
@@ -94,13 +94,129 @@ def test_relation_recall_shape_includes_both_directions():
             incoming = rendering.episode_recall_records(
                 store, [{"episode_id": "old", "matched_keywords": []}], 6000
             )
-            assert incoming[0]["relations"][0]["direction"] == "incoming"
+            assert incoming[0]["followed_by"] == [{"id": "new", "title": "项目进展"}]
             assert "turns" not in records[0]
             assert records[0]["details_omitted"] is True
-            assert records[0]["relations"] == [{
-                "episode_id": "old", "title": "项目启动",
-                "type": "follows_up", "direction": "outgoing",
-            }]
+        finally:
+            store.close()
+
+
+def _relate(store, source, target, relation, explanation="关联", updated=1):
+    with store._db:
+        store._db.execute(
+            """INSERT INTO episode_relations
+               (source_episode_id,target_episode_id,relation,explanation,
+                evidence_json,source_summary_ordinal,created_at,updated_at)
+               VALUES (?,?,?,?,'{}',1,1,?)""",
+            (source, target, relation, explanation, updated),
+        )
+
+
+def _recall(store, *ids, budget=6000):
+    from momoi.runtime.context import rendering
+
+    return rendering.episode_recall_records(
+        store, [{"episode_id": value, "matched_keywords": []} for value in ids], budget
+    )
+
+
+def test_revised_topic_injects_latest_reviser_after_it():
+    with tempfile.TemporaryDirectory() as directory:
+        store = Store(Path(directory) / "db")
+        try:
+            for index, episode_id in enumerate(("a", "b", "c", "other"), 1):
+                _summarize(store, episode_id, f"{episode_id} 标题", "出行安排" * 200, index)
+            _relate(store, "b", "a", "revises", "改为周六出发")
+            _relate(store, "c", "b", "revises", "再改为周日出发")
+            records = _recall(store, "a", "other")
+            assert [record["id"] for record in records] == ["a", "c", "other"]
+            assert records[0]["revised_by"] == [
+                {"id": "b", "title": "b 标题", "explanation": "改为周六出发"}
+            ]
+            assert records[1]["injected"] == "revises"
+            assert records[1]["revises"] == [{"id": "b", "title": "b 标题"}]
+            assert len(records[0]["summary"]) < len(records[2]["summary"])
+        finally:
+            store.close()
+
+
+def test_recalled_reviser_is_not_duplicated():
+    with tempfile.TemporaryDirectory() as directory:
+        store = Store(Path(directory) / "db")
+        try:
+            _summarize(store, "a", "旧", "旧决定", 1)
+            _summarize(store, "b", "新", "新决定", 2)
+            _relate(store, "b", "a", "revises", "改主意")
+            records = _recall(store, "b", "a")
+            assert [record["id"] for record in records] == ["a", "b"]
+            assert "injected" not in records[1]
+            assert records[1]["revises"] == [{"id": "a", "title": "旧"}]
+        finally:
+            store.close()
+
+
+def test_follow_up_within_results_is_written_once_and_ordered():
+    with tempfile.TemporaryDirectory() as directory:
+        store = Store(Path(directory) / "db")
+        try:
+            _summarize(store, "a", "起因", "开始", 1)
+            _summarize(store, "b", "后续", "进展", 2)
+            _relate(store, "b", "a", "follows_up")
+            records = _recall(store, "b", "a")
+            assert [record["id"] for record in records] == ["a", "b"]
+            assert "followed_by" not in records[0]
+            assert records[1]["follows_up"] == [{"id": "a", "title": "起因"}]
+        finally:
+            store.close()
+
+
+def test_unrecalled_follow_ups_are_capped_pointers():
+    with tempfile.TemporaryDirectory() as directory:
+        store = Store(Path(directory) / "db")
+        try:
+            _summarize(store, "a", "起因", "开始", 1)
+            for index in range(3):
+                _summarize(store, f"f{index}", f"后续{index}", "进展", index + 2)
+                _relate(store, f"f{index}", "a", "follows_up", updated=index)
+            records = _recall(store, "a")
+            assert [record["id"] for record in records] == ["a"]
+            assert [item["id"] for item in records[0]["followed_by"]] == ["f2", "f1"]
+        finally:
+            store.close()
+
+
+def test_tight_budget_drops_pointers_before_revisions():
+    with tempfile.TemporaryDirectory() as directory:
+        store = Store(Path(directory) / "db")
+        try:
+            _summarize(store, "a", "起因", "开始" * 50, 1)
+            _summarize(store, "b", "修订", "新决定", 2)
+            _summarize(store, "f", "后续", "进展", 3)
+            _summarize(store, "k", "背景", "背景", 4)
+            _relate(store, "b", "a", "revises", "改主意")
+            _relate(store, "f", "a", "follows_up")
+            _relate(store, "k", "a", "context")
+            records = _recall(store, "a", budget=60)
+            assert records[0]["revised_by"][0]["id"] == "b"
+            assert "context" not in records[0]
+            assert "followed_by" not in records[0]
+        finally:
+            store.close()
+
+
+def test_stale_revision_is_ignored():
+    with tempfile.TemporaryDirectory() as directory:
+        store = Store(Path(directory) / "db")
+        try:
+            _summarize(store, "a", "旧", "旧决定", 1)
+            _summarize(store, "b", "新", "新决定", 2)
+            _relate(store, "b", "a", "revises")
+            store._db.execute(
+                "UPDATE conversation_episodes SET summarized_through_ordinal=2 WHERE id='b'"
+            )
+            records = _recall(store, "a")
+            assert [record["id"] for record in records] == ["a"]
+            assert "revised_by" not in records[0]
         finally:
             store.close()
 
