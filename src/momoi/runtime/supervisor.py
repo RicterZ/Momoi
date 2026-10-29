@@ -84,18 +84,18 @@ class RuntimeSupervisor:
     async def balance(self):
         # Lock against retirement while the dashboard is querying the current provider.
         async with self.lock:
-            provider = self.daemon.services.balance if self.daemon is not None else None
+            billing = self.daemon.services.billing if self.daemon is not None else None
             return (
-                await provider.balance()
-                if provider is not None
+                await billing.balance()
+                if billing is not None
                 else {"source": "disabled"}
             )
 
     @property
     def accounting(self):
-        provider = self.daemon.services.balance if self.daemon is not None else None
+        billing = self.daemon.services.billing if self.daemon is not None else None
         guard = getattr(self.daemon, "budget_guard", None) or self.budget_guard
-        return provider.accounting if provider is not None and provider.accounting is not None else (guard.accounting if guard else None)
+        return billing.accounting if billing is not None else (guard.accounting if guard else None)
 
     async def _retire(self):
         if self.task is not None:

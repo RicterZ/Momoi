@@ -23,6 +23,8 @@ LLM = {
     "max_retries": field("integer", 3),
     "tool_choice": field("boolean", False),
     "multimodal": field("boolean", True),
+    "pricing": {**field("string", ""), "enum": ["", "deepseek", "google"]},
+    "usd_cny_rate": field("number", 7.1),
     "thinking": {
         **field("object", {}),
         "properties": {
@@ -123,6 +125,7 @@ def builtin_schema(name, capability):
         "multimodal": "支持多模态（图片输入）",
         "thinking": "模型思考设置",
         "accounting": "费用估算",
+        "pricing": "计费策略",
         "usd_cny_rate": "美元兑人民币汇率",
         "max_audio_bytes": "音频大小上限（字节）",
         "reference_id": "音色 ID",
@@ -143,7 +146,7 @@ def builtin_schema(name, capability):
     for key, spec in fields.items():
         spec["label"] = labels.get(key, key)
     basic = {
-        "llm": {"base_url", "api_key", "model"},
+        "llm": {"base_url", "api_key", "model", "pricing"},
         "asr": {"secret_id", "secret_key"},
         "tts": {"api_key", "reference_id", "voice_id", "model"},
         "embedding": {"endpoint", "api_key", "model", "dimensions"},
@@ -160,6 +163,9 @@ def builtin_schema(name, capability):
     }
     for key in required[capability]:
         fields[key]["required"] = True
+    if capability == "llm":
+        fields["pricing"]["description"] = "按该 Provider 的价格估算费用，并复用其 API 密钥；DeepSeek 支持余额查询。留空沿用全局计费服务或 DeepSeek 价格。"
+        fields["usd_cny_rate"]["description"] = "仅 Google AI Studio 计费策略使用，美元价按此汇率折算人民币。"
     if (name, capability) == ("sherpa", "asr"):
         fields["model_path"].update(label="本地 ASR 模型目录", advanced=True,
             description="留空使用内置模型；仅自定义本地模型时填写。")

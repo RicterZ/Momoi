@@ -73,8 +73,15 @@ def llm_config(options, api_format):
             "tool_choice",
             "multimodal",
             "thinking",
+            "pricing",
+            "usd_cny_rate",
         },
     )
+    from .pricing import pricing_key
+    try:
+        pricing_key(options)
+    except (TypeError, ValueError) as error:
+        raise ConfigError(str(error)) from None
     thinking = options.get("thinking", {})
     if not isinstance(thinking, dict):
         raise ConfigError("thinking must be a mapping")

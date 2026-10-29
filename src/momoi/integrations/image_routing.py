@@ -19,6 +19,7 @@ class ImageRoutingModel(StreamingProvider):
         self.thinking_sink = primary.thinking_sink
         self.usage_parser = primary.usage_parser
         self.request_metrics_sink = getattr(primary, "request_metrics_sink", None)
+        self.vision_pricing = None
         self._summaries = OrderedDict()
         self._lock = asyncio.Lock()
         self.prompt_path = prompt_path
@@ -77,11 +78,13 @@ class ImageRoutingModel(StreamingProvider):
         return blocks
 
     async def complete(self, system, messages, tools=None, *, require_tool=False, required_tool=None):
+        from .pricing import priced_metrics_sink, priced_usage_sink
         for model in (self.primary, self.vision):
-            model.usage_sink = self.usage_sink
+            pricing = self.vision_pricing if model is self.vision else None
+            model.usage_sink = priced_usage_sink(self.usage_sink, pricing)
             model.thinking_sink = self.thinking_sink
             if hasattr(model, "request_metrics_sink"):
-                model.request_metrics_sink = self.request_metrics_sink
+                model.request_metrics_sink = priced_metrics_sink(self.request_metrics_sink, pricing)
         self.primary.usage_parser = self.usage_parser
         converted = [{**message, "content": await self._content(message.get("content"))} for message in messages]
         return await self.primary.complete(system, converted, tools,
