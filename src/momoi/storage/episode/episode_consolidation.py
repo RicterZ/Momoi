@@ -4,7 +4,7 @@ import sqlite3
 import time
 import uuid
 
-from .episode_sql import runtime_archive_kind_sql
+from .episode_sql import runtime_archive_kind_sql, topic_turn_sql
 
 EPISODE_CONSOLIDATION_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
 EPISODE_CONSOLIDATION_BATCH_SIZE = 6
@@ -98,9 +98,13 @@ class EpisodeConsolidationStore:
         return self._db.execute(
             f"""SELECT pending.id, pending.updated_at FROM (
                    SELECT t.id, t.updated_at FROM turns AS t
-                   WHERE t.kind='owner' AND t.state='completed'
+                   WHERE {topic_turn_sql('t')} AND t.state='completed'
                      AND NOT EXISTS (
                          SELECT 1 FROM episode_turns AS et WHERE et.turn_id=t.id
+                     )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM notifications AS n
+                         WHERE n.turn_id=t.id AND n.state='pending'
                      )
                      AND NOT EXISTS (
                          SELECT 1 FROM episode_consolidation_decisions AS d
@@ -168,7 +172,7 @@ class EpisodeConsolidationStore:
                FROM turns AS t
                JOIN episode_turns AS et ON et.turn_id=t.id
                JOIN conversation_episodes AS e ON e.id=et.episode_id
-               WHERE t.kind='owner' AND t.state='completed'
+               WHERE {topic_turn_sql('t')} AND t.state='completed'
                  AND t.updated_at>?
                  AND {runtime_archive_kind_sql('e')} IS NULL
                  {context_scope}

@@ -13,7 +13,7 @@ from momoi.runtime.transcript.building import build_transcript
 
 
 class HeartbeatEpisodeTests(unittest.TestCase):
-    def _commit(self, store: Store, turn_id: str, now: float) -> str:
+    def _commit(self, store: Store, turn_id: str, now: float) -> None:
         with patch("momoi.storage.agenda.heartbeat_commits.time.time", return_value=now):
             store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
             store.commit_heartbeat(
@@ -27,76 +27,47 @@ class HeartbeatEpisodeTests(unittest.TestCase):
                 messages=[],
                 reason="test",
             )
-        return str(
-            store._db.execute(
-                "SELECT episode_id FROM episode_turns WHERE turn_id=?", (turn_id,)
-            ).fetchone()["episode_id"]
-        )
 
-    def test_heartbeat_uses_one_episode_per_local_day(self) -> None:
+    def _pending(self, store: Store) -> set[str]:
+        return {
+            str(row["id"])
+            for row in store._episode_consolidation_pending_rows(50)
+        }
+
+    def test_heartbeat_turns_are_consolidated_by_topic(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            zone = ZoneInfo("Asia/Shanghai")
             store = Store(
                 Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
             )
-            day_one = datetime(2026, 8, 16, 10, tzinfo=zone).timestamp()
-            first = self._commit(store, "heartbeat-1", day_one)
-            second = self._commit(store, "heartbeat-2", day_one + 3600)
-            next_day = self._commit(store, "heartbeat-3", day_one + 86400)
-            self.assertEqual(first, second)
-            self.assertNotEqual(first, next_day)
-            self.assertEqual(
-                store.episode(first)["title"],
-                "心跳 · 2026-08-16",
-            )
-            store.close()
-
-    def test_closed_daily_episode_is_not_reopened(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
             now = datetime(
                 2026, 8, 16, 10, tzinfo=ZoneInfo("Asia/Shanghai")
             ).timestamp()
-            closed = self._commit(store, "heartbeat-closed", now)
-            store._db.execute(
-                """UPDATE conversation_episodes
-                   SET status='closed', closed_at=? WHERE id=?""",
-                (now, closed),
+            self._commit(store, "heartbeat-1", now)
+            self._commit(store, "heartbeat-2", now + 3600)
+            self.assertEqual(
+                store._db.execute("SELECT COUNT(*) FROM episode_turns").fetchone()[0],
+                0,
             )
-            store._db.commit()
-            successor = self._commit(store, "heartbeat-after-close", now + 3600)
-            self.assertNotEqual(closed, successor)
-            self.assertEqual(store.episode(closed)["status"], "closed")
-            self.assertNotEqual(store.episode(successor)["status"], "closed")
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT COUNT(*) FROM conversation_episodes"
+                ).fetchone()[0],
+                0,
+            )
+            self.assertEqual(self._pending(store), {"heartbeat-1", "heartbeat-2"})
             store.close()
 
-    def test_delayed_notification_stays_with_heartbeat_day(self) -> None:
+    def test_pending_notification_defers_consolidation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            zone = ZoneInfo("Asia/Shanghai")
             store = Store(
                 Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
             )
             heartbeat_at = datetime(
-                2026, 8, 16, 23, 59, tzinfo=zone
+                2026, 8, 16, 23, 59, tzinfo=ZoneInfo("Asia/Shanghai")
             ).timestamp()
             delivered_at = heartbeat_at + 120
             turn_id = "heartbeat-delayed"
-            with patch("momoi.storage.agenda.heartbeat_commits.time.time", return_value=heartbeat_at):
-                store.begin_turn(turn_id, "heartbeat", ["heartbeat:delayed"])
-                store.commit_heartbeat(
-                    turn_id,
-                    owner_event_revision=0,
-                    notification_config=NotificationConfig(),
-                    activity="刷微博",
-                    result="发现一条消息",
-                    next_heartbeat_at=heartbeat_at + 60,
-                    mood_update=None,
-                    messages=[],
-                    reason="test",
-                )
-            episode_id = store._db.execute(
-                "SELECT episode_id FROM episode_turns WHERE turn_id=?", (turn_id,)
-            ).fetchone()["episode_id"]
+            self._commit(store, turn_id, heartbeat_at)
             with store._db:
                 store._db.execute(
                     """INSERT INTO notifications
@@ -106,12 +77,20 @@ class HeartbeatEpisodeTests(unittest.TestCase):
                                'normal', 'test', '["有新消息"]', 'pending', ?, ?, ?)""",
                     (turn_id, delivered_at, delivered_at, heartbeat_at),
                 )
+            self.assertNotIn(turn_id, self._pending(store))
             with patch("momoi.storage.agenda.notifications.time.time", return_value=delivered_at):
                 self.assertTrue(store.queue_notification("delayed"))
-            linked = store._db.execute(
-                "SELECT episode_id FROM episode_turns WHERE turn_id=?", (turn_id,)
-            ).fetchall()
-            self.assertEqual({str(row["episode_id"]) for row in linked}, {episode_id})
+            self.assertIsNone(
+                store._db.execute(
+                    "SELECT 1 FROM episode_turns WHERE turn_id=?", (turn_id,)
+                ).fetchone()
+            )
+            with store._db:
+                store._db.execute(
+                    "UPDATE messages SET delivery_state='delivered' WHERE turn_id=?",
+                    (turn_id,),
+                )
+            self.assertIn(turn_id, self._pending(store))
             store.close()
 
 

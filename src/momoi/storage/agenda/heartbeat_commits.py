@@ -125,20 +125,6 @@ class HeartbeatCommitStore:
                     heartbeat_source,
                 ),
             )
-            archive_day = self._archive_day(now)
-            self._ensure_runtime_archive(
-                archive_kind="heartbeat",
-                archive_day=archive_day,
-                episode_key=f"heartbeat:day:{archive_day}",
-                turn_id=turn_id,
-                title="心跳",
-                now=now,
-                recall_values=(
-                    activity,
-                    result,
-                    *(str(row["text"]) for row in progress_rows),
-                ),
-            )
             target_channel = notification_channel
             if progress_rows:
                 target_channel = str(

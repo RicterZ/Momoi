@@ -154,21 +154,6 @@ class WebhookStore:
             raise ValueError("webhook run not found")
         return str(row["workflow_id"])
 
-    def _heartbeat_turn_time(self, turn_id: str, fallback: float) -> float:
-        workflow = turn_workflow_kind_sql("t")
-        row = self._db.execute(
-            f"""SELECT MIN(m.created_at) AS created_at FROM messages AS m
-               JOIN turns AS t ON t.id=m.turn_id
-               WHERE m.turn_id=? AND m.delivery_state='internal'
-                 AND {workflow}='heartbeat'""",
-            (turn_id,),
-        ).fetchone()
-        return (
-            float(row["created_at"])
-            if row is not None and row["created_at"] is not None
-            else fallback
-        )
-
     def record_webhook_event(
         self,
         run_id: str,

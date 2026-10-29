@@ -134,29 +134,16 @@ class NotificationStore:
                     outbox_id,
                 ),
             )
-        if visible_messages:
-            archive_kind = "heartbeat" if row["goal_id"] == "heartbeat" else "goal"
-            archive_time = (
-                self._heartbeat_turn_time(str(row["turn_id"]), now)
-                if archive_kind == "heartbeat"
-                else now
-            )
-            archive_day = self._archive_day(archive_time)
-            title = (
-                "心跳"
-                if archive_kind == "heartbeat"
-                else self._episode_title(visible_messages[0], "Autonomous conversation")
-            )
+        if visible_messages and row["goal_id"] != "heartbeat":
+            archive_day = self._archive_day(now)
             self._ensure_runtime_archive(
-                archive_kind=archive_kind,
+                archive_kind="goal",
                 archive_day=archive_day,
-                episode_key=(
-                    f"heartbeat:day:{archive_day}"
-                    if archive_kind == "heartbeat"
-                    else f"goal:{row['goal_id']}:day:{archive_day}"
-                ),
+                episode_key=f"goal:{row['goal_id']}:day:{archive_day}",
                 turn_id=str(row["turn_id"]),
-                title=title,
+                title=self._episode_title(
+                    visible_messages[0], "Autonomous conversation"
+                ),
                 now=now,
                 recall_values=(visible_messages,),
             )

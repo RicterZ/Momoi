@@ -5,7 +5,7 @@ import logging
 
 from ...observability.events import log_event
 from ..context.context_plan_adapter import normalize_context_plan
-from .episode_sql import runtime_archive_kind_sql
+from .episode_sql import runtime_archive_kind_sql, topic_turn_sql
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,8 @@ class EpisodePlanStore:
                       AND {runtime_archive_kind_sql('conversation_episodes')} IS NULL
                       AND id IN (
                           SELECT et.episode_id FROM episode_turns AS et
-                          JOIN turns AS t ON t.id=et.turn_id WHERE t.kind='owner'
+                          JOIN turns AS t ON t.id=et.turn_id
+                          WHERE {topic_turn_sql('t')}
                       )""",
                 (now, now, *selected),
             )
@@ -156,7 +157,8 @@ class EpisodePlanStore:
                      AND {runtime_archive_kind_sql('conversation_episodes')} IS NULL
                      AND id IN (
                        SELECT et.episode_id FROM episode_turns AS et
-                       JOIN turns AS t ON t.id=et.turn_id WHERE t.kind='owner'
+                       JOIN turns AS t ON t.id=et.turn_id
+                       WHERE {topic_turn_sql('t')}
                    )""",
                 (now, now),
             )

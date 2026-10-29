@@ -2451,13 +2451,8 @@ class StorageMemoryTest(unittest.TestCase):
                     messages=[],
                     reason="test",
                 )
-            episode = store.search_episodes("关卡灵感", 3)[0]
-            self.assertEqual(len(store.episode_turns(str(episode["id"]))), 20)
-            self.assertIn(
-                "Activity: 整理关卡灵感",
-                store.conversation_episode(str(episode["id"]))["messages"][-1][
-                    "content"
-                ],
+            self.assertEqual(
+                len(store._episode_consolidation_pending_rows(50)), 20
             )
             store.close()
 
