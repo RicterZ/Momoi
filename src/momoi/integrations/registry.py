@@ -169,7 +169,10 @@ class ServiceRegistry:
             )
         self._instances[capability] = instance
         self._owned.append(instance)
-        if capability in {"llm", "background"} and not options.get("multimodal", True) and self.catalog.enabled("vision"):
+        if capability in {"llm", "background"} and self.catalog.enabled("vision") and (
+            not options.get("multimodal", True)
+            or binding.service != self.catalog.bindings["vision"].service
+        ):
             from .image_routing import ImageRoutingModel
             instance = ImageRoutingModel(instance, self.get("vision"), prompt_path=self.image_prompt_path)
             self._instances[capability] = instance

@@ -315,10 +315,32 @@ class ConfigurationManager:
                            "options": options})
         return models
 
+    @staticmethod
+    def _assign_stage_models(raw, models, replyer, document):
+        """Replyer, planner and vision models combine freely; empty reuses the replyer or the model itself."""
+        bindings = raw.setdefault("bindings", {})
+        planner = document.get("planner") or ""
+        vision = document.get("vision") or ""
+        for value in (planner, vision):
+            if not isinstance(value, str) or (value and value not in models):
+                raise ConfigError("model provider not found")
+        if planner and planner != replyer:
+            bindings["background"] = {"service": planner, "enabled": True}
+        else:
+            bindings.pop("background", None)
+        if vision:
+            if not models[vision]["options"].get("multimodal", True):
+                raise ConfigError("请选择支持多模态的图片识别 Provider")
+            bindings["vision"] = {"service": vision, "enabled": True}
+        else:
+            bindings.pop("vision", None)
+            if any(not models[item]["options"].get("multimodal", True) for item in {replyer, planner or replyer}):
+                raise ConfigError("所选模型不支持图片输入，请选择图片识别模型")
+
     def save_model_providers(self, document, revision):
         if revision != self.revision():
             raise RevisionConflict("configuration changed; reload before saving")
-        if not isinstance(document, dict) or set(document) - {"action", "id", "name", "adapter", "options", "vision"}:
+        if not isinstance(document, dict) or set(document) - {"action", "id", "name", "adapter", "options", "vision", "planner"}:
             raise ConfigError("invalid model provider request")
         raw = self.read_providers()
         models = {item["id"]: item for item in self.model_providers(raw)}
@@ -333,7 +355,7 @@ class ConfigurationManager:
             else:
                 raw.setdefault("bindings", {})["background"] = {"service": identifier, "enabled": True}
             return self.save("providers", raw, revision)
-        if action in {"delete", "activate"}:
+        if action in {"delete", "activate", "assign"}:
             if identifier not in models:
                 raise ConfigError("model provider not found")
             if action == "delete":
@@ -354,12 +376,15 @@ class ConfigurationManager:
                             preserved += "_new"
                         raw["services"][preserved] = copy.deepcopy(raw["services"][active])
                     raw["services"][preserved].setdefault("settings", {}).update(previous["options"])
-                    if document.get("vision") == active:
-                        document = {**document, "vision": preserved}
-                        models[preserved] = models[active]
+                    for role in ("vision", "planner"):
+                        if document.get(role) == active:
+                            document = {**document, role: preserved}
+                            models[preserved] = models[active]
                 raw.setdefault("bindings", {})["llm"] = {"service": identifier, "enabled": True}
                 if raw["bindings"].get("background", {}).get("service") == identifier:
                     raw["bindings"].pop("background")
+            if action == "assign":
+                self._assign_stage_models(raw, models, identifier, document)
             if action == "activate" and "vision" in document:
                 if models[identifier]["options"].get("multimodal", True):
                     raw["bindings"].pop("vision", None)

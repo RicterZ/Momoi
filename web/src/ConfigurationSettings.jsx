@@ -758,8 +758,12 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
   const [selectedProvider, setSelectedProvider] = useState(activeProvider);
   const [imageProvider, setImageProvider] = useState(data.image_model_provider || "");
   const [savedImageProvider, setSavedImageProvider] = useState(imageProvider);
-  const selectedMultimodal = modelProviders.find(item => item.id === selectedProvider)?.options.multimodal !== false;
-  const selectionDirty = selectedProvider !== activeProvider || (!selectedMultimodal && imageProvider !== savedImageProvider);
+  const [plannerProvider, setPlannerProvider] = useState(data.background_model_provider || "");
+  const [savedPlannerProvider, setSavedPlannerProvider] = useState(plannerProvider);
+  const multimodal = id => modelProviders.find(item => item.id === id)?.options.multimodal !== false;
+  const modelChoices = modelProviders.map(provider => ({ value: provider.id, label: `${provider.name || "未命名 Provider"} / ${provider.options.model || provider.adapter}` }));
+  const needsVision = !multimodal(selectedProvider) || !multimodal(plannerProvider || selectedProvider);
+  const selectionDirty = selectedProvider !== activeProvider || imageProvider !== savedImageProvider || plannerProvider !== savedPlannerProvider;
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showDisabled, setShowDisabled] = useState(false);
@@ -793,8 +797,12 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
       setModelProviders(result.model_providers || []);
       setActiveProvider(result.active_model_provider || "");
       setSavedImageProvider(result.image_model_provider || "");
-      if (document.action === "activate") setImageProvider(result.image_model_provider || "");
-      if (document.action === "activate" || !activeProvider || selectedProvider === activeProvider
+      setSavedPlannerProvider(result.background_model_provider || "");
+      if (document.action === "assign") {
+        setImageProvider(result.image_model_provider || "");
+        setPlannerProvider(result.background_model_provider || "");
+      }
+      if (document.action === "assign" || !activeProvider || selectedProvider === activeProvider
           || !result.model_providers.some(item => item.id === selectedProvider)) setSelectedProvider(result.active_model_provider || "");
       if (document.action === "save") {
         const provider = result.model_providers.find(item => item.name === document.name.trim());
@@ -845,7 +853,8 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
     event.preventDefault();
     if (isModel) {
       if (editorDirty) { setStatus({ text: "请先保存或取消上方 Provider 的修改，再切换模型。", error: true }); return; }
-      if (selectedProvider && selectionDirty) await modelAction({ action: "activate", id: selectedProvider, vision: selectedMultimodal ? "" : imageProvider });
+      if (selectedProvider && selectionDirty) await modelAction({ action: "assign", id: selectedProvider,
+        planner: plannerProvider === selectedProvider ? "" : plannerProvider, vision: imageProvider });
       return;
     }
     if (saving || busy || !dirty) return;
@@ -1091,25 +1100,27 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
               <div className="settings-model-list-heading"><strong>已添加的 Provider</strong><span>{modelProviders.length} 个配置</span></div>
               <div className="settings-model-table"><table><thead><tr><th>Provider 名称</th><th>服务协议</th><th>模型名称</th><th>操作</th></tr></thead>
                 <tbody>{modelProviders.map(provider => <tr key={provider.id} className={provider.id === activeProvider ? "is-active" : ""}>
-                  <td><strong>{provider.name || "未命名 Provider"}</strong>{provider.id === activeProvider && <small>使用中</small>}</td>
+                  <td><strong>{provider.name || "未命名 Provider"}</strong>{[activeProvider, savedPlannerProvider, savedImageProvider].includes(provider.id) && <small>{[[activeProvider, "Replyer"], [savedPlannerProvider || activeProvider, "Planner"], [savedImageProvider, "视觉"]].filter(([id]) => id === provider.id).map(([, role]) => role).join(" · ")}</small>}</td>
                   <td>{adapterLabels[provider.adapter] || provider.adapter}</td><td>{provider.options.model || "—"}</td>
                   <td><button type="button" className="settings-text-button" disabled={saving || busy} onClick={() => editModel(provider)}>编辑</button>
-                    <button type="button" className="settings-text-button is-error" disabled={saving || busy || provider.id === activeProvider || provider.id === savedImageProvider}
-                      title={provider.id === activeProvider ? "先切换模型，再删除当前 Provider" : undefined}
+                    <button type="button" className="settings-text-button is-error" disabled={saving || busy || [activeProvider, savedImageProvider, savedPlannerProvider].includes(provider.id)}
+                      title={[activeProvider, savedImageProvider, savedPlannerProvider].includes(provider.id) ? "先切换模型，再删除正在使用的 Provider" : undefined}
                       onClick={() => { if (window.confirm(`删除 ${provider.name || "未命名 Provider"}？`)) modelAction({ action: "delete", id: provider.id }); }}>删除</button></td>
                 </tr>)}</tbody></table>
                 {!modelProviders.length && <p className="settings-model-empty">尚未添加 Provider，请先填写上方表单。</p>}
               </div>
             </div>
-            <div className="settings-model-selection"><SelectField label="主模型" value={selectedProvider} disabled={saving || busy}
-              onChange={value => { setSelectedProvider(value); setStatus(null); }}
-              options={modelProviders.map(provider => ({ value: provider.id, label: `${provider.name || "未命名 Provider"} / ${provider.options.model || provider.adapter}` }))} />
-              <SelectField label="图片识别" value={selectedMultimodal ? selectedProvider : imageProvider}
-                disabled={selectedMultimodal || saving || busy} onChange={value => { setImageProvider(value); setStatus(null); }}
-                options={[...(!selectedMultimodal ? [{ value: "", label: "请选择图片识别模型" }] : []),
-                  ...modelProviders.filter(provider => provider.options.multimodal !== false).map(provider => ({ value: provider.id,
-                    label: `${provider.name || "未命名 Provider"} / ${provider.options.model || provider.adapter}` }))]} />
-              <p>{selectedMultimodal ? "主模型支持多模态，图片识别自动跟随主模型。" : "图片由所选多模态模型识别，识别结果交给主模型处理。"} 修改选择后点击「保存」应用。</p>
+            <div className="settings-model-selection">
+              <SelectField label="Replyer 模型" value={selectedProvider} disabled={saving || busy}
+                onChange={value => { setSelectedProvider(value); setStatus(null); }} options={modelChoices} />
+              <SelectField label="Planner 模型" value={plannerProvider === selectedProvider ? "" : plannerProvider} disabled={saving || busy}
+                onChange={value => { setPlannerProvider(value); setStatus(null); }}
+                options={[{ value: "", label: "与 Replyer 模型相同" }, ...modelChoices.filter(option => option.value !== selectedProvider)]} />
+              <SelectField label="视觉识别模型" value={imageProvider} disabled={saving || busy}
+                onChange={value => { setImageProvider(value); setStatus(null); }}
+                options={[{ value: "", label: needsVision ? "请选择视觉识别模型" : "由模型直接识别图片" },
+                  ...modelChoices.filter(option => multimodal(option.value))]} />
+              <p>Replyer 负责生成回复；规划、话题归档、复盘、记忆审核等其余阶段使用 Planner 模型。选择视觉识别模型后，图片先由它识别，再把结果交给 Replyer 和 Planner；不支持多模态的模型必须选择视觉识别模型。修改选择后点击「保存」应用。</p>
             </div>
           </>}
           {module.id === "voice" && <div className="settings-voice-call-section">
@@ -1196,12 +1207,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
   const [balance, setBalance] = useState(() => providerDraft(["balance"], data, true));
   const [savedBalance, setSavedBalance] = useState(balance);
   const balanceDirty = module.id === "budget" && !equal(balance, savedBalance);
-  const stageModelsOf = source => ({ reply: source.active_model_provider || "", background: source.background_model_provider || "" });
-  const [stageModels, setStageModels] = useState(() => stageModelsOf(data));
-  const [savedStageModels, setSavedStageModels] = useState(stageModels);
-  const stageModelsDirty = module.id === "runtime" && !equal(stageModels, savedStageModels);
-  const modelOptions = (data.model_providers || []).map(item => ({ value: item.id, label: item.name || item.options?.model || item.id }));
-  const dirty = !equal(draft, saved) || balanceDirty || stageModelsDirty;
+  const dirty = !equal(draft, saved) || balanceDirty;
   function changeBalance(next) { setBalance(next); setStatus(null); }
   async function submit(event) {
     event.preventDefault();
@@ -1227,18 +1233,6 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
           ...normalizeProvider("balance", balance.values.balance, data.adapters), enabled: balance.enabled,
         } });
         setSavedBalance(balance);
-      }
-      if (stageModelsDirty) {
-        if (stageModels.reply !== savedStageModels.reply) {
-          result = await save("/api/settings/model-providers", { action: "activate", id: stageModels.reply });
-        }
-        const background = stageModels.background === stageModels.reply ? "" : stageModels.background;
-        if (background !== (result.background_model_provider || "")) {
-          result = await save("/api/settings/model-providers", { action: "background", id: background });
-        }
-        const applied = stageModelsOf(result);
-        setStageModels(applied);
-        setSavedStageModels(applied);
       }
       if (Object.keys(document).length) result = await save("/api/settings/configuration/app", document, "PATCH");
       const updated = Object.fromEntries(Object.entries(schemas).map(([name, schema]) => [
@@ -1310,19 +1304,6 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
               return spec && <OptionField key={key} name={key} spec={spec} value={value.options[key]} onChange={option => changeBalance({ ...balance, values: { ...balance.values, balance: { ...value, options: { ...value.options, [key]: option } } } })} />;
             })}
           </Fields>}
-        </section>}
-        {module.id === "runtime" && modelOptions.length > 0 && <section className="settings-runtime-group settings-runtime-nested" aria-labelledby="runtime-stage-models">
-          <div className="settings-runtime-copy">
-            <div className="settings-voice-title"><h3 id="runtime-stage-models">阶段模型</h3><span className="panel-label">RUNTIME // MODELS</span></div>
-            <p className="settings-runtime-description">回复使用回复模型；规划、话题归档、复盘、记忆审核等其余阶段使用其他阶段模型。</p>
-          </div>
-          <Fields disabled={saving}>
-            <SelectField label="回复模型" value={stageModels.reply} disabled={saving} options={modelOptions}
-              onChange={reply => { setStageModels(current => ({ ...current, reply })); setStatus(null); }} />
-            <SelectField label="其他阶段模型" value={stageModels.background === stageModels.reply ? "" : stageModels.background} disabled={saving}
-              options={[{ value: "", label: "与回复模型相同" }, ...modelOptions.filter(option => option.value !== stageModels.reply)]}
-              onChange={background => { setStageModels(current => ({ ...current, background })); setStatus(null); }} />
-          </Fields>
         </section>}
         {!Object.keys(schemas).length && <p className="settings-channel-note">当前服务尚未提供运行设置，请更新服务后刷新。</p>}
       </div>

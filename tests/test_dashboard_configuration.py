@@ -17,6 +17,7 @@ from momoi.config.workspace import atomic_write, bootstrap
 from momoi.dashboard.app import create_dashboard_app
 from momoi.dashboard.auth import issue_dashboard_jwt
 from momoi.dashboard.settings import DashboardSettings
+from momoi.integrations.registry import ServiceRegistry
 from momoi.runtime.supervisor import RuntimeSupervisor
 from momoi.storage import Store
 from momoi.memory.retrieval.models import MemoryRecallQuery
@@ -154,6 +155,36 @@ class ConfigurationManagerTest(unittest.TestCase):
         restored = self.manager.save_model_providers({"action": "activate", "id": vision, "vision": ""}, selected["revision"])
         self.assertEqual(restored["image_model_provider"], "")
         self.assertFalse(self.manager.validate().providers.enabled("vision"))
+
+    def test_assign_combines_replyer_planner_and_vision_freely(self):
+        initial = self.manager.save_binding("llm", LLM, self.manager.revision())
+        first = initial["active_model_provider"]
+        added = self.manager.save_model_providers({"action": "save", "name": "Text", "adapter": "openai",
+            "options": {**LLM["options"], "model": "text", "multimodal": False}}, initial["revision"])
+        added = self.manager.save_model_providers({"action": "save", "name": "Eyes", "adapter": "openai",
+            "options": {**LLM["options"], "model": "eyes"}}, added["revision"])
+        ids = {item["name"]: item["id"] for item in added["model_providers"]}
+        text, eyes = ids["Text"], ids["Eyes"]
+        for invalid in ({"planner": text, "vision": ""}, {"planner": "", "vision": text}, {"planner": "missing", "vision": eyes}):
+            with self.assertRaises(ConfigError):
+                self.manager.save_model_providers({"action": "assign", "id": first, **invalid}, added["revision"])
+            self.assertEqual(self.manager.revision(), added["revision"])
+        assigned = self.manager.save_model_providers(
+            {"action": "assign", "id": first, "planner": text, "vision": eyes}, added["revision"])
+        self.assertEqual((assigned["active_model_provider"], assigned["background_model_provider"],
+                          assigned["image_model_provider"]), (first, text, eyes))
+        catalog = self.manager.validate().providers
+        self.assertEqual(catalog.options_for("background")["model"], "text")
+        self.assertEqual(catalog.options_for("vision")["model"], "eyes")
+        services = ServiceRegistry(catalog)
+        self.assertIs(services.llm.vision, services.get("vision"))
+        self.assertIs(services.background.vision, services.get("vision"))
+        swapped = self.manager.save_model_providers(
+            {"action": "assign", "id": text, "planner": text, "vision": eyes}, assigned["revision"])
+        self.assertEqual((swapped["active_model_provider"], swapped["background_model_provider"]), (text, ""))
+        cleared = self.manager.save_model_providers(
+            {"action": "assign", "id": first, "planner": "", "vision": ""}, swapped["revision"])
+        self.assertEqual((cleared["background_model_provider"], cleared["image_model_provider"]), ("", ""))
 
     def test_switch_preserves_legacy_binding_model_overrides(self):
         initial = self.manager.save_binding("llm", LLM, self.manager.revision())
