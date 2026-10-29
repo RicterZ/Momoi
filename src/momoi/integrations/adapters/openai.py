@@ -317,9 +317,3 @@ class OpenAIProvider(ProtocolProvider):
             openai_continuation["tool_call_extra"] = tool_call_extra
         continuation = {"openai": openai_continuation} if openai_continuation else {}
         return ProviderResponse(content, tool_calls, reasoning=reasoning, continuation=continuation)
-
-    def _check_content(self, parsed: ProviderResponse) -> None:
-        if not parsed.content:
-            raise ProviderResponseError(
-                "OpenAI-compatible endpoint returned no text content"
-            )

@@ -286,8 +286,7 @@ def test_replyer_isolated_request_and_actual_speech(tmp_path):
         assert args[0].startswith('更新人格')
         return ProviderResponse([], [])
     replyer.provider.complete = empty
-    with pytest.raises(ValueError, match='empty'):
-        asyncio.run(replyer.generate(ToolCall('c', 'reply', {'intent': '回应', 'reference': ''}), request))
+    assert asyncio.run(replyer.generate(ToolCall('c', 'reply', {'intent': '回应', 'reference': ''}), request)) == []
 
 
 def test_memory_evidence_reads_reply_result_not_intent():

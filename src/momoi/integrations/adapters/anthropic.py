@@ -1,7 +1,6 @@
 import copy
 from typing import Any
 
-from ...llm.errors import ProviderError
 from ...llm.telemetry import anthropic_reasoning
 from ...llm.transport import anthropic_url
 from ...models import ProviderResponse, ToolCall
@@ -120,16 +119,6 @@ class AnthropicProvider(ProtocolProvider):
         signed = any(block.get("type") in {"thinking", "redacted_thinking"} for block in content)
         continuation = {"anthropic": {"content": copy.deepcopy(content)}} if signed else {}
         return ProviderResponse(content, tool_calls, continuation=continuation)
-
-    def _check_content(self, parsed: ProviderResponse) -> None:
-        if not parsed.tool_calls and not "\n".join(
-            block.get("text", "")
-            for block in parsed.content
-            if block.get("type") == "text"
-        ).strip():
-            raise ProviderError(
-                "Anthropic-compatible endpoint returned no text content"
-            )
 
     def _thinking(self, parsed: ProviderResponse) -> str:
         return anthropic_reasoning(parsed.content)

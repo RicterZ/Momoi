@@ -1711,7 +1711,7 @@ def test_invalid_json_retries_then_succeeds(api_format, path, provider_type, suc
     asyncio.run(scenario())
 
 
-def test_rate_limit_and_empty_content_remain_errors():
+def test_rate_limit_is_error_and_empty_content_is_allowed():
     async def scenario():
         attempts = 0
         async def completion(_):
@@ -1728,8 +1728,9 @@ def test_rate_limit_and_empty_content_remain_errors():
             async with AnthropicProvider(config) as provider:
                 # Cooldown is covered separately; this test checks response validation.
                 provider._circuit.wait = AsyncMock()
-                for error in ("rate limited", "no text content"):
-                    with pytest.raises(ProviderError, match=error):
-                        await provider.complete("system", [{"role": "user", "content": "test"}])
+                with pytest.raises(ProviderError, match="rate limited"):
+                    await provider.complete("system", [{"role": "user", "content": "test"}])
+                response = await provider.complete("system", [{"role": "user", "content": "test"}])
+                assert response.content == [] and response.tool_calls == []
             assert attempts == 2
     asyncio.run(scenario())

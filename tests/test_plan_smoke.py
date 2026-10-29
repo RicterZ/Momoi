@@ -508,7 +508,7 @@ class PlanSmokeTest(unittest.IsolatedAsyncioTestCase):
             count += 1
             outcome = {'outcome': 'succeeded', 'summary': 'sent', 'output_refs': [], 'abort_remaining': False}
             if count == 1:
-                calls = [reply_call('send', bubbles=[]),
+                calls = [reply_call('send', bubbles=['戳你 qq://poke']),
                          ToolCall('finish', 'plan_step_finish', outcome)]
             else:
                 self.assertEqual(count, 2)

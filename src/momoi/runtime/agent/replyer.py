@@ -193,8 +193,6 @@ class Replyer(ReplyerBase):
             else:
                 raise ValueError("Replyer exceeded tool call limit")
         text = "\n".join(str(block.get("text", "")) for block in response.content if block.get("type") == "text").strip()
-        if not text:
-            raise ValueError("Replyer returned empty text")
         bubbles = [part.strip() for part in text.split("\n\n") if part.strip()]
         for bubble in bubbles:
             if QQ_POKE_DESCRIPTION in bubble or "[戳一戳用户]" in bubble:

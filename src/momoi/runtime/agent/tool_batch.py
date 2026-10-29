@@ -512,35 +512,38 @@ class ToolBatchExecutor:
                             bubbles = bubbles[:1]
                         if mode == "text":
                             bubbles = [*bubbles, *copy.deepcopy(call.arguments.get("attachments", []))]
-                        delivery_call = ToolCall(call.id, "send_voice" if mode == "voice" else "send_bubbles",
-                                                 {"text": "\n\n".join(bubbles)} if mode == "voice" else {"bubbles": bubbles})
-                        dispatch = self.bubble_delivery.dispatch_voice if mode == "voice" else self.bubble_delivery.dispatch
-                        call_context = next((event.delivery_context for event in reversed(request.current_events)
-                            if event.channel == target.name and event.delivery_context
-                            and not event.delivery_context.get("channel_notice")), {})
-                        if first_call_updated and target.session_valid(call_context):
-                            call_context = {**call_context, **target.routing_context()}
-                        delivery = dispatch(delivery_call, turn_id=request.turn_id, stage=execution.stage,
-                            round_number=request.round_number, delivery_channel=target,
-                            heartbeat_turn=execution.heartbeat,
-                            heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
-                            current_events=request.current_events,
-                            previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
-                            previous_channel=last_sent_channel,
-                            **({"delivery_context": call_context} if mode == "voice" and call_context else {}))
-                        if mode == "voice":
-                            delivery = await delivery
-                        if delivery.result.get("ok"):
-                            if ((not first_call_reply and self.store.owner_channel_revision(target.name) != owner_revision)
-                                    or (request.pause_requested and request.pause_requested())):
-                                self.store.cancel_pending_outbox(target.name, "owner_message_superseded_outbox")
-                                self.outbox_changed.set()
-                            result = {**await self.bubble_delivery.wait_reply(request.turn_id, call.id), "mode": mode}
+                        if not bubbles:
+                            result = {"ok": True, "state": "no_reply", "bubbles": [], "mode": mode}
                         else:
-                            result = {**delivery.result, "bubbles": [], "mode": mode}
-                        if delivery.bubbles is not None:
-                            last_sent_bubbles = copy.deepcopy(result["bubbles"])
-                            last_sent_channel = delivery.channel
+                            delivery_call = ToolCall(call.id, "send_voice" if mode == "voice" else "send_bubbles",
+                                                     {"text": "\n\n".join(bubbles)} if mode == "voice" else {"bubbles": bubbles})
+                            dispatch = self.bubble_delivery.dispatch_voice if mode == "voice" else self.bubble_delivery.dispatch
+                            call_context = next((event.delivery_context for event in reversed(request.current_events)
+                                if event.channel == target.name and event.delivery_context
+                                and not event.delivery_context.get("channel_notice")), {})
+                            if first_call_updated and target.session_valid(call_context):
+                                call_context = {**call_context, **target.routing_context()}
+                            delivery = dispatch(delivery_call, turn_id=request.turn_id, stage=execution.stage,
+                                round_number=request.round_number, delivery_channel=target,
+                                heartbeat_turn=execution.heartbeat,
+                                heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
+                                current_events=request.current_events,
+                                previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
+                                previous_channel=last_sent_channel,
+                                **({"delivery_context": call_context} if mode == "voice" and call_context else {}))
+                            if mode == "voice":
+                                delivery = await delivery
+                            if delivery.result.get("ok"):
+                                if ((not first_call_reply and self.store.owner_channel_revision(target.name) != owner_revision)
+                                        or (request.pause_requested and request.pause_requested())):
+                                    self.store.cancel_pending_outbox(target.name, "owner_message_superseded_outbox")
+                                    self.outbox_changed.set()
+                                result = {**await self.bubble_delivery.wait_reply(request.turn_id, call.id), "mode": mode}
+                            else:
+                                result = {**delivery.result, "bubbles": [], "mode": mode}
+                            if delivery.bubbles is not None:
+                                last_sent_bubbles = copy.deepcopy(result["bubbles"])
+                                last_sent_channel = delivery.channel
                     except ValueError as error:
                         result = {"ok": False, "error": "invalid_reply", "message": str(error)}
                     except Exception as error:
