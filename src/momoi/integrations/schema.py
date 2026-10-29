@@ -164,7 +164,7 @@ def builtin_schema(name, capability):
     for key in required[capability]:
         fields[key]["required"] = True
     if capability == "llm":
-        fields["pricing"]["description"] = "按该 Provider 的价格估算费用，并复用其 API 密钥；DeepSeek 支持余额查询。留空时按服务地址自动识别 DeepSeek 或 Google AI Studio，无法识别时按 DeepSeek 价格估算。"
+        fields["pricing"]["description"] = "按该 Provider 的价格估算费用，并复用其 API 密钥；DeepSeek 支持余额查询。留空则不计费。"
         fields["usd_cny_rate"]["description"] = "仅 Google AI Studio 计费策略使用，美元价按此汇率折算人民币。"
     if (name, capability) == ("sherpa", "asr"):
         fields["model_path"].update(label="本地 ASR 模型目录", advanced=True,

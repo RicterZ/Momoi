@@ -576,18 +576,14 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
         self.assertAlmostEqual(daemon.budget_guard.status(now)["daily"]["spent"], expected)
         self.assertAlmostEqual(daemon.store.dashboard_usage(now=now)["totals"]["estimated_cost"], round(expected, 4))
 
-    def test_pricing_is_inferred_from_vendor_address(self):
-        from momoi.integrations.pricing import provider_pricing
-        self.assertEqual(provider_pricing({"base_url": "https://api.deepseek.com/v1"}), "deepseek")
-        self.assertEqual(provider_pricing({"base_url": "https://generativelanguage.googleapis.com/v1beta/openai", "usd_cny_rate": 7}), "google:7")
-        self.assertEqual(provider_pricing({"base_url": "https://api.deepseek.com", "pricing": "google"}), "google:7.1")
-        self.assertIsNone(provider_pricing({"base_url": "https://example.com/v1"}))
+    def test_model_without_pricing_is_unbilled(self):
+        from momoi.integrations.pricing import PricingBook
         raw = catalog_data()
         raw["credentials"]["shared"]["api_key"] = "test-key"
-        del raw["bindings"]["balance"]
         services = ServiceRegistry(self.load(raw))
-        self.assertEqual(services.pricing_for("llm"), "deepseek")
-        self.assertEqual(services.billing.balance_source.api_key, "test-key")
+        self.assertEqual(services.pricing_for("llm"), "none")
+        self.assertIsNone(services.billing.balance_source)
+        self.assertEqual(PricingBook().estimate_cost("deepseek-v4-pro", 0, cache_read=0, uncached=10**6, output=10**6, pricing="none"), 0)
 
     async def test_pricing_without_balance_api_reports_unsupported(self):
         raw = catalog_data()
@@ -623,8 +619,6 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
         raw = catalog_data()
         raw["credentials"]["shared"]["api_key"] = "test-key"
         raw["services"]["account"] = {"adapter": name}
-        # An unrecognized vendor address falls back to the legacy billing binding.
-        raw["services"]["chat"]["base_url"] = "https://llm.example/v1"
         self.load(raw)
         path = self.root / "config.json"
         bootstrap(path)
@@ -636,7 +630,6 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
         })
         daemon = MomoiDaemon(load_config(path))
         self.addCleanup(daemon.store.close)
-        self.assertIs(daemon.provider.usage_parser.__self__, Account.accounting)
         self.assertTrue(daemon.store.dashboard_usage()["cost_available"])
         # Dashboard has a separate Store and follows the supervisor's active provider.
         supervisor = RuntimeSupervisor(None)
