@@ -97,6 +97,10 @@ SCHEMAS = {
         "timeout_seconds": field("number", 10),
         "accounting": field("boolean", True),
     },
+    ("google", "balance"): {
+        "usd_cny_rate": field("number", 7.1),
+        "accounting": field("boolean", True),
+    },
 }
 
 
@@ -119,6 +123,7 @@ def builtin_schema(name, capability):
         "multimodal": "支持多模态（图片输入）",
         "thinking": "模型思考设置",
         "accounting": "费用估算",
+        "usd_cny_rate": "美元兑人民币汇率",
         "max_audio_bytes": "音频大小上限（字节）",
         "reference_id": "音色 ID",
         "voice_id": "音色 ID",
@@ -142,7 +147,7 @@ def builtin_schema(name, capability):
         "asr": {"secret_id", "secret_key"},
         "tts": {"api_key", "reference_id", "voice_id", "model"},
         "embedding": {"endpoint", "api_key", "model", "dimensions"},
-        "balance": {"api_key", "base_url", "timeout_seconds", "accounting"},
+        "balance": {"api_key", "base_url", "timeout_seconds", "accounting", "usd_cny_rate"},
     }
     for key, spec in fields.items():
         spec["advanced"] = key not in basic[capability]
@@ -163,6 +168,8 @@ def builtin_schema(name, capability):
     if (name, capability) == ("deepseek", "balance"):
         fields["api_key"]["description"] = "可留空：仅估算费用，不查询账户余额。填写后启用余额查询。"
         fields["accounting"]["description"] = "使用 DeepSeek 计价策略；关闭后仍使用内置价格估算，不影响预算和启动。"
+    if (name, capability) == ("google", "balance"):
+        fields["accounting"]["description"] = "按 Gemini API 标准付费档官方价格估算（美元价按汇率折算人民币）；Google AI Studio 不提供余额查询。"
     if (name, capability) == ("local", "embedding"):
         fields["model_path"].update(label="BGE 模型目录",
             description="留空使用安装包内置模型。直接调用本地 BGE，无需服务地址。")
