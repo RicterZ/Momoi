@@ -56,6 +56,7 @@ const adapterLabels = {
   openai_responses: "OpenAI Responses",
   local: "内置 BGE",
   deepseek: "DeepSeek",
+  google: "Google AI Studio",
   anthropic: "Anthropic",
   fish: "Fish Audio",
   vocu: "悟声 Vocu",
@@ -67,7 +68,7 @@ const primaryFields = {
   asr: ["secret_id", "secret_key", "endpoint"],
   tts: ["api_key", "reference_id", "voice_id", "model"],
   embedding: ["endpoint", "api_key", "model", "dimensions"],
-  balance: ["base_url", "api_key", "timeout_seconds"],
+  balance: ["base_url", "api_key", "timeout_seconds", "usd_cny_rate"],
 };
 // Hide transport tuning from the form without removing saved option values.
 const hiddenFields = {
@@ -1278,8 +1279,11 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
         ))}
         {module.id === "budget" && <section className="settings-runtime-group settings-runtime-nested settings-budget-account" aria-labelledby="budget-balance-title">
           <div className="settings-runtime-copy">
-            <div className="settings-voice-title"><h3 id="budget-balance-title">账户余额</h3><span className="panel-label">BUDGET // BALANCE</span></div><p className="settings-runtime-description">关闭查询不影响费用估算。</p></div><Toggle checked={balance.enabled} disabled={saving} onChange={enabled => changeBalance({ ...balance, enabled })}>查询余额</Toggle>
+            <div className="settings-voice-title"><h3 id="budget-balance-title">账户余额</h3><span className="panel-label">BUDGET // BALANCE</span></div><p className="settings-runtime-description">计费服务决定费用估算使用的价格；关闭后按 DeepSeek 价格估算。</p></div><Toggle checked={balance.enabled} disabled={saving} onChange={enabled => changeBalance({ ...balance, enabled })}>启用计费服务</Toggle>
           {balance.enabled && <Fields disabled={saving}>
+            <SelectField label="计费服务" value={balance.values.balance.adapter} disabled={saving}
+              options={data.adapters.filter(item => item.capability === "balance").map(item => ({ value: item.adapter, label: adapterLabels[item.adapter] || item.adapter }))}
+              onChange={adapter => changeBalance({ ...balance, values: { ...balance.values, balance: { ...balance.values.balance, adapter, options: adapter === balance.values.balance.adapter ? balance.values.balance.options : {} } } })} />
             {balance.enabled && primaryFields.balance.map(key => {
               const value = balance.values.balance;
               const spec = data.adapters.find(item => item.capability === "balance" && item.adapter === value.adapter)?.fields?.[key];

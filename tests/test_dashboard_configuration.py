@@ -435,6 +435,17 @@ class ConfigurationManagerTest(unittest.TestCase):
         self.assertEqual(catalog.options_for("tts")["api_key"], "key")
         self.assertEqual(saved["capabilities"]["tts"]["options"]["api_key"], "key")
 
+    def test_balance_binding_switches_between_deepseek_and_google(self):
+        deepseek = {"adapter": "deepseek", "enabled": True, "options": {"api_key": "secret"}}
+        saved = self.manager.save_bindings({"balance": deepseek}, self.manager.revision())
+        google = {"adapter": "google", "enabled": True, "options": {"usd_cny_rate": 7.2, "accounting": True}}
+        saved = self.manager.save_bindings({"balance": google}, saved["revision"])
+        catalog = self.manager.validate().providers
+        self.assertEqual(saved["capabilities"]["balance"]["adapter"], "google")
+        self.assertEqual(catalog.options_for("balance"), {"usd_cny_rate": 7.2, "accounting": True})
+        saved = self.manager.save_bindings({"balance": deepseek}, saved["revision"])
+        self.assertEqual(self.manager.validate().providers.options_for("balance")["api_key"], "secret")
+
     def test_managed_credentials_shared_by_another_service_are_not_overwritten(self):
         self.manager.save_binding("llm", LLM, self.manager.revision())
         raw = self.manager.read_providers()
