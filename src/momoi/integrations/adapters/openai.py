@@ -29,8 +29,15 @@ def _text(content: Any, separator: str = "\n") -> str:
     return ""
 
 
+GEMINI_SKIP_SIGNATURE = "skip_thought_signature_validator"
+
+
+def is_gemini(base_url: str, model: str) -> bool:
+    return urlsplit(base_url).hostname == "generativelanguage.googleapis.com" or model.lower().startswith("gemini")
+
+
 def openai_messages(
-    system: str | list[dict[str, Any]], messages: list[dict[str, Any]]
+    system: str | list[dict[str, Any]], messages: list[dict[str, Any]], *, gemini: bool = False
 ) -> list[dict[str, Any]]:
     wire: list[dict[str, Any]] = []
     system_text = _text(system, "\n\n")
@@ -71,6 +78,14 @@ def openai_messages(
                 for block in content
                 if isinstance(block, dict) and block.get("type") == "tool_use"
             ]
+            extras = continuation.get("tool_call_extra", {})
+            for call in tool_calls:
+                if call["id"] in extras:
+                    call["extra_content"] = extras[call["id"]]
+            if gemini and tool_calls and not any(call["id"] in extras for call in tool_calls):
+                # Gemini signs only the first call of a step; replayed calls without a
+                # stored signature (older turns) use its documented validator bypass.
+                tool_calls[0]["extra_content"] = {"google": {"thought_signature": GEMINI_SKIP_SIGNATURE}}
             item: dict[str, Any] = {"role": "assistant", "content": text or None}
             if reasoning:
                 item["reasoning_content"] = reasoning
@@ -168,13 +183,13 @@ class OpenAIProvider(ProtocolProvider):
         config = self.config
         payload: dict[str, Any] = {
             "model": config.model,
-            "messages": openai_messages(system, messages),
+            "messages": openai_messages(system, messages, gemini=is_gemini(config.base_url, config.model)),
             "max_tokens": config.max_tokens,
             "temperature": config.temperature,
         }
         host = urlsplit(config.base_url).hostname or ""
         model = config.model.lower()
-        if host == "generativelanguage.googleapis.com" or model.startswith("gemini"):
+        if is_gemini(config.base_url, config.model):
             # Gemini's OpenAI layer rejects unknown fields such as `thinking`
             # and accepts only none/minimal/low/medium/high.
             if effort and effort != "off":
@@ -249,6 +264,7 @@ class OpenAIProvider(ProtocolProvider):
         if isinstance(text, str) and text.strip():
             content.append({"type": "text", "text": text})
         tool_calls: list[ToolCall] = []
+        tool_call_extra: dict[str, Any] = {}
         for item in message.get("tool_calls") or []:
             function = item.get("function") if isinstance(item, dict) else None
             if not isinstance(function, dict):
@@ -275,6 +291,8 @@ class OpenAIProvider(ProtocolProvider):
                 argument_error,
             )
             tool_calls.append(call)
+            if isinstance(item.get("extra_content"), dict):
+                tool_call_extra[call.id] = item["extra_content"]
             content.append(
                 {
                     "type": "tool_use",
@@ -284,15 +302,16 @@ class OpenAIProvider(ProtocolProvider):
                 }
             )
         reasoning = openai_reasoning(message)
-        continuation = (
-            {"openai": {"reasoning_content": (
+        openai_continuation: dict[str, Any] = {}
+        if reasoning or isinstance(message.get("reasoning_content"), str):
+            openai_continuation["reasoning_content"] = (
                 message["reasoning_content"]
                 if isinstance(message.get("reasoning_content"), str)
                 else reasoning
-            )}}
-            if reasoning or isinstance(message.get("reasoning_content"), str)
-            else {}
-        )
+            )
+        if tool_call_extra:
+            openai_continuation["tool_call_extra"] = tool_call_extra
+        continuation = {"openai": openai_continuation} if openai_continuation else {}
         return ProviderResponse(content, tool_calls, reasoning=reasoning, continuation=continuation)
 
     def _check_content(self, parsed: ProviderResponse) -> None:

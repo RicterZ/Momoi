@@ -111,6 +111,30 @@ class ReasoningContinuationTest(unittest.IsolatedAsyncioTestCase):
         history["provider_continuation"]["openai"]["reasoning_content"] = "changed"
         self.assertEqual(response.continuation["openai"]["reasoning_content"], "\nprivate thought\n")
 
+    async def test_gemini_thought_signature_round_trips_on_tool_calls(self):
+        signed = {"google": {"thought_signature": "sig-1"}}
+        async def completion(request):
+            return web.json_response({"choices": [{"message": {"content": None, "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "recall", "arguments": "{}"}, "extra_content": signed},
+                {"id": "c2", "type": "function", "function": {"name": "recall", "arguments": "{}"}},
+            ]}}]})
+        app = web.Application()
+        app.router.add_post("/v1beta/openai/chat/completions", completion)
+        server = TestServer(app)
+        await server.start_server()
+        self.addAsyncCleanup(server.close)
+        config = LLMConfig(str(server.make_url("/v1beta/openai")), "test", "gemini-test", 100, 0, 2, 0)
+        async with OpenAIProvider(config) as provider:
+            response = await provider.complete("", [{"role": "user", "content": "question"}])
+        history = assistant_history_message(response.content, response.continuation)
+        calls = openai_messages("", [history], gemini=True)[0]["tool_calls"]
+        self.assertEqual(calls[0]["extra_content"], signed)
+        self.assertNotIn("extra_content", calls[1])
+        replayed = assistant_history_message(response.content)
+        calls = openai_messages("", [replayed], gemini=True)[0]["tool_calls"]
+        self.assertEqual(calls[0]["extra_content"]["google"]["thought_signature"], "skip_thought_signature_validator")
+        self.assertNotIn("extra_content", openai_messages("", [replayed])[0]["tool_calls"][0])
+
     def test_all_text_correction_paths_preserve_provider_continuation(self):
         continuation = {"openai": {"reasoning_content": "private thought"}}
         for stage in ("workflow", "heartbeat", "goal", "owner", "webhook"):
