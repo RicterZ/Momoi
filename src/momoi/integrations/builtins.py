@@ -12,6 +12,7 @@ def register_builtins():
     from .adapters.vocu import VocuTTSProvider
     from .adapters.embedding import EmbeddingClient
     from .adapters.deepseek import DeepSeekBalanceProvider
+    from .adapters.google import GoogleAIStudioBalanceProvider
     from .adapters.openai import OpenAIProvider
     from .adapters.openai_responses import OpenAIResponsesProvider
     from .adapters.anthropic import AnthropicProvider
@@ -134,3 +135,14 @@ def register_builtins():
             schema=builtin_schema("deepseek", "balance"),
         )
     )
+
+    def validate_google_balance(options):
+        fields(options, {"usd_cny_rate", "accounting"})
+        number(options, "usd_cny_rate", 7.1)
+        GoogleAIStudioBalanceProvider(**options)
+
+    register_adapter(Adapter(
+        "google", "balance",
+        lambda options, ctx: GoogleAIStudioBalanceProvider(**options),
+        validate=validate_google_balance, schema=builtin_schema("google", "balance"),
+    ))
