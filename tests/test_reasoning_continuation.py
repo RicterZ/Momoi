@@ -12,6 +12,7 @@ from aiohttp.test_utils import TestServer
 from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.adapters.anthropic import merge_adjacent_roles
+from momoi.integrations.adapters.anthropic import AnthropicProvider
 from momoi.integrations.adapters.openai import OpenAIProvider, openai_messages
 from momoi.integrations.models import LLMConfig, ThinkingConfig
 from momoi.models import IncomingMessage
@@ -134,6 +135,28 @@ class ReasoningContinuationTest(unittest.IsolatedAsyncioTestCase):
         calls = openai_messages("", [replayed], gemini=True)[0]["tool_calls"]
         self.assertEqual(calls[0]["extra_content"]["google"]["thought_signature"], "skip_thought_signature_validator")
         self.assertNotIn("extra_content", openai_messages("", [replayed])[0]["tool_calls"][0])
+
+    async def test_anthropic_signed_thinking_is_replayed_before_tool_use(self):
+        thinking = {"type": "thinking", "thinking": "private", "signature": "sig-a"}
+        tool_use = {"type": "tool_use", "id": "t1", "name": "recall", "input": {}}
+        requests = []
+        async def messages_endpoint(request):
+            requests.append(await request.json())
+            return web.json_response({"content": [thinking, tool_use]})
+        app = web.Application()
+        app.router.add_post("/v1/messages", messages_endpoint)
+        server = TestServer(app)
+        await server.start_server()
+        self.addAsyncCleanup(server.close)
+        config = LLMConfig(str(server.make_url("/v1")), "test", "claude-test", 100, 0, 2, 0)
+        async with AnthropicProvider(config) as provider:
+            response = await provider.complete("", [{"role": "user", "content": "question"}])
+            history = assistant_history_message(response.content, response.continuation)
+            self.assertNotIn("thinking", [block["type"] for block in history["content"]])
+            result = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]}
+            await provider.complete("", [{"role": "user", "content": "question"}, history, result])
+        self.assertEqual(requests[-1]["messages"][1]["content"], [thinking, tool_use])
+        self.assertNotIn("provider_continuation", requests[-1]["messages"][1])
 
     def test_all_text_correction_paths_preserve_provider_continuation(self):
         continuation = {"openai": {"reasoning_content": "private thought"}}
