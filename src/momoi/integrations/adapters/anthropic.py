@@ -1,3 +1,4 @@
+import copy
 from typing import Any
 
 from ...llm.errors import ProviderError
@@ -5,6 +6,17 @@ from ...llm.telemetry import anthropic_reasoning
 from ...llm.transport import anthropic_url
 from ...models import ProviderResponse, ToolCall
 from .protocol_base import ProtocolProvider
+
+
+def anthropic_replay(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Restore signed thinking blocks that must precede replayed tool_use blocks."""
+    replayed = []
+    for message in messages:
+        original = message.get("provider_continuation", {}).get("anthropic", {}).get("content")
+        if message.get("role") == "assistant" and isinstance(original, list):
+            message = {**message, "content": copy.deepcopy(original)}
+        replayed.append(message)
+    return replayed
 
 
 def merge_adjacent_roles(
@@ -55,7 +67,7 @@ class AnthropicProvider(ProtocolProvider):
         payload: dict[str, Any] = {
             "model": config.model,
             "system": system,
-            "messages": merge_adjacent_roles(messages),
+            "messages": merge_adjacent_roles(anthropic_replay(messages)),
             "max_tokens": config.max_tokens,
             "temperature": config.temperature,
         }
@@ -105,7 +117,9 @@ class AnthropicProvider(ProtocolProvider):
                     ),
                 )
             )
-        return ProviderResponse(content, tool_calls)
+        signed = any(block.get("type") in {"thinking", "redacted_thinking"} for block in content)
+        continuation = {"anthropic": {"content": copy.deepcopy(content)}} if signed else {}
+        return ProviderResponse(content, tool_calls, continuation=continuation)
 
     def _check_content(self, parsed: ProviderResponse) -> None:
         if not parsed.tool_calls and not "\n".join(
