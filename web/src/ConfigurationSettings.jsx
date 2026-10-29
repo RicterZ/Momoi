@@ -68,15 +68,13 @@ const primaryFields = {
   asr: ["secret_id", "secret_key", "endpoint"],
   tts: ["api_key", "reference_id", "voice_id", "model"],
   embedding: ["endpoint", "api_key", "model", "dimensions"],
-  balance: ["base_url", "api_key", "timeout_seconds", "usd_cny_rate"],
 };
 // Hide transport tuning from the form without removing saved option values.
 const hiddenFields = {
-  balance: ["accounting"],
   embedding: ["base_url", "document_batch_size", "timeout_seconds"],
 };
 const enumLabels = {
-  pricing: { "": "沿用全局计费服务", deepseek: "DeepSeek", google: "Google AI Studio" },
+  pricing: { "": "按服务地址自动识别", deepseek: "DeepSeek", google: "Google AI Studio" },
 };
 const fieldHints = {
   dimensions: "需与所选模型的输出维度一致",
@@ -954,7 +952,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
                 disabled={managed || saving}
                 onChange={(enabled) => change({ ...draft, enabled })}
               >
-                {module.id === "balance" ? "查询余额" : "启用功能"}
+                启用功能
               </Toggle>
             )
           }
@@ -998,11 +996,6 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
               const basic = fields.filter(([key]) =>
                 primaryFields[name]?.includes(key),
               );
-              if (name === "balance") {
-                basic.sort(([left], [right]) =>
-                  primaryFields.balance.indexOf(left) - primaryFields.balance.indexOf(right),
-                );
-              }
               const advanced = fields.filter(
                 ([key]) =>
                   !primaryFields[name]?.includes(key) &&
@@ -1210,11 +1203,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
   const [saved, setSaved] = useState(initial);
   const [status, setStatus] = useState(null);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
-  const [balance, setBalance] = useState(() => providerDraft(["balance"], data, true));
-  const [savedBalance, setSavedBalance] = useState(balance);
-  const balanceDirty = module.id === "budget" && !equal(balance, savedBalance);
-  const dirty = !equal(draft, saved) || balanceDirty;
-  function changeBalance(next) { setBalance(next); setStatus(null); }
+  const dirty = !equal(draft, saved);
   async function submit(event) {
     event.preventDefault();
     if (saving || !dirty) return;
@@ -1234,12 +1223,6 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
         if (Object.keys(changes).length) document[name] = changes;
       }
       let result = data;
-      if (balanceDirty) {
-        result = await save("/api/settings/providers", { balance: {
-          ...normalizeProvider("balance", balance.values.balance, data.adapters), enabled: balance.enabled,
-        } });
-        setSavedBalance(balance);
-      }
       if (Object.keys(document).length) result = await save("/api/settings/configuration/app", document, "PATCH");
       const updated = Object.fromEntries(Object.entries(schemas).map(([name, schema]) => [
         name, Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, runtimeFieldValue(spec, result.app[name]?.[key])])),
@@ -1297,20 +1280,6 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
             </fieldset>
           </section>
         ))}
-        {module.id === "budget" && <section className="settings-runtime-group settings-runtime-nested settings-budget-account" aria-labelledby="budget-balance-title">
-          <div className="settings-runtime-copy">
-            <div className="settings-voice-title"><h3 id="budget-balance-title">账户余额</h3><span className="panel-label">BUDGET // BALANCE</span></div><p className="settings-runtime-description">费用优先按各模型 Provider 选择的计费策略估算；这里的全局计费服务只用于未选择计费策略的模型，关闭后按 DeepSeek 价格估算。</p></div><Toggle checked={balance.enabled} disabled={saving} onChange={enabled => changeBalance({ ...balance, enabled })}>启用计费服务</Toggle>
-          {balance.enabled && <Fields disabled={saving}>
-            <SelectField label="计费服务" value={balance.values.balance.adapter} disabled={saving}
-              options={data.adapters.filter(item => item.capability === "balance").map(item => ({ value: item.adapter, label: adapterLabels[item.adapter] || item.adapter }))}
-              onChange={adapter => changeBalance({ ...balance, values: { ...balance.values, balance: { ...balance.values.balance, adapter, options: adapter === balance.values.balance.adapter ? balance.values.balance.options : {} } } })} />
-            {balance.enabled && primaryFields.balance.map(key => {
-              const value = balance.values.balance;
-              const spec = data.adapters.find(item => item.capability === "balance" && item.adapter === value.adapter)?.fields?.[key];
-              return spec && <OptionField key={key} name={key} spec={spec} value={value.options[key]} onChange={option => changeBalance({ ...balance, values: { ...balance.values, balance: { ...value, options: { ...value.options, [key]: option } } } })} />;
-            })}
-          </Fields>}
-        </section>}
         {!Object.keys(schemas).length && <p className="settings-channel-note">当前服务尚未提供运行设置，请更新服务后刷新。</p>}
       </div>
       <SaveBar busy={saving} dirty={dirty} status={status} previous={previous} next={next} />

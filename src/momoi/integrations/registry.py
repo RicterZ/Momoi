@@ -16,7 +16,7 @@ from .transport import HTTPTransport
 from .builtins import register_builtins
 from .fields import normalize_fields, validate_schema
 from .models import EmbeddingSpaceConfig
-from .pricing import DEFAULT_PRICING, Billing, PricingBook, balance_for, legacy_pricing_key, pricing_key
+from .pricing import DEFAULT_PRICING, Billing, PricingBook, balance_for, legacy_pricing_key, provider_pricing
 
 from ..policies import SemanticPolicy
 
@@ -217,7 +217,7 @@ class ServiceRegistry:
     def pricing_for(self, capability: str) -> str | None:
         """Pricing key recorded on usage from one model binding."""
         if self.catalog.enabled(capability):
-            key = pricing_key(self.catalog.options_for(capability))
+            key = provider_pricing(self.catalog.options_for(capability))
             if key:
                 return key
         return self.legacy_pricing
@@ -232,7 +232,7 @@ class ServiceRegistry:
             if not self.catalog.enabled(capability):
                 continue
             options = self.catalog.options_for(capability)
-            source = balance_for(pricing_key(options), options, self.transport)
+            source = balance_for(provider_pricing(options), options, self.transport)
             if source is not None:
                 break
         if source is None and legacy is not None and (
