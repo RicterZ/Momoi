@@ -406,7 +406,9 @@ class OwnerWorkflow:
         channel_label = {"dashboard": "网页聊天", "onebot": "QQ 私聊", "weixin": "微信私聊", "qq_call": "QQ 电话"}.get(channel.name, channel.name)
         directives: list[str] = [
             f"当前消息渠道：{channel.name}（{channel_label}）。"
-            "reply 省略 channel 时回复此渠道；历史对话或默认渠道不代表当前消息来源。"
+            "reply 省略 channel 时回复此渠道；历史对话或默认渠道不代表当前消息来源。",
+            "调用 reply 前核对：intent 里称呼对方写“老师”；老师分享的消息、图片、链接或视频，intent 写自己看完的感受和看法，"
+            "reference 只留表达这份感受所需的一两个细节，内容介绍和逐段描述留在你自己的思考里。",
         ]
         background = getattr(self, "_background_pause", None)
         if background is not None and background.context:
