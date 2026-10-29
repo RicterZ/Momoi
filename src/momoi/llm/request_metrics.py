@@ -44,7 +44,7 @@ def response_headers(status):
         record["http_status"] = status
         log_event(logger, logging.INFO, "llm_response_headers",
                   elapsed_ms=record["first_response_ms"], status=status,
-                  attempt=record["attempt"], protocol=record["protocol"])
+                  attempt=record["attempt"], protocol=record["protocol"], model=record["model"] or None)
 
 
 def response_usage(metrics):
