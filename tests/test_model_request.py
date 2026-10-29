@@ -113,6 +113,24 @@ class ModelRequestTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(payloads[-1].get("thinking", {}).get("type", payloads[-1].get("reasoning_effort")),
                                          "none" if model == "gpt-test" else "disabled")
 
+    async def test_gemini_compatible_endpoint_gets_only_supported_reasoning_effort(self):
+        payloads = []
+        async def handler(request):
+            payloads.append(await request.json())
+            return web.json_response({"choices": [{"message": {"content": "OK"}}]})
+        app = web.Application()
+        app.router.add_post("/v1beta/openai/chat/completions", handler)
+        async with TestServer(app) as server:
+            for effort, expected in (("off", "none"), ("low", "low"), ("high", "high"), ("xhigh", "high"), ("max", "high"), ("", None)):
+                config = LLMConfig(base_url=str(server.make_url("/v1beta/openai")), api_key="test", model="gemini-3.8-flash",
+                    max_tokens=100, temperature=.6, timeout_seconds=2, max_retries=0,
+                    thinking=ThinkingConfig(effort=effort))
+                async with OpenAIProvider(config) as provider:
+                    await provider.complete("", [{"role": "user", "content": "Hello"}])
+                payload = payloads[-1]
+                self.assertNotIn("thinking", payload)
+                self.assertEqual(payload.get("reasoning_effort"), expected)
+
     async def test_overrides_are_isolated_across_concurrent_requests_and_child_tasks(self):
         runner = self.runner({"episode_anneal": "low", "webhook": "max"})
         ready = asyncio.Event()

@@ -172,10 +172,19 @@ class OpenAIProvider(ProtocolProvider):
             "max_tokens": config.max_tokens,
             "temperature": config.temperature,
         }
-        if effort == "off":
+        host = urlsplit(config.base_url).hostname or ""
+        model = config.model.lower()
+        if host == "generativelanguage.googleapis.com" or model.startswith("gemini"):
+            # Gemini's OpenAI layer rejects unknown fields such as `thinking`
+            # and accepts only none/minimal/low/medium/high.
+            if effort and effort != "off":
+                payload.pop("temperature", None)
+            if effort:
+                payload["reasoning_effort"] = "none" if effort == "off" else "high" if effort in {"xhigh", "max"} else effort
+        elif effort == "off":
             # Native OpenAI uses `none`; DeepSeek-compatible APIs use their
             # thinking switch and reject a simultaneous reasoning_effort.
-            native_openai = urlsplit(config.base_url).hostname == "api.openai.com" or config.model.lower().startswith(("gpt-", "chatgpt-", "o1", "o3", "o4"))
+            native_openai = host == "api.openai.com" or model.startswith(("gpt-", "chatgpt-", "o1", "o3", "o4"))
             if native_openai:
                 payload["reasoning_effort"] = "none"
             else:
