@@ -1,6 +1,7 @@
 """Per-provider pricing strategies; usage rows keep the key they were billed with."""
 
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..llm.accounting import UsageAccounting
 
@@ -22,6 +23,22 @@ def pricing_key(options: dict[str, Any]) -> str | None:
             raise ValueError("usd_cny_rate must be positive")
         return f"google:{rate:g}"
     return name
+
+
+_HOST_PRICING = {
+    "api.deepseek.com": "deepseek",
+    "generativelanguage.googleapis.com": "google",
+}
+
+
+def provider_pricing(options: dict[str, Any]) -> str | None:
+    """Explicit pricing, else the strategy implied by a known vendor address."""
+    key = pricing_key(options)
+    if key:
+        return key
+    host = urlsplit(str(options.get("base_url") or "")).hostname or ""
+    name = _HOST_PRICING.get(host.lower())
+    return pricing_key({**options, "pricing": name}) if name else None
 
 
 def legacy_pricing_key(adapter: str, options: dict[str, Any]) -> str | None:

@@ -490,12 +490,6 @@
   align-items: center;
   min-height: 60px;
 }
-#settings-panel-balance .settings-grid-item:has(> .settings-boolean) {
-  align-self: end;
-}
-#settings-panel-balance .settings-boolean {
-  min-height: 44px;
-}
 .settings-text-button {
   display: inline-flex;
   align-items: center;
@@ -1534,9 +1528,3 @@
 }
 
 
-.settings-budget-account.settings-runtime-nested { grid-template-columns: minmax(0, 1fr) auto; }
-.settings-budget-account > .settings-fields { grid-column: 1 / -1; }
-.settings-budget-account > .settings-toggle { font-size: 12px; gap: 8px; }
-@media (max-width: 650px) {
-}
-.settings-budget-account > fieldset.settings-fields { box-shadow: none; }
