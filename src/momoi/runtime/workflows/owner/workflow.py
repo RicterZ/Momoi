@@ -339,7 +339,7 @@ class OwnerWorkflow:
 
         async def speak(**options):
             try:
-                return await PhoneReplyer(self.config, self.store, self.provider).generate(
+                return await PhoneReplyer(self.config, self.store, self.reply_provider).generate(
                     batch, turn_id, enqueue, **options)
             except Exception as error:
                 log_event(logger, logging.WARNING, "qq_call_reply_failed", channel=channel.name,

@@ -156,20 +156,14 @@ class MomoiDaemon(
             for item in emotion_channels:
                 item.emotions_changed()
         self.store.emotions_changed = emotions_changed
-        self.provider = self.services.llm
+        # Reply generation keeps the primary model; every other stage may use a background model.
+        background = self.services.background
+        self._reply_provider = self.services.llm if background is not None else None
+        self.provider = background or self.services.llm
         from .budget import BudgetGuard
         self.budget_guard = BudgetGuard(config, accounting)
-        original_complete = self.provider.complete
-        async def budgeted_complete(*args, **kwargs):
-            self.budget_guard.check()
-            return await original_complete(*args, **kwargs)
-        self.provider.complete = budgeted_complete
-        self.provider.usage_sink = self.store.record_llm_call
-        if hasattr(self.provider, "request_metrics_sink"):
-            self.provider.request_metrics_sink = self.store.record_request_metric
-        self.provider.thinking_sink = self.store.record_thinking_call
-        if accounting is not None:
-            self.provider.usage_parser = accounting.parse_usage
+        for provider in filter(None, (self.provider, self._reply_provider)):
+            self._attach_provider_sinks(provider, accounting)
         self.mcp = MCPManager(config.mcp_config, servers=config.mcp_servers, connect_in_background=True)
         self.tool_surface = ToolSurface(
             self.mcp,
@@ -235,7 +229,7 @@ class MomoiDaemon(
             self.thinking_tools,
             self.tool_results,
             self.outbox_changed,
-            replyer=Replyer(config, self.store, self.provider),
+            replyer=Replyer(config, self.store, self.reply_provider),
             memory=self.memory,
             provider=self.provider,
         )
@@ -267,6 +261,23 @@ class MomoiDaemon(
             if config.webhooks.enabled
             else None
         )
+
+    @property
+    def reply_provider(self):
+        return getattr(self, "_reply_provider", None) or self.provider
+
+    def _attach_provider_sinks(self, provider, accounting):
+        original_complete = provider.complete
+        async def budgeted_complete(*args, **kwargs):
+            self.budget_guard.check()
+            return await original_complete(*args, **kwargs)
+        provider.complete = budgeted_complete
+        provider.usage_sink = self.store.record_llm_call
+        if hasattr(provider, "request_metrics_sink"):
+            provider.request_metrics_sink = self.store.record_request_metric
+        provider.thinking_sink = self.store.record_thinking_call
+        if accounting is not None:
+            provider.usage_parser = accounting.parse_usage
 
     async def run(self, stop: asyncio.Event) -> None:
         if self.config.episode_annealing.enabled:

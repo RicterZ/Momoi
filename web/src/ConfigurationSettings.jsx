@@ -1193,7 +1193,12 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
   const [balance, setBalance] = useState(() => providerDraft(["balance"], data, true));
   const [savedBalance, setSavedBalance] = useState(balance);
   const balanceDirty = module.id === "budget" && !equal(balance, savedBalance);
-  const dirty = !equal(draft, saved) || balanceDirty;
+  const stageModelsOf = source => ({ reply: source.active_model_provider || "", background: source.background_model_provider || "" });
+  const [stageModels, setStageModels] = useState(() => stageModelsOf(data));
+  const [savedStageModels, setSavedStageModels] = useState(stageModels);
+  const stageModelsDirty = module.id === "runtime" && !equal(stageModels, savedStageModels);
+  const modelOptions = (data.model_providers || []).map(item => ({ value: item.id, label: item.name || item.options?.model || item.id }));
+  const dirty = !equal(draft, saved) || balanceDirty || stageModelsDirty;
   function changeBalance(next) { setBalance(next); setStatus(null); }
   async function submit(event) {
     event.preventDefault();
@@ -1219,6 +1224,18 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
           ...normalizeProvider("balance", balance.values.balance, data.adapters), enabled: balance.enabled,
         } });
         setSavedBalance(balance);
+      }
+      if (stageModelsDirty) {
+        if (stageModels.reply !== savedStageModels.reply) {
+          result = await save("/api/settings/model-providers", { action: "activate", id: stageModels.reply });
+        }
+        const background = stageModels.background === stageModels.reply ? "" : stageModels.background;
+        if (background !== (result.background_model_provider || "")) {
+          result = await save("/api/settings/model-providers", { action: "background", id: background });
+        }
+        const applied = stageModelsOf(result);
+        setStageModels(applied);
+        setSavedStageModels(applied);
       }
       if (Object.keys(document).length) result = await save("/api/settings/configuration/app", document, "PATCH");
       const updated = Object.fromEntries(Object.entries(schemas).map(([name, schema]) => [
@@ -1290,6 +1307,19 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
               return spec && <OptionField key={key} name={key} spec={spec} value={value.options[key]} onChange={option => changeBalance({ ...balance, values: { ...balance.values, balance: { ...value, options: { ...value.options, [key]: option } } } })} />;
             })}
           </Fields>}
+        </section>}
+        {module.id === "runtime" && modelOptions.length > 0 && <section className="settings-runtime-group settings-runtime-nested" aria-labelledby="runtime-stage-models">
+          <div className="settings-runtime-copy">
+            <div className="settings-voice-title"><h3 id="runtime-stage-models">阶段模型</h3><span className="panel-label">RUNTIME // MODELS</span></div>
+            <p className="settings-runtime-description">回复使用回复模型；规划、话题归档、复盘、记忆审核等其余阶段使用其他阶段模型。</p>
+          </div>
+          <Fields disabled={saving}>
+            <SelectField label="回复模型" value={stageModels.reply} disabled={saving} options={modelOptions}
+              onChange={reply => { setStageModels(current => ({ ...current, reply })); setStatus(null); }} />
+            <SelectField label="其他阶段模型" value={stageModels.background === stageModels.reply ? "" : stageModels.background} disabled={saving}
+              options={[{ value: "", label: "与回复模型相同" }, ...modelOptions.filter(option => option.value !== stageModels.reply)]}
+              onChange={background => { setStageModels(current => ({ ...current, background })); setStatus(null); }} />
+          </Fields>
         </section>}
         {!Object.keys(schemas).length && <p className="settings-channel-note">当前服务尚未提供运行设置，请更新服务后刷新。</p>}
       </div>

@@ -12,7 +12,9 @@ import yaml
 from ..config.models import ConfigError
 from .fields import normalize_fields
 
-CAPABILITIES = frozenset({"llm", "vision", "asr", "tts", "embedding", "balance"})
+CAPABILITIES = frozenset({"llm", "vision", "background", "asr", "tts", "embedding", "balance"})
+# Bindings that select a language model provider profile.
+MODEL_BINDINGS = frozenset({"llm", "vision", "background"})
 
 
 class CatalogLoader(yaml.SafeLoader):
@@ -219,7 +221,7 @@ def parse_provider_catalog(raw: object, path: Path) -> ProviderCatalog:
         service = services[name]
         adapter = service["adapter"]
         try:
-            definition = adapter_definition(adapter, "llm" if capability == "vision" else capability)
+            definition = adapter_definition(adapter, "llm" if capability in MODEL_BINDINGS else capability)
         except ValueError as error:
             raise ConfigError(str(error)) from None
         options = dict(service.get("settings", {}))

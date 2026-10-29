@@ -284,6 +284,7 @@ class ConfigurationManager:
             "model_providers": self.model_providers(providers),
             "active_model_provider": providers.get("bindings", {}).get("llm", {}).get("service", ""),
             "image_model_provider": providers.get("bindings", {}).get("vision", {}).get("service", ""),
+            "background_model_provider": providers.get("bindings", {}).get("background", {}).get("service", ""),
         }
 
     def model_providers(self, raw):
@@ -296,7 +297,7 @@ class ConfigurationManager:
                 continue
             if identifier != active and any(
                 binding.get("service") == identifier
-                for capability, binding in raw.get("bindings", {}).items() if capability not in {"llm", "vision"}
+                for capability, binding in raw.get("bindings", {}).items() if capability not in {"llm", "vision", "background"}
             ):
                 continue
             if identifier != active and not service.get("name") and not service.get("settings", {}).get("model"):
@@ -324,6 +325,14 @@ class ConfigurationManager:
         identifier = document.get("id")
         action = document.get("action")
         active = raw.get("bindings", {}).get("llm", {}).get("service")
+        if action == "background":
+            if identifier in {None, "", active}:
+                raw.get("bindings", {}).pop("background", None)
+            elif identifier not in models:
+                raise ConfigError("model provider not found")
+            else:
+                raw.setdefault("bindings", {})["background"] = {"service": identifier, "enabled": True}
+            return self.save("providers", raw, revision)
         if action in {"delete", "activate"}:
             if identifier not in models:
                 raise ConfigError("model provider not found")
@@ -339,7 +348,7 @@ class ConfigurationManager:
                 # Preserve legacy model overrides before replacing its active binding.
                 if previous.get("options"):
                     preserved = active
-                    if any(b.get("service") == active for cap, b in raw["bindings"].items() if cap not in {"llm", "vision"}):
+                    if any(b.get("service") == active for cap, b in raw["bindings"].items() if cap not in {"llm", "vision", "background"}):
                         preserved = f"{active}_model"
                         while preserved in raw["services"]:
                             preserved += "_new"
@@ -349,6 +358,8 @@ class ConfigurationManager:
                         document = {**document, "vision": preserved}
                         models[preserved] = models[active]
                 raw.setdefault("bindings", {})["llm"] = {"service": identifier, "enabled": True}
+                if raw["bindings"].get("background", {}).get("service") == identifier:
+                    raw["bindings"].pop("background")
             if action == "activate" and "vision" in document:
                 if models[identifier]["options"].get("multimodal", True):
                     raw["bindings"].pop("vision", None)
@@ -382,7 +393,7 @@ class ConfigurationManager:
                 while identifier in raw.get("services", {}) or identifier in raw.get("credentials", {}):
                     identifier += "_new"
             updating_active = identifier == active
-            shared = any(b.get("service") == identifier for cap, b in raw.get("bindings", {}).items() if cap not in {"llm", "vision"})
+            shared = any(b.get("service") == identifier for cap, b in raw.get("bindings", {}).items() if cap not in {"llm", "vision", "background"})
             if shared:
                 identifier += "_model"
                 while identifier in raw.get("services", {}) or identifier in raw.get("credentials", {}):
@@ -465,7 +476,7 @@ class ConfigurationManager:
         if set(document) - {"adapter", "enabled", "options"}:
             raise ConfigError("unknown capability field")
         try:
-            definition = adapter_definition(document.get("adapter"), "llm" if capability == "vision" else capability)
+            definition = adapter_definition(document.get("adapter"), "llm" if capability in {"vision", "background"} else capability)
         except ValueError as error:
             raise ConfigError(str(error)) from None
         options = copy.deepcopy(document.get("options", {}))

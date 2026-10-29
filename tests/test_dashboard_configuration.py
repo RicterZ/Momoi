@@ -70,6 +70,32 @@ class ConfigurationManagerTest(unittest.TestCase):
         self.manager.save_model_providers({"action": "delete", "id": other["id"]}, self.manager.revision())
         self.assertEqual(len(self.manager.snapshot()["model_providers"]), 1)
 
+    def test_background_model_binding_splits_reply_from_other_stages(self):
+        initial = self.manager.save_binding("llm", LLM, self.manager.revision())
+        primary = initial["active_model_provider"]
+        alternate = {**LLM["options"], "model": "background-model", "api_key": "background-secret"}
+        added = self.manager.save_model_providers(
+            {"action": "save", "name": "Background", "adapter": "openai", "options": alternate}, initial["revision"])
+        other = next(p for p in added["model_providers"] if p["name"] == "Background")
+        split = self.manager.save_model_providers({"action": "background", "id": other["id"]}, added["revision"])
+        self.assertEqual(split["background_model_provider"], other["id"])
+        self.assertEqual(split["active_model_provider"], primary)
+        self.assertEqual(len(split["model_providers"]), 2)
+        catalog = self.manager.validate().providers
+        self.assertEqual(catalog.options_for("background")["model"], "background-model")
+        self.assertEqual(catalog.options_for("background")["api_key"], "background-secret")
+        self.assertNotEqual(catalog.options_for("llm")["model"], "background-model")
+        with self.assertRaises(ConfigError):
+            self.manager.save_model_providers({"action": "delete", "id": other["id"]}, split["revision"])
+        with self.assertRaises(ConfigError):
+            self.manager.save_model_providers({"action": "background", "id": "missing"}, split["revision"])
+        swapped = self.manager.save_model_providers({"action": "activate", "id": other["id"]}, split["revision"])
+        self.assertEqual(swapped["background_model_provider"], "")
+        restored = self.manager.save_model_providers({"action": "background", "id": primary}, swapped["revision"])
+        cleared = self.manager.save_model_providers({"action": "background", "id": ""}, restored["revision"])
+        self.assertEqual(cleared["background_model_provider"], "")
+        self.assertFalse(self.manager.validate().providers.enabled("background"))
+
     def test_model_profile_invalid_changes_are_atomic(self):
         self.manager.save_binding("llm", LLM, self.manager.revision())
         revision = self.manager.revision()
