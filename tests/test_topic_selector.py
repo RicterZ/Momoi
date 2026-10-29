@@ -231,3 +231,31 @@ def test_selector_repairs_excessive_results_from_expanded_pool():
     selected = asyncio.run(select_topics(provider, store, 'request', [], rows))
     assert selected.episodes == [rows[18]]
     assert provider.complete.await_count == 2
+
+
+def test_selection_timeout_falls_back_to_prefilter_top_six(monkeypatch):
+    from momoi.runtime.context import selection
+
+    rows = [dict(id=str(i), title='topic') for i in range(10)]
+    store = SimpleNamespace(topic_conversation_time=lambda _: None)
+    monkeypatch.setattr(selection, 'TOPIC_SELECTION_TIMEOUT_SECONDS', 0.01)
+
+    async def complete(*args, **kwargs):
+        await asyncio.sleep(1)
+
+    diagnostics = {}
+    selected = asyncio.run(select_topics(
+        SimpleNamespace(complete=complete), store, 'request', [], rows,
+        memory_candidates=[{'id': 1, 'kind': 'profile', 'key': 'k', 'content': 'c'}],
+        diagnostics=diagnostics,
+    ))
+    assert selected == RecallSelection(rows[:6], [], [])
+    assert diagnostics['status'] == 'timeout_fallback'
+    assert diagnostics['selected_ids'] == [str(i) for i in range(6)]
+
+
+def test_selection_errors_other_than_timeout_still_fail_closed():
+    rows = [dict(id=str(i), title='topic') for i in range(3)]
+    store = SimpleNamespace(topic_conversation_time=lambda _: None)
+    provider = SimpleNamespace(complete=AsyncMock(side_effect=RuntimeError('boom')))
+    assert asyncio.run(select_topics(provider, store, 'request', [], rows)) == RecallSelection([], [], [])

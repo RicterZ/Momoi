@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 # generic cue matches; the final context retains its existing eight-topic cap.
 TOPIC_CANDIDATE_LIMIT = 24
 TOPIC_RESULT_LIMIT = 8
+# Production P90 of selection latency is about 34s; slower calls fall back to prefilter order.
+TOPIC_SELECTION_TIMEOUT_SECONDS = 35
+TOPIC_TIMEOUT_FALLBACK_LIMIT = 6
 SYSTEM = (Path(__file__).resolve().parents[2] / "prompts/topic_selection.md").read_text(encoding="utf-8").strip()
 
 
@@ -174,8 +177,17 @@ async def select_topics(provider, store, request, queries, candidates, *, memory
             provider,
             SYSTEM,
             [{"role": "user", "content": render_topic_selection_request(payload)}],
-            spec, parse, timeout=45, thinking_effort=thinking_effort, stage="topic_selection",
+            spec, parse, timeout=TOPIC_SELECTION_TIMEOUT_SECONDS,
+            thinking_effort=thinking_effort, stage="topic_selection",
         )
+    except TimeoutError:
+        # Memories and reflections need the selector's judgement; only ranked topics fall back.
+        fallback = list(candidates[:TOPIC_TIMEOUT_FALLBACK_LIMIT])
+        diagnostics.update(status="timeout_fallback", error_type="TimeoutError",
+                           selected_ids=[str(row["id"]) for row in fallback],
+                           elapsed_ms=(time.monotonic()-started)*1000)
+        log_event(logger, logging.WARNING, "topic_selection", **diagnostics)
+        return RecallSelection(fallback, [], [])
     except Exception as error:
         # Unfiltered broad candidates are not safe substitutes for selected topics.
         diagnostics.update(status="failed", error_type=type(error).__name__,
