@@ -1,7 +1,7 @@
 """On-demand control of messages already delivered to QQ."""
 QQ_POKE_SPEC = {
     "name": "qq_poke",
-    "description": "真实戳一戳当前 QQ 私聊用户。需要此动作时调用工具，不要输出 qq://poke 或用文字假装已经执行。读取结果后继续输出实际发言。非 QQ 频道调用时不执行动作，静默返回成功。",
+    "description": "真实戳一戳当前 QQ 私聊用户。需要此动作时调用工具，不要输出 qq://poke 或用文字假装已经执行。读取结果后按意图继续发言；只需要动作时不再输出文字。非 QQ 频道调用时不执行动作，静默返回成功。",
     "input_schema": {
         "type": "object", "properties": {}, "additionalProperties": False,
     },

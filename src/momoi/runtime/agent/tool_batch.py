@@ -552,6 +552,8 @@ class ToolBatchExecutor:
                 action_bubbles = self.store.reply_action_bubbles(request.turn_id, call.id)
                 if action_bubbles:
                     result["bubbles"] = action_bubbles + list(result.get("bubbles", []))
+                    if result.get("state") == "no_reply":
+                        result["state"] = "sent"
                 attach_reply_episode_triggers(
                     self.store, result, stage=execution.stage, seen=request.draft.triggered_episode_ids,
                 )
