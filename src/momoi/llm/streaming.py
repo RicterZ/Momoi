@@ -137,6 +137,8 @@ async def response_data(response, protocol):
                         index = part["index"]
                         tool = tools.setdefault(index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
                         tool["id"] += part.get("id", "")
+                        if isinstance(part.get("extra_content"), dict):
+                            tool["extra_content"] = part["extra_content"]
                         for key in ("name", "arguments"):
                             tool["function"][key] += part.get("function", {}).get(key, "")
                         await emit(ProviderEvent("tool_delta", part.get("function", {}).get("arguments", ""), index, part))
