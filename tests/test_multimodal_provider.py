@@ -183,6 +183,9 @@ def test_registry_owns_both_models_and_bypasses_recognition_for_multimodal(multi
                 "primary": {"adapter": "openai", "settings": {"base_url": str(server.make_url("/v1")), "model": "primary", "multimodal": multimodal}},
                 "vision": {"adapter": "openai", "settings": {"base_url": str(server.make_url("/v1")), "model": "vision"}},
             }, "bindings": {"llm": {"service": "primary"}, "vision": {"service": "vision"}}}
+            if multimodal:
+                # Without a vision binding a multimodal model reads images itself.
+                del raw["bindings"]["vision"]
             registry = ServiceRegistry(parse_provider_catalog(raw, tmp_path / "providers.yaml"), dump_dir=tmp_path / "dumps")
             model = registry.llm
             model.thinking_sink = lambda **record: thinking.append(record)
