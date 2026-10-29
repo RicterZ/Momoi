@@ -114,6 +114,7 @@ class UsageAccounting(ABC):
         uncached: int,
         cache_write: int = 0,
         output: int,
+        pricing: str | None = None,
     ) -> float:
         hit, miss, completion = self.token_rates(model, timestamp)
         billed_miss = max(0, uncached) + max(0, cache_write)

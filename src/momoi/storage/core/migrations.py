@@ -821,6 +821,11 @@ def _add_episode_triggers(database):
         database.execute("ALTER TABLE conversation_episodes ADD COLUMN triggers_manual INTEGER NOT NULL DEFAULT 0")
 
 
+def _add_usage_pricing(database):
+    if "pricing" not in _columns(database, "llm_usage"):
+        database.execute("ALTER TABLE llm_usage ADD COLUMN pricing TEXT")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -867,6 +872,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_affinity,
     _add_transcript_context_activity,
     _add_episode_triggers,
+    _add_usage_pricing,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

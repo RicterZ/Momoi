@@ -829,6 +829,7 @@ main.is-record .error {
   gap: 10px;
   margin: 10px 0 4px;
 }
+.usage-home-stats.no-balance { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .usage-home-stats > div {
   padding: 10px 12px;
   border: 2px solid var(--ink);
@@ -1614,7 +1615,8 @@ a.tag:hover {
   .goal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .overview-grid { grid-template-columns: 1fr; }
   .overview-groups { grid-template-columns: 1fr; }
-  .usage-home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .usage-home-stats,
+  .usage-home-stats.no-balance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .usage-home-stats > div { padding: 12px; }
   .usage-home-stats strong { font-size: 20px; }
   .usage-chart-head {

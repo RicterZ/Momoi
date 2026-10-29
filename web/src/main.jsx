@@ -802,11 +802,11 @@ function UsageChart({ rows, today, balance, budget, costAvailable, days = 30, to
           <span className="usage-legend-item blue bar">请求次数</span>
         </div>
       </div>
-      <div className="usage-home-stats">
-        <div>
+      <div className={`usage-home-stats${balance?.source === "unsupported" ? " no-balance" : ""}`}>
+        {balance?.source !== "unsupported" && <div>
           <span>账户余额</span>
           <strong>{balance?.source === "live" ? formatYuan(balance.total_balance) : "-"}</strong>
-        </div>
+        </div>}
         <div>
           <span>{hourly ? "当日请求" : "今日请求"}</span>
           <strong>{hasStats ? todayStats.requests ?? 0 : "—"}</strong>

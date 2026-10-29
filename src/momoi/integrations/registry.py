@@ -16,6 +16,7 @@ from .transport import HTTPTransport
 from .builtins import register_builtins
 from .fields import normalize_fields, validate_schema
 from .models import EmbeddingSpaceConfig
+from .pricing import DEFAULT_PRICING, Billing, PricingBook, balance_for, legacy_pricing_key, pricing_key
 
 from ..policies import SemanticPolicy
 
@@ -102,6 +103,7 @@ class ServiceRegistry:
         self.transport = HTTPTransport()
         self.context = AdapterContext(self.transport, dump_dir, semantic_policy)
         self._instances = dict(overrides or {})
+        self._overrides = frozenset(self._instances)
         self._owned: list[Any] = []
         self._stack: AsyncExitStack | None = None
         self.image_prompt_path = image_prompt_path
@@ -196,7 +198,48 @@ class ServiceRegistry:
 
     @property
     def balance(self) -> BalanceProvider | None:
+        """Legacy global billing binding; fallback when a model sets no pricing."""
         return self.get("balance")
+
+    @property
+    def legacy_pricing(self) -> str | None:
+        if "balance" in self._overrides:
+            return None
+        if self.catalog.enabled("balance"):
+            return legacy_pricing_key(
+                self.catalog.adapter_for("balance"), self.catalog.options_for("balance")
+            )
+        return DEFAULT_PRICING
+
+    def pricing_for(self, capability: str) -> str | None:
+        """Pricing key recorded on usage from one model binding."""
+        if self.catalog.enabled(capability):
+            key = pricing_key(self.catalog.options_for(capability))
+            if key:
+                return key
+        return self.legacy_pricing
+
+    @property
+    def billing(self) -> Billing:
+        if "billing" in self._instances:
+            return self._instances["billing"]
+        legacy = self.balance
+        source = None
+        for capability in ("llm", "background"):
+            if not self.catalog.enabled(capability):
+                continue
+            options = self.catalog.options_for(capability)
+            source = balance_for(pricing_key(options), options, self.transport)
+            if source is not None:
+                break
+        if source is None and legacy is not None and (
+            self.catalog.adapter_for("balance") != "google" or "balance" in self._overrides
+        ):
+            source = legacy
+        accounting = getattr(legacy, "accounting", None) if legacy is not None else None
+        billing = Billing(PricingBook(accounting), source)
+        self._instances["billing"] = billing
+        return billing
 
     async def __aenter__(self):
         stack = AsyncExitStack()

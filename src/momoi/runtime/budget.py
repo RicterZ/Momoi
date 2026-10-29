@@ -10,10 +10,12 @@ class BudgetExceeded(RuntimeError):
 
 
 class BudgetGuard:
+    """One total budget across stages; each row is priced by its own strategy."""
+
     def __init__(self, config, accounting):
         self.config = config
-        from ..integrations.adapters.deepseek import DeepSeekAccounting
-        self.accounting = accounting or DeepSeekAccounting()
+        from ..integrations.pricing import PricingBook
+        self.accounting = accounting or PricingBook()
 
     def status(self, now=None):
         budget = self.config.budget
@@ -23,9 +25,10 @@ class BudgetGuard:
         daily_spent = monthly_spent = 0.0
         if self.accounting is not None:
             with sqlite3.connect(self.config.database) as db:
-                rows = db.execute("SELECT model, created_at, cache_read_tokens, uncached_tokens, cache_write_tokens, output_tokens FROM llm_usage WHERE created_at>=? AND created_at<=?", (month, current.timestamp()))
-                for model, stamp, hit, miss, write, output in rows:
-                    cost = self.accounting.estimate_cost(model, stamp, cache_read=hit, uncached=miss, cache_write=write, output=output)
+                rows = db.execute("SELECT model, created_at, cache_read_tokens, uncached_tokens, cache_write_tokens, output_tokens, pricing FROM llm_usage WHERE created_at>=? AND created_at<=?", (month, current.timestamp()))
+                for model, stamp, hit, miss, write, output, pricing in rows:
+                    extra = {"pricing": pricing} if pricing else {}
+                    cost = self.accounting.estimate_cost(model, stamp, cache_read=hit, uncached=miss, cache_write=write, output=output, **extra)
                     monthly_spent += cost
                     if stamp >= day:
                         daily_spent += cost
@@ -33,7 +36,7 @@ class BudgetGuard:
         daily_blocked = budget.daily_amount > 0 and daily_spent >= budget.daily_amount
         monthly_blocked = budget.monthly_amount > 0 and monthly_spent >= budget.monthly_amount
         daily = budget.daily_amount > 0
-        reason = ("费用估算不可用，请启用账户余额中的费用估算。" if not available
+        reason = ("费用估算不可用，请检查模型 Provider 的计费策略。" if not available
                   else "本月费用已达月预算，调度已暂停。" if monthly_blocked
                   else "今日费用已达日预算，调度已暂停。" if daily_blocked else "")
         return {"enabled": budget.enabled, "period": "daily" if daily else "monthly",

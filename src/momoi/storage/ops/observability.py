@@ -75,14 +75,15 @@ class ObservabilityStore:
         stage: str = "",
         model: str = "",
         metrics: dict[str, float | int | bool],
+        pricing: str | None = None,
     ) -> None:
         with self._db:
             self._db.execute(
                 """INSERT INTO llm_usage
                    (created_at, turn_id, stage, model, input_tokens,
                     uncached_tokens, cache_read_tokens, cache_write_tokens,
-                    output_tokens, cache_reported)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    output_tokens, cache_reported, pricing)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     created_at,
                     turn_id,
@@ -94,6 +95,7 @@ class ObservabilityStore:
                     max(0, int(metrics.get("cache_write") or 0)),
                     max(0, int(metrics.get("output") or 0)),
                     1 if metrics.get("cache_reported") else 0,
+                    pricing or None,
                 ),
             )
 
@@ -468,7 +470,7 @@ class ObservabilityStore:
         rows = self._db.execute(
             """SELECT created_at, turn_id, stage, model, input_tokens,
                       uncached_tokens, cache_read_tokens, cache_write_tokens,
-                      output_tokens, cache_reported
+                      output_tokens, cache_reported, pricing
                FROM llm_usage
                WHERE created_at >= ?
                ORDER BY created_at""",
@@ -492,7 +494,7 @@ class ObservabilityStore:
         end = datetime.combine(selected + timedelta(days=1), local_time.min, self._timezone)
         rows = self._db.execute(
             """SELECT created_at, model, input_tokens, uncached_tokens,
-                      cache_read_tokens, cache_write_tokens, output_tokens, cache_reported
+                      cache_read_tokens, cache_write_tokens, output_tokens, cache_reported, pricing
                FROM llm_usage WHERE created_at >= ? AND created_at < ?
                ORDER BY created_at""",
             (start.timestamp(), end.timestamp()),
@@ -504,3 +506,8 @@ class ObservabilityStore:
             zone=self._timezone,
             estimate=None if plugin is None else plugin.estimate_cost,
         )
+
+    def backfill_usage_pricing(self, pricing: str) -> None:
+        """Freeze legacy rows at the pricing they were reported with."""
+        with self._db:
+            self._db.execute("UPDATE llm_usage SET pricing=? WHERE pricing IS NULL", (pricing,))

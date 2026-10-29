@@ -169,12 +169,14 @@ class RequestMetricsRepository:
             usage = item.get("usage")
             item["estimated_cost"] = None
             if estimate is not None and isinstance(usage, dict) and usage.get("input") is not None:
+                pricing = {"pricing": item["pricing"]} if item.get("pricing") else {}
                 item["estimated_cost"] = estimate(
                     item["model"], item["created_at"],
                     cache_read=usage.get("cache_read") or 0,
                     uncached=usage.get("uncached") or 0,
                     cache_write=usage.get("cache_write") or 0,
                     output=usage.get("output") or 0,
+                    **pricing,
                 )
             items.append(item)
         result = dict(totals=totals, stages=stages, trend=trend, items=items,

@@ -708,7 +708,8 @@ CREATE TABLE IF NOT EXISTS llm_usage (
     cache_read_tokens INTEGER NOT NULL DEFAULT 0,
     cache_write_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
-    cache_reported INTEGER NOT NULL DEFAULT 0 CHECK (cache_reported IN (0, 1))
+    cache_reported INTEGER NOT NULL DEFAULT 0 CHECK (cache_reported IN (0, 1)),
+    pricing TEXT
 );
 CREATE INDEX IF NOT EXISTS llm_usage_created ON llm_usage(created_at);
 

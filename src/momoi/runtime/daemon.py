@@ -104,11 +104,11 @@ class MomoiDaemon(
         )
         self.semantic_recall.start()
         self.memory = self.store.memories
-        balance = self.services.balance
-        from ..integrations.adapters.deepseek import DeepSeekAccounting
-        accounting = (balance.accounting if balance is not None else None) or DeepSeekAccounting()
-        if accounting is not None:
-            self.store.set_usage_accounting(accounting)
+        accounting = self.services.billing.accounting
+        self.store.set_usage_accounting(accounting)
+        legacy_pricing = self.services.legacy_pricing
+        if legacy_pricing:
+            self.store.backfill_usage_pricing(legacy_pricing)
         self.store.recover_task_plans()
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
@@ -162,8 +162,11 @@ class MomoiDaemon(
         self.provider = background or self.services.llm
         from .budget import BudgetGuard
         self.budget_guard = BudgetGuard(config, accounting)
-        for provider in filter(None, (self.provider, self._reply_provider)):
-            self._attach_provider_sinks(provider, accounting)
+        vision_pricing = self.services.pricing_for("vision") if self.services.catalog.enabled("vision") else None
+        for provider, capability in ((self.provider, "background" if background is not None else "llm"),
+                                     (self._reply_provider, "llm")):
+            if provider is not None:
+                self._attach_provider_sinks(provider, accounting, self.services.pricing_for(capability), vision_pricing)
         self.mcp = MCPManager(config.mcp_config, servers=config.mcp_servers, connect_in_background=True)
         self.tool_surface = ToolSurface(
             self.mcp,
@@ -266,18 +269,21 @@ class MomoiDaemon(
     def reply_provider(self):
         return getattr(self, "_reply_provider", None) or self.provider
 
-    def _attach_provider_sinks(self, provider, accounting):
+    def _attach_provider_sinks(self, provider, accounting, pricing=None, vision_pricing=None):
+        from ..integrations.image_routing import ImageRoutingModel
+        from ..integrations.pricing import priced_metrics_sink, priced_usage_sink
         original_complete = provider.complete
         async def budgeted_complete(*args, **kwargs):
             self.budget_guard.check()
             return await original_complete(*args, **kwargs)
         provider.complete = budgeted_complete
-        provider.usage_sink = self.store.record_llm_call
+        provider.usage_sink = priced_usage_sink(self.store.record_llm_call, pricing)
         if hasattr(provider, "request_metrics_sink"):
-            provider.request_metrics_sink = self.store.record_request_metric
+            provider.request_metrics_sink = priced_metrics_sink(self.store.record_request_metric, pricing)
         provider.thinking_sink = self.store.record_thinking_call
-        if accounting is not None:
-            provider.usage_parser = accounting.parse_usage
+        provider.usage_parser = accounting.strategy(pricing).parse_usage
+        if isinstance(provider, ImageRoutingModel):
+            provider.vision_pricing = vision_pricing
 
     async def run(self, stop: asyncio.Event) -> None:
         if self.config.episode_annealing.enabled:

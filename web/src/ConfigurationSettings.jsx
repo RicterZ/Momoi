@@ -64,7 +64,7 @@ const adapterLabels = {
   sherpa: "本地 Sherpa ASR",
 };
 const primaryFields = {
-  llm: ["base_url", "api_key", "model", "thinking", "multimodal"],
+  llm: ["base_url", "api_key", "model", "pricing", "thinking", "multimodal"],
   asr: ["secret_id", "secret_key", "endpoint"],
   tts: ["api_key", "reference_id", "voice_id", "model"],
   embedding: ["endpoint", "api_key", "model", "dimensions"],
@@ -74,6 +74,9 @@ const primaryFields = {
 const hiddenFields = {
   balance: ["accounting"],
   embedding: ["base_url", "document_batch_size", "timeout_seconds"],
+};
+const enumLabels = {
+  pricing: { "": "沿用全局计费服务", deepseek: "DeepSeek", google: "Google AI Studio" },
 };
 const fieldHints = {
   dimensions: "需与所选模型的输出维度一致",
@@ -458,7 +461,7 @@ function OptionField({ name, spec, value, onChange, disabled = false }) {
         label={label}
         value={value ?? spec.default ?? ""}
         onChange={onChange}
-        options={spec.enum.map((item) => ({ value: item, label: item }))}
+        options={spec.enum.map((item) => ({ value: item, label: enumLabels[name]?.[item] ?? item }))}
       />
     );
   const object = spec.type === "object";
@@ -1296,7 +1299,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
         ))}
         {module.id === "budget" && <section className="settings-runtime-group settings-runtime-nested settings-budget-account" aria-labelledby="budget-balance-title">
           <div className="settings-runtime-copy">
-            <div className="settings-voice-title"><h3 id="budget-balance-title">账户余额</h3><span className="panel-label">BUDGET // BALANCE</span></div><p className="settings-runtime-description">计费服务决定费用估算使用的价格；关闭后按 DeepSeek 价格估算。</p></div><Toggle checked={balance.enabled} disabled={saving} onChange={enabled => changeBalance({ ...balance, enabled })}>启用计费服务</Toggle>
+            <div className="settings-voice-title"><h3 id="budget-balance-title">账户余额</h3><span className="panel-label">BUDGET // BALANCE</span></div><p className="settings-runtime-description">费用优先按各模型 Provider 选择的计费策略估算；这里的全局计费服务只用于未选择计费策略的模型，关闭后按 DeepSeek 价格估算。</p></div><Toggle checked={balance.enabled} disabled={saving} onChange={enabled => changeBalance({ ...balance, enabled })}>启用计费服务</Toggle>
           {balance.enabled && <Fields disabled={saving}>
             <SelectField label="计费服务" value={balance.values.balance.adapter} disabled={saving}
               options={data.adapters.filter(item => item.capability === "balance").map(item => ({ value: item.adapter, label: adapterLabels[item.adapter] || item.adapter }))}

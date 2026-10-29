@@ -60,6 +60,7 @@ def _add_row(
             row.get("input_tokens")
         )
     if estimate is not None:
+        pricing = {"pricing": row["pricing"]} if row.get("pricing") else {}
         bucket["estimated_cost"] = float(bucket["estimated_cost"]) + estimate(
             str(row.get("model") or DEFAULT_MODEL),
             float(row["created_at"]),
@@ -67,6 +68,7 @@ def _add_row(
             uncached=_as_int(row.get("uncached_tokens")),
             cache_write=_as_int(row.get("cache_write_tokens")),
             output=_as_int(row.get("output_tokens")),
+            **pricing,
         )
 
 

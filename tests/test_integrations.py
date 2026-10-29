@@ -523,7 +523,69 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
         self.assertIs(daemon.tool_batch.provider, daemon.provider)
         self.assertIs(daemon.tool_batch.replyer.provider, daemon.reply_provider)
         for provider in (daemon.provider, daemon.reply_provider):
-            self.assertEqual(provider.usage_sink, daemon.store.record_llm_call)
+            provider.usage_sink(created_at=1.0, stage="s", model="m", metrics={"input": 1, "uncached": 1, "output": 0})
+        self.assertEqual(daemon.store._db.execute("SELECT COUNT(*) FROM llm_usage").fetchone()[0], 2)
+
+    async def test_reply_and_background_models_bill_with_their_own_pricing(self):
+        import sqlite3
+        import time
+        from momoi.config.workspace import bootstrap, default_config
+        from momoi.integrations.adapters.deepseek import DeepSeekAccounting, DeepSeekBalanceProvider
+        from momoi.integrations.adapters.google import GeminiAccounting
+        from momoi.runtime.daemon import MomoiDaemon
+        from momoi.storage.core.schema import initialize_schema
+
+        raw = catalog_data()
+        raw["credentials"]["shared"]["api_key"] = "test-key"
+        raw["services"]["chat"]["settings"] = {"pricing": "deepseek"}
+        raw["services"]["worker"] = {"adapter": "openai", "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+                                     "credentials": "shared",
+                                     "settings": {"model": "gemini-3.6-flash", "pricing": "google", "usd_cny_rate": 7.0}}
+        raw["bindings"]["background"] = {"service": "worker"}
+        del raw["bindings"]["balance"]
+        self.load(raw)
+        path = self.root / "config.json"
+        bootstrap(path)
+        write_app_config(path, {
+            **default_config(),
+            "providers": "providers.yaml",
+            "channels": {"primary": "onebot", "enabled": {"onebot": {"url": "ws://localhost", "owner_qq": "123"}}},
+            "storage": {"database": "pricing.sqlite3"},
+            "budget": {"enabled": True, "daily_amount": 100, "monthly_amount": 0},
+        })
+        config = load_config(path)
+        # A row recorded before per-provider pricing keeps the legacy strategy.
+        with sqlite3.connect(config.database) as db:
+            initialize_schema(db)
+            db.execute("INSERT INTO llm_usage (created_at, model, uncached_tokens, input_tokens) VALUES (?, 'deepseek-v4-flash', 0, 0)", (time.time(),))
+        daemon = MomoiDaemon(config)
+        self.addCleanup(daemon.store.close)
+        self.assertEqual(daemon.services.pricing_for("llm"), "deepseek")
+        self.assertEqual(daemon.services.pricing_for("background"), "google:7")
+        self.assertIsInstance(daemon.services.billing.balance_source, DeepSeekBalanceProvider)
+        self.assertEqual(daemon.services.billing.balance_source.api_key, "test-key")
+        self.assertEqual(daemon.services.billing.balance_source.base_url, "https://api.deepseek.com")
+        now = time.time()
+        metrics = {"input": 1_000_000, "uncached": 1_000_000, "cache_read": 0, "output": 0, "cache_reported": False}
+        daemon.reply_provider.usage_sink(created_at=now, stage="reply", model="deepseek-v4-pro", metrics=metrics)
+        daemon.provider.usage_sink(created_at=now, stage="planner", model="gemini-3.6-flash", metrics=metrics)
+        rows = dict(daemon.store._db.execute("SELECT stage, pricing FROM llm_usage").fetchall())
+        self.assertEqual(rows, {"": "deepseek", "reply": "deepseek", "planner": "google:7"})
+        expected = (DeepSeekAccounting().estimate_cost("deepseek-v4-pro", now, cache_read=0, uncached=1_000_000, output=0)
+                    + GeminiAccounting(7.0).estimate_cost("gemini-3.6-flash", now, cache_read=0, uncached=1_000_000, output=0))
+        self.assertAlmostEqual(daemon.budget_guard.status(now)["daily"]["spent"], expected)
+        self.assertAlmostEqual(daemon.store.dashboard_usage(now=now)["totals"]["estimated_cost"], round(expected, 4))
+
+    async def test_pricing_without_balance_api_reports_unsupported(self):
+        raw = catalog_data()
+        raw["credentials"]["shared"]["api_key"] = "test-key"
+        raw["services"]["chat"]["settings"] = {"pricing": "google"}
+        del raw["bindings"]["balance"]
+        services = ServiceRegistry(self.load(raw))
+        self.assertEqual((await services.billing.balance())["source"], "unsupported")
+        raw["services"]["chat"]["settings"] = {"pricing": "other"}
+        with self.assertRaises(ConfigError):
+            self.load(raw)
 
     async def test_accounting_follows_balance_provider_in_runtime_and_dashboard(self):
         from datetime import datetime
@@ -588,11 +650,11 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
         class OtherPricing(Pricing):
             def token_rates(self, model, timestamp):
                 return (4, 5, 6)
+        from momoi.integrations.pricing import Billing, PricingBook
         replacement = Account()
-        replacement.accounting = OtherPricing()
-        supervisor.daemon = SimpleNamespace(services=SimpleNamespace(balance=replacement))
+        supervisor.daemon = SimpleNamespace(services=SimpleNamespace(billing=Billing(PricingBook(OtherPricing()), replacement)))
         await check(5.0)
-        replacement.accounting = None
+        supervisor.daemon = SimpleNamespace(services=SimpleNamespace(billing=Billing(None, replacement)))
         await check(None)
         self.assertEqual((await supervisor.balance())["total_balance"], "7.00")
         supervisor.daemon = None
