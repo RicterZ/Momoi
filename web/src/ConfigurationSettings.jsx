@@ -74,7 +74,7 @@ const hiddenFields = {
   embedding: ["base_url", "document_batch_size", "timeout_seconds"],
 };
 const enumLabels = {
-  pricing: { "": "按服务地址自动识别", deepseek: "DeepSeek", google: "Google AI Studio" },
+  pricing: { "": "不计费", deepseek: "DeepSeek", google: "Google AI Studio" },
 };
 const fieldHints = {
   dimensions: "需与所选模型的输出维度一致",

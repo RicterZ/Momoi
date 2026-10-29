@@ -19,13 +19,14 @@ class BudgetGuard:
 
     def status(self, now=None):
         budget = self.config.budget
-        current = datetime.fromtimestamp(time.time() if now is None else now, ZoneInfo(self.config.timezone))
+        stamp_now = time.time() if now is None else now
+        current = datetime.fromtimestamp(stamp_now, ZoneInfo(self.config.timezone))
         day = current.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         month = current.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp()
         daily_spent = monthly_spent = 0.0
         if self.accounting is not None:
             with sqlite3.connect(self.config.database) as db:
-                rows = db.execute("SELECT model, created_at, cache_read_tokens, uncached_tokens, cache_write_tokens, output_tokens, pricing FROM llm_usage WHERE created_at>=? AND created_at<=?", (month, current.timestamp()))
+                rows = db.execute("SELECT model, created_at, cache_read_tokens, uncached_tokens, cache_write_tokens, output_tokens, pricing FROM llm_usage WHERE created_at>=? AND created_at<=?", (month, stamp_now))
                 for model, stamp, hit, miss, write, output, pricing in rows:
                     extra = {"pricing": pricing} if pricing else {}
                     cost = self.accounting.estimate_cost(model, stamp, cache_read=hit, uncached=miss, cache_write=write, output=output, **extra)

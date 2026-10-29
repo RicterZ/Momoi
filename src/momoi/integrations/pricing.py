@@ -1,13 +1,14 @@
 """Per-provider pricing strategies; usage rows keep the key they were billed with."""
 
 from typing import Any
-from urllib.parse import urlsplit
 
 from ..llm.accounting import UsageAccounting
 
 PRICING_STRATEGIES = ("deepseek", "google")
 DEFAULT_PRICING = "deepseek"
 DEFAULT_USD_CNY_RATE = 7.1
+# Recorded on usage from a model provider without pricing; such calls cost nothing.
+UNBILLED = "none"
 
 
 def pricing_key(options: dict[str, Any]) -> str | None:
@@ -25,22 +26,6 @@ def pricing_key(options: dict[str, Any]) -> str | None:
     return name
 
 
-_HOST_PRICING = {
-    "api.deepseek.com": "deepseek",
-    "generativelanguage.googleapis.com": "google",
-}
-
-
-def provider_pricing(options: dict[str, Any]) -> str | None:
-    """Explicit pricing, else the strategy implied by a known vendor address."""
-    key = pricing_key(options)
-    if key:
-        return key
-    host = urlsplit(str(options.get("base_url") or "")).hostname or ""
-    name = _HOST_PRICING.get(host.lower())
-    return pricing_key({**options, "pricing": name}) if name else None
-
-
 def legacy_pricing_key(adapter: str, options: dict[str, Any]) -> str | None:
     """Key equivalent to an old global balance binding; None for plugin strategies."""
     if not options.get("accounting", True) or adapter == "deepseek":
@@ -55,6 +40,8 @@ def accounting_for(key: str | None) -> UsageAccounting | None:
     from .adapters.google import GeminiAccounting
 
     name, _, argument = str(key or "").partition(":")
+    if name == UNBILLED:
+        return Unbilled()
     if name == "deepseek":
         return DeepSeekAccounting()
     if name == "google":
@@ -79,11 +66,16 @@ def balance_for(key: str | None, options: dict[str, Any], transport=None):
     )
 
 
+class Unbilled(UsageAccounting):
+    def token_rates(self, model: str, timestamp: float) -> tuple[float, float, float]:
+        return (0.0, 0.0, 0.0)
+
+
 class PricingBook(UsageAccounting):
     """Price each usage row with the strategy recorded on it."""
 
     def __init__(self, fallback: UsageAccounting | None = None) -> None:
-        # Rows without a recognized key keep the legacy global strategy.
+        # Rows recorded before per-provider pricing keep the legacy global strategy.
         self.fallback = fallback or accounting_for(DEFAULT_PRICING)
         self._strategies: dict[str, UsageAccounting] = {}
 
