@@ -119,7 +119,7 @@ class ServiceRegistry:
         if self._stack is not None:
             raise RuntimeError("Resolve services before entering the registry")
         binding = self.catalog.bindings[capability]
-        adapter_capability = "llm" if capability == "vision" else capability
+        adapter_capability = "llm" if capability in {"vision", "background"} else capability
         adapter = adapter_definition(binding.adapter, adapter_capability)
         options = normalize_fields(adapter.schema, self.catalog.options_for(capability))
         adapter.validate(options)
@@ -167,7 +167,7 @@ class ServiceRegistry:
             )
         self._instances[capability] = instance
         self._owned.append(instance)
-        if capability == "llm" and not options.get("multimodal", True) and self.catalog.enabled("vision"):
+        if capability in {"llm", "background"} and not options.get("multimodal", True) and self.catalog.enabled("vision"):
             from .image_routing import ImageRoutingModel
             instance = ImageRoutingModel(instance, self.get("vision"), prompt_path=self.image_prompt_path)
             self._instances[capability] = instance
@@ -176,6 +176,11 @@ class ServiceRegistry:
     @property
     def llm(self) -> LanguageModel:
         return self.get("llm")
+
+    @property
+    def background(self) -> LanguageModel | None:
+        """Model for every stage except reply generation; None means reuse llm."""
+        return self.get("background")
 
     @property
     def asr(self) -> ASRProvider | None:

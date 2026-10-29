@@ -498,6 +498,33 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
             self.assertEqual(caught.exception.category, ErrorCategory.INVALID_RESPONSE)
         self.assertTrue(first_session.closed)
 
+    async def test_background_binding_serves_every_stage_except_reply(self):
+        from momoi.config.workspace import bootstrap, default_config
+        from momoi.runtime.daemon import MomoiDaemon
+
+        raw = catalog_data()
+        raw["credentials"]["shared"]["api_key"] = "test-key"
+        raw["services"]["worker"] = {"adapter": "openai", "base_url": "https://api.deepseek.com/v1",
+                                     "credentials": "shared", "settings": {"model": "background-model"}}
+        raw["bindings"]["background"] = {"service": "worker"}
+        self.load(raw)
+        path = self.root / "config.json"
+        bootstrap(path)
+        write_app_config(path, {
+            **default_config(),
+            "providers": "providers.yaml",
+            "channels": {"primary": "onebot", "enabled": {"onebot": {"url": "ws://localhost", "owner_qq": "123"}}},
+            "storage": {"database": "stages.sqlite3"},
+        })
+        daemon = MomoiDaemon(load_config(path))
+        self.addCleanup(daemon.store.close)
+        self.assertEqual(daemon.provider.config.model, "background-model")
+        self.assertEqual(daemon.reply_provider.config.model, "deepseek-v4-flash")
+        self.assertIs(daemon.tool_batch.provider, daemon.provider)
+        self.assertIs(daemon.tool_batch.replyer.provider, daemon.reply_provider)
+        for provider in (daemon.provider, daemon.reply_provider):
+            self.assertEqual(provider.usage_sink, daemon.store.record_llm_call)
+
     async def test_accounting_follows_balance_provider_in_runtime_and_dashboard(self):
         from datetime import datetime
         from types import SimpleNamespace
