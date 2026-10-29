@@ -12,6 +12,7 @@ from aiohttp.test_utils import TestServer
 from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.adapters.anthropic import merge_adjacent_roles
+from momoi.llm.errors import ProviderContentFiltered
 from momoi.integrations.adapters.anthropic import AnthropicProvider
 from momoi.integrations.adapters.openai import OpenAIProvider, openai_messages
 from momoi.integrations.models import LLMConfig, ThinkingConfig
@@ -135,6 +136,22 @@ class ReasoningContinuationTest(unittest.IsolatedAsyncioTestCase):
         calls = openai_messages("", [replayed], gemini=True)[0]["tool_calls"]
         self.assertEqual(calls[0]["extra_content"]["google"]["thought_signature"], "skip_thought_signature_validator")
         self.assertNotIn("extra_content", openai_messages("", [replayed])[0]["tool_calls"][0])
+
+    async def test_content_filter_block_is_not_retried(self):
+        requests = []
+        async def chat(request):
+            requests.append(await request.json())
+            return web.json_response({"choices": [{"finish_reason": "content_filter: PROHIBITED_CONTENT", "index": 0}]})
+        app = web.Application()
+        app.router.add_post("/v1/chat/completions", chat)
+        server = TestServer(app)
+        await server.start_server()
+        self.addAsyncCleanup(server.close)
+        config = LLMConfig(str(server.make_url("/v1")), "test", "gemini-3.6-flash", 100, 0, 5, 3, "openai")
+        async with OpenAIProvider(config) as provider:
+            with self.assertRaisesRegex(ProviderContentFiltered, "PROHIBITED_CONTENT"):
+                await provider.complete("", [{"role": "user", "content": "question"}])
+        self.assertEqual(len(requests), 1)
 
     async def test_anthropic_signed_thinking_is_replayed_before_tool_use(self):
         thinking = {"type": "thinking", "thinking": "private", "signature": "sig-a"}

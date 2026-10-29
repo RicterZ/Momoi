@@ -6,7 +6,7 @@ from typing import Any
 
 import aiohttp
 
-from ...llm.errors import ProviderResponseError
+from ...llm.errors import ProviderContentFiltered, ProviderResponseError
 from ...llm.telemetry import openai_reasoning
 from ...llm.transport import openai_url
 from ...observability.events import log_event
@@ -254,6 +254,10 @@ class OpenAIProvider(ProtocolProvider):
                 "OpenAI-compatible endpoint returned no choices"
             )
         message = choices[0].get("message")
+        finish = choices[0].get("finish_reason")
+        if not isinstance(message, dict) and isinstance(finish, str) and finish.startswith("content_filter"):
+            _log_unusable_response(response, data, "content_filter")
+            raise ProviderContentFiltered(f"Provider content filter blocked the request: {finish}")
         if not isinstance(message, dict):
             _log_unusable_response(response, data, "no_message")
             raise ProviderResponseError(

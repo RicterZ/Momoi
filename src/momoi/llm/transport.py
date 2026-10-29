@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 import aiohttp
 
-from .errors import ProviderError, ProviderResponseError
+from .errors import ProviderContentFiltered, ProviderError, ProviderResponseError
 from .streaming import _stream
 from ..integrations.errors import error_category
 from ..observability.events import log_event
@@ -149,7 +149,7 @@ async def retry_request(
                 reason=reason,
                 duration_ms=int((monotonic() - attempt_started) * 1000),
             )
-            if circuit is not None:
+            if circuit is not None and not isinstance(error, ProviderContentFiltered):
                 circuit.failed(error)
             if isinstance(error, ProviderError):
                 raise
