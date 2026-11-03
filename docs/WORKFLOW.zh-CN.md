@@ -221,7 +221,7 @@ prompt 用来描述发生了什么，以及 Momoi 应该传达什么。它不应
 
 每个工作流最多包含一个视频步骤。`source` 支持带 hostname 的 `rtmp`、`rtmps`、`rtsp`、`http`、`https` URL，可引用已声明的输入模板；绑定后使用其他协议会返回 HTTP `400`。`duration_seconds` 为 1～120 的整数。`send_as` 为 `file`（默认）或 `video`，原生视频需要 OneBot 服务支持。
 
-新请求被接受后立即在后台录制，与通知并行，不占用工作流 worker。幂等请求不会重复录制。程序自动为 message prompt 追加“视频正在后台录制，完成后单独发送”的上下文。所有 message 步骤结束后才会通过 Outbox 发送视频，包括静默结束或失败的情况；通知失败仍然发送视频。通知和视频全部到终态后，run 才进入最终状态。`/stop` 可以取消正在进行的录制。
+新请求被接受后立即在后台录制，与通知并行，不占用工作流 worker。幂等请求不会重复录制。程序自动为 message prompt 追加“视频正在后台录制，完成后单独发送”的上下文。所有 message 步骤结束后才会通过 Outbox 发送视频，包括静默结束或失败的情况；通知失败仍然发送视频。通知和视频全部到终态后，run 才进入最终状态。`/stop` 取消尚未进入 Outbox 的视频任务，包括已录完但仍在等待通知的片段；已保存文件按失败资产保留期清理。已经进入 Outbox 的视频保留投递回执监控。停止正在执行的通知时，其 message 步骤也会结束。
 
 录制使用 PyAV 自带的 FFmpeg 库，不调用 FFmpeg 可执行文件。H.264/AAC 源从第一个关键帧开始直接 remux 为 faststart MP4，按流时间戳截断。其他编码需设置 `webhooks.video_allow_transcode: true`，才能使用 libx264/AAC 转码。连接与读取有超时限制，录制总墙钟上限为请求时长加 30 秒。
 

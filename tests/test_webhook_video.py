@@ -164,6 +164,76 @@ class VideoServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.eventually(lambda: self.store.webhook_step(run_id, 1)["state"] == "failed")
         self.assertEqual(self.store.due_outbox(), [])
 
+    async def test_message_retry_succeeds_without_video(self):
+        await self.notification_retry_succeeds("event")
+
+    async def test_message_retry_keeps_recorded_video_waiting(self):
+        await self.notification_retry_succeeds("camera-event")
+
+    async def notification_retry_succeeds(self, workflow):
+        self.service.complete_turn = AsyncMock(return_value=AgentReply(["通知"]))
+        self.record_gate.set()
+        run_id = await self.post(workflow)
+        execute = asyncio.create_task(self.service._execute(
+            self.store.claim_webhook_run(), asyncio.Event(),
+        ))
+        try:
+            await self.eventually(lambda: self.store.webhook_step(run_id, 0)["state"] == "waiting_delivery")
+            outbox_id, = self.store.webhook_step(run_id, 0)["result"]["outbox_ids"]
+            self.assertTrue(self.store.mark_sending(outbox_id))
+            self.store.mark_ambiguous(outbox_id, 1, "response_lost")
+            self.assertEqual(self.store.webhook_delivery_state(run_id, 0), "pending")
+            # Allow the real delivery waiter to observe the retryable outcome.
+            await asyncio.sleep(0.55)
+            self.assertFalse(execute.done())
+            self.assertEqual(self.store.webhook_step(run_id, 0)["state"], "waiting_delivery")
+            if workflow == "camera-event":
+                self.assertEqual(self.store.webhook_step(run_id, 1)["result"]["status"], "recorded")
+            self.assertTrue(self.store.mark_sending(outbox_id))
+            self.store.mark_sent(outbox_id)
+            await asyncio.wait_for(execute, 3)
+            self.assertEqual(self.store.webhook_step(run_id, 0)["state"], "succeeded")
+            if workflow == "camera-event":
+                await self.eventually(lambda: bool(self.store.due_outbox()))
+                video, = self.store.due_outbox()
+                self.store.mark_sent(video.id)
+                await self.eventually(lambda: self.store.webhook_run(run_id)["state"] == "succeeded")
+            self.assertEqual(self.store.webhook_run(run_id)["state"], "succeeded")
+        finally:
+            execute.cancel()
+            await asyncio.gather(execute, return_exceptions=True)
+
+    async def test_stop_cancels_recorded_clip_before_queued_notification(self):
+        run_id = await self.post()
+        self.record_gate.set()
+        await self.eventually(lambda: self.store.webhook_step(run_id, 1)["result"].get("status") == "recorded")
+        monitor = self.service._video_tasks[run_id]
+        self.service.stop_active()
+        await asyncio.gather(monitor, return_exceptions=True)
+        self.assertEqual(self.store.webhook_step(run_id, 1)["error"], "recording_cancelled")
+        self.message_gate.set()
+        await self.service._execute(self.store.claim_webhook_run(), asyncio.Event())
+        self.assertEqual(self.store.webhook_run(run_id)["state"], "failed")
+        self.assertEqual(self.store.due_outbox(), [])
+        self.assertTrue((self.service.recorder.directory / f"{run_id}.mp4").exists())
+
+    async def test_stop_settles_active_notification_and_recorded_clip(self):
+        run_id = await self.post()
+        self.record_gate.set()
+        worker = asyncio.create_task(self.service.run_worker(asyncio.Event()))
+        try:
+            await self.eventually(lambda: self.store.webhook_step(run_id, 0)["state"] == "running"
+                and self.store.webhook_step(run_id, 1)["result"].get("status") == "recorded")
+            self.service.stop_active()
+            await self.eventually(lambda: self.store.webhook_run(run_id)["state"] == "failed")
+            await self.eventually(lambda: run_id not in self.service._video_tasks)
+            self.assertEqual(self.store.webhook_step(run_id, 0)["state"], "failed")
+            self.assertEqual(self.store.webhook_step(run_id, 1)["state"], "failed")
+            self.assertEqual(self.store.due_outbox(), [])
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+
     async def test_stop_preserves_enqueued_video_delivery_monitor(self):
         run_id = await self.post()
         self.message_gate.set()

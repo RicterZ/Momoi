@@ -323,10 +323,11 @@ class WebhookStore:
             return "failed"
         placeholders = ",".join("?" for _ in ids)
         rows = self._db.execute(
-            f"SELECT state FROM outbox WHERE id IN ({placeholders})", ids
+            f"SELECT id, state FROM outbox WHERE id IN ({placeholders})", ids
         ).fetchall()
         states = {str(row["state"]) for row in rows}
-        if states & {"ambiguous", "uncertain"}:
+        if any(row["state"] in {"ambiguous", "uncertain"}
+               and not self.outbox_dispatchable(int(row["id"])) for row in rows):
             return "ambiguous"
         if len(rows) != len(ids) or states & {"failed", "superseded"}:
             return "failed"

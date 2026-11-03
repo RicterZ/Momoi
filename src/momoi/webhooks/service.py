@@ -56,6 +56,7 @@ class WebhookService:
             allow_transcode=config.video_allow_transcode,
         )
         self._video_tasks: dict[str, asyncio.Task[None]] = {}
+        self._video_changed = asyncio.Event()
 
     def stop_active(self) -> None:
         """Stop a running webhook executor or delivery wait for /stop."""
@@ -70,8 +71,8 @@ class WebhookService:
                 if step["kind"] == "video":
                     index = int(step["step_index"])
                     record = self.store.webhook_step(run_id, index)
-                    if record["result"].get("status") in {None, "recording"}:
-                        if record["state"] == "queued":
+                    if record["result"].get("status") in {None, "recording", "recorded"}:
+                        if record["state"] == "queued" or record["result"].get("status") == "recorded":
                             self.store.finish_webhook_step(
                                 run_id, index, "failed", {}, "recording_cancelled"
                             )
@@ -199,6 +200,7 @@ class WebhookService:
                         (self.recorder.directory / f"{run_id}.mp4").unlink(missing_ok=True)
                         return
             while True:
+                self._video_changed.clear()
                 record = self.store.webhook_step(run_id, index)
                 if record is None or record["state"] in {"succeeded", "failed", "ambiguous"}:
                     return
@@ -206,10 +208,16 @@ class WebhookService:
                     ids = self.store.enqueue_webhook_video(run_id, index, self.primary_channel)
                     if ids:
                         self.wake_outbox()
+                        continue
                 elif record["result"].get("status") == "enqueued":
                     await self._wait_delivery(run_id, index, asyncio.Event())
                     return
-                await asyncio.sleep(0.1)
+                try:
+                    # Notification completion wakes all clips; recheck persisted
+                    # state periodically for updates made outside this worker.
+                    await asyncio.wait_for(self._video_changed.wait(), timeout=5)
+                except TimeoutError:
+                    pass
         except asyncio.CancelledError:
             cancel.set()
             record = self.store.webhook_step(run_id, index)
@@ -268,6 +276,12 @@ class WebhookService:
                 self._owner_stop_requested = False
 
     async def _execute(self, run: dict[str, Any], stop: asyncio.Event) -> None:
+        try:
+            await self._execute_steps(run, stop)
+        finally:
+            self._video_changed.set()
+
+    async def _execute_steps(self, run: dict[str, Any], stop: asyncio.Event) -> None:
         run_id = str(run["id"])
         workflow_id = str(run["workflow_id"])
         steps = run["plan"]["steps"]
