@@ -4,6 +4,7 @@ import http.server
 import threading
 from contextlib import contextmanager
 from fractions import Fraction
+from types import SimpleNamespace
 
 import av
 import numpy as np
@@ -103,6 +104,36 @@ def test_incompatible_codec_requires_explicit_transcode(tmp_path):
         assert output.streams.video[0].codec_context.name == "h264"
         assert len(list(output.decode(video=0))) == 20
     assert not list(recorder.directory.glob("*.part.mp4"))
+
+
+def test_transcode_live_camera_timestamps_and_misleading_average_rate(tmp_path):
+    # go2rtc's live H.265 MP4 reports ~989 fps and occasionally repeats or
+    # moves a timestamp backwards, although the camera runs at about 20 fps.
+    frames = []
+    for index in range(40):
+        frame = av.VideoFrame.from_ndarray(np.zeros((64, 64, 3), dtype=np.uint8), format="rgb24")
+        frame.time_base = Fraction(1, 90000)
+        frame.pts = (11 if index == 12 else 10 if index == 13 else index) * 4500
+        frames.append(frame)
+    packet = SimpleNamespace(
+        stream=SimpleNamespace(type="video"), is_keyframe=True,
+        pts=0, time_base=Fraction(1, 90000), decode=lambda: iter(frames),
+    )
+    source = SimpleNamespace(demux=lambda streams: iter([packet]))
+    video = SimpleNamespace(
+        average_rate=Fraction(90000, 91), guessed_rate=Fraction(20),
+        codec_context=SimpleNamespace(width=64, height=64),
+    )
+    path = tmp_path / "camera.mp4"
+    with av.open(str(path), "w", format="mp4") as output:
+        Recorder._transcode(source, output, [video], 2, lambda: None)
+    with av.open(str(path)) as output:
+        stream = output.streams.video[0]
+        decoded = list(output.decode(video=0))
+        assert stream.codec_context.name == "h264"
+        assert len(decoded) == 38
+        assert all(a.pts < b.pts for a, b in zip(decoded, decoded[1:]))
+        assert 1.9 <= float(stream.duration * stream.time_base) <= 2.1
 
 
 @pytest.mark.parametrize("video_codec,audio_codec,transcode", [
