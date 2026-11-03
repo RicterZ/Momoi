@@ -826,6 +826,20 @@ def _add_usage_pricing(database):
         database.execute("ALTER TABLE llm_usage ADD COLUMN pricing TEXT")
 
 
+def _add_webhook_video(database: sqlite3.Connection) -> None:
+    sql = database.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='webhook_steps'"
+    ).fetchone()[0]
+    if "'video'" in sql:
+        return
+    database.execute(sql.replace("webhook_steps", "webhook_steps_video", 1).replace(
+        "('message', 'exec')", "('message', 'exec', 'video')"
+    ))
+    database.execute("INSERT INTO webhook_steps_video SELECT * FROM webhook_steps")
+    database.execute("DROP TABLE webhook_steps")
+    database.execute("ALTER TABLE webhook_steps_video RENAME TO webhook_steps")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -873,6 +887,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_transcript_context_activity,
     _add_episode_triggers,
     _add_usage_pricing,
+    _add_webhook_video,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

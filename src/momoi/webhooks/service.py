@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import os
+import threading
 from collections.abc import Awaitable, Callable
 from time import monotonic
 from typing import Any
@@ -15,6 +16,7 @@ from ..config.models import WebhookConfig
 from ..observability.context import log_context
 from ..observability.events import log_event
 from ..models import AgentReply
+from ..media.recorder import Recorder, RecorderError
 from ..storage import Store
 
 logger = logging.getLogger(__name__)
@@ -47,12 +49,33 @@ class WebhookService:
         self.changed = asyncio.Event()
         self._active_run: asyncio.Task[None] | None = None
         self._owner_stop_requested = False
+        self.recorder = Recorder(
+            store.webhook_media_directory,
+            max_bytes=config.video_max_bytes,
+            concurrency=config.video_concurrency,
+            allow_transcode=config.video_allow_transcode,
+        )
+        self._video_tasks: dict[str, asyncio.Task[None]] = {}
 
     def stop_active(self) -> None:
         """Stop a running webhook executor or delivery wait for /stop."""
         if self._active_run is not None and not self._active_run.done():
             self._owner_stop_requested = True
             self._active_run.cancel()
+        for run_id, task in self._video_tasks.items():
+            run = self.store.webhook_run(run_id)
+            if run is None:
+                continue
+            for step in run["steps"]:
+                if step["kind"] == "video":
+                    index = int(step["step_index"])
+                    record = self.store.webhook_step(run_id, index)
+                    if record["result"].get("status") in {None, "recording"}:
+                        if record["state"] == "queued":
+                            self.store.finish_webhook_step(
+                                run_id, index, "failed", {}, "recording_cancelled"
+                            )
+                        task.cancel()
 
     async def run_api(self, stop: asyncio.Event) -> None:
         @web.middleware
@@ -103,6 +126,8 @@ class WebhookService:
             return web.json_response(
                 {"error": "invalid_request", "detail": str(error)}, status=400
             )
+        if created:
+            self._start_video(str(run["id"]), plan)
         self.changed.set()
         log_event(
             logger,
@@ -129,7 +154,87 @@ class WebhookService:
         return web.json_response(run)
 
     async def run_worker(self, stop: asyncio.Event) -> None:
+        for run in self.store.recoverable_webhook_video_runs():
+            self._start_video(str(run["id"]), run["plan"], recovering=True)
+        self.store.cleanup_webhook_video_assets(
+            self.recorder.directory, self.config.video_retention_days,
+            self.config.video_failed_retention_days,
+        )
+        try:
+            await self._run_worker(stop)
+        finally:
+            tasks = list(self._video_tasks.values())
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _start_video(
+        self, run_id: str, plan: dict[str, Any], *, recovering: bool = False
+    ) -> None:
+        if run_id in self._video_tasks:
+            return
+        for index, step in enumerate(plan["steps"]):
+            if step["uses"] != "video":
+                continue
+            task = asyncio.create_task(self._video(run_id, index, step, recovering))
+            self._video_tasks[run_id] = task
+            task.add_done_callback(lambda _task, key=run_id: self._video_tasks.pop(key, None))
+
+    async def _video(
+        self, run_id: str, index: int, step: dict[str, Any], recovering: bool
+    ) -> None:
+        cancel = threading.Event()
+        try:
+            record = self.store.webhook_step(run_id, index)
+            if record is None or record["state"] in {"succeeded", "failed", "ambiguous"}:
+                return
+            if not recovering:
+                part = str(self.recorder.directory / f"{run_id}.part.mp4")
+                if self.store.begin_webhook_video(run_id, index, part):
+                    asset = await self.recorder.record(
+                        str(step["source"]), run_id, int(step["duration_seconds"]),
+                        cancel=cancel,
+                    )
+                    if not self.store.record_webhook_video(run_id, index, asset):
+                        (self.recorder.directory / f"{run_id}.mp4").unlink(missing_ok=True)
+                        return
+            while True:
+                record = self.store.webhook_step(run_id, index)
+                if record is None or record["state"] in {"succeeded", "failed", "ambiguous"}:
+                    return
+                if record["result"].get("status") == "recorded":
+                    ids = self.store.enqueue_webhook_video(run_id, index, self.primary_channel)
+                    if ids:
+                        self.wake_outbox()
+                elif record["result"].get("status") == "enqueued":
+                    await self._wait_delivery(run_id, index, asyncio.Event())
+                    return
+                await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            cancel.set()
+            record = self.store.webhook_step(run_id, index)
+            if record is not None and record["state"] not in {"succeeded", "failed", "ambiguous"}:
+                if record["result"].get("status") in {None, "recording"}:
+                    (self.recorder.directory / f"{run_id}.mp4").unlink(missing_ok=True)
+                    self.store.finish_webhook_step(run_id, index, "failed", {}, "recording_cancelled")
+            raise
+        except Exception as error:
+            reason = str(error) if isinstance(error, RecorderError) else type(error).__name__
+            self.store.finish_webhook_step(run_id, index, "failed", {}, reason)
+            log_event(logger, logging.WARNING, "webhook_video_failed", run_id=run_id,
+                      error=reason)
+        finally:
+            self.changed.set()
+
+    async def _run_worker(self, stop: asyncio.Event) -> None:
+        cleanup_at = monotonic() + 3600
         while not stop.is_set():
+            if monotonic() >= cleanup_at:
+                self.store.cleanup_webhook_video_assets(
+                    self.recorder.directory, self.config.video_retention_days,
+                    self.config.video_failed_retention_days,
+                )
+                cleanup_at = monotonic() + 3600
             run = self.store.claim_webhook_run()
             if run is None:
                 self.changed.clear()
@@ -166,21 +271,26 @@ class WebhookService:
         run_id = str(run["id"])
         workflow_id = str(run["workflow_id"])
         steps = run["plan"]["steps"]
+        video = next((step for step in steps if step["uses"] == "video"), None)
         for index in range(int(run["current_step"]), len(steps)):
             step = steps[index]
             step_started = monotonic()
             record = self.store.webhook_step(run_id, index)
             if record is None:
                 raise RuntimeError("webhook step missing")
-            if record["state"] == "succeeded":
+            if record["state"] in {"succeeded", "failed", "ambiguous"}:
+                continue
+            if step["uses"] == "video":
                 continue
             if step["uses"] == "message":
                 if record["state"] != "waiting_delivery":
                     self.store.start_webhook_step(run_id, index)
                     turn_id = f"webhook:{run_id}:{index}"
-                    self.store.record_webhook_event(
-                        run_id, turn_id, str(step["prompt"])
-                    )
+                    prompt = str(step["prompt"])
+                    if video is not None:
+                        prompt += (f"\n\n[系统上下文] 摄像头视频（约 {video['duration_seconds']} 秒）"
+                                   "正在后台录制，完成后会单独发送，不需要你再发送或承诺具体时间。")
+                    self.store.record_webhook_event(run_id, turn_id, prompt)
                     log_event(
                         logger,
                         logging.DEBUG,
@@ -201,10 +311,17 @@ class WebhookService:
                             step_index=index,
                             turn_id=turn_id,
                         ):
-                            reply = await self.complete_turn(str(step["prompt"]), turn_id)
+                            reply = await self.complete_turn(prompt, turn_id)
                         outbox_ids = self.store.commit_webhook_reply(
                             run_id, index, turn_id, reply, self.primary_channel,
                         )
+                    except Exception as error:
+                        if video is None:
+                            raise
+                        self.store.finish_webhook_step(
+                            run_id, index, "failed", {}, type(error).__name__
+                        )
+                        continue
                     finally:
                         if self.turn_settled is not None:
                             self.turn_settled(turn_id)
@@ -212,7 +329,8 @@ class WebhookService:
                         continue
                     self.wake_outbox()
                 if not await self._wait_delivery(run_id, index, stop):
-                    return
+                    if video is None:
+                        return
             else:
                 self.store.start_webhook_step(run_id, index)
                 log_event(
@@ -247,6 +365,9 @@ class WebhookService:
                 if state != "succeeded":
                     return
         self.store.complete_webhook_run(run_id)
+        settled = self.store.webhook_run(run_id)
+        if settled is None or settled["state"] not in {"succeeded", "failed", "ambiguous"}:
+            return
         log_event(
             logger,
             logging.INFO,
@@ -254,6 +375,7 @@ class WebhookService:
             stage="webhook",
             workflow_id=workflow_id,
             run_id=run_id,
+            state=settled["state"],
             steps=len(steps),
         )
 
@@ -277,9 +399,9 @@ class WebhookService:
                     ok=True,
                 )
                 return True
-            if state == "failed":
+            if state in {"failed", "ambiguous"}:
                 self.store.finish_webhook_step(
-                    run_id, step_index, "failed", {}, "message_delivery_failed"
+                    run_id, step_index, state, {}, f"message_delivery_{state}"
                 )
                 log_event(
                     logger,

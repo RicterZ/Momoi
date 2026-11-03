@@ -1,4 +1,5 @@
 import time
+import json
 
 from .schema import initialize_schema
 from ..conversation.turns import EPISODE_MAINTENANCE_RESTART_REASON
@@ -93,11 +94,11 @@ class LifecycleStore:
         self._db.execute(
             """UPDATE outbox
                SET state='ambiguous', possible_duplicate=1, next_attempt_at=0
-               WHERE state='sending' AND attempts < 2"""
+               WHERE state='sending' AND (attempts < 2 OR dedupe_key LIKE 'webhook-video:%')"""
         )
         self._db.execute(
             """UPDATE outbox SET state='failed', possible_duplicate=1
-               WHERE state='sending' AND attempts >= 2"""
+               WHERE state='sending' AND attempts >= 2 AND dedupe_key NOT LIKE 'webhook-video:%'"""
         )
         for row in recovered:
             outbox_id = int(row["id"])
@@ -110,6 +111,30 @@ class LifecycleStore:
     def _recover_webhooks(self) -> None:
         now = time.time()
         with self._db:
+            videos = self._db.execute(
+                """SELECT run_id, step_index, state, result_json FROM webhook_steps
+                   WHERE kind='video' AND state IN ('queued', 'running')"""
+            ).fetchall()
+            for row in videos:
+                result = json.loads(row["result_json"])
+                if result.get("status") == "recorded":
+                    continue
+                # An event's live footage cannot be recovered by opening it later.
+                path = self.webhook_media_directory / f"{row['run_id']}.part.mp4"
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                final_path = self.webhook_media_directory / f"{row['run_id']}.mp4"
+                if final_path.is_file():
+                    result["path"] = str(final_path)
+                result["status"] = "failed"
+                self._db.execute(
+                    """UPDATE webhook_steps SET state='failed',
+                       error='recording_interrupted', completed_at=?, result_json=?
+                       WHERE run_id=? AND step_index=?""",
+                    (now, json.dumps(result), row["run_id"], row["step_index"]),
+                )
             running_execs = self._db.execute(
                 "SELECT run_id, step_index FROM webhook_steps WHERE kind='exec' AND state='running'"
             ).fetchall()
@@ -135,3 +160,7 @@ class LifecycleStore:
                    )""",
                 (now,),
             )
+            for row in self._db.execute(
+                "SELECT DISTINCT run_id FROM webhook_steps WHERE kind='video'"
+            ).fetchall():
+                self._refresh_webhook_video_run(str(row["run_id"]))

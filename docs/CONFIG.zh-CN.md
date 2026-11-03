@@ -222,6 +222,7 @@ QQ 渠道键是 `onebot`。已有配置里的 `napcat` 会在读取时改成 `on
 | `heartbeat_seconds` | 否 | `30` | 连接心跳间隔 |
 | `reconnect_max_seconds` | 否 | `30` | 最大重连退避时间 |
 | `send_timeout_seconds` | 否 | `20` | 出站请求超时时间 |
+| `video_send_timeout_seconds` | 否 | `120` | 摄像头片段独立发送超时，文件模式也适用，见[工作流](./WORKFLOW.zh-CN.md#录制并发送摄像头片段) |
 | `media_max_bytes` | 否 | `20971520` | 下载入站图片的最大大小 |
 | `media_download_timeout_seconds` | 否 | `15` | 入站图片下载超时时间 |
 

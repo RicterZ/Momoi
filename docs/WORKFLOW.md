@@ -154,7 +154,7 @@ steps: []
 | `id` | Yes | Route ID used in `/webhooks/{id}` |
 | `description` | No | Human-readable purpose |
 | `inputs` | No | Declared JSON request fields |
-| `steps` | Yes | Non-empty ordered list of `message` or `exec` steps |
+| `steps` | Yes | Non-empty list of `message`, `exec`, or `video` steps |
 
 Workflow, step, executor, input, and parameter identifiers must begin with a lowercase letter and may then contain lowercase letters, digits, `_`, or `-`. The maximum length is 64 characters.
 
@@ -209,6 +209,35 @@ An input referenced by an `exec` step must be present because the command argume
 `prompt` must be a non-empty string. `${inputs.<name>}` may appear anywhere in it, and every referenced name must be declared by the Workflow.
 
 The prompt describes what happened and what Momoi should communicate. It should not contain credentials or pretend to be owner speech.
+
+## Record and send a camera clip
+
+Copy [camera-event.yaml](../config.example/workflows/camera-event.yaml) into your workflow directory. Its request fields are `event_prompt` and `rtmp_url`. The video step is:
+
+```yaml
+- id: clip
+  uses: video
+  source: "${inputs.rtmp_url}"
+  duration_seconds: 30
+  send_as: file
+```
+
+Each workflow supports at most one video step. `source` accepts an absolute `rtmp`, `rtmps`, `rtsp`, `http`, or `https` URL, including declared input templates. Other schemes are rejected with HTTP `400` after binding. `duration_seconds` is an integer from 1 to 120. `send_as` is `file` (default) or `video`; native video requires support from the OneBot service.
+
+Recording starts as soon as a new request is accepted, in parallel with the notification, and does not occupy the workflow worker. Reusing an idempotency key does not start another recording. Momoi adds context to message prompts explaining that the clip is recording and will be sent separately. It waits for all message steps to finish, including silent or failed steps, before queuing the clip through Outbox. The run reaches its final state after both notification and video settle; notification failure still allows the video to send. `/stop` cancels ongoing recordings.
+
+The recorder uses PyAV with its bundled FFmpeg libraries; it does not invoke an FFmpeg executable. H.264/AAC streams are remuxed into faststart MP4 from the first keyframe, using stream timestamps to limit duration. Other codecs require `webhooks.video_allow_transcode: true` to enable libx264/AAC conversion. Connection and read waits are bounded, with a total recording limit of the requested duration plus 30 seconds.
+
+| Configuration | Default | Meaning |
+| --- | --- | --- |
+| `webhooks.video_max_bytes` | `52428800` | Maximum recorded file size (50 MiB) |
+| `webhooks.video_concurrency` | `2` | Concurrent recordings; additional jobs queue, and identical sources are serialized |
+| `webhooks.video_allow_transcode` | `false` | Permit conversion when the source cannot be remuxed as H.264/AAC |
+| `webhooks.video_retention_days` | `1` | Retain successfully delivered assets for this many days |
+| `webhooks.video_failed_retention_days` | `7` | Retain failed or uncertain assets for this many days |
+| `channels.enabled.onebot.video_send_timeout_seconds` | `120` | Separate send timeout for camera clips, including file mode |
+
+Files live in `media/webhook/` beside the database. Temporary `.part.mp4` files become final assets only after duration, video track, and size validation. Cleanup runs at startup and hourly. These assets are excluded from Dashboard backup archives. After a restart, interrupted recordings fail with `recording_interrupted` and are not repeated; recorded clips resume queuing, and queued clips wait for delivery. An uncertain video send is terminal: Momoi does not resend it or fall back to file mode automatically. Check the run state before manually sending again.
 
 ## Exec steps
 
@@ -316,7 +345,7 @@ Call `rest_command.momoi_event` with an `event_prompt` value from an automation.
 
 ## Execution and recovery
 
-- Steps execute sequentially.
+- Message and command steps execute sequentially; video recording runs in parallel as described above.
 - A `message` step waits until its Channel messages are delivered before the next step starts.
 - An `exec` step succeeds only with exit code `0`.
 - A nonzero exit or start failure marks the step failed.

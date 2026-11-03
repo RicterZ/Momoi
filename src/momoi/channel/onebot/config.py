@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import ClassVar
 from pathlib import Path
+import math
 from urllib.parse import urlsplit
 
 
@@ -65,6 +66,7 @@ class OneBotConfig:
     access_token: str = ""
     bot_qq: str = ""
     voice_call: QQCallConfig = QQCallConfig()
+    video_send_timeout_seconds: float = 120
 
     @classmethod
     def from_mapping(cls, value: object) -> "OneBotConfig":
@@ -80,7 +82,7 @@ class OneBotConfig:
 
         def positive(name: str, default: float) -> float:
             number = float(value.get(name, default))
-            if number <= 0:
+            if not math.isfinite(number) or number <= 0:
                 raise ValueError(f"channel.settings.{name} must be positive")
             return number
 
@@ -102,6 +104,7 @@ class OneBotConfig:
             heartbeat_seconds=positive("heartbeat_seconds", 30),
             reconnect_max_seconds=positive("reconnect_max_seconds", 30),
             send_timeout_seconds=positive("send_timeout_seconds", 20),
+            video_send_timeout_seconds=positive("video_send_timeout_seconds", 120),
             media_max_bytes=media_max_bytes,
             media_download_timeout_seconds=positive(
                 "media_download_timeout_seconds", 60

@@ -336,6 +336,11 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
             token=webhook_token,
             workflows=workflow_path,
             executors=executor_path,
+            video_max_bytes=integer(webhook_raw.get("video_max_bytes", 50 * 1024 * 1024), "webhooks.video_max_bytes", minimum=1),
+            video_concurrency=integer(webhook_raw.get("video_concurrency", 2), "webhooks.video_concurrency", minimum=1),
+            video_allow_transcode=boolean(webhook_raw.get("video_allow_transcode", False), "webhooks.video_allow_transcode"),
+            video_retention_days=positive(webhook_raw.get("video_retention_days", 1), "webhooks.video_retention_days"),
+            video_failed_retention_days=positive(webhook_raw.get("video_failed_retention_days", 7), "webhooks.video_failed_retention_days"),
         ),
         dashboard=DashboardConfig(token=dashboard_token),
         heartbeat=HeartbeatConfig(

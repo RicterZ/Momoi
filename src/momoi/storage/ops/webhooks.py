@@ -2,6 +2,7 @@ import json
 import sqlite3
 import time
 import uuid
+from pathlib import Path
 
 from ...models import AgentReply
 from ..core.integrity import decode_stored_json
@@ -97,6 +98,14 @@ class WebhookStore:
                 """SELECT id, workflow_id, plan_json, state, current_step
                    FROM webhook_runs
                    WHERE state IN ('queued', 'waiting_delivery')
+                     AND (NOT EXISTS (
+                         SELECT 1 FROM webhook_steps v
+                         WHERE v.run_id=webhook_runs.id AND v.kind='video'
+                     ) OR EXISTS (
+                         SELECT 1 FROM webhook_steps s
+                         WHERE s.run_id=webhook_runs.id AND s.kind!='video'
+                           AND s.state NOT IN ('succeeded', 'failed', 'ambiguous')
+                     ))
                    ORDER BY created_at LIMIT 1"""
             ).fetchone()
             if row is None:
@@ -317,6 +326,8 @@ class WebhookStore:
             f"SELECT state FROM outbox WHERE id IN ({placeholders})", ids
         ).fetchall()
         states = {str(row["state"]) for row in rows}
+        if states & {"ambiguous", "uncertain"}:
+            return "ambiguous"
         if len(rows) != len(ids) or states & {"failed", "superseded"}:
             return "failed"
         return "succeeded" if states == {"sent"} else "pending"
@@ -331,6 +342,9 @@ class WebhookStore:
     ) -> None:
         if state not in {"succeeded", "failed", "ambiguous"}:
             raise ValueError("invalid webhook terminal state")
+        step = self.webhook_step(run_id, step_index)
+        if step is not None and step["kind"] == "video":
+            result = {**step["result"], **result, "status": state}
         now = time.time()
         with self._db:
             if result:
@@ -360,9 +374,14 @@ class WebhookStore:
                     run_id,
                 ),
             )
+            if self._webhook_has_video(run_id):
+                self._refresh_webhook_video_run(run_id)
 
     def complete_webhook_run(self, run_id: str) -> None:
         with self._db:
+            if self._webhook_has_video(run_id):
+                self._refresh_webhook_video_run(run_id)
+                return
             self._db.execute(
                 """UPDATE webhook_runs SET state='succeeded', error=NULL, updated_at=?
                    WHERE id=? AND NOT EXISTS (
@@ -381,7 +400,176 @@ class WebhookStore:
                 (error[:500], now, run_id),
             )
             self._db.execute(
-                """UPDATE webhook_steps SET state='failed', error=?, completed_at=?
-                   WHERE run_id=? AND state IN ('running', 'waiting_delivery')""",
+                """UPDATE webhook_steps SET state='failed', error=?, completed_at=?,
+                   result_json=CASE WHEN kind='video'
+                       THEN json_set(result_json, '$.status', 'failed') ELSE result_json END
+                   WHERE run_id=? AND state IN ('queued', 'running', 'waiting_delivery')""",
                 (error[:500], now, run_id),
             )
+
+    @property
+    def webhook_media_directory(self) -> Path:
+        row = self._db.execute("PRAGMA database_list").fetchone()
+        return Path(row["file"]).parent / "media" / "webhook"
+
+    def _webhook_has_video(self, run_id: str) -> bool:
+        return self._db.execute(
+            "SELECT 1 FROM webhook_steps WHERE run_id=? AND kind='video'",
+            (run_id,),
+        ).fetchone() is not None
+
+    def _refresh_webhook_video_run(self, run_id: str) -> None:
+        self._db.execute(
+            """UPDATE webhook_steps SET state='failed', error='previous_step_failed', completed_at=?
+               WHERE run_id=? AND kind!='video' AND state='queued'
+                 AND EXISTS (SELECT 1 FROM webhook_steps prior
+                     WHERE prior.run_id=webhook_steps.run_id AND prior.kind='exec'
+                       AND prior.state IN ('failed', 'ambiguous')
+                       AND prior.step_index < webhook_steps.step_index)""",
+            (time.time(), run_id),
+        )
+        steps = self._db.execute(
+            "SELECT state, error, kind, step_index FROM webhook_steps WHERE run_id=? ORDER BY step_index",
+            (run_id,),
+        ).fetchall()
+        terminal = {"succeeded", "failed", "ambiguous"}
+        states = {row["state"] for row in steps}
+        if states <= terminal:
+            state = "ambiguous" if "ambiguous" in states else (
+                "failed" if "failed" in states else "succeeded"
+            )
+            error = next((row["error"] for row in steps if row["error"]), None)
+        else:
+            state = "waiting_delivery" if "waiting_delivery" in states else "queued"
+            error = None
+        current = next((row["step_index"] for row in steps
+                        if row["kind"] != "video" and row["state"] not in terminal), len(steps))
+        self._db.execute(
+            "UPDATE webhook_runs SET state=?, current_step=?, error=?, updated_at=? WHERE id=?",
+            (state, current, error, time.time(), run_id),
+        )
+
+    def begin_webhook_video(
+        self, run_id: str, step_index: int, part_path: str = ""
+    ) -> bool:
+        with self._db:
+            result = {"status": "recording"}
+            if part_path:
+                result["part_path"] = part_path
+            cursor = self._db.execute(
+                """UPDATE webhook_steps SET state='running', result_json=?, started_at=?
+                   WHERE run_id=? AND step_index=? AND kind='video' AND state='queued'""",
+                (json.dumps(result), time.time(), run_id, step_index),
+            )
+        return bool(cursor.rowcount)
+
+    def record_webhook_video(
+        self, run_id: str, step_index: int, asset: dict[str, object]
+    ) -> bool:
+        with self._db:
+            cursor = self._db.execute(
+                """UPDATE webhook_steps SET result_json=? WHERE run_id=? AND step_index=?
+                   AND kind='video' AND state='running'
+                   AND json_extract(result_json, '$.status')='recording'""",
+                (json.dumps({**asset, "status": "recorded"}), run_id, step_index),
+            )
+        return bool(cursor.rowcount)
+
+    def enqueue_webhook_video(
+        self, run_id: str, step_index: int, target_channel: str = ""
+    ) -> list[int]:
+        with self._db:
+            step = self.webhook_step(run_id, step_index)
+            if step is None or step["kind"] != "video":
+                raise ValueError("webhook video step not found")
+            result = step["result"]
+            if result.get("outbox_ids"):
+                return [int(value) for value in result["outbox_ids"]]
+            if step["state"] != "running" or result.get("status") != "recorded":
+                return []
+            unsettled = self._db.execute(
+                """SELECT 1 FROM webhook_steps WHERE run_id=? AND kind='message'
+                   AND state NOT IN ('succeeded', 'failed', 'ambiguous') LIMIT 1""",
+                (run_id,),
+            ).fetchone()
+            if unsettled is not None:
+                return []
+            run = self._db.execute(
+                "SELECT plan_json, created_at FROM webhook_runs WHERE id=?", (run_id,)
+            ).fetchone()
+            plan = json.loads(run["plan_json"])
+            mode = plan["steps"][step_index].get("send_as", "file")
+            if mode not in {"file", "video"}:
+                raise ValueError("invalid video send_as")
+            path = str(result["path"])
+            turn_id = f"webhook:{run_id}:{step_index}"
+            segment = {"type": mode, "send_as": mode, "data": {
+                "file": path, "name": f"camera-{int(run['created_at'])}.mp4"
+            }}
+            payload = {"segments": [segment]}
+            text = f"[视频: {segment['data']['name']}]"
+            self._db.execute(
+                """INSERT INTO outbox
+                   (turn_id, dedupe_key, text, kind, media_path, payload_json, target_channel)
+                   VALUES (?, ?, ?, 'message', ?, ?, ?)
+                   ON CONFLICT(dedupe_key) DO NOTHING""",
+                (turn_id, f"webhook-video:{run_id}:{step_index}", text, path,
+                 json.dumps(payload, ensure_ascii=False), target_channel),
+            )
+            outbox_id = int(self._db.execute(
+                "SELECT id FROM outbox WHERE dedupe_key=?",
+                (f"webhook-video:{run_id}:{step_index}",),
+            ).fetchone()["id"])
+            self._db.execute(
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json,
+                    outbox_id, delivery_state)
+                   SELECT ?, 'assistant', ?, ?, ?, ?, 'queued'
+                   WHERE NOT EXISTS (SELECT 1 FROM messages WHERE outbox_id=?)""",
+                (turn_id, text, time.time(), json.dumps([turn_id]), outbox_id, outbox_id),
+            )
+            self._db.execute(
+                """UPDATE webhook_steps SET state='waiting_delivery', result_json=?
+                   WHERE run_id=? AND step_index=?""",
+                (json.dumps({**result, "status": "enqueued", "outbox_ids": [outbox_id]}),
+                 run_id, step_index),
+            )
+            self._refresh_webhook_video_run(run_id)
+        return [outbox_id]
+
+    def recoverable_webhook_video_runs(self) -> list[dict[str, object]]:
+        rows = self._db.execute(
+            """SELECT DISTINCT r.id, r.workflow_id, r.plan_json, r.state, r.current_step
+               FROM webhook_runs r JOIN webhook_steps s ON s.run_id=r.id
+               WHERE s.kind='video' AND s.state IN ('queued','running','waiting_delivery')"""
+        ).fetchall()
+        return [{**dict(row), "plan": json.loads(row["plan_json"])} for row in rows]
+
+    def cleanup_webhook_video_assets(
+        self, directory: Path, success_days: float = 1, failed_days: float = 7
+    ) -> int:
+        now = time.time()
+        removed = 0
+        for row in self._db.execute(
+            """SELECT run_id, state, result_json, completed_at FROM webhook_steps
+               WHERE kind='video' AND state IN ('succeeded','failed','ambiguous')
+                 AND completed_at IS NOT NULL"""
+        ).fetchall():
+            days = success_days if row["state"] == "succeeded" else failed_days
+            if now - row["completed_at"] < days * 86400:
+                continue
+            result = json.loads(row["result_json"])
+            if not result.get("path"):
+                continue
+            path = Path(result["path"])
+            # Only files owned by this recorder may be removed.
+            if path.parent.resolve() != directory.resolve() or path.name != f"{row['run_id']}.mp4":
+                continue
+            if not path.exists():
+                continue
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                continue
+            removed += 1
+        return removed

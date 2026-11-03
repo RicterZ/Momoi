@@ -604,8 +604,12 @@ class OneBotChannel:
         return await self._send_segments(payload.get("segments") or [])
 
     async def _send_segments(self, segments: list[dict[str, Any]]) -> str:
+        options = {}
+        if any(segment.get("type") == "video" or segment.get("send_as") in {"video", "file"}
+               for segment in segments):
+            options["timeout"] = self.config.video_send_timeout_seconds
         return await self._send_action(
-            "send_private_msg", {"message": await self._prepare_segments(segments)}
+            "send_private_msg", {"message": await self._prepare_segments(segments)}, **options
         )
 
     async def _prepare_segments(
@@ -618,7 +622,10 @@ class OneBotChannel:
                 "data": dict(segment.get("data") or {}),
             }
             if item["type"] == "video":
-                item["type"] = "file"
+                send_as = segment.get("send_as", "file")
+                if send_as not in {"file", "video"}:
+                    raise SendRejected("video send_as must be file or video")
+                item["type"] = send_as
             if item["type"] in {"json", "xml"} and isinstance(
                 item["data"].get("data"), dict
             ):
@@ -652,10 +659,14 @@ class OneBotChannel:
             prepared.append(item)
         return prepared
 
-    async def _send_action(self, action: str, params: dict[str, Any]) -> str:
+    async def _send_action(
+        self, action: str, params: dict[str, Any], *, timeout: float | None = None
+    ) -> str:
+        options = {} if timeout is None else {"timeout": timeout}
         response = await self._request_action(
             action,
             {"user_id": int(self.config.owner_qq), **params},
+            **options,
         )
         data = response.get("data")
         data = data if isinstance(data, dict) else {}
