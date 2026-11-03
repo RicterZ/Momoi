@@ -188,8 +188,14 @@ class Recorder:
     @staticmethod
     def _transcode(input_file, output, streams, duration, check) -> None:
         video = streams[0]
-        rate = video.average_rate or Fraction(25)
+        rate = video.guessed_rate or video.average_rate or Fraction(25)
+        if rate <= 0 or rate > 120:
+            rate = Fraction(25)
         target_video = output.add_stream("libx264", rate=rate)
+        # Live MP4 average_rate is unreliable; retain the source timeline at
+        # sufficient precision rather than quantizing it into nominal frames.
+        video_time_base = Fraction(1, 90000)
+        target_video.codec_context.time_base = video_time_base
         target_video.width = video.codec_context.width
         target_video.height = video.codec_context.height
         target_video.pix_fmt = "yuv420p"
@@ -206,6 +212,7 @@ class Recorder:
             )
             resampler = av.AudioResampler(format="fltp", layout=target_audio.layout, rate=target_audio.rate)
         start = None
+        last_video_pts = None
         for packet in input_file.demux(streams):
             check()
             if start is None:
@@ -226,6 +233,11 @@ class Recorder:
                     continue
                 frame.pts -= int(start / frame.time_base)
                 if isinstance(frame, av.VideoFrame):
+                    pts = int(elapsed / video_time_base)
+                    if last_video_pts is not None and pts <= last_video_pts:
+                        continue
+                    frame.pts, frame.time_base = pts, video_time_base
+                    last_video_pts = pts
                     output.mux(target_video.encode(frame))
                 elif resampler is not None:
                     for audio_frame in resampler.resample(frame):
