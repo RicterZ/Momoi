@@ -1,0 +1,22 @@
+version: 1
+id: camera-event
+description: Record a camera clip in the background and send it after the notification
+inputs:
+  event_prompt:
+    type: string
+    required: true
+    max_length: 2000
+  rtmp_url:
+    type: string
+    required: true
+    format: url
+    schemes: [rtmp, rtmps, rtsp, http, https]
+steps:
+  - id: notify
+    uses: message
+    prompt: "${inputs.event_prompt}"
+  - id: clip
+    uses: video
+    source: "${inputs.rtmp_url}"
+    duration_seconds: 30
+    send_as: file

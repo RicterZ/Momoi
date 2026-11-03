@@ -243,6 +243,7 @@ The QQ channel key is `onebot`. A stored `napcat` key is renamed when the config
 | `heartbeat_seconds` | No | `30` | Connection heartbeat interval |
 | `reconnect_max_seconds` | No | `30` | Maximum reconnect backoff |
 | `send_timeout_seconds` | No | `20` | Outbound request timeout |
+| `video_send_timeout_seconds` | No | `120` | Camera clip send timeout, including file mode; see [workflows](./WORKFLOW.md#record-and-send-a-camera-clip) |
 | `media_max_bytes` | No | `20971520` | Maximum downloaded inbound image size |
 | `media_download_timeout_seconds` | No | `15` | Inbound image download timeout |
 

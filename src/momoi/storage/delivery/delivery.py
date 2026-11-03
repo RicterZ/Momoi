@@ -9,7 +9,8 @@ from ..core.integrity import decode_stored_json
 class DeliveryStore:
     def outbox_dispatchable(self, outbox_id: int) -> bool:
         return self._db.execute(
-            "SELECT 1 FROM outbox WHERE id=? AND state IN ('pending', 'ambiguous')",
+            """SELECT 1 FROM outbox WHERE id=? AND (state='pending' OR
+               (state='ambiguous' AND dedupe_key NOT LIKE 'webhook-video:%'))""",
             (outbox_id,),
         ).fetchone() is not None
 
@@ -19,12 +20,14 @@ class DeliveryStore:
                       o.kind, o.media_path, o.payload_json, o.target_channel
                FROM outbox AS o
                WHERE o.state IN ('pending', 'ambiguous')
+                 AND NOT (o.state='ambiguous' AND o.dedupe_key LIKE 'webhook-video:%')
                  AND o.next_attempt_at <= ?
                  AND NOT EXISTS (
                      SELECT 1 FROM outbox AS earlier
                      WHERE earlier.id < o.id
                        AND earlier.target_channel = o.target_channel
                        AND earlier.state NOT IN ('sent', 'failed', 'superseded')
+                       AND NOT (earlier.state='ambiguous' AND earlier.dedupe_key LIKE 'webhook-video:%')
                  )
                ORDER BY o.id""",
             (time.time(),),
@@ -103,7 +106,8 @@ class DeliveryStore:
         with self._db:
             cursor = self._db.execute(
                 """UPDATE outbox SET state='sending', attempts=attempts+1
-                   WHERE id=? AND state IN ('pending', 'ambiguous')""",
+                   WHERE id=? AND (state='pending' OR (state='ambiguous'
+                     AND dedupe_key NOT LIKE 'webhook-video:%'))""",
                 (outbox_id,),
             )
         return cursor.rowcount == 1
@@ -151,6 +155,9 @@ class DeliveryStore:
 
     def mark_ambiguous(self, outbox_id: int, attempts: int, error: str) -> None:
         state = "ambiguous" if attempts < 2 else "failed"
+        row = self._db.execute("SELECT dedupe_key FROM outbox WHERE id=?", (outbox_id,)).fetchone()
+        if row is not None and str(row["dedupe_key"]).startswith("webhook-video:"):
+            state = "ambiguous"
         with self._db:
             self._db.execute(
                 """UPDATE outbox SET state=?, possible_duplicate=1,

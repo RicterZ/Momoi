@@ -281,6 +281,26 @@ def load_catalog(
                 )
             step_ids.add(step_id)
             uses = str(step.get("uses") or "")
+            if uses == "video":
+                _only(step, {"id", "uses", "source", "duration_seconds", "send_as"},
+                      f"workflow {workflow_id} step {step_id}")
+                if any(item["uses"] == "video" for item in steps):
+                    raise WorkflowError(f"workflow {workflow_id} allows at most one video step")
+                duration = step.get("duration_seconds", 30)
+                if type(duration) is not int or not 1 <= duration <= 120:
+                    raise WorkflowError("video.duration_seconds must be an integer between 1 and 120")
+                source = step.get("source")
+                if not isinstance(source, str) or not source.strip():
+                    raise WorkflowError("video.source is required")
+                _templates(source, source="inputs", names=set(inputs), name="video.source")
+                if "${" not in source:
+                    _video_source(source)
+                send_as = step.get("send_as", "file")
+                if send_as not in {"file", "video"}:
+                    raise WorkflowError("video.send_as must be file or video")
+                steps.append({"id": step_id, "uses": uses, "source": source,
+                              "duration_seconds": duration, "send_as": send_as})
+                continue
             if uses == "message":
                 _only(
                     step,
@@ -421,6 +441,11 @@ def bind_workflow(
 
     bound_steps: list[dict[str, Any]] = []
     for step in workflow["steps"]:
+        if step["uses"] == "video":
+            source = render_prompt(step["source"])
+            _video_source(source)
+            bound_steps.append({**step, "source": source})
+            continue
         if step["uses"] == "message":
             bound_steps.append(
                 {
@@ -461,3 +486,13 @@ def bind_workflow(
             }
         )
     return {"version": 1, "workflow": workflow["id"], "steps": bound_steps}
+
+
+def _video_source(source: str) -> None:
+    try:
+        parsed = urlsplit(source)
+        valid = parsed.scheme.lower() in {"rtmp", "rtmps", "rtsp", "http", "https"} and parsed.hostname
+    except ValueError:
+        valid = False
+    if not valid or any(ord(char) < 32 for char in source):
+        raise WorkflowError("video.source must be an allowed absolute URL")

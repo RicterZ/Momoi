@@ -151,7 +151,7 @@ steps: []
 | `id` | 是 | `/webhooks/{id}` 使用的路由 ID |
 | `description` | 否 | 人类可读的用途说明 |
 | `inputs` | 否 | 已声明的 JSON 请求字段 |
-| `steps` | 是 | 由 `message` 或 `exec` 步骤组成的非空有序列表 |
+| `steps` | 是 | 由 `message`、`exec` 或 `video` 步骤组成的非空列表 |
 
 工作流、步骤、执行器、输入和参数标识符必须以小写字母开头，后续可以包含小写字母、数字、`_` 或 `-`，最长 64 个字符。
 
@@ -206,6 +206,35 @@ inputs:
 `prompt` 必须是非空字符串。`${inputs.<name>}` 可以出现在任何位置，其引用的每个名称都必须已由工作流声明。
 
 prompt 用来描述发生了什么，以及 Momoi 应该传达什么。它不应包含凭据，也不应伪装成主人说的话。
+
+## 录制并发送摄像头片段
+
+将 [camera-event.yaml](../config.example/workflows/camera-event.yaml) 复制到工作流目录，请求字段为 `event_prompt` 和 `rtmp_url`。视频步骤如下：
+
+```yaml
+- id: clip
+  uses: video
+  source: "${inputs.rtmp_url}"
+  duration_seconds: 30
+  send_as: file
+```
+
+每个工作流最多包含一个视频步骤。`source` 支持带 hostname 的 `rtmp`、`rtmps`、`rtsp`、`http`、`https` URL，可引用已声明的输入模板；绑定后使用其他协议会返回 HTTP `400`。`duration_seconds` 为 1～120 的整数。`send_as` 为 `file`（默认）或 `video`，原生视频需要 OneBot 服务支持。
+
+新请求被接受后立即在后台录制，与通知并行，不占用工作流 worker。幂等请求不会重复录制。程序自动为 message prompt 追加“视频正在后台录制，完成后单独发送”的上下文。所有 message 步骤结束后才会通过 Outbox 发送视频，包括静默结束或失败的情况；通知失败仍然发送视频。通知和视频全部到终态后，run 才进入最终状态。`/stop` 取消尚未进入 Outbox 的视频任务，包括已录完但仍在等待通知的片段；已保存文件按失败资产保留期清理。已经进入 Outbox 的视频保留投递回执监控。停止正在执行的通知时，其 message 步骤也会结束。
+
+录制使用 PyAV 自带的 FFmpeg 库，不调用 FFmpeg 可执行文件。H.264/AAC 源从第一个关键帧开始直接 remux 为 faststart MP4，按流时间戳截断。其他编码需设置 `webhooks.video_allow_transcode: true`，才能使用 libx264/AAC 转码。连接与读取有超时限制，录制总墙钟上限为请求时长加 30 秒。
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `webhooks.video_max_bytes` | `52428800` | 录制文件体积上限，50 MiB |
+| `webhooks.video_concurrency` | `2` | 并发录制上限，超出排队，相同来源串行打开连接 |
+| `webhooks.video_allow_transcode` | `false` | 允许对不兼容 H.264/AAC remux 的源转码 |
+| `webhooks.video_retention_days` | `1` | 成功投递的资产保留天数 |
+| `webhooks.video_failed_retention_days` | `7` | 失败或不确定的资产保留天数 |
+| `channels.enabled.onebot.video_send_timeout_seconds` | `120` | 摄像头片段独立发送超时，文件模式也适用 |
+
+文件存放在数据库旁的 `media/webhook/` 下。先写 `.part.mp4`，校验时长、视频流和体积后再原子改名。启动时及每小时清理到期资产；这些资产不进入 Dashboard 备份。重启后，录制中的步骤以 `recording_interrupted` 失败，不会重新录制过时画面；已录完的继续入队，已入队的等待投递。视频发送结果不确定时进入终态，不自动重发，也不自动降级为文件。人工补发前应检查 run 状态。
 
 ## Exec 步骤
 
@@ -313,7 +342,7 @@ rest_command:
 
 ## 执行与恢复
 
-- 步骤按顺序执行。
+- 消息与命令步骤按顺序执行；视频按上文规则并行录制。
 - `message` 步骤会等待其 Channel 消息投递完成，然后再执行下一步。
 - `exec` 步骤只在退出码为 `0` 时成功。
 - 非零退出或启动失败会将步骤标记为失败。

@@ -131,10 +131,10 @@ steps:
             (root / "executors.yaml").write_text(
                 """version: 1
 executors:
-  napcat-send:
+  qq-action:
     optional: true
     parameters: {}
-    argv: [nap-msg, '${config.owner_qq}']
+    argv: [qq-action, '${config.owner_qq}']
     env: {}
 """,
                 encoding="utf-8",
@@ -147,7 +147,7 @@ inputs: {}
 steps:
   - id: send
     uses: exec
-    executor: napcat-send
+    executor: qq-action
     args: {}
 """,
                 encoding="utf-8",
@@ -177,7 +177,7 @@ steps:
                 logs.records[0].momoi_event, "workflow_executor_skipped"
             )
             self.assertEqual(
-                logs.records[0].momoi_fields["executor_id"], "napcat-send"
+                logs.records[0].momoi_fields["executor_id"], "qq-action"
             )
             self.assertTrue(
                 any(

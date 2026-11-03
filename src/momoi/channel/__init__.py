@@ -187,7 +187,13 @@ def _normalize_segments(value: object) -> list[dict[str, Any]]:
             data["text"] = text.strip()
         if kind in _MEDIA_TYPES and not isinstance(data.get("file"), str):
             raise ValueError("media_segment_requires_file")
-        normalized.append({"type": kind, "data": data})
+        item = {"type": kind, "data": data}
+        if "send_as" in segment:
+            send_as = segment["send_as"]
+            if kind not in {"video", "file"} or send_as not in ("video", "file"):
+                raise ValueError("invalid_media_send_as")
+            item["send_as"] = send_as
+        normalized.append(item)
     return normalized
 
 

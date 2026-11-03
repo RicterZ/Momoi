@@ -681,11 +681,11 @@ CREATE TABLE IF NOT EXISTS webhook_runs (
 );
 CREATE INDEX IF NOT EXISTS webhook_runs_ready
     ON webhook_runs(state, created_at);
-CREATE TABLE IF NOT EXISTS webhook_steps (
+CREATE TABLE IF NOT EXISTS "webhook_steps" (
     run_id TEXT NOT NULL,
     step_index INTEGER NOT NULL,
     step_id TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('message', 'exec')),
+    kind TEXT NOT NULL CHECK (kind IN ('message', 'exec', 'video')),
     state TEXT NOT NULL CHECK (
         state IN ('queued', 'running', 'waiting_delivery',
                   'succeeded', 'failed', 'ambiguous')

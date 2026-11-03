@@ -26,6 +26,11 @@ class WebhookConfig:
     token: str = ""
     workflows: Path | None = None
     executors: Path | None = None
+    video_max_bytes: int = 50 * 1024 * 1024
+    video_concurrency: int = 2
+    video_allow_transcode: bool = False
+    video_retention_days: float = 1
+    video_failed_retention_days: float = 7
 
 
 @dataclass(frozen=True)
