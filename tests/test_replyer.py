@@ -629,6 +629,7 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
         assert 'event_id=' not in text
         assert 'image-event' not in text and 'new-event' not in text
         assert '只回应 <to_reply>' in text
+        assert '本次没有待回复消息' not in text
         assert '旧消息、旧图片和已经演过的情节视为已经回应过' in system
         channel.content_blocks.assert_not_called()
         return ProviderResponse([{'type': 'text', 'text': 'Continue latest'}], [])
@@ -637,6 +638,30 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
         assert asyncio.run(Replyer(config, store, SimpleNamespace(complete=complete)).generate(
             ToolCall('next', 'reply', {'intent': 'Continue', 'reference': ''}), request)) == ['Continue latest']
         assert store.replyer_dialogue_rows('test') == []  # Projection does not prematurely archive.
+    finally:
+        store.close()
+
+
+def test_replyer_without_target_marks_proactive_speech(tmp_path):
+    store = Store(tmp_path / 'db')
+    owner = IncomingMessage('owner-event', 'owner-event', '我不是说了吗', 10, 10, channel='test')
+    store.add_event(owner)
+    store.begin_turn('owner-turn', 'owner', [owner.event_id])
+    store.commit_turn([owner], owner.text, AgentReply([]), turn_id='owner-turn')
+    store.begin_turn('webhook:run:0', 'webhook', ['webhook:run:0'])
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt='Soul', timezone='UTC', thinking_stages={})
+    channel = SimpleNamespace(name='test', content_blocks=Mock(return_value=[]))
+    request = SimpleNamespace(turn_id='webhook:run:0', round_number=1, delivery_channel=channel, current_events=[])
+
+    async def complete(system, messages, tools):
+        text = str(messages)
+        assert '<to_reply>' not in messages[1]['content'][0]['text']
+        assert '本次没有待回复消息' in text and '不要用“知道了' in text
+        return ProviderResponse([{'type': 'text', 'text': '路上慢点'}], [])
+
+    try:
+        assert asyncio.run(Replyer(config, store, SimpleNamespace(complete=complete)).generate(
+            ToolCall('wh', 'reply', {'intent': '道别', 'reference': ''}), request)) == ['路上慢点']
     finally:
         store.close()
 

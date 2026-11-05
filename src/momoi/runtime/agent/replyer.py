@@ -90,12 +90,14 @@ class Replyer(ReplyerBase):
         row_by_index = dict(zip(dialogue_indexes, rows))
         lines = []
         section = None
+        has_target = False
         for index, message in enumerate(dialogue):
             row = row_by_index.get(index)
             event = row.get("_event") if row else None
             targeted = bool(row and row["role"] == "user" and (
                 event.event_id in target_ids if event else row["id"] in archived_targets
             ))
+            has_target = has_target or targeted
             next_section = "to_reply" if targeted else "history"
             if next_section != section:
                 if section:
@@ -148,6 +150,9 @@ class Replyer(ReplyerBase):
             f"当前时间：{datetime.now(ZoneInfo(str(self.config.timezone))).isoformat()}\n"
             f"发送形式：{'语音' if mode == 'voice' else '文字'}\n本次回应意图：{call.arguments['intent']}\n必要参考：{call.arguments['reference']}\n"
             "只回应 <to_reply> 内的消息；<history> 仅供衔接，其中内容视为已经回应过。没有 <to_reply> 时按本次意图执行自主发言。\n"
+            + ("" if has_target else
+               "本次没有待回复消息：这是由事件、定时任务或主 agent 自主发起的主动发言，不是在回复老师刚说的话。"
+               "<history> 末尾的 USER 消息已经回应过，不要接它的话，也不要用“知道了/好的/收到”之类的应答开头。\n")
             + expression
         )
         if call.arguments.get("attachments"):
