@@ -16,6 +16,9 @@ from ..tool_contracts.qq_message import QQ_POKE_SPEC
 from .protocol import assistant_history_message
 
 
+TRIGGER_SOURCES = {"webhook": "外部事件", "heartbeat": "定时检查", "goal": "自主任务", "plan_step": "自主任务"}
+
+
 def prompt_text(config, name, fallback):
     path = config.soul_prompt_path.parent / name if config.soul_prompt_path else None
     return (path.read_text(encoding="utf-8").strip() or fallback) if path and path.is_file() else fallback
@@ -146,13 +149,12 @@ class Replyer(ReplyerBase):
             "只输出适合朗读的实际发言：自然口语，只含文字和普通标点，按停顿用空行分段。"
             if mode == "voice" else "只输出实际发言，用空行分隔气泡，气泡内部不换行。"
         )
+        stage = getattr(getattr(request, "execution", None), "stage", None)
         tail = (
             f"当前时间：{datetime.now(ZoneInfo(str(self.config.timezone))).isoformat()}\n"
             f"发送形式：{'语音' if mode == 'voice' else '文字'}\n本次回应意图：{call.arguments['intent']}\n必要参考：{call.arguments['reference']}\n"
             "只回应 <to_reply> 内的消息；<history> 仅供衔接，其中内容视为已经回应过。没有 <to_reply> 时按本次意图执行自主发言。\n"
-            + ("" if has_target else
-               "本次没有待回复消息：这是由事件、定时任务或主 agent 自主发起的主动发言，不是在回复老师刚说的话。"
-               "<history> 末尾的 USER 消息已经回应过，不要接它的话，也不要用“知道了/好的/收到”之类的应答开头。\n")
+            + ("" if has_target else f"本次发言由{TRIGGER_SOURCES.get(stage, '主 agent 自主')}触发，没有待回复的消息。\n")
             + expression
         )
         if call.arguments.get("attachments"):

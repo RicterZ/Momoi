@@ -629,7 +629,7 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
         assert 'event_id=' not in text
         assert 'image-event' not in text and 'new-event' not in text
         assert '只回应 <to_reply>' in text
-        assert '本次没有待回复消息' not in text
+        assert '没有待回复的消息' not in text
         assert '旧消息、旧图片和已经演过的情节视为已经回应过' in system
         channel.content_blocks.assert_not_called()
         return ProviderResponse([{'type': 'text', 'text': 'Continue latest'}], [])
@@ -651,12 +651,13 @@ def test_replyer_without_target_marks_proactive_speech(tmp_path):
     store.begin_turn('webhook:run:0', 'webhook', ['webhook:run:0'])
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt='Soul', timezone='UTC', thinking_stages={})
     channel = SimpleNamespace(name='test', content_blocks=Mock(return_value=[]))
-    request = SimpleNamespace(turn_id='webhook:run:0', round_number=1, delivery_channel=channel, current_events=[])
+    request = SimpleNamespace(turn_id='webhook:run:0', round_number=1, delivery_channel=channel, current_events=[],
+                              execution=SimpleNamespace(stage='webhook'))
 
     async def complete(system, messages, tools):
         text = str(messages)
         assert '<to_reply>' not in messages[1]['content'][0]['text']
-        assert '本次没有待回复消息' in text and '不要用“知道了' in text
+        assert '本次发言由外部事件触发，没有待回复的消息。' in text
         return ProviderResponse([{'type': 'text', 'text': '路上慢点'}], [])
 
     try:
