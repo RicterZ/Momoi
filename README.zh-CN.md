@@ -336,6 +336,7 @@ Webhook Turn 与其他 Momoi 工作流共享同一份原生对话和记忆；如
 | --- | --- |
 | `/stop` | 取消当前任务 |
 | `/compact` | 压缩当前对话上下文，保留原始历史 |
+| `/reset-replyer` | 清空 replyer 的聊天上下文（例如被内容过滤持续拦截时），不删除历史消息 |
 | `/heartbeat` | 立即触发一次 Heartbeat |
 | `/reflect` | 手动触发一次日复盘 |
 

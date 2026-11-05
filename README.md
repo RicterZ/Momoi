@@ -398,6 +398,7 @@ nothing useful.
 | --- | --- |
 | `/stop` | Cancel the active task |
 | `/compact` | Compact the active conversation context while preserving history |
+| `/reset-replyer` | Clear the replyer chat context (e.g. when provider content filters keep blocking replies) without deleting history |
 | `/heartbeat` | Trigger one Heartbeat immediately |
 | `/reflect` | Trigger a daily review manually |
 

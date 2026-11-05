@@ -104,6 +104,18 @@ class CommandRouter:
                 retained_turns=retained_turns,
             )
             return
+        if message.text.strip() == "/reset-replyer":
+            floor = self.store.reset_replyer_history(self._channel_for(message.channel).name)
+            log_event(
+                logger,
+                logging.INFO,
+                "owner_command_accepted",
+                channel=message.channel,
+                event_id=message.event_id,
+                command="reset_replyer",
+                message_floor=floor,
+            )
+            return
         if message.text.strip() == "/heartbeat":
             if self.store.claim_manual_heartbeat():
                 log_event(

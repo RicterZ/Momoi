@@ -34,6 +34,30 @@ def select_history_rows(rows, previous):
 
 
 class ReplyerHistoryStore:
+    def _replyer_reset_floor(self, key):
+        stored = self._db.execute(
+            "SELECT rows_json FROM replyer_history_windows WHERE channel=?", (f"reset:{key}",)
+        ).fetchone()
+        floor = decode_stored_json(
+            stored["rows_json"], entity="replyer_history_windows", field="rows_json",
+            record_id=f"reset:{key}", expected_type=int, fallback=0,
+        ) if stored else 0
+        return floor
+
+    def reset_replyer_history(self, channel: str) -> int:
+        """Drop the reply window; messages up to now never re-enter it."""
+        keys = ("onebot", "qq_call", "phone_turns") if channel in {"onebot", "qq_call"} else (channel,)
+        with transaction(self._db):
+            floor = int(self._db.execute("SELECT COALESCE(MAX(id), 0) FROM messages").fetchone()[0])
+            for key in keys:
+                self._db.execute("DELETE FROM replyer_history_windows WHERE channel=?", (key,))
+                self._db.execute(
+                    "INSERT INTO replyer_history_windows(channel, rows_json) VALUES (?, ?) "
+                    "ON CONFLICT(channel) DO UPDATE SET rows_json=excluded.rows_json",
+                    (f"reset:{key}", json.dumps(floor)),
+                )
+        return floor
+
     def phone_history_rows(self, turn_id):
         key = "phone_turns"
         with transaction(self._db):
@@ -44,7 +68,9 @@ class ReplyerHistoryStore:
                 stored["rows_json"], entity="replyer_history_windows", field="rows_json",
                 record_id=key, expected_type=list, fallback=[],
             ) if stored else []
-            rows = self.replyer_dialogue_rows("qq_call", turn_limit=32)
+            floor = self._replyer_reset_floor(key)
+            rows = [row for row in self.replyer_dialogue_rows("qq_call", turn_limit=32)
+                    if row["id"] > floor]
             selected = select_phone_turns(rows, previous, exclude_turn=turn_id)
             self._db.execute(
                 "INSERT INTO replyer_history_windows(channel, rows_json) VALUES (?, ?) "
@@ -62,7 +88,9 @@ class ReplyerHistoryStore:
                 stored["rows_json"], entity="replyer_history_windows", field="rows_json",
                 record_id=channel, expected_type=list, fallback=[],
             ) if stored else []
-            selected = select_history_rows(self.replyer_dialogue_rows(channel), previous)
+            floor = self._replyer_reset_floor(channel)
+            rows = [row for row in self.replyer_dialogue_rows(channel) if row["id"] > floor]
+            selected = select_history_rows(rows, previous)
             if selected != previous or stored is None:
                 self._db.execute(
                     "INSERT INTO replyer_history_windows(channel, rows_json) VALUES (?, ?) "

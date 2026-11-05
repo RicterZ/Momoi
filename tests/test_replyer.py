@@ -235,6 +235,25 @@ def test_replyer_channel_history_uses_actual_delivery(tmp_path):
 
 
 
+def test_reset_replyer_history_drops_existing_dialogue(tmp_path):
+    store = Store(tmp_path / 'db')
+    try:
+        def turn(name):
+            event = IncomingMessage(name, name, name + ' input', 1, 1, channel='first')
+            store.add_event(event)
+            store.begin_turn(name, "owner", [event.event_id])
+            store.commit_turn([event], event.text, AgentReply([]), turn_id=name)
+        turn('old')
+        assert [r['content'] for r in store.replyer_history_rows('first')] == ['old input']
+        store.reset_replyer_history('first')
+        assert store.replyer_history_rows('first') == []
+        turn('new')
+        assert [r['content'] for r in store.replyer_history_rows('first')] == ['new input']
+        assert [r['content'] for r in store.replyer_dialogue_rows('first')] == ['old input', 'new input']
+    finally:
+        store.close()
+
+
 def test_replyer_generates_with_malformed_legacy_event_payload(tmp_path):
     store = Store(tmp_path / 'db')
     try:
