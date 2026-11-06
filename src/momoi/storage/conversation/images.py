@@ -69,6 +69,21 @@ class ImageStore:
             return None
         return image_block(row["media_type"], base64.b64encode(row["data"]).decode("ascii"))
 
+    def read_image_file(self, path: str) -> dict[str, Any] | str:
+        try:
+            file = Path(path).expanduser()
+            if not file.is_file():
+                return "image_not_found"
+            if file.stat().st_size > MAX_IMAGE_BYTES:
+                return "image_too_large"
+            raw = file.read_bytes()
+        except OSError:
+            return "image_not_found"
+        media_type = _sniff_image_type(raw)
+        if media_type is None:
+            return "unsupported_image_type"
+        return image_block(media_type, base64.b64encode(raw).decode("ascii"))
+
     def image_history_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Request-only enrichment; do not alter visible conversation records."""
         sources = {
@@ -194,3 +209,15 @@ def _image_marker(identifier: str, summary: str | None) -> str:
             + summary
         )
     return marker
+
+
+def _sniff_image_type(raw: bytes) -> str | None:
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if raw[:6] in {b"GIF87a", b"GIF89a"}:
+        return "image/gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None

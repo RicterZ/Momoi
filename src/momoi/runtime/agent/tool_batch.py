@@ -680,16 +680,19 @@ class ToolBatchExecutor:
                     str(call.arguments.get("image_id") or ""), call.arguments.get("summary")
                 )
             elif source == "image":
-                identifier = str(call.arguments.get("image_id") or "")
-                image = self.store.read_image(identifier)
-                result = {"ok": image is not None, "image_id": identifier}
-                if image is None:
-                    result["error"] = "image_not_found"
+                path = call.arguments.get("path")
+                identifier = str(path if path else call.arguments.get("image_id") or "")
+                image = (("invalid_arguments" if not identifier else self.store.read_image_file(identifier)) if path
+                         else self.store.read_image(identifier) if identifier else "invalid_arguments")
+                error = image if isinstance(image, str) else "image_not_found" if image is None else None
+                result = {"ok": error is None, **({"path": identifier} if path else {"image_id": identifier})}
+                if error:
+                    result["error"] = error
                 else:
                     # Keep binary input outside JSON results, result storage and logs.
                     # Both providers accept image blocks in this user-role message.
                     image_blocks.extend([
-                        {"type": "text", "text": f"[read_image attachment id={identifier}]"},
+                        {"type": "text", "text": f"[read_image {'path' if path else 'attachment id'}={identifier}]"},
                         image,
                     ])
             elif source == "thinking":
