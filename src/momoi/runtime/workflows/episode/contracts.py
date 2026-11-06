@@ -133,9 +133,12 @@ _SUMMARY_CLAIM_SCHEMA: dict[str, Any] = {
     "type": "object",
     "description": '从 previous_verified_claims 或 new_messages 复制引用元数据。',
     "properties": {
-        "message_id": {"type": "integer", "minimum": 1},
-        "turn_id": {"type": "string", "minLength": 1},
-        "ordinal": {"type": "integer", "minimum": 1},
+        "message_id": {
+            "type": "integer", "minimum": 1,
+            "description": 'quote 所在那条消息头部方括号里的 message_id；不是 Message 序号，也不是相邻消息的 ID。',
+        },
+        "turn_id": {"type": "string", "minLength": 1, "description": '与 message_id 同一头部中的 turn_id。'},
+        "ordinal": {"type": "integer", "minimum": 1, "description": '与 message_id 同一头部中的 ordinal。'},
         "quote": {
             "type": "string", "minLength": 1, "maxLength": 1000,
             "description": '被引用的原始消息的精确连续子串。',
