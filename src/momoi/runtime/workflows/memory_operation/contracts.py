@@ -54,7 +54,7 @@ _MEMORY = {
                 },
             },
             "required": ["tags"], "additionalProperties": False,
-            "description": "从预定义目录选择零至三个主题；没有合适主题时 tags 为空。",
+            "description": "scope、triggers、tags 只能写在 meta 内，不要放到 memory 顶层。tags 从预定义目录选择零至三个主题；没有合适主题时为空数组。",
         },
         "expires_at": {
             "type": "null",

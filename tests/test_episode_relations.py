@@ -438,3 +438,18 @@ def test_workflow_model_chooses_query_then_finishes():
             assert store._db.execute("SELECT count(*) FROM episode_relations").fetchone()[0] == 1
         finally:
             store.close()
+
+
+def test_relation_recall_hides_newer_episodes():
+    with tempfile.TemporaryDirectory() as directory:
+        store = Store(Path(directory) / "db")
+        try:
+            _summarize(store, "old", "项目启动", "团队确认项目启动", 1)
+            _summarize(store, "source", "项目进展", "团队完成首个阶段", 2)
+            _summarize(store, "newer", "项目收尾", "团队完成交付", 3)
+            source = store.episode("source")
+            assert store.episode_relation_target_eligible(source, store.episode("old"))
+            assert not store.episode_relation_target_eligible(source, store.episode("newer"))
+            assert not store.episode_relation_target_eligible(source, source)
+        finally:
+            store.close()

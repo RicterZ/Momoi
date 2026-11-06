@@ -1479,3 +1479,34 @@ def test_archive_dialogue_preserves_speech_ids_and_delivery_without_tool_replay(
     assert '<turn id="T-3" evidence="none" />' in text
     assert text.index("A &amp; B") < text.index("reply") < text.index("follow-up")
     assert "tool_use" not in text
+
+
+def test_summary_citation_follows_quote_to_its_unique_message():
+    with tempfile.TemporaryDirectory() as directory:
+        daemon = MomoiDaemon(config(directory))
+        try:
+            daemon.store.create_episode("话题", episode_id="episode-main")
+            add_turn(daemon, 1)
+            add_turn(daemon, 2)
+            rows = daemon.store._db.execute(
+                """SELECT m.id, m.turn_id, et.ordinal, m.content FROM messages AS m
+                   JOIN episode_turns AS et ON et.turn_id=m.turn_id ORDER BY m.id"""
+            ).fetchall()
+            target = next(row for row in rows if row["content"] == "第2轮主人消息")
+            wrong = next(row for row in rows if row["id"] == target["id"] - 1)
+            claims = [{"message_id": wrong["id"], "turn_id": wrong["turn_id"],
+                       "ordinal": wrong["ordinal"], "quote": "第2轮主人消息"}]
+            cues = [{"text": "第二轮", "evidence_message_ids": [wrong["id"]]}]
+            claims, cues = daemon.store.resolve_episode_summary_citations(
+                "episode-main", 2, claims, cues
+            )
+            assert claims[0]["message_id"] == target["id"]
+            assert claims[0]["turn_id"] == target["turn_id"]
+            assert cues[0]["evidence_message_ids"] == [target["id"]]
+            assert daemon.store.validate_episode_summary_claims("episode-main", 2, claims)
+            unchanged, _ = daemon.store.resolve_episode_summary_citations(
+                "episode-main", 2, [{**claims[0], "quote": "原文没有"}], []
+            )
+            assert unchanged[0]["quote"] == "原文没有"
+        finally:
+            daemon.store.close()

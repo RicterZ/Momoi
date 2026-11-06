@@ -158,6 +158,64 @@ class EpisodeAnnealingStore:
                 }
         return None
 
+    def resolve_episode_summary_citations(self, episode_id, through_ordinal, claims, cues):
+        """Repair citation metadata when a quote names exactly one archived message.
+
+        The quote stays the evidence; only a mismatched message_id/turn_id/ordinal
+        is replaced, and cue links follow the repaired claim.
+        """
+        if not isinstance(claims, list):
+            return claims, cues
+        rows = self._db.execute(
+            """SELECT m.id, m.turn_id, et.ordinal, m.content
+               FROM episode_turns AS et JOIN messages AS m ON m.turn_id=et.turn_id
+               WHERE et.episode_id=? AND et.ordinal<=?
+                 AND (m.role!='assistant' OR m.delivery_state IN ('delivered','uncertain','internal'))""",
+            (episode_id, through_ordinal),
+        ).fetchall()
+        by_id = {int(row["id"]): row for row in rows}
+        resolved, remap = [], {}
+        for claim in claims:
+            if (not isinstance(claim, dict) or not isinstance(claim.get("quote"), str)
+                    or type(claim.get("message_id")) is not int):
+                resolved.append(claim)
+                continue
+            quote = claim["quote"].strip()
+            cited = by_id.get(claim["message_id"])
+            if (cited is not None and quote and quote in str(cited["content"])
+                    and claim.get("turn_id") == str(cited["turn_id"])
+                    and claim.get("ordinal") == int(cited["ordinal"])):
+                resolved.append(claim)
+                continue
+            candidates = [quote, quote.replace("\\n", "\n")] if quote else []
+            match = None
+            for text in dict.fromkeys(candidates):
+                hits = [row for row in rows if text in str(row["content"])]
+                if cited is not None and cited in hits:
+                    match = (cited, text)
+                elif len(hits) == 1:
+                    match = (hits[0], text)
+                if match:
+                    break
+            if match is None:
+                resolved.append(claim)
+                continue
+            row, text = match
+            remap[claim["message_id"]] = int(row["id"])
+            resolved.append({**claim, "message_id": int(row["id"]), "turn_id": str(row["turn_id"]),
+                             "ordinal": int(row["ordinal"]), "quote": text})
+        if remap and isinstance(cues, list):
+            kept = {claim["message_id"] for claim in resolved if isinstance(claim, dict)}
+            cues = [
+                {**cue, "evidence_message_ids": [
+                    remap[identifier] if type(identifier) is int and identifier not in kept
+                    and identifier in remap else identifier
+                    for identifier in cue["evidence_message_ids"]]}
+                if isinstance(cue, dict) and isinstance(cue.get("evidence_message_ids"), list) else cue
+                for cue in cues
+            ]
+        return resolved, cues
+
     def validate_episode_summary_claims(self, episode_id, through_ordinal, claims):
         if not 1 <= len(claims) <= 64:
             raise ValueError("episode summary needs 1 to 64 evidence claims")

@@ -139,17 +139,20 @@ class EpisodeAnnealingWorkflow:
         async def execute_tool(call: ToolCall) -> dict[str, Any]:
             nonlocal workflow_complete, workflow_result
             try:
-                claims = self.store.validate_episode_summary_claims(
+                raw_claims, raw_cues = self.store.resolve_episode_summary_citations(
                     episode_id, int(candidate["through_ordinal"]),
-                    call.arguments.get("claims", []),
+                    call.arguments.get("claims", []), call.arguments.get("recall_cues"),
+                )
+                claims = self.store.validate_episode_summary_claims(
+                    episode_id, int(candidate["through_ordinal"]), raw_claims,
                 )
                 cues = await verify_episode_cues(
-                    self.provider, call.arguments.get("recall_cues"), claims,
+                    self.provider, raw_cues, claims,
                 )
                 working_summary = self.store.finish_episode_annealing(
                     episode_id,
                     int(candidate["through_ordinal"]),
-                    call.arguments.get("claims", []),
+                    raw_claims,
                     narrative_summary=str(
                         call.arguments.get("narrative_summary") or ""
                     ),

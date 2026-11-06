@@ -76,8 +76,15 @@ class EpisodeRelationWorkflow:
                 )
                 if result.get("ok"):
                     search_count += 1
+                    # Only older, conversational Episodes can be relation targets.
+                    eligible = []
                     for record in result.get("episodes", []):
-                        recalled[str(record["id"])] = record
+                        target = self.store.episode(str(record["id"]))
+                        if target is not None and self.store.episode_relation_target_eligible(episode, target):
+                            recalled[str(record["id"])] = record
+                            eligible.append(record)
+                    if "episodes" in result:
+                        result = {**result, "episodes": eligible}
                 return result
 
             decisions = call.arguments.get("relations")
