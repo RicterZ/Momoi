@@ -225,6 +225,8 @@ prompt 用来描述发生了什么，以及 Momoi 应该传达什么。它不应
 
 录制使用 PyAV 自带的 FFmpeg 库，不调用 FFmpeg 可执行文件。H.264/AAC 源从第一个关键帧开始直接 remux 为 faststart MP4，按流时间戳截断。其他编码需设置 `webhooks.video_allow_transcode: true`，才能使用 libx264/AAC 转码。连接与读取有超时限制，录制总墙钟上限为请求时长加 30 秒。
 
+HTTP(S) 源可以是 HLS 播放列表，支持无扩展名分片和 AES-128 加密。已结束的点播列表（含 `#EXT-X-ENDLIST`，例如摄像头云端事件录像）会逐段独立解码，再按顺序拼接并转码为一段 MP4，因此需要开启 `webhooks.video_allow_transcode`。录像比 `duration_seconds` 短时，录完整段即结束。
+
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `webhooks.video_max_bytes` | `52428800` | 录制文件体积上限，50 MiB |

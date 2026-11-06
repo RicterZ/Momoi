@@ -228,6 +228,8 @@ Recording starts as soon as a new request is accepted, in parallel with the noti
 
 The recorder uses PyAV with its bundled FFmpeg libraries; it does not invoke an FFmpeg executable. H.264/AAC streams are remuxed into faststart MP4 from the first keyframe, using stream timestamps to limit duration. Other codecs require `webhooks.video_allow_transcode: true` to enable libx264/AAC conversion. Connection and read waits are bounded, with a total recording limit of the requested duration plus 30 seconds.
 
+HTTP(S) sources may be HLS playlists, including extensionless and AES-128 encrypted segments. A finished playlist (with `#EXT-X-ENDLIST`, such as a camera cloud event recording) is decoded one segment at a time and transcoded into a single continuous MP4, so it requires `webhooks.video_allow_transcode`. When the recording is shorter than `duration_seconds`, the whole recording is kept.
+
 | Configuration | Default | Meaning |
 | --- | --- | --- |
 | `webhooks.video_max_bytes` | `52428800` | Maximum recorded file size (50 MiB) |
