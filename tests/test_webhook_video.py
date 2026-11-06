@@ -305,3 +305,129 @@ class VideoServiceTests(unittest.IsolatedAsyncioTestCase):
             stop.set()
             self.service.changed.set()
             await worker
+
+
+class AgentVideoServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        workflows = self.root / "workflows"
+        workflows.mkdir()
+        workflow = camera_workflow()
+        workflow["steps"][1]["deliver"] = "agent"
+        (workflows / "camera.yaml").write_text(yaml.safe_dump(workflow))
+        executors = self.root / "executors.yaml"
+        executors.write_text("version: 1\nexecutors: {}\n")
+        self.store = Store(self.root / "momoi.sqlite3")
+        self.prompts = []
+        self.replies = {}
+        self.record_error = None
+
+        async def complete(prompt, turn):
+            self.prompts.append((turn, prompt))
+            return self.replies.get(turn, AgentReply([]))
+
+        self.service = WebhookService(
+            WebhookConfig(workflows=workflows, executors=executors), {},
+            self.store, complete, lambda: None, "onebot",
+        )
+
+        async def record(source, run_id, duration, **kwargs):
+            if self.record_error:
+                from momoi.media.recorder import RecorderError
+                raise RecorderError(self.record_error)
+            path = self.service.recorder.directory / f"{run_id}.mp4"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"validated recorder fixture")
+            return {"path": str(path), "duration_seconds": 12, "size_bytes": path.stat().st_size}
+
+        self.service.recorder.record = AsyncMock(side_effect=record)
+
+    async def asyncTearDown(self):
+        tasks = list(self.service._video_tasks.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.store.close()
+        self.temp.cleanup()
+
+    async def run_event(self):
+        response = await self.service._post(SimpleNamespace(
+            match_info={"workflow_id": "camera-event"}, headers={"Idempotency-Key": "door"},
+            json=AsyncMock(return_value={"event_prompt": "door event",
+                                         "rtmp_url": "https://camera.test/event.m3u8"}),
+        ))
+        run_id = json.loads(response.text)["run_id"]
+        await self.service._execute(self.store.claim_webhook_run(), asyncio.Event())
+        return run_id
+
+    async def eventually(self, predicate):
+        async with asyncio.timeout(3):
+            while not predicate():
+                await asyncio.sleep(0.01)
+
+    async def test_agent_reviews_finished_video_and_attaches_it(self):
+        path = str(self.service.recorder.directory / "RUN.mp4")
+        attachment = {"segments": [{"type": "file", "data": {"file": path, "name": "RUN.mp4"}}]}
+        self.service._video_changed.set()
+        run_id = None
+
+        async def complete(prompt, turn):
+            self.prompts.append((turn, prompt))
+            if turn.endswith(":1"):
+                return AgentReply(["门口是快递员", json.loads(json.dumps(attachment).replace("RUN", run_id))])
+            return AgentReply([])
+
+        self.service.complete_turn = complete
+        response = await self.service._post(SimpleNamespace(
+            match_info={"workflow_id": "camera-event"}, headers={"Idempotency-Key": "door"},
+            json=AsyncMock(return_value={"event_prompt": "door event",
+                                         "rtmp_url": "https://camera.test/event.m3u8"}),
+        ))
+        run_id = json.loads(response.text)["run_id"]
+        await self.service._execute(self.store.claim_webhook_run(), asyncio.Event())
+        await self.eventually(lambda: len(self.prompts) == 2)
+        notify, review = self.prompts
+        self.assertIn("由你判断", notify[1])
+        self.assertEqual(review[0], f"webhook:{run_id}:1")
+        self.assertIn(f"video_id={run_id}", review[1])
+        self.assertIn("read_video_frames", review[1])
+        rows = lambda: self.store._db.execute(
+            "SELECT id, text, media_path FROM outbox ORDER BY id"
+        ).fetchall()
+        await self.eventually(lambda: len(rows()) == 2)
+        self.assertFalse(any(row["text"].startswith("[视频") for row in rows()))
+        self.assertEqual(rows()[1]["media_path"],
+                         str(self.service.recorder.directory / f"{run_id}.mp4"))
+        step = self.store.webhook_step(run_id, 1)
+        self.assertEqual(step["result"]["status"], "enqueued")
+        self.assertTrue(step["result"]["path"].endswith(f"{run_id}.mp4"))
+        self.store._db.execute("UPDATE outbox SET state='sent'")
+        self.store._db.commit()
+        await self.eventually(lambda: self.store.webhook_run(run_id)["state"] == "succeeded")
+        self.assertEqual(self.store.webhook_video_asset(run_id)["duration_seconds"], 12)
+
+    async def test_agent_may_stay_silent_after_review(self):
+        run_id = await self.run_event()
+        await self.eventually(lambda: self.store.webhook_run(run_id)["state"] == "succeeded")
+        self.assertEqual(len(self.prompts), 2)
+        self.assertEqual(self.store.due_outbox(), [])
+        self.assertEqual(self.store.webhook_step(run_id, 1)["result"]["status"], "reviewed")
+
+    async def test_agent_hears_about_failed_recording(self):
+        self.record_error = "recording_invalid_media:InvalidDataError"
+        run_id = await self.run_event()
+        await self.eventually(lambda: self.store.webhook_run(run_id)["state"] == "failed")
+        self.assertEqual(len(self.prompts), 2)
+        self.assertIn("录制失败", self.prompts[1][1])
+        self.assertNotIn("read_video_frames", self.prompts[1][1])
+        self.assertIsNone(self.store.webhook_video_asset(run_id))
+        step = self.store.webhook_step(run_id, 1)
+        self.assertEqual((step["state"], step["error"]), ("failed", self.record_error))
+
+    async def test_catalog_rejects_unknown_delivery(self):
+        workflow = camera_workflow()
+        workflow["steps"][1]["deliver"] = "maybe"
+        (self.root / "workflows" / "camera.yaml").write_text(yaml.safe_dump(workflow))
+        with self.assertRaisesRegex(WorkflowError, "deliver"):
+            load_catalog(self.root / "workflows", self.root / "executors.yaml")
