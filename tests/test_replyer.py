@@ -438,6 +438,25 @@ def test_replyer_receives_mode_and_splits_bubbles(mode):
     assert actual == ["第一句", "第二句"]
 
 
+def test_replyer_drops_bubbles_restating_attachment_paths():
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
+    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
+    request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[],
+                              turn_id="turn", round_number=1)
+    path = "/data/media/webhook/run.mp4"
+
+    async def complete(system, messages, tools):
+        return ProviderResponse([{"type": "text", "text": (
+            f"视频录好啦\n\n[QQ video: source={path}]\n\n你看看画面"
+        )}], [])
+
+    replyer = Replyer(config, store, SimpleNamespace(complete=complete))
+    call = ToolCall("dispatch", "reply", {"intent": "发视频", "reference": "", "attachments": [
+        {"segments": [{"type": "file", "data": {"file": path, "name": "run.mp4"}}]},
+    ]})
+    assert asyncio.run(replyer.generate(call, request)) == ["视频录好啦", "你看看画面"]
+
+
 def test_reply_attachments_schema_preserves_media_but_rejects_voice_and_plain_strings():
     from momoi.runtime.tool_contracts.reply import REPLY_TOOL_SPEC
     from momoi.tools.validation import validate_tool_arguments
