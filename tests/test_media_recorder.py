@@ -433,16 +433,3 @@ def test_http_playlist_cannot_open_local_file(tmp_path):
         asyncio.run(Recorder(directory).record(base + "/source.m3u8", "run", 2))
     assert not list(directory.glob("*.mp4"))
 
-
-def test_extract_frames_returns_jpeg_at_requested_seconds(tmp_path):
-    from momoi.media.frames import extract_frames
-
-    source = tmp_path / "clip.mp4"
-    make_video(source, seconds=4)
-    frames = extract_frames(source, [0, 1.5, 3.9, 60])
-    assert [timestamp for timestamp, _ in frames] == [0.0, 1.5, 3.9, 3.9]
-    for _, data in frames:
-        assert data[:2] == b"\xff\xd8"
-        with av.open(__import__("io").BytesIO(data), format="mjpeg") as image:
-            frame = next(image.decode(video=0))
-            assert (frame.width, frame.height) == (64, 64)

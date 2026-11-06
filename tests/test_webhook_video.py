@@ -390,8 +390,7 @@ class AgentVideoServiceTests(unittest.IsolatedAsyncioTestCase):
         notify, review = self.prompts
         self.assertIn("由你判断", notify[1])
         self.assertEqual(review[0], f"webhook:{run_id}:1")
-        self.assertIn(f"video_id={run_id}", review[1])
-        self.assertIn("read_video_frames", review[1])
+        self.assertIn(str(self.service.recorder.directory / f"{run_id}.mp4"), review[1])
         rows = lambda: self.store._db.execute(
             "SELECT id, text, media_path FROM outbox ORDER BY id"
         ).fetchall()
@@ -405,7 +404,6 @@ class AgentVideoServiceTests(unittest.IsolatedAsyncioTestCase):
         self.store._db.execute("UPDATE outbox SET state='sent'")
         self.store._db.commit()
         await self.eventually(lambda: self.store.webhook_run(run_id)["state"] == "succeeded")
-        self.assertEqual(self.store.webhook_video_asset(run_id)["duration_seconds"], 12)
 
     async def test_agent_may_stay_silent_after_review(self):
         run_id = await self.run_event()
@@ -420,8 +418,7 @@ class AgentVideoServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.eventually(lambda: self.store.webhook_run(run_id)["state"] == "failed")
         self.assertEqual(len(self.prompts), 2)
         self.assertIn("录制失败", self.prompts[1][1])
-        self.assertNotIn("read_video_frames", self.prompts[1][1])
-        self.assertIsNone(self.store.webhook_video_asset(run_id))
+        self.assertNotIn(".mp4", self.prompts[1][1])
         step = self.store.webhook_step(run_id, 1)
         self.assertEqual((step["state"], step["error"]), ("failed", self.record_error))
 

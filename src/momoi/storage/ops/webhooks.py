@@ -513,20 +513,6 @@ class WebhookStore:
             )
         return bool(cursor.rowcount)
 
-    def webhook_video_asset(self, video_id: str) -> dict[str, object] | None:
-        row = self._db.execute(
-            """SELECT run_id, result_json FROM webhook_steps
-               WHERE run_id=? AND kind='video' LIMIT 1""",
-            (video_id,),
-        ).fetchone()
-        if row is None:
-            return None
-        result = json.loads(row["result_json"])
-        path = result.get("path")
-        if not path or result.get("record_error") or not Path(path).is_file():
-            return None
-        return {"path": str(path), "duration_seconds": result.get("duration_seconds")}
-
     def enqueue_webhook_video(
         self, run_id: str, step_index: int, target_channel: str = ""
     ) -> list[int]:

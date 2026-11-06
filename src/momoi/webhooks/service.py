@@ -269,9 +269,9 @@ class WebhookService:
                 "file": result["path"], "name": Path(str(result["path"])).name,
             }}]}
             prompt = (
-                f"[系统通知] 摄像头视频录制完成：video_id={run_id}，"
-                f"时长约 {float(result.get('duration_seconds') or 0):.0f} 秒。"
-                "可以用 read_video_frames 按时间点查看画面。是否回复、是否发送视频由你决定；"
+                f"[系统通知] 摄像头视频录制完成，时长约 "
+                f"{float(result.get('duration_seconds') or 0):.0f} 秒，文件：{result['path']}。"
+                "是否查看画面、是否回复、是否发送视频由你决定；"
                 "发送视频时，在 reply 的 attachments 中放入 "
                 f"{json.dumps(attachment, ensure_ascii=False)}。"
             )
