@@ -44,10 +44,14 @@ def make_video(path, *, codec="libx264", seconds=4, audio_codec=None):
 
 
 @contextmanager
-def serve(directory):
+def serve(directory, types=None):
     class Handler(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *args):
             pass
+
+        def guess_type(self, path):
+            name = path.rsplit("/", 1)[-1]
+            return (types or {}).get(name) or super().guess_type(path)
 
     server = http.server.ThreadingHTTPServer(
         ("127.0.0.1", 0), functools.partial(Handler, directory=str(directory))
@@ -106,6 +110,53 @@ def test_incompatible_codec_requires_explicit_transcode(tmp_path):
     assert not list(recorder.directory.glob("*.part.mp4"))
 
 
+def test_encrypted_hls_event_clip_with_discontinuities(tmp_path):
+    # Mirrors camera cloud event recordings: extensionless AES-128 segments,
+    # each a standalone fragmented MP4 restarting at zero, last one truncated.
+    from cryptography.hazmat.primitives import padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    key, iv = bytes(range(16)), bytes(range(16, 32))
+    (tmp_path / "key").write_bytes(key)
+    lines = ["#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-TARGETDURATION:3",
+             '#EXT-X-KEY:METHOD=AES-128,URI="key",IV=0x' + iv.hex()]
+    for index in range(3):
+        segment = tmp_path / f"segment{index}.mp4"
+        with av.open(str(segment), "w", format="mp4", options={
+            "movflags": "frag_keyframe+empty_moov+default_base_moof"
+        }) as output:
+            stream = output.add_stream("libx265", rate=10)
+            stream.width = stream.height = 64
+            stream.pix_fmt = "yuv420p"
+            stream.options = {"x265-params": "log-level=none:keyint=10:bframes=0"}
+            for pts in range(30):
+                frame = av.VideoFrame.from_ndarray(
+                    np.full((64, 64, 3), pts, dtype=np.uint8), format="rgb24"
+                )
+                frame.pts = pts
+                output.mux(stream.encode(frame))
+            output.mux(stream.encode(None))
+        data = segment.read_bytes()
+        if index == 2:
+            data = data[: len(data) - 200]
+        padder = padding.PKCS7(128).padder()
+        encryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
+        (tmp_path / f"seg{index}").write_bytes(
+            encryptor.update(padder.update(data) + padder.finalize()) + encryptor.finalize()
+        )
+        lines += ["#EXTINF:3.0,", f"seg{index}?token=x", "#EXT-X-DISCONTINUITY"]
+    (tmp_path / "playlist").write_text("\n".join(lines + ["#EXT-X-ENDLIST", ""]))
+    recorder = Recorder(tmp_path / "recordings", allow_transcode=True)
+    with serve(tmp_path, {"playlist": "application/vnd.apple.mpegurl"}) as base:
+        result = asyncio.run(recorder.record(base + "/playlist?data=x", "event", 30))
+    with av.open(result["path"]) as output:
+        decoded = list(output.decode(video=0))
+        assert output.streams.video[0].codec_context.name == "h264"
+    assert len(decoded) >= 80
+    assert all(a.pts < b.pts for a, b in zip(decoded, decoded[1:]))
+    assert 8 <= result["duration_seconds"] <= 9.1
+
+
 def test_transcode_live_camera_timestamps_and_misleading_average_rate(tmp_path):
     # go2rtc's live H.265 MP4 reports ~989 fps and occasionally repeats or
     # moves a timestamp backwards, although the camera runs at about 20 fps.
@@ -116,8 +167,9 @@ def test_transcode_live_camera_timestamps_and_misleading_average_rate(tmp_path):
         frame.pts = (11 if index == 12 else 10 if index == 13 else index) * 4500
         frames.append(frame)
     packet = SimpleNamespace(
-        stream=SimpleNamespace(type="video"), is_keyframe=True,
-        pts=0, time_base=Fraction(1, 90000), decode=lambda: iter(frames),
+        stream=SimpleNamespace(type="video", index=0), is_keyframe=True,
+        pts=0, dts=0, duration=None, time_base=Fraction(1, 90000),
+        decode=lambda: iter(frames),
     )
     source = SimpleNamespace(demux=lambda streams: iter([packet]))
     video = SimpleNamespace(
