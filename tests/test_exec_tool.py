@@ -50,7 +50,7 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("exec" in {item["name"] for item in surface.conversation_specs()}, enabled)
             for stage in ("owner", "heartbeat", "goal"):
                 self.assertEqual("exec" in surface.permitted_names(stage), enabled)
-            self.assertNotIn("exec", surface.permitted_names("webhook"))
+            self.assertEqual("exec" in surface.permitted_names("webhook"), enabled)
         self.assertEqual(self.tools.capability(call), "external_effect")
 
     async def test_bash_toggle_replaces_file_tools_in_catalog_permissions_and_dispatch(self):
@@ -70,7 +70,8 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((visible | discovered) & catalog, expected)
             for stage in ("owner", "heartbeat", "goal"):
                 self.assertEqual(surface.permitted_names(stage) & catalog, expected)
-            self.assertEqual(surface.permitted_names("webhook") & catalog, {"web_fetch"})
+            self.assertEqual(surface.permitted_names("webhook") & catalog,
+                             {"web_fetch", "exec"} if enabled else {"web_fetch"})
         for name in replaced:
             result = await self.tools.execute(ToolCall("hidden", name, {}))
             self.assertEqual(result, {"ok": False, "error": "tool_not_allowed"})

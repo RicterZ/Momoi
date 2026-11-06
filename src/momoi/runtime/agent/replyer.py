@@ -201,6 +201,17 @@ class Replyer(ReplyerBase):
                 raise ValueError("Replyer exceeded tool call limit")
         text = "\n".join(str(block.get("text", "")) for block in response.content if block.get("type") == "text").strip()
         bubbles = [part.strip() for part in text.split("\n\n") if part.strip()]
+        sources = {
+            str(segment.get("data", {}).get("file"))
+            for attachment in call.arguments.get("attachments") or []
+            if isinstance(attachment, dict)
+            for segment in attachment.get("segments") or []
+            if isinstance(segment, dict) and isinstance(segment.get("data"), dict)
+            and segment["data"].get("file")
+        }
+        # The sending layer delivers attachments; a bubble quoting one is a
+        # textual stand-in for the media and must not be sent as words.
+        bubbles = [bubble for bubble in bubbles if not any(source in bubble for source in sources)]
         for bubble in bubbles:
             if QQ_POKE_DESCRIPTION in bubble or "[戳一戳用户]" in bubble:
                 raise ValueError("戳一戳的历史动作说明不能作为文字发送，请用 qq://poke 单独作为一个气泡")
