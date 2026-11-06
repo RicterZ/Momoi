@@ -8,8 +8,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import base64
+
+import av
 
 from ...channel import Channel, ChannelMessage
+from ...media.frames import extract_frames
+from ...segments import image_block
 from ...storage.core.timestamps import context_timestamp
 from ...observability.context import log_context
 from ...models import MessageRecalled, AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
@@ -679,6 +684,33 @@ class ToolBatchExecutor:
                 result = self.store.save_image_summary(
                     str(call.arguments.get("image_id") or ""), call.arguments.get("summary")
                 )
+            elif source == "image" and call.name == "read_video_frames":
+                identifier = str(call.arguments.get("video_id") or "")
+                asset = self.store.webhook_video_asset(identifier)
+                result = {"ok": asset is not None, "video_id": identifier}
+                if asset is None:
+                    result["error"] = "video_not_found"
+                else:
+                    try:
+                        frames = await asyncio.to_thread(
+                            extract_frames, asset["path"], list(call.arguments.get("seconds") or [])
+                        )
+                    except (av.error.FFmpegError, OSError, IndexError):
+                        frames = None
+                    if not frames:
+                        result.update({"ok": False, "error": "video_frames_unavailable"})
+                    else:
+                        result.update({
+                            "duration_seconds": asset["duration_seconds"],
+                            "frames": [timestamp for timestamp, _ in frames],
+                        })
+                        for timestamp, data in frames:
+                            image_blocks.extend([
+                                {"type": "text", "text": (
+                                    f"[read_video_frames video_id={identifier} second={timestamp}]"
+                                )},
+                                image_block("image/jpeg", base64.b64encode(data).decode("ascii")),
+                            ])
             elif source == "image":
                 identifier = str(call.arguments.get("image_id") or "")
                 image = self.store.read_image(identifier)

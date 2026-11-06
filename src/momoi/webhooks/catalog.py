@@ -282,7 +282,7 @@ def load_catalog(
             step_ids.add(step_id)
             uses = str(step.get("uses") or "")
             if uses == "video":
-                _only(step, {"id", "uses", "source", "duration_seconds", "send_as"},
+                _only(step, {"id", "uses", "source", "duration_seconds", "send_as", "deliver"},
                       f"workflow {workflow_id} step {step_id}")
                 if any(item["uses"] == "video" for item in steps):
                     raise WorkflowError(f"workflow {workflow_id} allows at most one video step")
@@ -298,8 +298,12 @@ def load_catalog(
                 send_as = step.get("send_as", "file")
                 if send_as not in {"file", "video"}:
                     raise WorkflowError("video.send_as must be file or video")
+                deliver = step.get("deliver", "auto")
+                if deliver not in {"auto", "agent"}:
+                    raise WorkflowError("video.deliver must be auto or agent")
                 steps.append({"id": step_id, "uses": uses, "source": source,
-                              "duration_seconds": duration, "send_as": send_as})
+                              "duration_seconds": duration, "send_as": send_as,
+                              "deliver": deliver})
                 continue
             if uses == "message":
                 _only(

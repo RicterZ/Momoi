@@ -283,7 +283,12 @@ class WebhookStore:
                     "SELECT id FROM outbox WHERE turn_id=? ORDER BY id", (turn_id,)
                 ).fetchall()
             ]
-            result_json = json.dumps({"outbox_ids": outbox_ids}, separators=(",", ":"))
+            result = {"outbox_ids": outbox_ids}
+            if step["kind"] == "video":
+                # The recording's path and outcome stay with the step for cleanup.
+                result = {**step["result"], **result,
+                          "status": "enqueued" if outbox_ids else "reviewed"}
+            result_json = json.dumps(result, separators=(",", ":"))
             step_state = "waiting_delivery" if outbox_ids else "succeeded"
             self._db.execute(
                 """UPDATE webhook_steps SET state=?, result_json=?, completed_at=?
@@ -306,6 +311,8 @@ class WebhookStore:
                     run_id,
                 ),
             )
+            if step["kind"] == "video":
+                self._refresh_webhook_video_run(run_id)
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
                    failure_reason=NULL, updated_at=? WHERE id=?""",
@@ -475,6 +482,50 @@ class WebhookStore:
                 (json.dumps({**asset, "status": "recorded"}), run_id, step_index),
             )
         return bool(cursor.rowcount)
+
+    def fail_webhook_video_recording(self, run_id: str, step_index: int, error: str) -> bool:
+        """Keep a failed agent-delivered recording open so the agent hears about it."""
+        with self._db:
+            cursor = self._db.execute(
+                """UPDATE webhook_steps SET result_json=json_set(
+                       result_json, '$.status', 'record_failed', '$.record_error', ?)
+                   WHERE run_id=? AND step_index=? AND kind='video' AND state='running'
+                     AND json_extract(result_json, '$.status')='recording'""",
+                (error, run_id, step_index),
+            )
+        return bool(cursor.rowcount)
+
+    def webhook_messages_settled(self, run_id: str) -> bool:
+        return self._db.execute(
+            """SELECT 1 FROM webhook_steps WHERE run_id=? AND kind='message'
+               AND state NOT IN ('succeeded', 'failed', 'ambiguous') LIMIT 1""",
+            (run_id,),
+        ).fetchone() is None
+
+    def begin_webhook_video_review(self, run_id: str, step_index: int) -> bool:
+        with self._db:
+            cursor = self._db.execute(
+                """UPDATE webhook_steps SET result_json=json_set(result_json, '$.status', 'reviewing')
+                   WHERE run_id=? AND step_index=? AND kind='video' AND state='running'
+                     AND json_extract(result_json, '$.status') IN
+                         ('recorded', 'record_failed', 'reviewing')""",
+                (run_id, step_index),
+            )
+        return bool(cursor.rowcount)
+
+    def webhook_video_asset(self, video_id: str) -> dict[str, object] | None:
+        row = self._db.execute(
+            """SELECT run_id, result_json FROM webhook_steps
+               WHERE run_id=? AND kind='video' LIMIT 1""",
+            (video_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        result = json.loads(row["result_json"])
+        path = result.get("path")
+        if not path or result.get("record_error") or not Path(path).is_file():
+            return None
+        return {"path": str(path), "duration_seconds": result.get("duration_seconds")}
 
     def enqueue_webhook_video(
         self, run_id: str, step_index: int, target_channel: str = ""

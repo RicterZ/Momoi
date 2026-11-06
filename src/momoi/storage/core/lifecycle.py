@@ -117,7 +117,7 @@ class LifecycleStore:
             ).fetchall()
             for row in videos:
                 result = json.loads(row["result_json"])
-                if result.get("status") == "recorded":
+                if result.get("status") in {"recorded", "record_failed", "reviewing"}:
                     continue
                 # An event's live footage cannot be recovered by opening it later.
                 path = self.webhook_media_directory / f"{row['run_id']}.part.mp4"

@@ -20,3 +20,6 @@ steps:
     source: "${inputs.rtmp_url}"
     duration_seconds: 30
     send_as: file
+    # auto sends the clip after the notification; agent lets the model
+    # inspect frames and decide whether to send it.
+    deliver: auto
