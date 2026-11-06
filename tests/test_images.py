@@ -59,6 +59,20 @@ def test_image_survives_restart_and_history_is_text_only(tmp_path):
     store._db.close()
 
 
+def test_read_image_file_sniffs_local_images(tmp_path):
+    store = Store(tmp_path / "test.db")
+    frame = tmp_path / "frame.jpg"
+    frame.write_bytes(PNG)
+    block = store.read_image_file(str(frame))
+    assert block["source"]["media_type"] == "image/png"
+    assert base64.b64decode(block["source"]["data"]) == PNG
+    (tmp_path / "note.txt").write_text("not an image")
+    assert store.read_image_file(str(tmp_path / "note.txt")) == "unsupported_image_type"
+    assert store.read_image_file(str(tmp_path / "missing.jpg")) == "image_not_found"
+    assert store.read_image_file(str(tmp_path)) == "image_not_found"
+    store._db.close()
+
+
 def test_read_image_transport_is_multimodal_without_bytes_in_tool_json(tmp_path):
     store = Store(tmp_path / "test.db")
     event = incoming()

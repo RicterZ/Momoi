@@ -1,11 +1,10 @@
 IMAGE_TOOL_SPECS = [
     {
         "name": "read_image",
-        "description": '通过附件 ID 检查此前接收到的图像，返回原始视觉输入；当历史文本缺乏所需细节时使用。',
+        "description": '检查图像并返回原始视觉输入：image_id 读取此前接收到的图像附件，path 读取本地 JPEG/PNG/GIF/WebP 文件（如自行抽取的视频帧）；当历史文本缺乏所需细节时使用。',
         "input_schema": {
             "type": "object",
-            "properties": {"image_id": {"type": "string"}},
-            "required": ["image_id"],
+            "properties": {"image_id": {"type": "string"}, "path": {"type": "string", "minLength": 1}},
             "additionalProperties": False,
         },
     }
