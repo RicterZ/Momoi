@@ -1151,6 +1151,40 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, expected)
             await response.read()
 
+    async def test_emotion_zip_import_parses_slug_and_description(self) -> None:
+        import zipfile
+
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("pack/shy-害羞的时候用.png", b"\x89PNG-shy")
+            archive.writestr("Wave-挥手-打招呼.GIF", b"GIF89a")
+            archive.writestr("noslug.png", b"x")
+            archive.writestr("bad slug-描述.png", b"x")
+            archive.writestr("readme.txt", b"x")
+            archive.writestr("__MACOSX/._shy-害羞的时候用.png", b"x")
+        form = FormData()
+        form.add_field("file", BytesIO(buffer.getvalue()), filename="pack.zip",
+                       content_type="application/zip")
+        response = await self.client.post("/api/emotions/import", data=form,
+                                          headers=self._auth())
+        self.assertEqual(response.status, 200)
+        result = await response.json()
+        imported = {item["slug"]: item["description"] for item in result["imported"]}
+        self.assertEqual(imported, {"shy": "害羞的时候用", "wave": "挥手-打招呼"})
+        self.assertEqual(sorted(item["name"] for item in result["skipped"]),
+                         ["bad slug-描述.png", "noslug.png", "readme.txt"])
+        asset = await self.client.get(
+            next(i for i in result["imported"] if i["slug"] == "shy")["asset_url"],
+            headers=self._auth(),
+        )
+        self.assertEqual(await asset.read(), b"\x89PNG-shy")
+
+        form = FormData()
+        form.add_field("file", BytesIO(b"not a zip"), filename="pack.zip")
+        response = await self.client.post("/api/emotions/import", data=form,
+                                          headers=self._auth())
+        self.assertEqual(response.status, 400)
+
     async def test_emotion_create_update_and_delete(self) -> None:
         form = FormData()
         form.add_field("slug", "wave")

@@ -1,7 +1,11 @@
 """Bounded historical execution evidence from native and legacy journals."""
 import json
+import logging
+from ...observability.events import log_event
 from ...tools.presentation import fit_result, present_result
 from itertools import groupby
+
+logger = logging.getLogger(__name__)
 
 EXCLUDED = {'recall', 'end_turn', 'heartbeat_end_turn', 'reply', 'send_bubbles', 'send_voice'}
 
@@ -97,7 +101,13 @@ def historical_result(value, tool_name=None):
     """Remove transport metadata only from the historical presentation."""
     if not isinstance(value, dict):
         return value
-    value = present_result(value, historical=True, tool_name=tool_name)
+    try:
+        value = present_result(value, historical=True, tool_name=tool_name)
+    except (TypeError, KeyError, ValueError, AttributeError) as error:
+        # Archived results predate current projections; one odd record must not fail recall.
+        log_event(logger, logging.WARNING, 'historical_result_projection_failed',
+                  tool_name=tool_name, error_type=type(error).__name__)
+        return value
     if value.get('result_ref') and 'chunk_start' in value and 'content' in value:
         for key in ('format', 'sha256', 'original_chars', 'chunk_start', 'chunk_end',
                     'next_cursor', 'has_more'):

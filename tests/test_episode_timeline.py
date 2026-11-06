@@ -265,3 +265,13 @@ def test_execution_pages_resume_across_turns_with_parallel_batches(tmp_path):
             assert tiny['result_ref'] == observation['result_ref']
     finally:
         store.close()
+
+
+def test_legacy_episode_messages_are_left_unprojected():
+    from momoi.tools.episode_timeline import project_episode
+    from momoi.storage.episode.execution_evidence import historical_result
+
+    legacy = {"ok": True, "episode": {"id": "e", "messages": ["USER: 早安", "ASSISTANT: 早"]}}
+    assert project_episode({**legacy, "episode": dict(legacy["episode"])})["episode"]["messages"] == [
+        "USER: 早安", "ASSISTANT: 早"]
+    assert historical_result(legacy, "episode_read")["ok"] is True

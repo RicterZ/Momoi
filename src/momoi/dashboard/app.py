@@ -18,6 +18,7 @@ from .auth import (
 from .settings import DashboardSettings
 from ..storage.delivery.emotions import (
     managed_emotion_bytes,
+    read_emotion_archive,
     remove_unreferenced_emotion_asset,
     valid_emotion_slug,
 )
@@ -717,6 +718,42 @@ def create_dashboard_app(
             remove_unreferenced_emotion_asset(store, str(previous["path"]), workspace)
         return web.json_response(_public_emotion(item), status=201)
 
+    async def import_emotions(request: web.Request) -> web.Response:
+        if "multipart/" not in (request.content_type or ""):
+            raise web.HTTPBadRequest(text="multipart form required")
+        limit = 50 * 1024 * 1024
+        data: bytearray | None = None
+        reader = await request.multipart()
+        async for part in reader:
+            if part.name != "file":
+                continue
+            data = bytearray()
+            while chunk := await part.read_chunk():
+                data.extend(chunk)
+                if len(data) > limit:
+                    raise web.HTTPRequestEntityTooLarge(max_size=limit, actual_size=len(data))
+        if not data:
+            raise web.HTTPBadRequest(text="file is required")
+        try:
+            entries, skipped = read_emotion_archive(bytes(data))
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        imported: list[dict[str, object]] = []
+        for name, slug, description, content in entries:
+            previous = store.emotion(slug)
+            try:
+                managed = managed_emotion_bytes(workspace, content, name)
+                item = store.add_emotion(slug, managed, description)
+            except ValueError as error:
+                skipped.append({"name": name, "reason": str(error)})
+                continue
+            if previous and previous["path"] != item["path"]:
+                remove_unreferenced_emotion_asset(store, str(previous["path"]), workspace)
+            public = _public_emotion(item)
+            public["replaced"] = previous is not None
+            imported.append(public)
+        return web.json_response({"imported": imported, "skipped": skipped})
+
     async def update_emotion(request: web.Request) -> web.Response:
         slug = request.match_info["slug"]
         if not valid_emotion_slug(slug):
@@ -799,6 +836,7 @@ def create_dashboard_app(
     app.router.add_put("/api/settings/prompts/{prompt_id}", update_prompt)
     app.router.add_get("/api/emotions", emotions)
     app.router.add_post("/api/emotions", create_emotion)
+    app.router.add_post("/api/emotions/import", import_emotions)
     app.router.add_patch("/api/emotions/{slug}", update_emotion)
     app.router.add_delete("/api/emotions/{slug}", delete_emotion)
     app.router.add_get("/api/emotions/{slug}/asset", emotion_asset)

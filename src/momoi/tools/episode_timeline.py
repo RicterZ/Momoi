@@ -160,6 +160,10 @@ def project_episode(result):
         if 'transcript' in episode:
             return result
         messages = episode.get('messages', [])
+        # Older archived results may carry pre-projection message shapes.
+        if not isinstance(messages, list) or not all(
+                isinstance(item, dict) and 'ordinal' in item for item in messages):
+            return result
         ordinals = sorted({item['ordinal'] for item in messages})[-3:]
         selected = sorted((item for item in messages if item['ordinal'] in ordinals),
                           key=lambda item: (item['ordinal'], item.get('created_at', 0), item.get('id', 0)))

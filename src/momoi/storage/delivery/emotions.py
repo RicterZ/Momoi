@@ -1,8 +1,10 @@
 import hashlib
+import io
 import re
 import sqlite3
 import time
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath
 
 from ...memory.text import estimate_tokens
 
@@ -39,6 +41,77 @@ def managed_emotion_bytes(workspace: str | Path, data: bytes, filename: str) -> 
     if not destination.exists():
         destination.write_bytes(data)
     return destination
+
+
+EMOTION_IMPORT_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+EMOTION_IMPORT_MAX_FILE = 5 * 1024 * 1024
+EMOTION_IMPORT_MAX_ENTRIES = 500
+
+
+def parse_emotion_filename(name: str) -> tuple[str, str, str]:
+    """Split ``slug-desc.ext`` into its parts or raise ValueError with a reason."""
+    base = PurePosixPath(name.replace("\\", "/")).name
+    stem, dot, extension = base.rpartition(".")
+    extension = f".{extension.lower()}"
+    if not dot or extension not in EMOTION_IMPORT_EXTENSIONS:
+        raise ValueError("unsupported file type")
+    slug, separator, description = stem.partition("-")
+    slug = slug.strip().lower()
+    description = description.strip()
+    if not separator or not description:
+        raise ValueError("file name must look like slug-desc.ext")
+    if not valid_emotion_slug(slug):
+        raise ValueError("invalid slug")
+    if len(description) > 500:
+        raise ValueError("description is too long")
+    return slug, description, extension
+
+
+def _zip_entry_name(info: zipfile.ZipInfo) -> str:
+    if info.flag_bits & 0x800:
+        return info.filename
+    raw = info.filename.encode("cp437", errors="replace")
+    for encoding in ("utf-8", "gb18030"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return info.filename
+
+
+def read_emotion_archive(data: bytes) -> tuple[list[tuple[str, str, str, bytes]], list[dict[str, str]]]:
+    """Return ``(name, slug, description, bytes)`` entries and skipped files."""
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        raise ValueError("file is not a valid zip archive") from None
+    entries: list[tuple[str, str, str, bytes]] = []
+    skipped: list[dict[str, str]] = []
+    seen: set[str] = set()
+    with archive:
+        for info in archive.infolist():
+            name = _zip_entry_name(info)
+            parts = PurePosixPath(name.replace("\\", "/")).parts
+            if info.is_dir() or not parts or parts[0] == "__MACOSX" or parts[-1].startswith("."):
+                continue
+            if len(entries) + len(skipped) >= EMOTION_IMPORT_MAX_ENTRIES:
+                skipped.append({"name": name, "reason": "too many files"})
+                continue
+            try:
+                slug, description, _ = parse_emotion_filename(name)
+                if slug in seen:
+                    raise ValueError("duplicate slug in archive")
+                if info.file_size > EMOTION_IMPORT_MAX_FILE:
+                    raise ValueError("file is larger than 5 MiB")
+                content = archive.read(info)
+                if not content:
+                    raise ValueError("file is empty")
+            except (ValueError, zipfile.BadZipFile, RuntimeError) as error:
+                skipped.append({"name": name, "reason": str(error)})
+                continue
+            seen.add(slug)
+            entries.append((name, slug, description, content))
+    return entries, skipped
 
 
 EMOTION_REACTION_POLICY = """可以选用上方列出的 `emotion://` 表情。表情可以单独发送，但不能代替必要的信息；放在合适的消息位置。"""
