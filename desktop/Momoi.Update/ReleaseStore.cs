@@ -35,6 +35,8 @@ public sealed class ReleaseStore
         System.IO.Directory.CreateDirectory(releases);
     }
 
+    public string RuntimeId => runtimeId;
+
     public CodeRelease Initialize()
     {
         string bundled = Path.Combine(installDirectory, "releases", "bundled");

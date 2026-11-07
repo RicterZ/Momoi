@@ -67,6 +67,7 @@ public partial class App
             return;
         }
         updateBusy = true;
+        bool runtimeUpgrade = false;
         try
         {
             SetUpdateMenus(false);
@@ -88,6 +89,27 @@ public partial class App
             LatestRelease? code = await SignedLatest.FetchAsync(checkDeadline.Token);
             if (code is not null && code.Version != catalog.Version) throw new InvalidDataException("发布正在切换，请稍后重新检查更新。");
             bool codeUpdate = code is not null && code.ReleaseId != currentRelease.Manifest.ReleaseId;
+            if (codeUpdate && code!.RuntimeId != releases.RuntimeId)
+            {
+                // The full installer replaces the shell, runtime and QQ pair together.
+                byte[] installEnvelope = await InstallCatalog.FetchEnvelopeAsync(checkDeadline.Token);
+                var install = InstallCatalog.Verify(installEnvelope, SignedLatest.EmbeddedPublicKey());
+                if (install.Version != code.Version || install.RuntimeId != code.RuntimeId) throw new InvalidDataException("发布正在切换，请稍后重新检查更新。");
+                LiveLog.Write("update", "stdout", $"Runtime upgrade available: {releases.RuntimeId} -> {install.RuntimeId}");
+                if (!await ShowUpdatePromptAsync("发现可用更新", $"Momoi {install.Version} 需要升级运行组件，将下载完整安装包（约 {install.Core.Size / 1024 / 1024} MB）并自动安装。\n\n安装期间 Momoi 会重启，配置和数据将保留。", "安装并重启", "稍后再说")) return;
+                ShowLoading("正在更新…");
+                string runtimeDirectory = Path.Combine(workspace, "updates", Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(runtimeDirectory);
+                string installPath = Path.Combine(runtimeDirectory, "install.json");
+                File.WriteAllBytes(installPath, installEnvelope);
+                string coreArchive = await UpdateCatalog.DownloadAsync(install.Core, runtimeDirectory, UpdateProgressView(), lifetime.Token);
+                runtimeUpgrade = true;
+                loadingView?.SetDetail("安装运行组件中");
+                ComponentUpdateWorker.Launch(AppContext.BaseDirectory, coreArchive, "core-installer", installPath);
+                updateTask = null;
+                _ = ExitAsync();
+                return;
+            }
             if (!shell && !napcatUpdate && !codeUpdate && !asrUpdate) { if (!quiet) await ShowUpdatePromptAsync("已是最新版本", "外壳、QQ 组件和主体程序均已是最新版本。"); return; }
             var names = new List<string>();
             if (shell) names.Add("外壳 " + catalog.Shell.Version);
@@ -120,7 +142,7 @@ public partial class App
         {
             updateBusy = false;
             SetUpdateMenus(true);
-            if (!exiting) ShowDashboard();
+            if (!exiting && !runtimeUpgrade) ShowDashboard();
         }
         if (File.Exists(UpdatePlanPath)) await ResumeUpdatesAsync();
     }

@@ -45,8 +45,7 @@ internal static class ComponentUpdateWorker
         {
             var request = JsonSerializer.Deserialize<ComponentUpdateRequest>(File.ReadAllText(requestPath)) ?? throw new InvalidDataException("无效更新请求。");
             install = Path.GetFullPath(request.InstallDirectory);
-            var catalog = UpdateCatalog.Verify(File.ReadAllBytes(request.Catalog), SignedLatest.EmbeddedPublicKey());
-            var artifact = request.Kind == "shell-zip" ? catalog.Shell : request.Kind == "napcat-installer" ? catalog.NapCat : request.Kind == "asr-installer" && catalog.ASR is not null ? catalog.ASR : throw new InvalidDataException("未知组件。");
+            var artifact = ResolveArtifact(request);
             view.SetDetail("校验中");
             using (var stream = File.OpenRead(request.Archive))
                 if (stream.Length != artifact.Size || Convert.ToHexStringLower(SHA256.HashData(stream)) != artifact.Sha256)
@@ -67,6 +66,13 @@ internal static class ComponentUpdateWorker
                 await Task.Run(() => ExtractShell(request.Archive, payload));
                 view.SetDetail("安装外壳中");
                 await RunElevatedAsync(requestPath);
+            }
+            else if (request.Kind == "core-installer")
+            {
+                view.SetDetail("安装运行组件中");
+                await RunElevatedAsync(requestPath);
+                var installed = InstallCatalog.Verify(File.ReadAllBytes(request.Catalog), SignedLatest.EmbeddedPublicKey());
+                File.WriteAllText(Path.Combine(install, "data", "updates", "napcat-installed-id.txt"), installed.QQPairId);
             }
             else
             {
@@ -93,6 +99,14 @@ internal static class ComponentUpdateWorker
                 Process.Start(new ProcessStartInfo(Path.Combine(install, "Momoi.exe")) { UseShellExecute = true });
         }
         app.Shutdown();
+    }
+
+    private static UpdateArtifact ResolveArtifact(ComponentUpdateRequest request)
+    {
+        byte[] envelope = File.ReadAllBytes(request.Catalog);
+        if (request.Kind == "core-installer") return InstallCatalog.Verify(envelope, SignedLatest.EmbeddedPublicKey()).Core;
+        var catalog = UpdateCatalog.Verify(envelope, SignedLatest.EmbeddedPublicKey());
+        return request.Kind == "shell-zip" ? catalog.Shell : request.Kind == "napcat-installer" ? catalog.NapCat : request.Kind == "asr-installer" && catalog.ASR is not null ? catalog.ASR : throw new InvalidDataException("未知组件。");
     }
 
     internal static void ExtractShell(string archive, string destination)
@@ -187,8 +201,7 @@ internal static class ComponentUpdateWorker
         {
             var request = JsonSerializer.Deserialize<ComponentUpdateRequest>(File.ReadAllText(requestPath)) ?? throw new InvalidDataException("无效更新请求。");
             string install = Path.GetFullPath(request.InstallDirectory);
-            var catalog = UpdateCatalog.Verify(File.ReadAllBytes(request.Catalog), SignedLatest.EmbeddedPublicKey());
-            var artifact = request.Kind == "shell-zip" ? catalog.Shell : request.Kind == "napcat-installer" ? catalog.NapCat : request.Kind == "asr-installer" && catalog.ASR is not null ? catalog.ASR : throw new InvalidDataException("未知组件。");
+            var artifact = ResolveArtifact(request);
             using (var stream = File.OpenRead(request.Archive))
                 if (stream.Length != artifact.Size || Convert.ToHexStringLower(SHA256.HashData(stream)) != artifact.Sha256) throw new InvalidDataException("更新文件校验失败。");
             if (request.Kind == "shell-zip")
@@ -196,6 +209,20 @@ internal static class ComponentUpdateWorker
                 string package = Path.Combine(Path.GetDirectoryName(requestPath)!, "verified-" + Guid.NewGuid().ToString("N"));
                 try { ExtractShell(request.Archive, package); ApplyShell(package, install); }
                 finally { if (Directory.Exists(package)) Directory.Delete(package, true); }
+            }
+            else if (request.Kind == "core-installer")
+            {
+                var catalog = InstallCatalog.Verify(File.ReadAllBytes(request.Catalog), SignedLatest.EmbeddedPublicKey());
+                var start = new ProcessStartInfo(request.Archive) { UseShellExecute = false };
+                // Silent setup reuses the previous task selection; VB-CABLE has its own interactive installer.
+                foreach (string arg in new[] { "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/MERGETASKS=!vbcable", "/DIR=" + install, "/LOG=" + request.Archive + ".install.log" }) start.ArgumentList.Add(arg);
+                using var child = Process.Start(start) ?? throw new IOException("无法启动 Momoi 安装程序。");
+                await child.WaitForExitAsync();
+                if (child.ExitCode != 0) throw new IOException("Momoi 安装失败，退出码 " + child.ExitCode);
+                using var runtime = JsonDocument.Parse(File.ReadAllText(Path.Combine(install, "runtime", "runtime.json")));
+                if (runtime.RootElement.GetProperty("runtime_id").GetString() != catalog.RuntimeId ||
+                    File.ReadAllText(Path.Combine(install, "runtime", "qq-pair", "pair-id.txt")).Trim() != catalog.QQPairId)
+                    throw new IOException("安装后的运行组件与签名锁定版本不符。");
             }
             else
             {

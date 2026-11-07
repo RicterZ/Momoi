@@ -117,6 +117,11 @@ try
         catch (InvalidDataException) { rejected = true; }
         if (!rejected) throw new Exception("Invalid component catalog accepted");
     }
+    var untrustedCore = new UpdateArtifact("1.1.3-abc", "1.1.3", UpdateCatalog.Url.Replace("catalog.json", "components/Momoi-Setup-1.1.3-x64.exe"), new string('d', 64), 400, "core-installer");
+    bool coreRejected = false;
+    try { await UpdateCatalog.DownloadAsync(untrustedCore, Path.Combine(root, "core"), new RecordedProgress([]), CancellationToken.None); }
+    catch (InvalidDataException) { coreRejected = true; }
+    if (!coreRejected) throw new Exception("Core installer outside the installer path accepted");
     byte[] brokenCatalog = SignCatalog(catalog);
     using (var document = JsonDocument.Parse(brokenCatalog))
     {
