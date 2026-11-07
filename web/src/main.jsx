@@ -1889,6 +1889,28 @@ function Emotions({ refreshKey, token, onMutated }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(null);
+  const [importResult, setImportResult] = useState(null);
+
+  async function importArchive(archive) {
+    setBusy("import");
+    setError("");
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.set("file", archive);
+      const result = await api("/api/emotions/import", {
+        method: "POST",
+        token,
+        formData,
+      });
+      setImportResult(result);
+      onMutated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
 
   async function createEmotion(event) {
     event.preventDefault();
@@ -1998,7 +2020,46 @@ function Emotions({ refreshKey, token, onMutated }) {
             >
               添加表情
             </button>
+            <label
+              className={`quiet-button emotion-import${busy === "import" ? " is-busy" : ""}`}
+              htmlFor="emotion-archive"
+              title="上传 zip，文件名按 slug-描述.png 解析，例如 shy-害羞的时候用.png；同名 slug 会被覆盖"
+            >
+              <input
+                id="emotion-archive"
+                className="file-picker-input"
+                type="file"
+                accept=".zip,application/zip"
+                disabled={busy === "import"}
+                onChange={(event) => {
+                  const next = event.target.files?.[0];
+                  event.target.value = "";
+                  if (next) importArchive(next);
+                }}
+              />
+              {busy === "import" ? "导入中…" : "批量导入"}
+            </label>
           </form>
+          {importResult && (
+            <section className="emotion-import-result">
+              <p>
+                导入 {importResult.imported.length} 个
+                {importResult.imported.some((item) => item.replaced) &&
+                  `（覆盖 ${importResult.imported.filter((item) => item.replaced).length} 个）`}
+                {importResult.skipped.length > 0 &&
+                  `，跳过 ${importResult.skipped.length} 个`}
+              </p>
+              {importResult.skipped.length > 0 && (
+                <ul>
+                  {importResult.skipped.map((item) => (
+                    <li key={item.name}>
+                      <code>{item.name}</code> {item.reason}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
           {error && <p className="form-error">{error}</p>}
           <section className="section-tools">
             <p>{items.length} 个可用表情</p>
