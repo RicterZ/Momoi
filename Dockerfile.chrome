@@ -60,7 +60,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 ARG CHROME_DEVTOOLS_MCP_VERSION=1.6.0
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates chromium ffmpeg git nodejs npm ripgrep tini tzdata \
+    && apt-get install -y --no-install-recommends ca-certificates chromium ffmpeg git nodejs npm ripgrep tini tzdata curl \
     && mkdir -p /opt/google/chrome \
     && ln -s /usr/bin/chromium /opt/google/chrome/chrome \
     && npm install --global "chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}" \
