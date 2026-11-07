@@ -68,8 +68,9 @@ public sealed record UpdateCatalog(
 
     public static async Task<string> DownloadAsync(UpdateArtifact artifact, string directory, IProgress<UpdateProgress> progress, CancellationToken token)
     {
-        if (artifact.Kind is not ("shell-zip" or "napcat-installer" or "asr-installer")) throw new InvalidDataException("未知组件。");
-        Validate(artifact, artifact.Kind);
+        if (artifact.Kind is not ("shell-zip" or "napcat-installer" or "asr-installer" or "core-installer")) throw new InvalidDataException("未知组件。");
+        if (artifact.Kind == "core-installer") InstallCatalog.ValidateArtifact(artifact, "core-installer");
+        else Validate(artifact, artifact.Kind);
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, artifact.Id + (artifact.Kind == "shell-zip" ? ".zip" : ".exe"));
         string partial = path + ".partial";
