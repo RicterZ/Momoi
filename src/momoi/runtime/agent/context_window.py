@@ -218,7 +218,8 @@ class ContextWindow:
                 replacement = context_data_message(
                     ("long_term_memories", snapshot["current"]),
                     ("memory_overrides", ""),
-                    ("goal_directory", snapshot["goals"]), required=True,
+                    ("goal_directory", snapshot["goals"]),
+                    ("memory_catalog", snapshot.get("catalog", "")), required=True,
                 )
                 prefix["content"] = replacement["content"]
                 from ..transcript.recall import remove_folded_memory_evidence
