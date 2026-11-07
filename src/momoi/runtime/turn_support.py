@@ -76,6 +76,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "long_term_memories",
     "memory_overrides",
     "goal_directory",
+    "memory_catalog",
     "scoped_memories",
     "current_state",
     "active_goals",

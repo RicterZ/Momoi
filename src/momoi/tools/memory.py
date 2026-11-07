@@ -26,6 +26,8 @@ from .validation import validate_tool_arguments
 
 logger = logging.getLogger(__name__)
 _EPISODE_SEARCH_SUMMARY_TOKENS = 300
+MEMORY_BROWSE_PAGE = 20
+MEMORY_BROWSE_EXCERPT = 80
 
 
 def _episode_claim_excerpt(
@@ -213,6 +215,10 @@ class MemoryTools:
         try:
             if call.name == "memory_search":
                 return self._search(call.arguments, draft)
+            if call.name == "memory_browse":
+                return self._browse(call.arguments)
+            if call.name == "memory_read":
+                return self._read(call.arguments, draft)
             if call.name == "episode_search":
                 return self._episode_search(call.arguments)
             if call.name == "episode_read":
@@ -250,6 +256,34 @@ class MemoryTools:
             limit = 6
         results = self.memory.search_literal(query, limit, filters=arguments.get("filters"))
         return self._memory_search_result(results, draft)
+
+    def _browse(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        rows = self.memory.repository.topic_rows(str(arguments["topic"]), scope=str(arguments.get("scope") or ""))
+        cursor = int(arguments.get("cursor") or 0)
+        page = rows[cursor:cursor + MEMORY_BROWSE_PAGE]
+        items = [{
+            "id": row["id"], "kind": row["kind"], "key": row["key"],
+            "excerpt": str(row["content"])[:MEMORY_BROWSE_EXCERPT],
+            "truncated": len(str(row["content"])) > MEMORY_BROWSE_EXCERPT,
+        } for row in page]
+        result: dict[str, Any] = {"ok": True, "topic": arguments["topic"], "total": len(rows), "items": items}
+        if cursor + len(page) < len(rows):
+            result["next_cursor"] = cursor + len(page)
+        return result
+
+    def _read(self, arguments: dict[str, Any], draft: TurnDraft) -> dict[str, Any]:
+        ids = [int(value) for value in arguments["ids"]]
+        snapshots = self.memory.snapshots(ids)
+        draft.memory_context.update(snapshots)
+        memories = [{
+            "id": item["id"], "kind": item["kind"], "key": item["key"], "content": item["content"],
+            "activation": item["activation"], "updated_at": item["updated_at"], "meta": item["meta"],
+        } for item in snapshots.values()]
+        result: dict[str, Any] = {"ok": True, "memories": memories}
+        missing = [value for value in ids if value not in snapshots]
+        if missing:
+            result["missing_ids"] = missing
+        return result
 
     def _memory_search_result(
         self, results: list[dict[str, object]], draft: TurnDraft,

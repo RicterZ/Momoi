@@ -223,13 +223,16 @@ class ContextService:
                     ),
                 })
         goals = self.owner_context_baseline()["goal_directory"]
+        catalog = self.store.memory_catalog_context()
         prefix = context_data_message(
             ("long_term_memories", self.store._memory_context(snapshot)),
             ("memory_overrides", "\n".join(memory_state["snapshot_overrides"].values())),
             ("goal_directory", goals),
+            ("memory_catalog", catalog),
             required=True,
         )
         prefix["_memory_snapshot"] = {
+            "catalog": catalog,
             "revision": memory_state["revision"],
             "turn_ids": ids,
             "overrides": "\n".join(memory_state["overrides"].values()),

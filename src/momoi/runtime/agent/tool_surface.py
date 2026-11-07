@@ -261,6 +261,8 @@ class ToolSurface:
                     *channel_tools,
                     "goal_create",
                     "memory_search",
+                    "memory_browse",
+                    "memory_read",
                     "read_tool_result",
                     "tool_search",
                     "tool_enable",
