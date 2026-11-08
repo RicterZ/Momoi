@@ -7,7 +7,7 @@ from ...memory.text import estimate_tokens
 from ...memory.writing.validation import ALWAYS_MEMORY_KINDS
 
 DAY = 86400
-VOLATILE_KINDS = {'preference', 'cross_event_state', 'profile'}
+VOLATILE_KINDS = {'cross_event_state'}
 
 
 class MemoryActivationStore:

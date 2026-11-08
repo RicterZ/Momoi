@@ -183,8 +183,8 @@ never removed when the budget is lowered.
 
 After each weekly reflection, the Dashboard shows activation suggestions for
 manual review: recall memories with at least five recalls or reads across three
-primary Episodes in 30 days, and long-term memories in volatile categories
-(profile, preference, cross-event state) or without recorded reply use for 60 days.
+primary Episodes in 30 days, and long-term cross-event state memories or entries
+without recorded reply use for 60 days. Profile and preference kinds alone do not imply volatility.
 The inactivity rule requires a complete 60-day observation period. Planner can
 report actual use through `reply.used_memory_ids`; this is model-reported evidence,
 not proof of adherence. Prefix injection alone does not count as reply use.

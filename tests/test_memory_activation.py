@@ -15,6 +15,14 @@ from tests.test_memory_writing import decision, context
 DAY = 86400
 
 
+def seed_volatile(store):
+    identifier = seed(store.memories, 'volatile', [], activation='always')
+    # Imported legacy always states can predate the current kind restrictions.
+    with store.transaction():
+        store._db.execute("UPDATE memories SET kind='cross_event_state' WHERE id=?", (identifier,))
+    return identifier
+
+
 def reviewed(store, demote_ids=()):
     command = decision(key='new')
     command['memory']['activation'] = 'always'
@@ -113,7 +121,7 @@ def test_promotion_threshold_topics_time_window_and_lineage(store):
 
 def test_demotion_ignores_injection_requires_full_observation_and_preserves_usage(store):
     now = time.time()
-    volatile = seed(store.memories, 'volatile', [], activation='always')
+    volatile = seed_volatile(store)
     unused = seed(store.memories, 'unused', [], activation='always')
     used = seed(store.memories, 'used', [], activation='always')
     with store.transaction():
@@ -148,7 +156,7 @@ def test_approve_reject_stale_suggestions_and_budget_failure(store):
     assert not store.memory_activation_suggestions()['items']
     with pytest.raises(LookupError):
         store.review_memory_activation_suggestion(promotion['id'], approve=True)
-    store.generate_memory_activation_suggestions()
+    store.generate_memory_activation_suggestions(now=time.time() + 61*DAY)
     item = store.memory_activation_suggestions()['items'][0]
     store.update_memory_content(item['memory_id'], '已变化')
     with pytest.raises(ValueError, match='snapshot_changed'):
@@ -156,7 +164,7 @@ def test_approve_reject_stale_suggestions_and_budget_failure(store):
 
 
 def test_weekly_empty_review_still_generates_suggestions(store):
-    seed(store.memories, 'volatile', [], activation='always')
+    seed_volatile(store)
     record = store.claim_due_weekly_reflection(ReflectionConfig(enabled=True))
     store.begin_turn('weekly', 'weekly_reflection', [])
     before = store.memories.repository.inventory()
@@ -176,7 +184,7 @@ def test_prefix_order_stays_stable_when_version_id_changes(store):
 
 def test_activation_api_requires_auth_and_explicit_confirmation(store):
     async def run():
-        seed(store.memories, 'volatile', [], activation='always')
+        seed_volatile(store)
         store.generate_memory_activation_suggestions()
         from momoi.dashboard.auth import issue_dashboard_jwt
         headers = {'Authorization': 'Bearer ' + issue_dashboard_jwt('secret')}
@@ -268,3 +276,35 @@ def test_reply_usage_retention_preserves_sixty_day_window(store):
     store.compact_memory_access(now=now)
     rows = store._db.execute('SELECT event_key FROM memory_reply_usage ORDER BY created_at').fetchall()
     assert [row[0] for row in rows] == ['60', '1']
+
+
+@pytest.mark.parametrize('kind', ['profile', 'preference'])
+def test_stable_always_kinds_require_sixty_days_without_use(store, kind):
+    now = time.time()
+    identifier = seed(store.memories, 'stable', [], activation='always', content='用户不吃香菜，称呼为阿澈')
+    with store.transaction():
+        store._db.execute('UPDATE memories SET kind=? WHERE id=?', (kind, identifier))
+        store._db.execute('UPDATE memory_usage_observation SET started_at=?', (now,))
+    for days in (0, 7, 59):
+        assert store.generate_memory_activation_suggestions(now=now + days*DAY) == []
+        assert store.memory_activation_suggestions()['items'] == []
+    candidates = store.generate_memory_activation_suggestions(now=now + 61*DAY)
+    assert [(item['memory_id'], item['target']) for item in candidates] == [(identifier, 'recall')]
+    assert '60 天' in candidates[0]['reason']
+
+
+@pytest.mark.parametrize('kind', ['profile', 'preference'])
+def test_newly_promoted_or_updated_stable_memory_is_not_recommended_for_demotion(store, kind):
+    now = time.time()
+    identifier = seed(store.memories, 'stable', [], content='用户不吃香菜，称呼为阿澈')
+    with store.transaction():
+        store._db.execute('UPDATE memories SET kind=? WHERE id=?', (kind, identifier))
+    add_usage(store, identifier, now)
+    store.generate_memory_activation_suggestions(now=now)
+    item = store.memory_activation_suggestions()['items'][0]
+    assert item['target'] == 'always'
+    result = store.review_memory_activation_suggestion(item['id'], approve=True)
+    assert store.generate_memory_activation_suggestions(now=now + 7*DAY) == []
+    store.update_memory_content(result['memory_id'], '称呼用户为阿澈，点餐时不要香菜')
+    assert store.generate_memory_activation_suggestions(now=now + 14*DAY) == []
+    assert store.memory_activation_suggestions()['items'] == []

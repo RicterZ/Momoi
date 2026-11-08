@@ -4,6 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 import tempfile
+import time
 from types import SimpleNamespace
 
 from momoi.integrations.adapters.openai import OpenAIProvider
@@ -37,6 +38,10 @@ async def evaluate_always(complete, directory):
                     seed(f'background_{index}', f'用户在第 {index} 个虚构游戏中偏好蓝色装饰。' * 5)
                 baseline_tokens = store.always_memory_tokens()
                 if mode == 'after':
+                    # Synthetic complete observation period with no recorded use.
+                    with store.transaction():
+                        store._db.execute('UPDATE memory_usage_observation SET started_at=?',
+                                          (time.time() - 61 * 86400,))
                     store.generate_memory_activation_suggestions()
                     for item in store.memory_activation_suggestions()['items']:
                         if item['key'].startswith('background_'):
