@@ -122,4 +122,15 @@ def format_memory(row: Mapping[str, object]) -> str:
     header = " ".join(
         f"{key}={quoteattr(str(value))}" for key, value in attributes.items()
     )
-    return f"<memory {header}>{escape(str(row['content']))}</memory>"
+    content = escape(str(row['content']))
+    if row["kind"] == "practice":
+        status = meta.get("verification")
+        if status:
+            content += f'<verification>{escape(status)}</verification>'
+        if status == "unverified":
+            content += "<caution>此方法尚未验证，执行前先向用户确认。</caution>"
+        if meta.get("basis"):
+            content += f'<basis>{escape(meta["basis"])}</basis>'
+        for pitfall in meta.get("pitfalls", []):
+            content += f'<pitfall>{escape(pitfall)}</pitfall>'
+    return f"<memory {header}>{content}</memory>"

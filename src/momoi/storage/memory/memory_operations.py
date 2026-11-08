@@ -40,6 +40,32 @@ class MemoryOperationStore:
             ),
         )
 
+    def memory_operation_execution_evidence(self, source_turn_id):
+        """Only actual native journal receipts may establish practice verification."""
+        from ..episode.execution_evidence import eligible, bounded_result
+
+        rows = self._db.execute(
+            """SELECT payload_json FROM turn_journal WHERE turn_id=?
+               AND item_type='assistant_exchange' AND trust='runtime' ORDER BY sequence DESC LIMIT 40""",
+            (source_turn_id,),
+        ).fetchall()
+        evidence = {}
+        for row in reversed(rows):
+            exchange = eligible(json.loads(row["payload_json"]))
+            for tool in (exchange or {}).get("tools", []):
+                result = tool["result"]
+                if (tool["name"] == "memory_operation" or not tool["arguments_complete"]
+                        or not isinstance(result, dict) or result.get("ok") is not True
+                        or result.get("error") or result.get("ambiguous")
+                        or result.get("exit_code", 0) != 0
+                        or result.get("state") in {"accepted", "pending", "queued", "running"}):
+                    continue
+                identifier = f"execution:{source_turn_id}:{tool['call_id']}"
+                evidence[identifier] = json.dumps(
+                    {"tool": tool["name"], "arguments": bounded_result(tool["arguments"]),
+                     "result": bounded_result(result)}, ensure_ascii=False)
+        return evidence
+
     def memory_operation_evidence_records(
         self, evidence: dict[str, str]
     ) -> list[dict[str, object]]:
@@ -215,9 +241,14 @@ class MemoryOperationStore:
             decisions = plan.decisions
             if payload["requests"] != batch["operations"]:
                 raise ValueError("memory_operation_plan_mismatch")
-            # Only persisted owner input and authenticated dashboard edits are evidence.
+            # Reauthenticate both owner citations and native execution receipts at commit.
             records = {row["event_id"]: row for row in self.memory_operation_evidence_records(payload["evidence"])}
+            executions = self.memory_operation_execution_evidence(batch["id"])
             for event_id, text in payload["evidence"].items():
+                if event_id.startswith("execution:"):
+                    if executions.get(event_id) != text or event_id in payload["evidence_times"]:
+                        raise ValueError("memory_operation_evidence_changed")
+                    continue
                 row = records.get(event_id)
                 if (row is None or text != row["content"]
                         or (event_id in payload["evidence_times"]

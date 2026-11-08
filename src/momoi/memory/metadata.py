@@ -32,10 +32,37 @@ TRIGGER_INPUT_SCHEMA = {
 }
 
 
+PRACTICE_META_FIELDS = ("verification", "basis", "pitfalls")
+PRACTICE_META_SCHEMA = {
+    "verification": {"type": "string", "enum": ["verified", "unverified"]},
+    "basis": {"type": "string", "minLength": 1, "maxLength": 500,
+              "description": "验证依据：必须填写所提供 execution_evidence 中的完整 ID；用户口述不构成执行验证。"},
+    "pitfalls": {"type": "array", "maxItems": 3,
+                 "items": {"type": "string", "minLength": 1, "maxLength": 200}},
+}
+
+
+def validate_practice_meta(meta):
+    if "verification" in meta and meta["verification"] not in ("verified", "unverified"):
+        raise ValueError("verification must be verified or unverified")
+    if "basis" in meta and (not isinstance(meta["basis"], str) or not meta["basis"].strip()
+                            or len(meta["basis"]) > 500):
+        raise ValueError("basis must be a nonempty string of at most 500 characters")
+    if meta.get("verification") == "verified" and not meta.get("basis"):
+        raise ValueError("verified practice requires basis")
+    if "pitfalls" in meta and (not isinstance(meta["pitfalls"], list) or len(meta["pitfalls"]) > 3
+            or any(not isinstance(item, str) or not item.strip() or len(item) > 200
+                   for item in meta["pitfalls"])):
+        raise ValueError("pitfalls must contain at most three short nonempty strings")
+
+
 class MemoryMeta(TypedDict):
     tags: list[str]
     scope: str
     triggers: NotRequired[list[str]]
+    verification: NotRequired[str]
+    basis: NotRequired[str]
+    pitfalls: NotRequired[list[str]]
 
 
 class MemoryFilters(TypedDict, total=False):
@@ -140,14 +167,16 @@ class TagCatalog:
         return sorted(values)
 
     def validate(self, meta: object) -> MemoryMeta:
-        if not isinstance(meta, dict) or set(meta) - {"tags", "scope", "triggers"}:
-            raise ValueError("memory meta only accepts tags, scope and triggers")
+        if not isinstance(meta, dict) or set(meta) - {"tags", "scope", "triggers", *PRACTICE_META_FIELDS}:
+            raise ValueError("invalid memory meta fields")
         tags = self._values(meta.get("tags", []), self.tags, "tags")
         if len(tags) > 3:
             raise ValueError("memory accepts at most three tags")
         result = {"tags": tags, "scope": validate_scope(meta.get("scope", ""))}
         if "triggers" in meta:
             result["triggers"] = validate_triggers(meta["triggers"])
+        validate_practice_meta(meta)
+        result.update({key: meta[key] for key in PRACTICE_META_FIELDS if key in meta})
         return result
 
     def filters(self, filters: object) -> MemoryFilters:

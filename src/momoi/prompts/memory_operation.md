@@ -30,7 +30,7 @@ owner_evidence 是认证的用户证据，包含聊天和带时间的后台手�
 - write：新增、修正或合并。target_ids 包含被替代的全部当前版本；新增为空。优先复用原 kind/key，在 reason 说明新增事实与现有记忆的实质区别。
 - forget：仅在用户明确要求删除或不再保留信息时使用，不另写替代。用户否定旧事实、纠正内容时用 write 保存有证据支持的新结论（包括否定结论），替代旧版本；不写成“不要记住旧事实”，不把纠正当作删除。保留证据的不确定性，“尚未确诊”不等于“没有疾病”。
 - noop：事实已覆盖时提供 target_ids 和 evidence 追加证据；请求不适合长期记忆、只是助手建议或已被更新证据取代时，只填 operation_ids、action、reason，省略 target_ids 和 evidence，不能填空数组。
-- metadata：仅修改 tags 或 triggers，提供目标、meta 和证据，不改正文或 scope。
+- metadata：仅修改 tags、triggers 或 practice 验证信息，提供目标、meta 和证据，不改正文或 scope。
 - defer：目标、证据或范围不清，或检索无法完成时写明原因。本次审阅结束，不生效，也不靠同一证据自动重试。
 
 每个请求恰好解决一次；同一事实的多个请求可合成一个决定。不顺便修改无关事实。
@@ -42,3 +42,11 @@ content 只写一个完整、可复用的事实或规则，以及必要对象、
 kind 按 schema 选择，tags 从预定义目录选择零至三个主题，无合适标签填 []；标签不决定 scope，也不是判重依据。recall 用于相关话题中检索的长期事实；always 只用于与具体话题无关的人际偏好或约束，不因重要就常驻。
 
 meta.triggers 按工具字段中的统一触发词定义选择：通常 1 个，仅不同聊天入口需要时选第 2 个，优先用户原话，结合所提供的语境理解其用法，不凑数。无需求填 []。匹配忽略英文大小写及全半角差异，只有全局 recall 会自动注入；命中不覆盖用户当前意图。改写或 activation 变化时保留仍适用的触发词；省略该字段继承，显式 [] 清空。
+
+
+practice 写入（包括改写、合并）必须显式填写 meta.verification：verified 或 unverified。
+只有 execution_evidence 中的实际执行回执能支持验证；核对工具输入、结果是否确实执行并成功验证了这条方法，而非仅接受、排队或搜索到相关说明。
+verified 必须将支持该方法的 execution ID 原样填入 meta.basis；不能编造 ID、用主人口述、助手声称成功或旧记忆的 verified 标签代替执行记录。
+仅有主人口头要求、假设或缺少足够执行证据时使用 unverified，不能继承旧正文的 verified 状态。
+meta.pitfalls 可选，最多三条、每条不超过 200 字，只写材料支持的已知坑，不编造。basis、pitfalls 不放进正文。
+其他 kind 不填写这些验证字段。仅调整标签、触发词时省略验证字段以保留旧值；修改验证状态时一并填写 verification，verified 同时填写有效 basis。
