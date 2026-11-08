@@ -7,13 +7,15 @@ class MemoryEvidenceStore:
         placeholders = ",".join("?" for _ in memory_ids)
         rows = self._db.execute(
             f"""SELECT DISTINCT e.source_event_id AS id,
-                       COALESCE(v.content, e.quote) AS content,
-                       COALESCE(v.occurred_at, e.created_at) AS occurred_at,
-                       COALESCE(v.received_at, e.created_at) AS received_at
+                       COALESCE(v.content, json_extract(b.events_json,'$[0].text'), e.quote) AS content,
+                       COALESCE(v.occurred_at, b.created_at, e.created_at) AS occurred_at,
+                       COALESCE(v.received_at, b.created_at, e.created_at) AS received_at
                 FROM memory_evidence AS e
                 LEFT JOIN events AS v ON v.id=e.source_event_id
+                LEFT JOIN memory_operation_batches b ON b.id=e.source_event_id
+                  AND b.id LIKE 'dashboard:reflection:%'
                 WHERE e.memory_id IN ({placeholders})
-                  AND (v.id IS NOT NULL OR e.source_event_id LIKE 'dashboard:memory:%')
+                  AND (v.id IS NOT NULL OR e.source_event_id LIKE 'dashboard:memory:%' OR b.id IS NOT NULL)
                 ORDER BY received_at, id""",
             memory_ids,
         ).fetchall()
