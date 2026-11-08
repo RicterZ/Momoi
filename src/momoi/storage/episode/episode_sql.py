@@ -2,9 +2,12 @@ from ..core.turn_workflow import turn_workflow_kind_sql
 
 
 def topic_turn_sql(turn: str) -> str:
-    """Turns archived into topic Episodes: owner turns and heartbeats."""
+    """Turns archived into topic Episodes: owner and outward-facing autonomous turns."""
 
-    return f"({turn}.kind='owner' OR {turn}.workflow_kind='heartbeat')"
+    return (
+        f"({turn}.kind='owner' OR {turn}.workflow_kind IN "
+        "('heartbeat', 'webhook', 'goal'))"
+    )
 
 
 def runtime_archive_kind_sql(episode: str) -> str:

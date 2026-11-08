@@ -134,19 +134,6 @@ class NotificationStore:
                     outbox_id,
                 ),
             )
-        if visible_messages and row["goal_id"] != "heartbeat":
-            archive_day = self._archive_day(now)
-            self._ensure_runtime_archive(
-                archive_kind="goal",
-                archive_day=archive_day,
-                episode_key=f"goal:{row['goal_id']}:day:{archive_day}",
-                turn_id=str(row["turn_id"]),
-                title=self._episode_title(
-                    visible_messages[0], "Autonomous conversation"
-                ),
-                now=now,
-                recall_values=(visible_messages,),
-            )
         self._db.execute(
             """UPDATE notifications SET state='queued', claimed_at=NULL, queued_at=?
                WHERE id=?""",

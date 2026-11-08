@@ -196,16 +196,17 @@ class TurnCommitStore:
                         goal_source,
                     ),
                 )
-                archive_day = self._archive_day(now)
-                self._ensure_runtime_archive(
-                    archive_kind="goal",
-                    archive_day=archive_day,
-                    episode_key=f"goal:{goal_id}:day:{archive_day}",
-                    turn_id=turn_id,
-                    title=str(current["title"]),
-                    now=now,
-                    recall_values=(goal_record,),
-                )
+                if not draft.notification_messages:
+                    archive_day = self._archive_day(now)
+                    self._ensure_runtime_archive(
+                        archive_kind="goal",
+                        archive_day=archive_day,
+                        episode_key=f"goal:{goal_id}:day:{archive_day}",
+                        turn_id=turn_id,
+                        title=str(current["title"]),
+                        now=now,
+                        recall_values=(goal_record,),
+                    )
             if draft.notification_messages:
                 self._db.execute(
                     """INSERT OR IGNORE INTO notifications

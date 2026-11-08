@@ -577,17 +577,17 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ).fetchone()[0],
                 webhook_turn_id,
             )
-            episode = store.search_episodes("门口 | 继续留意", 3)[0]
-            contents = [
-                item["content"]
-                for item in store.conversation_episode(str(episode["id"]))[
-                    "messages"
-                ]
-            ]
-            self.assertIn("门口检测到有人，请自然提醒我。", contents)
-            self.assertIn("门口好像有人，需要我继续帮你留意吗？", contents)
+            self.assertIsNone(
+                store._db.execute(
+                    "SELECT 1 FROM episode_turns WHERE turn_id=?", (webhook_turn_id,)
+                ).fetchone()
+            )
             store.mark_sent(rows[0].id)
             await asyncio.wait_for(task, timeout=1)
+            self.assertIn(
+                webhook_turn_id,
+                [str(row["id"]) for row in store._episode_consolidation_pending_rows(10)],
+            )
             self.assertEqual(store.webhook_run(str(first["id"]))["state"], "succeeded")
             self.assertEqual(
                 store._db.execute(
@@ -656,35 +656,17 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn('source="webhook:event-message"', external)
             self.assertIn("没有变化时保持安静。", external)
             self.assertNotIn("<bubble>", external)
-            found = store.search_episodes("没有变化", 3)
-            self.assertTrue(found)
+            self.assertEqual(
+                store._db.execute("SELECT COUNT(*) FROM conversation_episodes").fetchone()[0],
+                0,
+            )
             self.assertIn(
-                "没有变化时保持安静。",
-                [
-                    item["content"]
-                    for item in store.conversation_episode(str(found[0]["id"]))[
-                        "messages"
-                    ]
-                ],
-            )
-            searched = MemoryTools(store).execute(
-                ToolCall(
-                    "search-webhook",
-                    "episode_search",
-                    {"query": "没有变化"},
-                ),
-                [],
-                TurnDraft(),
-            )
-            self.assertTrue(searched["ok"])
-            self.assertGreater(searched["count"], 0)
-            episode = found[0]
-            self.assertRegex(
-                str(episode["title"]), r"^Webhook event-message · \d{4}-\d{2}-\d{2}$"
+                webhook_turn_id,
+                [str(row["id"]) for row in store._episode_consolidation_pending_rows(10)],
             )
             store.close()
 
-    async def test_webhook_events_share_one_episode_per_local_day(self) -> None:
+    async def test_webhook_events_wait_for_topic_consolidation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(__file__).resolve().parents[1] / "config.example"
             store = Store(Path(directory) / "momoi.sqlite3")
@@ -726,29 +708,15 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             other = store.claim_webhook_run()
             await service._execute(other, asyncio.Event())
 
-            door = store.search_episodes("门锁超时", 3)
-            hamster = store.search_episodes("仓鼠窝", 3)
-            self.assertTrue(door)
-            self.assertTrue(hamster)
-            by_title = {str(item["title"]): item for item in door}
-            event_title = next(
-                title
-                for title in by_title
-                if title.startswith("Webhook event-message ")
+            self.assertEqual(
+                store._db.execute("SELECT COUNT(*) FROM conversation_episodes").fetchone()[0],
+                0,
             )
-            other_title = next(
-                title
-                for title in by_title
-                if title.startswith("Webhook url-check-event ")
-            )
-            self.assertEqual(by_title[event_title]["id"], hamster[0]["id"])
-            self.assertNotEqual(by_title[event_title]["id"], by_title[other_title]["id"])
-            contents = [
-                item["content"]
-                for item in store.conversation_episode(
-                    str(by_title[event_title]["id"])
-                )["messages"]
+            pending = [
+                str(row["id"]) for row in store._episode_consolidation_pending_rows(10)
             ]
-            self.assertIn("门锁超时未关", contents)
-            self.assertIn("当前仓鼠窝温度为 28.0°C", contents)
+            self.assertEqual(
+                sorted(pending),
+                sorted(f"webhook:{run['id']}:0" for run in (first, second, other)),
+            )
             store.close()

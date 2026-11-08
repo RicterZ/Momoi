@@ -6,7 +6,6 @@ from pathlib import Path
 
 from ...models import AgentReply
 from ..core.integrity import decode_stored_json
-from ..core.turn_workflow import turn_workflow_kind_sql
 
 
 class WebhookStore:
@@ -183,23 +182,19 @@ class WebhookStore:
             ).fetchone()
             if existing is not None:
                 return int(existing["id"])
+            self._db.execute(
+                """INSERT OR IGNORE INTO turns
+                   (id, kind, workflow_kind, source_ids_json, state,
+                    started_at, updated_at)
+                   VALUES (?, 'autonomous', 'webhook', ?, 'running', ?, ?)""",
+                (turn_id, source, now, now),
+            )
             inserted = self._db.execute(
                 """INSERT INTO messages
                    (turn_id, role, content, created_at, source_event_ids_json,
                     delivery_state)
                    VALUES (?, 'event', ?, ?, ?, 'delivered')""",
                 (turn_id, text, now, source),
-            )
-            workflow_id = self._webhook_workflow_id(run_id)
-            archive_day = self._archive_day(now)
-            self._ensure_runtime_archive(
-                archive_kind="webhook",
-                archive_day=archive_day,
-                episode_key=f"webhook:{workflow_id}:day:{archive_day}",
-                turn_id=turn_id,
-                title=f"Webhook {workflow_id}",
-                now=now,
-                recall_values=(text,),
             )
             return int(inserted.lastrowid)
 
@@ -225,12 +220,6 @@ class WebhookStore:
         now = time.time()
         with self._db:
             self._commit_memory_access(turn_id, reply.memory_access)
-            progress = self._db.execute(
-                """SELECT text, created_at, tool_call_id, part_index
-                   FROM turn_progress
-                   WHERE turn_id=? ORDER BY created_at, tool_call_id, part_index""",
-                (turn_id,),
-            ).fetchall()
             self._archive_progress_messages(turn_id, source)
             for index, (text, kind, path, payload) in enumerate(normalized):
                 outbox = self._db.execute(
@@ -254,28 +243,6 @@ class WebhookStore:
                         outbox_id, delivery_state)
                        VALUES (?, 'assistant', ?, ?, ?, ?, 'queued')""",
                     (turn_id, text, now, source, outbox.lastrowid),
-                )
-            visible = [str(row["text"]) for row in progress] + [
-                text for text, _, _, _ in normalized
-            ]
-            if visible:
-                event = self._db.execute(
-                    """SELECT created_at FROM messages
-                       WHERE turn_id=? AND role='event'
-                       ORDER BY id LIMIT 1""",
-                    (turn_id,),
-                ).fetchone()
-                when = float(event["created_at"]) if event is not None else now
-                workflow_id = self._webhook_workflow_id(run_id)
-                archive_day = self._archive_day(when)
-                self._ensure_runtime_archive(
-                    archive_kind="webhook",
-                    archive_day=archive_day,
-                    episode_key=f"webhook:{workflow_id}:day:{archive_day}",
-                    turn_id=turn_id,
-                    title=f"Webhook {workflow_id}",
-                    now=now,
-                    recall_values=(visible,),
                 )
             self._apply_mood_update(reply.mood_update, now)
             outbox_ids = [
