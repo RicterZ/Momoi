@@ -91,6 +91,16 @@ class MemoryWritingService:
                 if any('scope' in request and request['scope'] != scope for request in context.requests
                        if request['id'] in item['operation_ids']):
                     raise ValueError('memory write does not match request scope')
+        if any(item['action'] == 'write' and item['memory']['activation'] == 'always' for item in decisions):
+            demoted = {identifier for item in decisions for identifier in item.get('demote_ids', [])}
+            removed = {identifier for item in decisions if item['action'] in {'write', 'forget'}
+                       for identifier in item['target_ids']}
+            rows = [row for row in self.repository.rows('always') if row['id'] not in demoted | removed]
+            next_id = self.database.execute('SELECT COALESCE(MAX(id),0)+1 FROM memories').fetchone()[0]
+            rows.extend({**item['memory'], 'id': next_id + index}
+                        for index, item in enumerate(decisions)
+                        if item['action'] == 'write' and item['memory']['activation'] == 'always')
+            self.repository.check_always_budget(rows)
         return MemoryPlan(canonical_json({
             'version': 4, 'requests': context.requests, 'evidence': context.evidence,
             'snapshots': {str(key): value for key, value in context.snapshots.items()},
@@ -157,6 +167,12 @@ class MemoryWritingService:
             current = self.repository.validate_snapshots(context.snapshots)
             now = time.time()
             results = []
+            for decision in reviewed.decisions:
+                for identifier in decision.get('demote_ids', []):
+                    row = current[identifier]
+                    self.repository.replace(identifier, row['content'], 'recall', None,
+                        {'event_id': 'memory-budget:' + operation_id,
+                         'quote': '后台审核确认：为常驻记忆预算降级为 recall'}, updated_at=now)
             for decision in reviewed.decisions:
                 action = decision['action']
                 result = {'operation_ids': decision['operation_ids'], 'action': action, 'memory_ids': []}

@@ -10,6 +10,7 @@ from .runtime_fields import LOG_LEVELS, runtime_fields, migrate_budget
 from .models import (
     AppConfig,
     BudgetConfig,
+    MemoryConfig,
     ConfigError,
     DashboardConfig,
     EpisodeAnnealingConfig,
@@ -55,7 +56,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         raise ConfigError("config.json must be a table/object")
     remove_retired_thinking_stages(raw)
     allowed = {
-        "affinity", "budget",
+        "affinity", "budget", "memory",
         "providers",
         "timezone",
         "channels",
@@ -284,6 +285,8 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
     )
 
     return AppConfig(
+        memory=MemoryConfig(**normalize_fields(runtime_fields()["memory"]["fields"],
+                                               raw.get("memory", {}), path="memory")),
         affinity_enabled=normalize_fields(runtime_fields()["affinity"]["fields"], raw.get("affinity", {}), path="affinity")["enabled"],
         budget=BudgetConfig(**budget),
         channel=channel_config,

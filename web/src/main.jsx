@@ -1349,12 +1349,57 @@ function Reflections({ refreshKey, token, routeParam }) {
   );
 }
 
+function ActivationSuggestions({ data, token, onMutated }) {
+  const [demoteIds, setDemoteIds] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const confirm = useConfirm();
+  async function review(item, approve) {
+    if (approve && !await confirm({ title: "确认调整记忆？", message: `将「${item.content}」${item.target === "always" ? "升级为常驻记忆" : "降为按需召回"}。${item.target === "always" && demoteIds.length ? `同时降级所选的 ${demoteIds.length} 条常驻记忆。` : ""}`, confirmLabel: "确认调整", cancelLabel: "取消" })) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/api/memory-activation-suggestions/${item.id}/review`, {
+        method: "POST", token, body: { approve, demote_ids: approve && item.target === "always" ? demoteIds : [] },
+      });
+      setDemoteIds([]);
+      onMutated();
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+  return <section className="memory-section">
+    <p>常驻记忆：约 {data.always_tokens} / {data.always_token_budget} token</p>
+    {data.items.length > 0 && <>
+      <h3>待审升降级建议</h3>
+      <p>建议不会自动修改记忆；降级后仍可按需召回。</p>
+      {data.items.some(item => item.target === "always") && data.always_memories.length > 0 &&
+        <fieldset disabled={busy}><legend>升级时同时降级的常驻记忆</legend>
+          {data.always_memories.map(item => <label key={item.id} style={{ display: "block" }}>
+            <input type="checkbox" checked={demoteIds.includes(item.id)} onChange={event => setDemoteIds(ids => event.target.checked ? [...ids, item.id] : ids.filter(id => id !== item.id))} />
+            {item.content}
+          </label>)}
+        </fieldset>}
+      {data.items.map(item => <article className="memory-card" key={item.id}>
+        <p>{item.target === "always" ? "升级为常驻" : "降为按需召回"} · {item.content}</p>
+        <p>{item.reason}</p>
+        <button type="button" disabled={busy} onClick={() => review(item, true)}>确认调整</button>
+        <button type="button" disabled={busy} onClick={() => review(item, false)}>忽略建议</button>
+      </article>)}
+    </>}
+    {error && <p className="form-error" role="alert">{error}</p>}
+  </section>;
+}
+
 function Memories({ refreshKey, token, onMutated }) {
   const [activation, setActivation] = useState("always");
   const [query, setQuery] = useState("");
   const candidateMode = activation === "reflection";
   const path = candidateMode ? "/api/reflection-candidates" : "/api/memories?limit=400";
   return (
+    <>
+    <DataView path="/api/memory-activation-suggestions" refreshKey={refreshKey} token={token}>
+      {data => <ActivationSuggestions {...{ data, token, onMutated }} />}
+    </DataView>
     <DataView key={candidateMode ? "reflection" : "confirmed"} path={path} refreshKey={refreshKey} token={token}>
       {(data) => <MemoryInventory candidateMode={candidateMode}
         items={data.items.map(item => candidateMode
@@ -1363,6 +1408,7 @@ function Memories({ refreshKey, token, onMutated }) {
           : { ...item, resource: "memories", identity: `memory:${item.id}` })}
         {...{ token, onMutated, activation, setActivation, query, setQuery }} />}
     </DataView>
+    </>
   );
 }
 

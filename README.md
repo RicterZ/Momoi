@@ -174,6 +174,30 @@ The authenticated `GET /api/memory-access` endpoint reports unused memory counts
 and audited tool invocation counts (including failed and empty-result calls);
 `GET /api/memories` includes each memory's `access` aggregate.
 
+Long-term (`always`) memory has an estimated token budget, configured with
+`memory.always_token_budget` (default 1500; 0 prevents new long-term entries).
+Writes and promotions above the budget are rejected atomically. A background
+review can provide `demote_ids` alongside an `always` write to move selected
+long-term memories back to recall in the same transaction. Existing entries are
+never removed when the budget is lowered.
+
+After each weekly reflection, the Dashboard shows activation suggestions for
+manual review: recall memories with at least five recalls or reads across three
+primary Episodes in 30 days, and long-term memories in volatile categories
+(profile, preference, cross-event state) or without recorded reply use for 60 days.
+The inactivity rule requires a complete 60-day observation period. Planner can
+report actual use through `reply.used_memory_ids`; this is model-reported evidence,
+not proof of adherence. Prefix injection alone does not count as reply use.
+Confirming a promotion can also demote selected entries to fit the budget;
+ignoring a suggestion leaves the memory intact. Suggestions never apply themselves.
+Long-term prefix entries use stable kind/key ordering across version changes.
+
+Run `uv run --locked --group test python -m evals.always_memory` for an offline
+smoke check of the production Replyer prefix before and after a reviewed budget
+reduction. Use `--live` with explicit `MOMOI_EVAL_BASE_URL`, `MOMOI_EVAL_API_KEY`,
+and `MOMOI_EVAL_MODEL` to measure model adherence on synthetic address and dietary
+restriction cases. Offline scores check the harness only.
+
 ### Memory architecture
 
 ```mermaid
