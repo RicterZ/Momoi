@@ -1,5 +1,10 @@
 # 交互表达评估
 
+记忆导航另有独立用例：`uv run --locked python -m evals.memory_navigation` 运行真实工具的脚本烟测；
+加 `--live` 使用显式配置的 `MOMOI_EVAL_*` 模型，验证“外卖配料”问题能通过
+`memory_browse` 或 `memory_read` 命中措辞不同的“芫荽”记忆。用例只使用虚构数据，
+不加载生产配置，结果保存在 `/tmp/momoi-eval-navigation-*`。脚本烟测不代表模型能力通过。
+
 本目录评估真实 Replyer 的表达，不评估 Planner、检索、真实渠道投递或长期记忆。
 所有用例从零编写，均为虚构、无真实身份的日常交互；不读取应用配置、聊天记录、
 私人 SOUL、记忆库或现有生产场景。新用例也不得包含真实用户资料、凭据或私聊原文。

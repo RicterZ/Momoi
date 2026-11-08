@@ -232,6 +232,8 @@ class ContextService:
             required=True,
         )
         prefix["_memory_snapshot"] = {
+            "access_generation": memory_state["access_generation"],
+            "access_ids": [row["id"] for row in snapshot],
             "catalog": catalog,
             "revision": memory_state["revision"],
             "turn_ids": ids,

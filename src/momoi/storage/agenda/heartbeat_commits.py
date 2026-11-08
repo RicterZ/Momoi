@@ -80,6 +80,7 @@ class HeartbeatCommitStore:
                         row["outbox_id"],
                     ),
                 )
+            self._commit_memory_access(turn_id, draft.memory_access if draft else [])
             self._apply_mood_update(mood_update, now)
             self._apply_goal_mutations(draft, now)
             self._queue_memory_operations(turn_id, draft, memory_events or [], now)

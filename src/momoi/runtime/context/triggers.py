@@ -2,7 +2,7 @@
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 
-def triggered_memory_context(memory, events, snapshots, *, only_new=False, on_injected=None):
+def triggered_memory_context(memory, events, snapshots, *, only_new=False, on_injected=None, draft=None):
     rows = memory.triggered([
         event.text for event in events if not event.delivery_context.get("channel_notice")
     ])
@@ -12,6 +12,8 @@ def triggered_memory_context(memory, events, snapshots, *, only_new=False, on_in
         on_injected(events, rows)
     if not rows:
         return ""
+    if draft is not None:
+        draft.record_memory_access("recalled", [row["id"] for row in rows])
     snapshots.update(memory.snapshots([row["id"] for row in rows]))
     node = Element("triggered_memories")
     SubElement(node, "usage").text = (

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...observability.context import log_context, new_trace_id
-from ...models import ProviderResponse
+from ...models import ProviderResponse, TurnDraft
 from ...integrations.request_context import model_request
 from ...memory.text import estimate_tokens
 from .context_window import ContextWindow
@@ -66,6 +66,7 @@ class ModelRoundRunner:
         channel: str,
         goal_id: str | None,
         preserve_transcript: bool = False,
+        draft: TurnDraft | None = None,
     ) -> ModelRoundResult:
         request_system = (
             system_policy(system, request_tools)
@@ -99,6 +100,14 @@ class ModelRoundRunner:
                 self.context_window.check_budget(
                     turn_id, request_system, request_messages, request_tools
                 )
+            if draft is not None:
+                for message in messages:
+                    snapshot = message.get("_memory_snapshot", {})
+                    if snapshot.get("access_generation"):
+                        draft.record_memory_access(
+                            "always", snapshot["access_ids"],
+                            event_key=snapshot["access_generation"],
+                        )
             response = await complete(
                 request_system,
                 request_messages,

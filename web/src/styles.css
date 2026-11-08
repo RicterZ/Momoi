@@ -2379,3 +2379,10 @@ a.tag:hover {
 .episode-triggers-field { display: grid; gap: 8px; min-width: 0; }
 .episode-triggers-field .secondary { font-size: 12px; }
 .episode-triggers-form .card-actions { margin-top: 0; }
+.memory-access {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+  font-size: 12px;
+  color: var(--muted);
+}

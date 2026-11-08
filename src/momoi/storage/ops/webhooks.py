@@ -224,6 +224,7 @@ class WebhookStore:
         source = json.dumps(source_ids, ensure_ascii=False)
         now = time.time()
         with self._db:
+            self._commit_memory_access(turn_id, reply.memory_access)
             progress = self._db.execute(
                 """SELECT text, created_at, tool_call_id, part_index
                    FROM turn_progress

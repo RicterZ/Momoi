@@ -858,3 +858,26 @@ CREATE TABLE IF NOT EXISTS transcript_context_activity (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     last_used_at REAL NOT NULL, turn_id TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS memory_access (
+    memory_id INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('recalled','searched','browsed','read','always')),
+    turn_id TEXT NOT NULL,
+    workflow TEXT NOT NULL,
+    event_key TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY(turn_id, event_key, memory_id, kind)
+);
+CREATE INDEX IF NOT EXISTS memory_access_created ON memory_access(created_at);
+CREATE INDEX IF NOT EXISTS memory_access_memory ON memory_access(memory_id);
+
+CREATE TABLE IF NOT EXISTS memory_access_totals (
+    memory_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    last_at REAL NOT NULL,
+    PRIMARY KEY(memory_id, kind)
+);
+
+CREATE TABLE IF NOT EXISTS memory_access_prefixes (
+    generation TEXT PRIMARY KEY
+);

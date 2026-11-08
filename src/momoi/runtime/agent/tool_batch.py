@@ -405,6 +405,11 @@ class ToolBatchExecutor:
                     request.draft.memory_context.update(self.memory.snapshots(
                         [item["id"] for item in recalled if isinstance(item.get("id"), int)]
                     ))
+                if result.get("ok"):
+                    request.draft.record_memory_access(
+                        "recalled", [item["id"] for item in result.get("memory", [])
+                                     if isinstance(item.get("id"), int)], event_key=call.id,
+                    )
             elif call.name == "episode_relations":
                 try:
                     result = {"ok": True, "cursor": call.arguments.get("cursor", 0),

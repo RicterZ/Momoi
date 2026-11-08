@@ -1494,6 +1494,10 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                     </div>
                   </div>
                   <MemoryMetadata item={item} />
+                  {!candidateMode && item.access && <div className="memory-access" aria-label="记忆访问统计" title="搜索、浏览、读取按命中条目计数；常驻仅在前缀重建时计数。统计从功能启用后开始。">
+                    <span>召回 {item.access.counts.recalled} · 搜索 {item.access.counts.searched} · 浏览 {item.access.counts.browsed} · 读取 {item.access.counts.read} · 常驻 {item.access.counts.always}</span>
+                    <span>近 30 天 {item.access.recent_30_days} 次 · 最后访问 {item.access.last_at ? new Date(item.access.last_at * 1000).toLocaleString() : "从未使用"}</span>
+                  </div>}
                   {editingId === item.identity ? (
                     <textarea
                       aria-label="记忆内容"

@@ -154,12 +154,12 @@ class MemoryTools:
             if call.name == "memory_search":
                 query = str(call.arguments.get("query") or "").strip()
                 if not query:
-                    return self._search(call.arguments, draft)
+                    return self._search(call.arguments, draft, event_key=call.id)
                 results = await self.memory.search(
                     query, min(6, max(1, int(call.arguments.get("limit", 6)))),
                     filters=call.arguments.get("filters"),
                 )
-                return self._memory_search_result(results, draft)
+                return self._memory_search_result(results, draft, event_key=call.id)
             if call.name == "episode_search":
                 query = str(call.arguments.get("query") or "").strip()
                 try:
@@ -214,11 +214,11 @@ class MemoryTools:
             call = ToolCall(call.id, call.name, normalized or {}, call.argument_error)
         try:
             if call.name == "memory_search":
-                return self._search(call.arguments, draft)
+                return self._search(call.arguments, draft, event_key=call.id)
             if call.name == "memory_browse":
-                return self._browse(call.arguments)
+                return self._browse(call.arguments, draft, event_key=call.id)
             if call.name == "memory_read":
-                return self._read(call.arguments, draft)
+                return self._read(call.arguments, draft, event_key=call.id)
             if call.name == "episode_search":
                 return self._episode_search(call.arguments)
             if call.name == "episode_read":
@@ -246,6 +246,7 @@ class MemoryTools:
         self,
         arguments: dict[str, Any],
         draft: TurnDraft,
+        *, event_key: str = "",
     ) -> dict[str, Any]:
         query = str(arguments.get("query") or "").strip()
         if not query:
@@ -255,12 +256,13 @@ class MemoryTools:
         except (TypeError, ValueError):
             limit = 6
         results = self.memory.search_literal(query, limit, filters=arguments.get("filters"))
-        return self._memory_search_result(results, draft)
+        return self._memory_search_result(results, draft, event_key=event_key)
 
-    def _browse(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    def _browse(self, arguments: dict[str, Any], draft: TurnDraft, *, event_key: str = "") -> dict[str, Any]:
         rows = self.memory.repository.topic_rows(str(arguments["topic"]), scope=str(arguments.get("scope") or ""))
         cursor = int(arguments.get("cursor") or 0)
         page = rows[cursor:cursor + MEMORY_BROWSE_PAGE]
+        draft.record_memory_access("browsed", [row["id"] for row in page], event_key=event_key)
         items = [{
             "id": row["id"], "kind": row["kind"], "key": row["key"],
             "excerpt": str(row["content"])[:MEMORY_BROWSE_EXCERPT],
@@ -271,9 +273,10 @@ class MemoryTools:
             result["next_cursor"] = cursor + len(page)
         return result
 
-    def _read(self, arguments: dict[str, Any], draft: TurnDraft) -> dict[str, Any]:
+    def _read(self, arguments: dict[str, Any], draft: TurnDraft, *, event_key: str = "") -> dict[str, Any]:
         ids = [int(value) for value in arguments["ids"]]
         snapshots = self.memory.snapshots(ids)
+        draft.record_memory_access("read", snapshots, event_key=event_key)
         draft.memory_context.update(snapshots)
         memories = [{
             "id": item["id"], "kind": item["kind"], "key": item["key"], "content": item["content"],
@@ -287,6 +290,7 @@ class MemoryTools:
 
     def _memory_search_result(
         self, results: list[dict[str, object]], draft: TurnDraft,
+        *, event_key: str = "",
     ) -> dict[str, Any]:
         ids = [
             int(item["id"])
@@ -294,6 +298,7 @@ class MemoryTools:
             if isinstance(item.get("id"), int)
             and item.get("source", "confirmed") == "confirmed"
         ]
+        draft.record_memory_access("searched", ids, event_key=event_key)
         draft.memory_context.update(self.memory.snapshots(ids))
         return {"ok": True, "count": len(results), "results": results}
 

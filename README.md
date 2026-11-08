@@ -165,6 +165,15 @@ memory changes pass through a separate writing workflow that checks source evide
 and existing memories. Reflection candidates require manual Dashboard submission
 to the same memory-operation review before they can enter or merge into recall memory.
 
+Confirmed memory cards show recall, search, browse, read, and long-term prefix
+injection counts, the last access time, and accesses in the last 30 days. Counts
+start when access tracking is installed, commit with each Turn, and follow replaced
+or merged versions within their memory identity and scope. Long-term memories count
+once per rebuilt prefix. Details older than 180 days become lifetime totals.
+The authenticated `GET /api/memory-access` endpoint reports unused memory counts
+and audited tool invocation counts (including failed and empty-result calls);
+`GET /api/memories` includes each memory's `access` aggregate.
+
 ### Memory architecture
 
 ```mermaid
