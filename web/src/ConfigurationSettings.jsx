@@ -1178,7 +1178,7 @@ function RuntimePropertyFields({ spec, value, onChange }) {
   );
 }
 
-const runtimeOrder = { affinity: -2, turn: -1, context: -0.5, heartbeat: 0, reflection: 1, episode_annealing: 2, episode_relation: 3, logging: 4, thinking: 5 };
+const runtimeOrder = { affinity: -2, turn: -1, context: -0.5, memory: -0.25, heartbeat: 0, reflection: 1, episode_annealing: 2, episode_relation: 3, logging: 4, thinking: 5 };
 const runtimeDescriptions = {
   context: "闲置后，下次对话自动压缩上下文，保留原始历史。",
   turn: "自然结束后等待快速补充；其他任务需要运行时立即让出。0 表示关闭。",
