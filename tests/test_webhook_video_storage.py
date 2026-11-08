@@ -214,7 +214,7 @@ def test_video_migration_schema_matches_fresh_database_for_backups():
         )
         upgraded.execute("DROP TABLE webhook_steps")
         upgraded.execute(historical)
-        upgraded.execute(f"PRAGMA user_version={migrations.SCHEMA_VERSION - 1}")
+        upgraded.execute(f"PRAGMA user_version={migrations.MIGRATIONS.index(_add_webhook_video)}")
         upgraded.commit()
         initialize_schema(upgraded)
         initialize_schema(fresh)

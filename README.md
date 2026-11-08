@@ -162,8 +162,8 @@ separately. The Dashboard memory page has four sections:
 Episodes preserve experiences, summaries, and original conversations for on-demand
 reading. Memories instead describe user facts, preferences, and habits. Model-requested
 memory changes pass through a separate writing workflow that checks source evidence
-and existing memories. Reflection candidates require manual Dashboard admission
-before entering recall memory.
+and existing memories. Reflection candidates require manual Dashboard submission
+to the same memory-operation review before they can enter or merge into recall memory.
 
 ### Memory architecture
 
@@ -190,7 +190,7 @@ flowchart TB
   writing --> core
   writing --> recall
   writing --> scoped
-  admission --> recall
+  admission --> writing
   topics -->|"Read topics and original dialogue"| context["Current context"]
   core -->|"Direct injection"| context
   recall -->|"Keyword / semantic retrieval<br/>or triggers in owner messages"| context
@@ -210,8 +210,11 @@ flowchart TB
    unresolved conflicts block admission.
 3. **Manual admission:** the memory page shows observations supported by at least
    2 events. At least 5 events without conflicts make a candidate ready for admission.
-   Users can edit its text, delete it, or admit it. Counts never automatically create
-   recall memory or promote it to long-term memory.
+   Users can edit its text, delete it, or submit it to `memory_operation` for duplicate
+   and conflict review against current memories. Review can write, merge, reuse, or
+   defer the candidate. Pending reviews lock edits and deletion; candidates that do
+   not enter memory retain their result for inspection and retry. Counts never
+   automatically create recall memory or promote it to long-term memory.
 
 Weekly review runs one hour after Sunday's daily review time. Disabling reflection
 turns off both daily and weekly automatic scheduling.

@@ -1415,9 +1415,9 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
   }
 
   async function admit(item) {
-    const ok = await confirm({ title: "准入召回记忆？",
-      message: `准入后 Momoi 会在相关话题中使用这条记忆：${item.content}`,
-      confirmLabel: "准入 recall", cancelLabel: "继续观察" });
+    const ok = await confirm({ title: "提交记忆审核？",
+      message: `Momoi 会先检查重复和冲突，审核通过后才写入或合并记忆：${item.content}`,
+      confirmLabel: "提交审核", cancelLabel: "继续观察" });
     if (!ok) return;
     setBusyId(item.identity);
     setError("");
@@ -1517,6 +1517,12 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                   {item.evidence && (
                     <p className="secondary memory-evidence">依据：{item.evidence}</p>
                   )}
+                  {candidateMode && item.review_state && (
+                    <p className="secondary">
+                      {({ pending: "等待审核", running: "正在审核", failed: "审核失败，可重新提交", completed: "审核未准入" })[item.review_state]}
+                      {item.review_reason && `：${item.review_reason}`}
+                    </p>
+                  )}
                   <StampMeta
                     items={[
                       {
@@ -1535,8 +1541,8 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                   />
                   <div className="card-actions">
                     {candidateMode && item.status === "pending" && editingId !== item.identity && (
-                      <button type="button" className="quiet-button" disabled={busyId === item.identity}
-                        onClick={() => admit(item)}>准入 recall</button>
+                      <button type="button" className="quiet-button" disabled={busyId === item.identity || ["pending", "running"].includes(item.review_state)}
+                        onClick={() => admit(item)}>提交审核</button>
                     )}
                     {editingId === item.identity ? (
                       <>
@@ -1561,6 +1567,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                         <button
                           type="button"
                           className="quiet-button"
+                          disabled={candidateMode && ["pending", "running"].includes(item.review_state)}
                           onClick={() => {
                             setEditingId(item.identity);
                             setDraft(item.content);
@@ -1573,7 +1580,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                         <button
                           type="button"
                           className="quiet-button pink"
-                          disabled={busyId === item.identity}
+                          disabled={busyId === item.identity || (candidateMode && ["pending", "running"].includes(item.review_state))}
                           onClick={() => remove(item)}
                         >
                           删除
@@ -1587,7 +1594,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
           </section>
         ))
       ) : (
-        <Empty text={candidateMode ? "暂无累计达到 2 次的观察；达到 5 次且无冲突后，可在此手动准入召回记忆。" : undefined} />
+        <Empty text={candidateMode ? "暂无累计达到 2 次的观察；达到 5 次且无冲突后，可在此提交审核，通过后进入召回记忆。" : undefined} />
       )}
     </>
   );

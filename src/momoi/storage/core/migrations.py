@@ -840,6 +840,11 @@ def _add_webhook_video(database: sqlite3.Connection) -> None:
     database.execute("ALTER TABLE webhook_steps_video RENAME TO webhook_steps")
 
 
+def _add_reflection_candidate_operation(database: sqlite3.Connection) -> None:
+    if 'memory_operation_id' not in _columns(database, 'reflection_candidates'):
+        database.execute('ALTER TABLE reflection_candidates ADD COLUMN memory_operation_id TEXT')
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -888,6 +893,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_episode_triggers,
     _add_usage_pricing,
     _add_webhook_video,
+    _add_reflection_candidate_operation,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

@@ -1,4 +1,4 @@
-"""Unconfirmed, month-bounded observations. Only Dashboard admission writes memory."""
+"""Unconfirmed observations; Dashboard admission queues private memory review."""
 import calendar
 import hashlib
 import json
@@ -7,9 +7,11 @@ from datetime import date, datetime
 
 from ...memory.storage.transactions import transaction
 from ...memory.metadata import validate_triggers
+from ...models import IncomingMessage, TurnDraft
 
 
 def month_start(end):
+    # TODO: Design longer-term evidence accumulation; a rolling month misses slow patterns.
     value = date.fromisoformat(end)
     year, month = (value.year, value.month - 1) if value.month > 1 else (value.year - 1, 12)
     return date(year, month, min(value.day, calendar.monthrange(year, month)[1])).isoformat()
@@ -29,13 +31,19 @@ class ReflectionCandidateStore:
     def reflection_candidates(self, *, end=None, include_seeds=False):
         end = end or datetime.now(self._timezone).date().isoformat()
         result = []
-        for row in self._db.execute("SELECT * FROM reflection_candidates WHERE state='active' ORDER BY updated_at DESC,id DESC"):
+        for row in self._db.execute("""SELECT c.*, b.state AS review_state, b.error AS review_error,
+                                           b.result_json AS review_result
+                                      FROM reflection_candidates c
+                                      LEFT JOIN memory_operation_batches b ON b.id=c.memory_operation_id
+                                      WHERE c.state='active' ORDER BY c.updated_at DESC,c.id DESC"""):
             item = dict(row)
             item['triggers'] = json.loads(item.pop('triggers_json'))
             item['events'] = current_events(json.loads(item.pop('events_json')), end)
             item['conflicts'] = current_events(json.loads(item.pop('conflicts_json')), end)
             item['count'] = len(item['events'])
             item['status'] = candidate_status(item['events'], item['conflicts'])
+            decisions = json.loads(item.pop('review_result') or '[]')
+            item['review_reason'] = decisions[0]['reason'] if decisions else item['review_error']
             if item['count'] >= (1 if include_seeds else 2):
                 result.append(item)
         return result
@@ -60,6 +68,8 @@ class ReflectionCandidateStore:
             old = self._db.execute('SELECT * FROM reflection_candidates WHERE key=?', (key,)).fetchone()
             if old and old['state'] != 'active':
                 continue  # A frozen model request cannot revive a deleted/admitted candidate.
+            if old and self._reflection_candidate_review(old) in ('pending', 'running'):
+                continue
             events, used = [], set()
             for group in finding['events']:
                 refs = group['refs']
@@ -101,16 +111,28 @@ class ReflectionCandidateStore:
                  json.dumps(conflicts, ensure_ascii=False), now, json.dumps(triggers, ensure_ascii=False)),
             )
 
+    def _reflection_candidate_review(self, row):
+        batch = self._db.execute('SELECT state FROM memory_operation_batches WHERE id=?',
+                                 (row['memory_operation_id'],)).fetchone()
+        return batch['state'] if batch else None
+
     def change_reflection_candidate(self, identifier, revision, *, content=None, delete=False, admit=False):
         with transaction(self._db):
             row = self._db.execute('SELECT * FROM reflection_candidates WHERE id=?', (identifier,)).fetchone()
             if row is None:
                 raise LookupError('candidate_not_found')
-            # Double-click/retry must return the same receipt without re-adding forgotten memory.
+            operation_id = f'dashboard:reflection:{identifier}:{revision}'
+            review_state = self._reflection_candidate_review(row)
+            if admit and row['memory_operation_id'] == operation_id:
+                return {'ok': True, 'state': review_state, 'operation_id': operation_id,
+                        'memory_id': row['memory_id']}
+            # Preserve receipts for candidates admitted before private review was introduced.
             if admit and row['state'] == 'admitted' and revision == row['revision'] - 1:
                 return {'ok': True, 'memory_id': row['memory_id']}
             if row['state'] != 'active' or row['revision'] != revision:
                 raise ValueError('candidate_changed_refresh')
+            if review_state in ('pending', 'running'):
+                raise ValueError('candidate_review_in_progress')
             now = time.time()
             if admit:
                 end = datetime.now(self._timezone).date().isoformat()
@@ -118,22 +140,23 @@ class ReflectionCandidateStore:
                 conflicts = current_events(json.loads(row['conflicts_json']), end)
                 if len(events) < 5 or conflicts:
                     raise ValueError('candidate_not_ready')
-                repository = self.memories.repository
-                matches = [m for activation in ('recall', 'always') for m in repository.rows(activation)
-                           if m['content'].strip() == row['content'].strip()]
-                if matches:
-                    memory_id = matches[0]['id']
-                else:
-                    key = 'reflection.' + hashlib.sha256(row['key'].encode()).hexdigest()[:24]
-                    evidence = {'event_id': f'dashboard:reflection:{identifier}:{revision}', 'quote': row['content']}
-                    memory_id = repository.write(
-                        {'kind': row['kind'], 'key': key, 'content': row['content'],
-                         'activation': 'recall', 'expires_at': None, 'meta': {'tags': [], 'triggers': json.loads(row['triggers_json']), 'scope': ''}},
-                        [], evidence, [evidence], now=now,
-                    )
-                self._db.execute("UPDATE reflection_candidates SET state='admitted',memory_id=?,revision=revision+1,updated_at=? WHERE id=?",
-                                 (memory_id, now, identifier))
-                return {'ok': True, 'memory_id': memory_id}
+                evidence = IncomingMessage(operation_id, operation_id, row['content'], now, now)
+                draft = TurnDraft(memory_operations=[{
+                    'id': 'admit', 'type': 'add', 'scope': '', 'content': row['content'],
+                    'event_id': operation_id, 'evidence': row['content'],
+                }], memory_conversation=[{'role': 'user', 'content':
+                    'Dashboard 人工提交复盘候选，请审核重复和冲突后决定是否写入。候选材料：' +
+                    json.dumps({'kind': row['kind'], 'content': row['content'],
+                                'triggers': json.loads(row['triggers_json']), 'events': events}, ensure_ascii=False)}])
+                self._db.execute(
+                    """INSERT INTO turns(id,kind,workflow_kind,source_ids_json,state,stage,started_at,updated_at)
+                       VALUES (?,'autonomous','memory_operation',?,'completed','completed',?,?)""",
+                    (operation_id, json.dumps([f'reflection-candidate:{identifier}']), now, now),
+                )
+                self._queue_memory_operations(operation_id, draft, [evidence], now)
+                self._db.execute('UPDATE reflection_candidates SET memory_operation_id=?,revision=revision+1,updated_at=? WHERE id=?',
+                                 (operation_id, now, identifier))
+                return {'ok': True, 'state': 'pending', 'operation_id': operation_id, 'memory_id': None}
             if delete:
                 self._db.execute("UPDATE reflection_candidates SET state='deleted',revision=revision+1,updated_at=? WHERE id=?", (now, identifier))
             else:

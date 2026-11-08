@@ -850,6 +850,7 @@ CREATE TABLE IF NOT EXISTS reflection_candidates (
     edited INTEGER NOT NULL DEFAULT 0,
     revision INTEGER NOT NULL DEFAULT 1,
     memory_id INTEGER,
+    memory_operation_id TEXT,
     updated_at REAL NOT NULL
 );
 

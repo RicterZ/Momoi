@@ -54,6 +54,15 @@ class MemoryOperationStore:
                        FROM memory_evidence WHERE source_event_id=? AND quote=? LIMIT 1""",
                     (event_id, content),
                 ).fetchone()
+            if row is None and event_id.startswith('dashboard:reflection:'):
+                # The persisted batch is the immutable authenticated Dashboard submission.
+                row = self._db.execute(
+                    """SELECT json_extract(events_json,'$[0].text') AS content,
+                              created_at AS occurred_at, created_at AS received_at
+                       FROM memory_operation_batches WHERE id=?
+                       AND json_extract(events_json,'$[0].event_id')=?""",
+                    (event_id, event_id),
+                ).fetchone()
             if row:
                 records.append(
                     {
@@ -215,7 +224,19 @@ class MemoryOperationStore:
                             and payload["evidence_times"][event_id] != row["received_at"])):
                     raise ValueError("memory_operation_evidence_changed")
             self.validate_memory_scopes(payload["requests"], plan.decisions)
-            self.memories.apply(plan, operation_id="owner-memory:" + str(batch["id"]))
+            result = self.memories.apply(plan, operation_id="owner-memory:" + str(batch["id"]))
+            candidate = self._db.execute(
+                "SELECT id FROM reflection_candidates WHERE memory_operation_id=? AND state='active'",
+                (batch['id'],),
+            ).fetchone()
+            if candidate:
+                decision = result['decisions'][0]
+                memory_ids = decision['memory_ids'] if decision['action'] in ('write', 'noop') else []
+                self._db.execute(
+                    "UPDATE reflection_candidates SET state=?,memory_id=?,updated_at=? WHERE id=?",
+                    ('admitted' if memory_ids else 'active', memory_ids[0] if memory_ids else None,
+                     now, candidate['id']),
+                )
             self._db.execute(
                 """UPDATE memory_operation_batches SET state='completed',result_json=?,error=NULL,updated_at=? WHERE id=?""",
                 (json.dumps(decisions, ensure_ascii=False), now, batch["id"]),
