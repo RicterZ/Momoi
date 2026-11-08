@@ -21,7 +21,7 @@ class MemoryRepository:
     authentication and source-text verification belong to the caller. Connection
     lifetime and schema migrations remain the caller's responsibility.
     """
-    def __init__(self, database: sqlite3.Connection, *, tags: TagCatalog | None = None, always_token_budget: int = 1500) -> None:
+    def __init__(self, database: sqlite3.Connection, *, tags: TagCatalog | None = None, always_token_budget: int = 3000) -> None:
         self._db = database
         self.tags = tags or TagCatalog()
         self.always_token_budget = always_token_budget

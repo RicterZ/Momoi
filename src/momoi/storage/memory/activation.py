@@ -81,9 +81,7 @@ class MemoryActivationStore:
                 continue
             item.update(content=snapshot['content'], kind=snapshot['kind'], key=snapshot['key'])
             items.append(item)
-        return {'items': items, 'always_tokens': self.always_memory_tokens(),
-                'always_token_budget': self.memories.repository.always_token_budget,
-                'always_memories': self.memories.repository.rows('always')}
+        return {'items': items, 'always_memories': self.memories.repository.rows('always')}
 
     def review_memory_activation_suggestion(self, identifier, *, approve, demote_ids=()):
         if not isinstance(approve, bool) or not isinstance(demote_ids, (list, tuple)) or any(type(x) is not int for x in demote_ids):

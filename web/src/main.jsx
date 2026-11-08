@@ -1368,7 +1368,6 @@ function ActivationSuggestions({ data, token, onMutated }) {
     finally { setBusy(false); }
   }
   return <section className="memory-section">
-    <p>常驻记忆：约 {data.always_tokens} / {data.always_token_budget} token</p>
     {data.items.length > 0 && <>
       <h3>待审升降级建议</h3>
       <p>建议不会自动修改记忆；降级后仍可按需召回。</p>

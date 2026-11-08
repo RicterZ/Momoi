@@ -35,7 +35,7 @@ def default_config() -> dict:
         "timezone": "UTC",
         "channels": {"primary": "", "enabled": {}},
         "context": {},
-        "memory": {"always_token_budget": 1500},
+        "memory": {"always_token_budget": 3000},
         "storage": {"database": "data/momoi.sqlite3"},
         "logging": {"level": "INFO"},
         "thinking": {"stages": {"topic_selection": "low"}},

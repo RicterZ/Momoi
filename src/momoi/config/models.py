@@ -74,7 +74,7 @@ class BudgetConfig:
 
 @dataclass(frozen=True)
 class MemoryConfig:
-    always_token_budget: int = 1500
+    always_token_budget: int = 3000
 
 
 @dataclass(frozen=True)
