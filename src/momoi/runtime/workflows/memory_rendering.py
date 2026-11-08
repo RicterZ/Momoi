@@ -26,6 +26,11 @@ def memory_element(memory, *, visible=False, compact=False):
         SubElement(node, "tag").text = tag
     for word in record.get("meta", {}).get("triggers", []):
         SubElement(node, "trigger").text = word
+    for field in ("verification", "basis"):
+        if field in record.get("meta", {}):
+            SubElement(node, field).text = record["meta"][field]
+    for pitfall in record.get("meta", {}).get("pitfalls", []):
+        SubElement(node, "pitfall").text = pitfall
     if not compact and record.get("evidence_quote"):
         SubElement(node, "evidence", {"event_id": str(record["source_event_id"])}).text = str(record["evidence_quote"])
     return node

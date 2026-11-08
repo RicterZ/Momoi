@@ -2,7 +2,7 @@
 import re
 from typing import Any
 
-from ..metadata import TagCatalog
+from ..metadata import PRACTICE_META_FIELDS, TagCatalog
 from ..storage.records import MEMORY_ACTIVATIONS, MEMORY_KINDS
 
 
@@ -89,6 +89,7 @@ def parse_decisions(
             event_id, quote = citation["event_id"], citation["quote"]
             if (
                 not isinstance(event_id, str)
+                or event_id.startswith("execution:")
                 or event_id not in evidence
                 or not isinstance(quote, str)
                 or not quote.strip()
@@ -102,6 +103,9 @@ def parse_decisions(
             raise ValueError("cite the owner events supporting every resolved request")
         if action == "metadata":
             tags.validate(item["meta"])
+            for target in targets:
+                if set(item["meta"]) & set(PRACTICE_META_FIELDS):
+                    validate_practice_review(memories[target]["kind"], item["meta"], evidence)
             if "scope" in item["meta"] and any(
                 item["meta"]["scope"] != memories[target].get("meta", {}).get("scope", "") for target in targets
             ):
@@ -119,6 +123,7 @@ def parse_decisions(
             raise ValueError("write requires complete memory fields")
         if "meta" in memory:
             tags.validate(memory["meta"])
+        validate_practice_review(memory["kind"], memory.get("meta", {}), evidence)
         if (
             memory["kind"] not in MEMORY_KINDS
             or memory["activation"] not in MEMORY_ACTIVATIONS
@@ -164,3 +169,16 @@ def parse_decisions(
     if resolved != set(requests):
         raise ValueError("resolve every operation exactly once")
     return arguments["decisions"]
+
+
+def validate_practice_review(kind, meta, evidence):
+    if kind != "practice":
+        if set(meta) & set(PRACTICE_META_FIELDS):
+            raise ValueError("verification fields are only for practice memories")
+        return
+    if "verification" not in meta:
+        raise ValueError("reviewed practice requires verification")
+    if meta["verification"] == "verified":
+        basis = meta.get("basis", "")
+        if not basis.startswith("execution:") or basis not in evidence:
+            raise ValueError("verified practice requires supplied execution evidence")

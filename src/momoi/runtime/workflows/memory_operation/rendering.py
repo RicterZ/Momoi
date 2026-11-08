@@ -5,7 +5,7 @@ from ..memory_rendering import memory_element, owner_evidence_element, xml_secti
 
 def render_memory_operation_request(*, now, timestamp,
                                     operations, visible, snapshots, evidence,
-                                    goals=(), retrieval_fallback="", always_budget=1500, always_tokens=0):
+                                    execution_evidence=None, goals=(), retrieval_fallback="", always_budget=1500, always_tokens=0):
     clock = Element("current_time", {"at": timestamp, "unix": str(now)})
     requests = Element("operation_requests")
     for operation in operations:
@@ -27,5 +27,8 @@ def render_memory_operation_request(*, now, timestamp,
     for goal in goals:
         SubElement(goal_directory, "goal", {"id": str(goal["id"]), "scope": "goal:" + str(goal["id"]),
                                              "status": str(goal["status"])}).text = str(goal["title"])
-    return xml_sections(clock, budget, requests, goal_directory, memories, outdated, retrieval,
+    executions = Element("execution_evidence")
+    for identifier, content in (execution_evidence or {}).items():
+        SubElement(executions, "execution", {"id": identifier}).text = content
+    return xml_sections(clock, budget, executions, requests, goal_directory, memories, outdated, retrieval,
                         owner_evidence_element(evidence))

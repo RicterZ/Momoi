@@ -59,6 +59,9 @@ class MemoryOperationWorkflow:
         snapshots = self.memory.snapshots(sorted(current_ids))
         evidence = {event["event_id"]: event["text"] for event in batch["events"]}
 
+        executions = self.store.memory_operation_execution_evidence(batch["id"])
+        evidence.update(executions)
+
         async def planner(context):
             snapshots, evidence = context.snapshots, context.evidence
             # Budget review needs the complete set from which it can propose demotions.
@@ -74,7 +77,7 @@ class MemoryOperationWorkflow:
             request = render_memory_operation_request(
                 now=now, timestamp=self.store.context_timestamp(now),
                 operations=batch["operations"], visible=visible, snapshots=snapshots,
-                evidence=evidence_records,
+                evidence=evidence_records, execution_evidence=executions,
                 goals=self.store.list_goals(),
                 always_budget=self.memory.repository.always_token_budget,
                 always_tokens=self.store.always_memory_tokens(),

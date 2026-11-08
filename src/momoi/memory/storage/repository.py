@@ -5,7 +5,7 @@ import sqlite3
 import time
 from typing import cast
 
-from ..metadata import MemoryFilters, TagCatalog, validate_scope, inherited_triggers, validate_triggers
+from ..metadata import PRACTICE_META_FIELDS, MemoryFilters, TagCatalog, validate_scope, inherited_triggers, validate_triggers
 from .records import (
     LIVE_MEMORY_SQL, NOT_TOMBSTONED_SQL, ActiveMemory, InventoryMemory, MEMORY_ACTIVATIONS,
     memory_snapshot_fingerprint, memory_scope,
@@ -32,8 +32,9 @@ class MemoryRepository:
         meta = json.loads(record.pop("meta_json"))
         # Reading does not reclassify historical tags after catalog changes.
         record["meta"] = {"tags": meta.get("tags", []), "scope": record.pop("scope_key")}
-        if "triggers" in meta:
-            record["meta"]["triggers"] = meta["triggers"]
+        for key in ("triggers", *PRACTICE_META_FIELDS):
+            if key in meta:
+                record["meta"][key] = meta[key]
         return record
 
     def _filter_sql(self, filters: MemoryFilters | None):
@@ -61,6 +62,10 @@ class MemoryRepository:
             meta["scope"] = memory_scope(current)
             if "triggers" not in requested and "triggers" in current["meta"]:
                 meta["triggers"] = current["meta"]["triggers"]
+            for key in PRACTICE_META_FIELDS:
+                if key not in requested and key in current["meta"]:
+                    meta[key] = current["meta"][key]
+            meta = self.tags.validate(meta)
             if meta == current["meta"]:
                 return
             self._db.execute(

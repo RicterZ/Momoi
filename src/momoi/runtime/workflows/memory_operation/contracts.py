@@ -1,6 +1,6 @@
 from typing import Any
 
-from ....memory.metadata import TRIGGER_INPUT_SCHEMA
+from ....memory.metadata import PRACTICE_META_SCHEMA, TRIGGER_INPUT_SCHEMA
 
 from ....memory.writing.validation import ALWAYS_MEMORY_KINDS
 from ....memory.storage.records import MEMORY_ACTIVATIONS, MEMORY_KINDS
@@ -47,6 +47,7 @@ _MEMORY = {
                     "description": "全局填空字符串；工作流范围为 heartbeat、webhook 或 goal:<提供的 Goal ID>。key 不包含范围前缀。",
                 },
                 "triggers": TRIGGER_INPUT_SCHEMA,
+                **PRACTICE_META_SCHEMA,
                 "tags": {
                     "type": "array", "maxItems": 3, "uniqueItems": True,
                     "items": {"type": "string", "enum": sorted(MOMOI_MEMORY_TAGS.tags)},
@@ -54,7 +55,11 @@ _MEMORY = {
                 },
             },
             "required": ["tags"], "additionalProperties": False,
-            "description": "scope、triggers、tags 只能写在 meta 内，不要放到 memory 顶层。tags 从预定义目录选择零至三个主题；没有合适主题时为空数组。",
+            "allOf": [{
+                "if": {"properties": {"verification": {"const": "verified"}}, "required": ["verification"]},
+                "then": {"required": ["basis"]},
+            }],
+            "description": "scope、triggers、tags、verification、basis、pitfalls 只能写在 meta 内，不要放到 memory 顶层。tags 从预定义目录选择零至三个主题；没有合适主题时为空数组。",
         },
         "expires_at": {
             "type": "null",
@@ -62,6 +67,10 @@ _MEMORY = {
         },
     },
     "required": ["kind", "key", "content", "activation", "expires_at"],
+    "allOf": [{
+        "if": {"properties": {"kind": {"const": "practice"}}, "required": ["kind"]},
+        "then": {"required": ["meta"], "properties": {"meta": {"required": ["verification"]}}},
+    }],
     "oneOf": [
         {
             "properties": {
