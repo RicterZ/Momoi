@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+from xml.sax.saxutils import escape, quoteattr
 import math
 
 
@@ -106,3 +108,18 @@ def token_chunk(text: str, offset: int, token_budget: int) -> tuple[str, int | N
     if low == 0:
         low = 1
     return remaining[:low] + marker, offset + low
+
+
+def format_memory(row: Mapping[str, object]) -> str:
+    attributes = {"id": row["id"], "kind": row["kind"], "key": row["key"]}
+    if row.get("activation"):
+        attributes["activation"] = row["activation"]
+    meta = row.get("meta") or {}
+    if meta.get("scope"):
+        attributes["scope"] = meta["scope"]
+    if meta.get("tags"):
+        attributes["tags"] = ",".join(meta["tags"])
+    header = " ".join(
+        f"{key}={quoteattr(str(value))}" for key, value in attributes.items()
+    )
+    return f"<memory {header}>{escape(str(row['content']))}</memory>"

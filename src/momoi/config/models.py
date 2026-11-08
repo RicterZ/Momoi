@@ -73,6 +73,11 @@ class BudgetConfig:
 
 
 @dataclass(frozen=True)
+class MemoryConfig:
+    always_token_budget: int = 1500
+
+
+@dataclass(frozen=True)
 class AppConfig:
     providers: "ProviderCatalog"
     channel: object
@@ -98,6 +103,7 @@ class AppConfig:
     exec_enabled: bool = False
     # Validated snapshot retained with a runtime generation for reliable rollback.
     mcp_servers: dict | None = field(default=None, repr=False)
+    memory: MemoryConfig = MemoryConfig()
     budget: BudgetConfig = BudgetConfig()
     notifications: NotificationConfig = NotificationConfig()
     tool_result_max_chars: int = 12000

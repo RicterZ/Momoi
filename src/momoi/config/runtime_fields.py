@@ -23,6 +23,10 @@ THINKING_STAGES = {
 }
 
 _FIELDS = {
+    "memory": {"label": "记忆", "fields": {
+        "always_token_budget": {"type": "integer", "label": "常驻记忆 token 预算", "default": 1500,
+                                "minimum": 0, "description": "按上下文估算器计费；0 表示不允许新增常驻记忆。"},
+    }},
     "context": {"label": "闲时压缩", "fields": {
         "transcript_idle_compaction_seconds": {
             "type": "integer", "label": "空闲时长（秒）", "default": 1800,

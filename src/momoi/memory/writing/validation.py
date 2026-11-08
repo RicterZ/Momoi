@@ -40,6 +40,8 @@ def parse_decisions(
             expected |= {"target_ids", "evidence"}
         elif action not in {"noop", "defer"}:
             raise ValueError("action must be write, metadata, forget, noop, or defer")
+        if action == "write" and "demote_ids" in item:
+            expected.add("demote_ids")
         if set(item) != expected:
             raise ValueError(f"{action} requires exactly {sorted(expected)}")
         ids = item["operation_ids"]
@@ -148,6 +150,17 @@ def parse_decisions(
             raise ValueError("invalid memory content")
         if memory["expires_at"] is not None:
             raise ValueError("memories do not expire; temporary state belongs to current state")
+    demoted = set()
+    for item in arguments["decisions"]:
+        ids = item.get("demote_ids", [])
+        if (not isinstance(ids, list) or any(type(x) is not int or x not in memories
+                or memories[x]["activation"] != "always" for x in ids)
+                or len(ids) != len(set(ids)) or demoted.intersection(ids)
+                or modified.intersection(ids)):
+            raise ValueError("demote_ids must identify distinct, unmodified current always memories")
+        if ids and item["memory"]["activation"] != "always":
+            raise ValueError("demote_ids requires an always write")
+        demoted.update(ids)
     if resolved != set(requests):
         raise ValueError("resolve every operation exactly once")
     return arguments["decisions"]

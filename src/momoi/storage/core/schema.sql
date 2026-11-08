@@ -881,3 +881,20 @@ CREATE TABLE IF NOT EXISTS memory_access_totals (
 CREATE TABLE IF NOT EXISTS memory_access_prefixes (
     generation TEXT PRIMARY KEY
 );
+
+
+CREATE TABLE IF NOT EXISTS memory_usage_observation (
+    id INTEGER PRIMARY KEY CHECK(id=1), started_at REAL NOT NULL
+);
+INSERT OR IGNORE INTO memory_usage_observation(id,started_at) VALUES(1,unixepoch());
+CREATE TABLE IF NOT EXISTS memory_reply_usage (
+    memory_id INTEGER NOT NULL, turn_id TEXT NOT NULL, event_key TEXT NOT NULL,
+    created_at REAL NOT NULL, PRIMARY KEY(turn_id,event_key,memory_id)
+);
+CREATE INDEX IF NOT EXISTS memory_reply_usage_memory ON memory_reply_usage(memory_id,created_at);
+CREATE TABLE IF NOT EXISTS memory_activation_suggestions (
+    id INTEGER PRIMARY KEY, memory_id INTEGER NOT NULL, target TEXT NOT NULL CHECK(target IN ('always','recall')),
+    reason TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','stale')),
+    created_at REAL NOT NULL, UNIQUE(memory_id,target)
+);

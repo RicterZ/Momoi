@@ -30,6 +30,12 @@ class MemoryAccessStore:
         """Caller owns the Turn transaction; recording never commits separately."""
         if not accesses:
             return
+        self._db.executemany(
+            "INSERT OR IGNORE INTO memory_reply_usage(memory_id,turn_id,event_key,created_at) VALUES(?,?,?,?)",
+            ((item['memory_id'], turn_id, item['event_key'], item['created_at'])
+             for item in accesses if item['kind'] == 'used'),
+        )
+        accesses = [item for item in accesses if item['kind'] != 'used']
         workflow = self.turn_workflow_kind(turn_id) or "owner"
         prefixes = {item["event_key"] for item in accesses if item["kind"] == "always"}
         accepted = {generation for generation in prefixes if self._db.execute(
@@ -53,6 +59,7 @@ class MemoryAccessStore:
                  count=count+excluded.count, last_at=MAX(last_at,excluded.last_at)""", (cutoff,),
         )
         self._db.execute("DELETE FROM memory_access WHERE created_at < ?", (cutoff,))
+        self._db.execute("DELETE FROM memory_reply_usage WHERE created_at < ?", (cutoff,))
 
     def compact_memory_access(self, *, now=None):
         with transaction(self._db):

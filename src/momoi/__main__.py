@@ -92,6 +92,7 @@ async def _run(config, configuration, dashboard, dashboard_host, dashboard_port,
         thinking=config.thinking,
         timezone=config.timezone,
     )
+    store.memories.repository.always_token_budget = config.memory.always_token_budget
     service = DashboardService(
         store,
         dashboard_host,

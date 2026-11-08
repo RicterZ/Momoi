@@ -69,8 +69,10 @@ from ..memory.storage.transactions import transaction
 
 from .memory.transcript_memory import TranscriptMemoryStore
 from .memory.access import MemoryAccessStore
+from .memory.activation import MemoryActivationStore
 
 class Store(
+    MemoryActivationStore,
     MemoryAccessStore,
     TranscriptMemoryStore,
     RepositoryFacade,

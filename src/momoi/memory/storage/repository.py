@@ -21,9 +21,10 @@ class MemoryRepository:
     authentication and source-text verification belong to the caller. Connection
     lifetime and schema migrations remain the caller's responsibility.
     """
-    def __init__(self, database: sqlite3.Connection, *, tags: TagCatalog | None = None) -> None:
+    def __init__(self, database: sqlite3.Connection, *, tags: TagCatalog | None = None, always_token_budget: int = 1500) -> None:
         self._db = database
         self.tags = tags or TagCatalog()
+        self.always_token_budget = always_token_budget
 
     @staticmethod
     def _record(row):
@@ -67,6 +68,8 @@ class MemoryRepository:
                 (json.dumps({key: value for key, value in meta.items() if key != "scope"}, ensure_ascii=False, sort_keys=True),
                  time.time() if now is None else now, snapshot["id"]),
             )
+            if current["activation"] == "always":
+                self.check_always_budget()
 
     def validate_snapshots(
         self, snapshots: dict[int, dict[str, object]],
@@ -179,7 +182,7 @@ class MemoryRepository:
             f"""SELECT id, kind, key, content, activation, importance, updated_at, meta_json, scope_key
                FROM memories AS m
                WHERE m.activation=? AND m.scope_key=? AND {LIVE_MEMORY_SQL}
-               ORDER BY m.id""",
+               ORDER BY {"m.kind, m.key, m.id" if activation == "always" else "m.id"}""",
             (activation, validate_scope(scope), now),
         ).fetchall()
         return [self._record(row) for row in rows]
@@ -314,6 +317,8 @@ class MemoryRepository:
                 self.add_evidence(
                     memory_id, citation["event_id"], citation["quote"], now
                 )
+            if memory["activation"] == "always":
+                self.check_always_budget()
             return memory_id
 
     def planning_rows(self, ids=None):
@@ -374,3 +379,12 @@ class MemoryRepository:
             (time.time(), include_scoped or bool((filters or {}).get("scope")), activation, activation, *params),
         ).fetchall()
         return [self._record(row) for row in rows]
+
+    def check_always_budget(self, rows=None):
+        from ..text import estimate_tokens, format_memory
+        rows = self.rows("always") if rows is None else rows
+        text = "\n\n".join(format_memory(row) for row in rows)
+        used = estimate_tokens(text) if text else 0
+        if used > self.always_token_budget:
+            raise ValueError(f"always memory token budget exceeded: {used}/{self.always_token_budget}; include demote_ids")
+        return used

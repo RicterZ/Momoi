@@ -104,6 +104,7 @@ class MomoiDaemon(
         )
         self.semantic_recall.start()
         self.memory = self.store.memories
+        self.memory.repository.always_token_budget = config.memory.always_token_budget
         accounting = self.services.billing.accounting
         self.store.set_usage_accounting(accounting)
         legacy_pricing = self.services.legacy_pricing

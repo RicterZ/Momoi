@@ -541,6 +541,11 @@ def create_dashboard_app(
             raise web.HTTPNotFound(text="reflection memory not found")
         return web.json_response({"ok": True})
 
+    def sync_memory_budget():
+        config = (getattr(runtime, 'last_config', None) or getattr(runtime, 'active_config', None)) if runtime else None
+        if config is not None:
+            store.memories.repository.always_token_budget = config.memory.always_token_budget
+
     async def memories(request: web.Request) -> web.Response:
         limit = _bounded_int(request, "limit", 200, 1, 500)
         return web.json_response({"items": store.list_memories(limit)})
@@ -548,7 +553,27 @@ def create_dashboard_app(
     async def memory_access(request: web.Request) -> web.Response:
         return web.json_response(store.memory_access_summary())
 
+    async def memory_activation_suggestions(request: web.Request) -> web.Response:
+        sync_memory_budget()
+        return web.json_response(store.memory_activation_suggestions())
+
+    async def review_memory_activation(request: web.Request) -> web.Response:
+        sync_memory_budget()
+        payload = await _json_body(request)
+        if set(payload) - {'approve', 'demote_ids'} or type(payload.get('approve')) is not bool:
+            raise web.HTTPBadRequest(text='approve must be boolean')
+        try:
+            result = store.review_memory_activation_suggestion(
+                int(request.match_info['suggestion_id']), approve=payload['approve'],
+                demote_ids=payload.get('demote_ids', []))
+        except LookupError:
+            raise web.HTTPNotFound(text='suggestion not found') from None
+        except (ValueError, TypeError) as error:
+            raise web.HTTPConflict(text=str(error)) from None
+        return web.json_response(result)
+
     async def update_memory(request: web.Request) -> web.Response:
+        sync_memory_budget()
         try:
             memory_id = int(request.match_info["memory_id"])
         except ValueError:
@@ -820,6 +845,8 @@ def create_dashboard_app(
     app.router.add_get("/api/conversations", conversations)
     app.router.add_get("/api/conversations/episode/{record_id}", episode_conversation)
     app.router.add_get("/api/conversations/turn/{record_id}", turn_conversation)
+    app.router.add_get('/api/memory-activation-suggestions', memory_activation_suggestions)
+    app.router.add_post('/api/memory-activation-suggestions/{suggestion_id}/review', review_memory_activation)
     app.router.add_get('/api/reflection-candidates', reflection_candidates)
     app.router.add_patch('/api/reflection-candidates/{candidate_id}', change_reflection_candidate)
     app.router.add_delete('/api/reflection-candidates/{candidate_id}', change_reflection_candidate)

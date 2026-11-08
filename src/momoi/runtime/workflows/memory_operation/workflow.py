@@ -61,6 +61,9 @@ class MemoryOperationWorkflow:
 
         async def planner(context):
             snapshots, evidence = context.snapshots, context.evidence
+            # Budget review needs the complete set from which it can propose demotions.
+            always = self.store.memories.repository.rows("always")
+            snapshots.update(self.memory.snapshots([row["id"] for row in always]))
             for item in self.store.memory_evidence_for_memories(
                 list(snapshots)
             ):
@@ -73,6 +76,8 @@ class MemoryOperationWorkflow:
                 operations=batch["operations"], visible=visible, snapshots=snapshots,
                 evidence=evidence_records,
                 goals=self.store.list_goals(),
+                always_budget=self.memory.repository.always_token_budget,
+                always_tokens=self.store.always_memory_tokens(),
                 retrieval_fallback=context.retrieval_fallback,
             )
             complete = False

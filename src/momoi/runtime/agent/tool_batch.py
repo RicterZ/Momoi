@@ -559,6 +559,13 @@ class ToolBatchExecutor:
                     result["bubbles"] = action_bubbles + list(result.get("bubbles", []))
                     if result.get("state") == "no_reply":
                         result["state"] = "sent"
+                if result.get("ok") and result.get("bubbles"):
+                    visible_ids = set(request.draft.memory_context)
+                    for message in request.messages:
+                        visible_ids.update(message.get("_memory_snapshot", {}).get("access_ids", []))
+                    request.draft.record_memory_access("used",
+                        [identifier for identifier in call.arguments.get("used_memory_ids", []) if identifier in visible_ids],
+                        event_key=call.id)
                 attach_reply_episode_triggers(
                     self.store, result, stage=execution.stage, seen=request.draft.triggered_episode_ids,
                 )
