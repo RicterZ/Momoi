@@ -12,8 +12,6 @@ from momoi.storage import Store
 from momoi.integrations.request_context import requested_thinking_effort
 from momoi.observability.context import current_log_context
 from momoi.runtime.tool_contracts.qq_message import QQ_POKE_SPEC
-from importlib.resources import files
-
 
 def empty_replyer_db():
     cursor = Mock()
@@ -287,7 +285,7 @@ def test_replyer_isolated_request_and_actual_speech(tmp_path):
 
     async def complete(system, messages, tools):
         assert [tool['name'] for tool in tools] == ['qq_poke']
-        assert system == '测试人格\n\n测试表达\n\n' + files('momoi').joinpath('prompts/replyer.md').read_text(encoding='utf-8')
+        assert system == '测试人格\n\n测试表达'
         assert requested_thinking_effort() == 'low'
         assert current_log_context()['stage'] == 'replyer'
         assert current_log_context()['tool_call_id'] == 'c'
