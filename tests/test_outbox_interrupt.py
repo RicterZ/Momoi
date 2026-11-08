@@ -40,6 +40,28 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent, ['第一条', '第二条', '第三条'])
         self.assertTrue(all(row[0] == 'sent' for row in self.store._db.execute('SELECT state FROM outbox')))
 
+    async def test_attachments_skip_bubble_gap(self):
+        image = Path(self.daemon.config.database).parent / 'photo.png'
+        image.write_bytes(b'png')
+        self.store.begin_turn('web-media', 'owner', [])
+        self.store.queue_progress('web-media', 'reply', [
+            '第一条', {'segments': [{'type': 'image', 'data': {'file': str(image)}}]}, '第二条',
+        ], 'dashboard')
+        stop = asyncio.Event()
+        sent = []
+
+        async def send(payload):
+            sent.append(payload['segments'][0]['type'])
+            if len(sent) == 3:
+                stop.set()
+            return 'dashboard:test'
+
+        self.daemon.channels['dashboard'].send_message = send
+        with patch.object(self.daemon, '_wait_outbox_gap', AsyncMock()) as gap:
+            await asyncio.wait_for(self.daemon._outbox_worker(stop), 1)
+        self.assertEqual(sent, ['text', 'image', 'text'])
+        self.assertEqual(gap.await_count, 1)
+
     async def test_call_interrupt_preserves_reason_in_owner_turn_and_log(self):
         from momoi.channel.onebot.voice_call.channel import QQCallChannel
         from types import SimpleNamespace

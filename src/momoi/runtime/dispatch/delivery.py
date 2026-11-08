@@ -29,6 +29,14 @@ def message_gap_bounds(
     return lower, min(policy.message_gap_max_seconds, upper)
 
 
+def _is_attachment(payload: dict | None) -> bool:
+    if not payload or payload.get("emotion_slug"):
+        return False
+    if payload.get("action") == "forward":
+        return True
+    return any(segment.get("type") not in {"text", "reply", "at"} for segment in payload.get("segments") or [])
+
+
 class OutboxWorker:
     async def _wait_outbox_gap(self, outbox_id: int, delay: float) -> None:
         deadline = monotonic() + delay
@@ -72,7 +80,7 @@ class OutboxWorker:
                     self.store.mark_not_dispatched(row.id, "ChannelNotConfigured")
                     continue
                 delivery = (row.channel, row.turn_id)
-                if delivery == previous_delivery and channel.name != "qq_call":
+                if delivery == previous_delivery and channel.name != "qq_call" and not _is_attachment(row.payload):
                     delay = random.uniform(
                         *message_gap_bounds(row.text, self.daemon_policy)
                     )
