@@ -226,6 +226,9 @@ class ContextWindow:
                 state = self.store.transcript_memory_context(snapshot["turn_ids"], track_boundary=False)
                 remove_folded_memory_evidence(messages, {**state.get("folded_overrides", {}), **state["overrides"]})
                 self.store.fold_transcript_memory(snapshot["revision"])
+                state = self.store.transcript_memory_context(snapshot["turn_ids"], track_boundary=False)
+                snapshot["access_generation"] = state["access_generation"]
+                snapshot["access_ids"] = [row["id"] for row in state["snapshot"].values()]
                 removed = sum(bool(m.get("_memory_change")) for m in messages[:history_messages])
                 messages[:] = [m for m in messages if not m.get("_memory_change")]
                 history_messages -= removed

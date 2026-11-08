@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from ...channel import Channel
 from ...models import AgentReply, TurnDraft
 from ..agent import TurnExecutionSpec
@@ -45,12 +47,13 @@ class WebhookWorkflow:
         current_input = build_input()
         system = self._system(planner=True)
         messages = self.autonomous_turn_messages(shared, current_input)
+        draft = TurnDraft()
         reply = await self._run_tool_loop(
             system,
             messages,
             self.tool_surface.conversation_specs(),
             [],
-            TurnDraft(),
+            draft,
             resume_input=build_input,
             execution=TurnExecutionSpec(
                 "webhook",
@@ -63,4 +66,4 @@ class WebhookWorkflow:
         )
         if not isinstance(reply, AgentReply):
             raise RuntimeError("Webhook Turn ended without end_turn")
-        return reply
+        return replace(reply, memory_access=draft.memory_access)

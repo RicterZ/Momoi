@@ -73,7 +73,7 @@ class OwnerWorkflow:
         """Steer the same turn with matched memories followed by new owner input."""
         triggered = triggered_memory_context(
             self.memory, updates, draft.memory_context if draft is not None else {}, only_new=True,
-            on_injected=self._record_trigger_injections,
+            on_injected=self._record_trigger_injections, draft=draft,
         )
         runtime_text = (
             (f"<affinity>{self.store.self_state()['affinity']}/100</affinity>\n\n" if self.config.affinity_enabled else "")
@@ -178,6 +178,7 @@ class OwnerWorkflow:
         self.owner_context_baseline()
         shared = self.shared_turn_context(turn_id)
         memories = shared["memories"]
+        draft = TurnDraft(memory_context=memories, memory_conversation=shared["history"])
         candidates = self.owner_context_candidates([str(row["turn_id"]) for row in shared["rows"]])
         runtime_text = pack_current_turn_context(
             self.store, "owner",
@@ -202,12 +203,11 @@ class OwnerWorkflow:
             ("recent_recall_context", candidates["recent_recall_context"]),
             ("triggered_episodes", triggered_episode_context(self.store, batch, wrapped=False)),
             ("triggered_memories", triggered_memory_context(
-                self.memory, batch, memories, on_injected=self._record_trigger_injections)),
+                self.memory, batch, memories, on_injected=self._record_trigger_injections, draft=draft)),
         )
         content = _owner_content_blocks(batch, channel.content_blocks, self.store.timezone, runtime_text)
         content[-1]["cache_control"] = {"type": "ephemeral"}
-        return [*shared["messages"], {"role": "user", "content": content}], TurnDraft(
-            memory_context=memories, memory_conversation=shared["history"])
+        return [*shared["messages"], {"role": "user", "content": content}], draft
 
     async def _phone_planner(self, batch, turn_id, channel, carryover=""):
         from ...agent.workflow import AgentWorkflow
@@ -464,6 +464,7 @@ class OwnerWorkflow:
         )
         system = self._system(planner=True)
         injected_memories = shared["memories"]
+        draft = TurnDraft(memory_context=injected_memories, memory_conversation=transcript_messages)
         runtime_text = pack_current_turn_context(
             self.store, "owner",
             ("workflow_contract", self._owner_system_prompt()),
@@ -471,7 +472,7 @@ class OwnerWorkflow:
             ("runtime_directives", "\n\n".join(directives)),
             ("recent_recall_context", candidates["recent_recall_context"]),
             ("triggered_episodes", triggered_episode_context(self.store, batch, wrapped=False)),
-            ("triggered_memories", triggered_memory_context(self.memory, batch, injected_memories, on_injected=self._record_trigger_injections)),
+            ("triggered_memories", triggered_memory_context(self.memory, batch, injected_memories, on_injected=self._record_trigger_injections, draft=draft)),
         )
         current_content = _owner_content_blocks(
             batch, channel.content_blocks, self.store.timezone, runtime_text
@@ -490,7 +491,6 @@ class OwnerWorkflow:
                 groups=len(transcript.orphaned),
                 bubbles=sum(len(group.parts) for group in transcript.orphaned),
             )
-        draft = TurnDraft(memory_context=injected_memories, memory_conversation=transcript_messages)
         tools = self.tool_surface.conversation_specs()
         if channel.name == "qq_call":
             log_event(logger, logging.INFO, "qq_call_context_prepared", channel=channel.name, turn_id=turn_id,

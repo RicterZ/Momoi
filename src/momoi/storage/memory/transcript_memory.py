@@ -1,6 +1,7 @@
 """Durable memory snapshot and append-only changes for the shared transcript."""
 import json
 import time
+import uuid
 from xml.etree import ElementTree
 from xml.sax.saxutils import quoteattr
 
@@ -184,6 +185,8 @@ class TranscriptMemoryStore:
                 state["events"] = []
             if track_boundary:
                 state["boundary"] = boundary
+            if (compact and current) or "access_generation" not in state:
+                state["access_generation"] = uuid.uuid4().hex
             self._db.execute(
                 "INSERT INTO transcript_memory_state(id,data_json) VALUES(1,?) "
                 "ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json",
@@ -205,6 +208,8 @@ class TranscriptMemoryStore:
             state["history_format"] = 4
             state["snapshot_revision"] = state["revision"]
             state["snapshot"] = state["observed"]
+            if state["snapshot"]:
+                state["access_generation"] = uuid.uuid4().hex
             state.setdefault("folded_overrides", {}).update(state["overrides"])
             state["overrides"] = {}
             state["snapshot_overrides"] = {}

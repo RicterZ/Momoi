@@ -68,8 +68,10 @@ from .repositories import RepositoryFacade
 from ..memory.storage.transactions import transaction
 
 from .memory.transcript_memory import TranscriptMemoryStore
+from .memory.access import MemoryAccessStore
 
 class Store(
+    MemoryAccessStore,
     TranscriptMemoryStore,
     RepositoryFacade,
     ImageStore,

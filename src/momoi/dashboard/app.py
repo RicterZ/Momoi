@@ -545,6 +545,9 @@ def create_dashboard_app(
         limit = _bounded_int(request, "limit", 200, 1, 500)
         return web.json_response({"items": store.list_memories(limit)})
 
+    async def memory_access(request: web.Request) -> web.Response:
+        return web.json_response(store.memory_access_summary())
+
     async def update_memory(request: web.Request) -> web.Response:
         try:
             memory_id = int(request.match_info["memory_id"])
@@ -826,6 +829,7 @@ def create_dashboard_app(
     app.router.add_patch("/api/reflection-memories/{memory_id}", update_reflection_memory)
     app.router.add_delete("/api/reflection-memories/{memory_id}", delete_reflection_memory)
     app.router.add_get("/api/memories", memories)
+    app.router.add_get("/api/memory-access", memory_access)
     app.router.add_patch("/api/memories/{memory_id}", update_memory)
     app.router.add_delete("/api/memories/{memory_id}", delete_memory)
     app.router.add_get("/api/goals", goals)

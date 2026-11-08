@@ -296,6 +296,7 @@ class AgentLoop:
                     goal_id=autonomous_goal_id,
                     round_number=llm_round,
                     preserve_transcript=workflow is not None and workflow.preserve_transcript,
+                    draft=draft,
                 )
             except OwnerMessagesChanged as interruption:
                 updates = list(interruption.updates)

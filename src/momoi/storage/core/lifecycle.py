@@ -84,6 +84,7 @@ class LifecycleStore:
                  )""",
             (EPISODE_MAINTENANCE_RESTART_REASON, now),
         )
+        self._compact_memory_access(now)
         self.memory_index_queue.recover_encoding()
         self._db.commit()
     

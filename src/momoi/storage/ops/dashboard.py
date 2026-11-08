@@ -125,8 +125,10 @@ class DashboardStore:
                     tuple(scoped_goal_ids),
                 )
             }
+        access = self.memory_access_stats([row["id"] for row in rows], now=now)
         for row in rows:
             item = self._memory_public_dict(row)
+            item["access"] = access[row["id"]]
             if item["activation"] == "scoped":
                 scope = item["scope"]
                 item["scope_label"] = (

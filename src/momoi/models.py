@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import time
 from typing import Any
 
 from .contracts import GoalMutation
@@ -65,6 +66,7 @@ class OutboxMessage:
 class AgentReply:
     messages: list[str | dict[str, Any]]
     mood_update: dict[str, Any] | None = None
+    memory_access: list[dict[str, Any]] = field(default_factory=list, repr=False)
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,7 @@ class TurnDraft:
     heartbeat_activity: dict[str, Any] | None = None
     memory_operations: list[dict[str, Any]] = field(default_factory=list)
     memory_context: dict[int, dict[str, Any]] = field(default_factory=dict)
+    memory_access: list[dict[str, Any]] = field(default_factory=list)
     memory_conversation: list[dict[str, Any]] = field(default_factory=list)
     triggered_episode_ids: set[str] = field(default_factory=set)
     goals: dict[str, GoalMutation] = field(default_factory=dict)
@@ -99,3 +102,10 @@ class TurnDraft:
     notification_priority: str = "normal"
     notification_reason: str = ""
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
+
+    def record_memory_access(self, kind: str, ids, *, event_key: str = "") -> None:
+        for memory_id in dict.fromkeys(ids):
+            event = {"memory_id": memory_id, "kind": kind, "event_key": event_key}
+            if not any(all(previous[key] == value for key, value in event.items())
+                       for previous in self.memory_access):
+                self.memory_access.append({**event, "created_at": time.time()})

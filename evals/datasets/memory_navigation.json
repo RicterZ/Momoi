@@ -1,0 +1,8 @@
+{
+  "id": "memory_navigation_wording_mismatch",
+  "input": "今晚想点外卖，有哪些配料得绕开？",
+  "target": {"key": "配菜约定", "content": "不接受芫荽作配菜。", "tags": ["food_drink"]},
+  "distractors": ["喜欢清汤", "喜欢烤南瓜", "喜欢豆腐", "喜欢蒸鱼", "喜欢土豆", "喜欢番茄", "喜欢萝卜", "喜欢紫菜", "喜欢菌菇", "喜欢玉米", "喜欢茄子", "喜欢花椰菜"],
+  "expected": {"navigation_tools": ["memory_browse", "memory_read"], "target_hit": true},
+  "provenance": "Entirely synthetic; no production records."
+}
