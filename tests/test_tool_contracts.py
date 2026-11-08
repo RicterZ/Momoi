@@ -12,7 +12,6 @@ from momoi.runtime.tool_contracts.runtime import READ_TOOL_RESULT_SPEC, TOOL_ENA
 from momoi.runtime.tool_contracts.reply import REPLY_TOOL_SPEC
 from momoi.runtime.workflows.episode.contracts import (
     EPISODE_CLASSIFY_TURNS_SPEC,
-    EPISODE_CONSOLIDATION_FINISH_SPEC,
     EPISODE_SUMMARY_FINISH_SPEC,
 )
 from momoi.runtime.workflows.memory_operation.contracts import (
@@ -36,7 +35,6 @@ def test_model_tool_schemas_compile_and_examples_validate():
         TOOL_ENABLE_SPEC,
         REFLECTION_FINISH_SPEC,
         EPISODE_CLASSIFY_TURNS_SPEC,
-        EPISODE_CONSOLIDATION_FINISH_SPEC,
         EPISODE_SUMMARY_FINISH_SPEC,
         MEMORY_OPERATION_FINISH_SPEC,
         MEMORY_OPERATION_SEARCH_SPEC,

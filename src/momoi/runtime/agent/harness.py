@@ -9,7 +9,7 @@ class TurnHarnessSpec:
 
     stage: str
     first_tool: str | None
-    terminal_tool: str
+    terminal_tool: str | None
     permitted_tools: frozenset[str] | None = None
     required_before_end: frozenset[str] = frozenset()
     terminal_alone: bool = True
@@ -35,7 +35,7 @@ TURN_HARNESS_SPECS = {
         TurnHarnessSpec("weekly_reflection", None, "weekly_reflection_finish",
                         permitted_tools=frozenset({"weekly_reflection_finish"})),
         TurnHarnessSpec("memory_operation", None, "memory_operation_finish", permitted_tools=frozenset({"memory_operation_finish", "memory_operation_search"})),
-        TurnHarnessSpec("episode_consolidate", None, "episode_consolidation_finish"),
+        TurnHarnessSpec("episode_consolidate", None, None),
         TurnHarnessSpec("episode_anneal", None, "episode_summary_finish"),
         TurnHarnessSpec("episode_relation", "recall", "episode_relation_finish",
                         permitted_tools=frozenset({"recall", "episode_relation_finish"}),
@@ -99,7 +99,7 @@ class TurnHarness:
 
     def validate_surface(self, tool_names: set[str]) -> None:
         required = set(self.spec.required_before_end)
-        if self.spec.terminal_tool != "end_turn":
+        if self.spec.terminal_tool is not None and self.spec.terminal_tool != "end_turn":
             required.add(self.spec.terminal_tool)
         if self.spec.first_tool is not None:
             required.add(self.spec.first_tool)

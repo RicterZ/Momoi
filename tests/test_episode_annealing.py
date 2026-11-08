@@ -18,7 +18,6 @@ from momoi.runtime.workflows.episode import (
 )
 from momoi.runtime.workflows.episode import (
     EPISODE_CLASSIFY_TURNS_SPEC,
-    EPISODE_CONSOLIDATION_FINISH_SPEC,
     EPISODE_SUMMARY_FINISH_SPEC,
 )
 from momoi.storage import EPISODE_CONSOLIDATION_BATCH_SIZE, EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS, EPISODE_CONSOLIDATION_PARTIAL_IDLE_SECONDS
@@ -1164,10 +1163,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                         provider_self.consolidation_round += 1
                         self.assertEqual(
                             _tools,
-                            [
-                                EPISODE_CLASSIFY_TURNS_SPEC,
-                                EPISODE_CONSOLIDATION_FINISH_SPEC,
-                            ],
+                            [EPISODE_CLASSIFY_TURNS_SPEC],
                         )
                         if provider_self.consolidation_round == 2:
                             assistant = messages[-2]["content"]
@@ -1175,9 +1171,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                 "reasoning",
                                 [block.get("type") for block in assistant],
                             )
-                            return workflow_response(
-                                "episode_consolidation_finish", {}
-                            )
+                            return ProviderResponse([], [])
                         ids = re.findall(
                             r'<turn id="([^"]+)"',
                             prompt_section(
@@ -1302,15 +1296,10 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     nonlocal calls
                     calls += 1
-                    assert tools == [
-                        EPISODE_CLASSIFY_TURNS_SPEC,
-                        EPISODE_CONSOLIDATION_FINISH_SPEC,
-                    ]
+                    assert tools == [EPISODE_CLASSIFY_TURNS_SPEC]
                     assert kwargs["require_tool"] is False
                     if calls == 7:
-                        return workflow_response(
-                            "episode_consolidation_finish", {}
-                        )
+                        return ProviderResponse([], [])
                     action = "defer" if calls == 6 else "ignore"
                     return workflow_response(
                         "episode_classify_turns",
@@ -1375,7 +1364,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                 },
                             ),
                         ])
-                    return workflow_response("episode_consolidation_finish", {})
+                    return ProviderResponse([], [])
 
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]

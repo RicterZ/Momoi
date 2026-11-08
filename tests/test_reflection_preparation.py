@@ -59,7 +59,8 @@ def test_reflection_reads_material_after_small_batch_and_summary(daemon):
                                "turn_ids": ids, "topics": [], "entities": [], "open_loops": []}],
             }))
             assert result["ok"]
-            result = await workflow.execute_tool(ToolCall("done", "episode_consolidation_finish", {}))
+            workflow.on_no_tools()
+            assert workflow.is_complete()
         elif workflow.stage == "episode_anneal":
             items = annealing_items(messages[0]["content"], "new_messages", "Message")
             assert [item["turn_id"] for item in items] == ["day-1", "day-2"]

@@ -69,3 +69,4 @@ class AgentWorkflow:
     no_tool_correction: str
     preserve_transcript: bool = False
     before_round: Callable[[int, list[dict[str, Any]]], Awaitable[None]] | None = None
+    on_no_tools: Callable[[], None] | None = None
