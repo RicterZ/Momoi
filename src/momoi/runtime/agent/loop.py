@@ -340,6 +340,11 @@ class AgentLoop:
             if not response.tool_calls and self.background_pause_requested():
                 continue
             if not response.tool_calls:
+                if workflow is not None:
+                    if workflow.on_no_tools is not None:
+                        workflow.on_no_tools()
+                    if workflow.is_complete():
+                        return workflow.completion_result() or {"ok": True}
                 completion_correction = None
                 if workflow is None and harness.spec.terminal_tool == "end_turn":
                     error = harness.completion_error()

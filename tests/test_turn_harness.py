@@ -183,6 +183,13 @@ class TurnHarnessTest(unittest.TestCase):
     def test_terminal_tool_must_be_alone_for_every_stage(self) -> None:
         work = ToolCall("work", "work", {})
         for stage, spec in TURN_HARNESS_SPECS.items():
+            if spec.terminal_tool is None:
+                harness = TurnHarness.for_stage(stage)
+                harness.validate_surface({"episode_classify_turns"})
+                self.assertIsNone(harness.validate([
+                    ToolCall("classify", "episode_classify_turns", {"decisions": []}),
+                ]))
+                continue
             with self.subTest(stage=stage):
                 harness = TurnHarness.for_stage(stage)
                 if spec.first_tool is not None:

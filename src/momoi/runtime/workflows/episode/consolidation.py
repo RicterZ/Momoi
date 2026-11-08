@@ -8,10 +8,7 @@ from ....models import ToolCall
 from ...agent import AgentWorkflow
 from ...transcript.maintenance import maintenance_dialogue
 from ...turn_support import EPISODE_CONSOLIDATION_SYSTEM_PROMPT
-from .contracts import (
-    EPISODE_CLASSIFY_TURNS_SPEC,
-    EPISODE_CONSOLIDATION_FINISH_SPEC,
-)
+from .contracts import EPISODE_CLASSIFY_TURNS_SPEC
 from .rendering import render_episode_consolidation_request
 
 logger = logging.getLogger(__name__)
@@ -91,24 +88,15 @@ class EpisodeConsolidationWorkflow:
                 if source_ids[value] in pending_source
             ]
 
-        async def execute_tool(call: ToolCall) -> dict[str, Any]:
+        def on_no_tools() -> None:
             nonlocal workflow_complete, workflow_result
-            if call.name == "episode_consolidation_finish":
-                pending = remaining()
-                if pending:
-                    return {
-                        "ok": False,
-                        "error": "incomplete_consolidation_turn_coverage",
-                        "covered_turn_ids": [
-                            value for value in turn_ids if value not in pending
-                        ],
-                        "remaining_turn_ids": pending,
-                    }
-                self.store.complete_background_turn(turn_id)
-                workflow_complete = True
-                workflow_result = {"ok": True, "covered_turn_ids": turn_ids}
-                return {"ok": True, "state": "completed", **workflow_result}
+            if remaining():
+                return
+            self.store.complete_background_turn(turn_id)
+            workflow_complete = True
+            workflow_result = {"ok": True, "covered_turn_ids": turn_ids}
 
+        async def execute_tool(call: ToolCall) -> dict[str, Any]:
             decisions = call.arguments.get("decisions")
             if not isinstance(decisions, list) or not decisions:
                 return {
@@ -195,16 +183,15 @@ class EpisodeConsolidationWorkflow:
         workflow = AgentWorkflow(
             stage="episode_consolidate",
             preserve_transcript=True,
-            tool_names=frozenset(
-                {"episode_classify_turns", "episode_consolidation_finish"}
-            ),
+            tool_names=frozenset({"episode_classify_turns"}),
+            on_no_tools=on_no_tools,
             execute_tool=execute_tool,
             is_complete=lambda: workflow_complete,
             completion_result=lambda: workflow_result,
             no_tool_correction=(
                 "[Trusted runtime protocol error. Plain assistant text is not stored. "
-                "Call episode_classify_turns for remaining Turns, or call "
-                "episode_consolidation_finish after every Turn is durably covered.]"
+                "Call episode_classify_turns for remaining Turns; "
+                "stop calling tools after every Turn is durably covered.]"
             ),
         )
         try:
@@ -212,10 +199,7 @@ class EpisodeConsolidationWorkflow:
                 self._run_agent_workflow(
                     EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
                     request,
-                    [
-                        EPISODE_CLASSIFY_TURNS_SPEC,
-                        EPISODE_CONSOLIDATION_FINISH_SPEC,
-                    ],
+                    [EPISODE_CLASSIFY_TURNS_SPEC],
                     turn_id=turn_id,
                     workflow=workflow,
                 ),

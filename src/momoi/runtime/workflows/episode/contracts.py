@@ -117,18 +117,6 @@ EPISODE_CLASSIFY_TURNS_SPEC: dict[str, Any] = {
     },
 }
 
-EPISODE_CONSOLIDATION_FINISH_SPEC: dict[str, Any] = {
-    "name": "episode_consolidation_finish",
-    "description": (
-        '仅在所有 pending Turns 均拥有持久的 Store 决策后才完成分类。运行时会在仍有 Turns 剩余时拒绝此调用。'
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": False,
-    },
-}
-
 _SUMMARY_CLAIM_SCHEMA: dict[str, Any] = {
     "type": "object",
     "description": '从 previous_verified_claims 或 new_messages 复制引用元数据。',

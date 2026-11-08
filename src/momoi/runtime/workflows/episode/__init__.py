@@ -1,6 +1,5 @@
 from .contracts import (
     EPISODE_CLASSIFY_TURNS_SPEC,
-    EPISODE_CONSOLIDATION_FINISH_SPEC,
     EPISODE_SUMMARY_FINISH_SPEC,
 )
 from .rendering import (
@@ -10,7 +9,6 @@ from .rendering import (
 
 __all__ = [
     "EPISODE_CLASSIFY_TURNS_SPEC",
-    "EPISODE_CONSOLIDATION_FINISH_SPEC",
     "EPISODE_SUMMARY_FINISH_SPEC",
     "EpisodeAnnealingWorkflow",
     "EpisodeConsolidationWorkflow",
