@@ -380,7 +380,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(memories["items"][0]["access"]["total"], 0)
         access = await (await self.client.get("/api/memory-access", headers=auth)).json()
         self.assertEqual(access["unused_memories"], 3)
-        self.assertEqual(access["tool_calls"]["memory_browse"]["total"], 0)
+        self.assertEqual(access["tool_calls"]["memory_search"]["total"], 0)
         self.assertEqual(memories["items"][1]["evidence"], "我今天在公司")
 
         reflections = await (

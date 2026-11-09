@@ -25,22 +25,19 @@ def commit(store, draft, turn_id="access", workflow="owner"):
 def test_tools_count_hits_per_call_only_when_turn_commits(store):
     identifier = seed(store.memories, "coffee", ["food_drink"])
     tools, draft = MemoryTools(store), TurnDraft()
-    for name, args in [("memory_search", {"query": "无糖咖啡"}),
-                       ("memory_browse", {"topic": "food_drink"}),
-                       ("memory_read", {"ids": [identifier, 999]})]:
-        call = ToolCall(name, name, args)
-        assert tools.execute(call, [], draft)["ok"]
-        assert tools.execute(call, [], draft)["ok"]  # Same invocation is idempotent.
+    call = ToolCall("memory_search", "memory_search", {"query": "无糖咖啡"})
+    assert tools.execute(call, [], draft)["ok"]
+    assert tools.execute(call, [], draft)["ok"]  # Same invocation is idempotent.
     assert store.memory_access_stats([identifier])[identifier]["total"] == 0
     commit(store, draft)
     item = store.list_memories()[0]["access"]
-    assert item["counts"] == {"searched": 1, "browsed": 1, "read": 1, "recalled": 0, "always": 0}
-    assert item["recent_30_days"] == item["total"] == 3
+    assert item["counts"] == {"searched": 1, "browsed": 0, "read": 0, "recalled": 0, "always": 0}
+    assert item["recent_30_days"] == item["total"] == 1
     assert item["last_at"] is not None
     draft = TurnDraft()
-    tools.execute(ToolCall("second-read", "memory_read", {"ids": [identifier]}), [], draft)
+    tools.execute(ToolCall("second-search", "memory_search", {"query": "无糖咖啡"}), [], draft)
     commit(store, draft, "second")
-    assert store.memory_access_stats([identifier])[identifier]["counts"]["read"] == 2
+    assert store.memory_access_stats([identifier])[identifier]["counts"]["searched"] == 2
 
 
 def test_async_search_counts_once_and_failed_or_missing_results_do_not_count(store):
@@ -48,9 +45,8 @@ def test_async_search_counts_once_and_failed_or_missing_results_do_not_count(sto
     draft, tools = TurnDraft(), MemoryTools(store)
     result = asyncio.run(tools.execute_async(ToolCall("search", "memory_search", {"query": "无糖咖啡"}), [], draft))
     assert result["results"][0]["id"] == identifier
-    for name, args in [("memory_search", {"query": ""}), ("memory_read", {"ids": [999]}),
-                       ("memory_browse", {"topic": "food_drink", "cursor": 100})]:
-        tools.execute(ToolCall(name, name, args), [], draft)
+    tools.execute(ToolCall("empty", "memory_search", {"query": ""}), [], draft)
+    tools.execute(ToolCall("miss", "memory_search", {"query": "不存在的词"}), [], draft)
     commit(store, draft)
     assert store.memory_access_stats([identifier])[identifier]["total"] == 1
 
@@ -174,13 +170,13 @@ def test_summary_counts_calls_separately_from_hits_and_includes_unused(store):
     first = seed(store.memories, "first", [])
     seed(store.memories, "unused", [])
     store.begin_turn("summary", "owner", [])
-    for call_id in ["browse-1", "browse-2"]:
-        store.begin_tool_call("summary", call_id, "memory_browse", {"topic": "food_drink"}, "read")
+    for call_id in ["search-1", "search-2"]:
+        store.begin_tool_call("summary", call_id, "memory_search", {"query": "first"}, "read")
         store.complete_tool_call("summary", call_id, {"ok": True})
     draft = TurnDraft()
-    draft.record_memory_access("browsed", [first])
+    draft.record_memory_access("searched", [first])
     commit(store, draft, "summary")
     summary = store.memory_access_summary()
     assert summary["memories"] == 2 and summary["unused_memories"] == 1
-    assert summary["tool_calls"]["memory_browse"] == {"total": 2, "recent_30_days": 2}
-    assert summary["tool_calls"]["memory_read"]["total"] == 0
+    assert summary["tool_calls"]["memory_search"] == {"total": 2, "recent_30_days": 2}
+    assert summary["tool_calls"]["recall"]["total"] == 0

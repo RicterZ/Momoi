@@ -1,10 +1,5 @@
 # 交互表达评估
 
-记忆导航另有独立用例：`uv run --locked python -m evals.memory_navigation` 运行真实工具的脚本烟测；
-加 `--live` 使用显式配置的 `MOMOI_EVAL_*` 模型，验证“外卖配料”问题能通过
-`memory_browse` 或 `memory_read` 命中措辞不同的“芫荽”记忆。用例只使用虚构数据，
-不加载生产配置，结果保存在 `/tmp/momoi-eval-navigation-*`。脚本烟测不代表模型能力通过。
-
 本目录评估真实 Replyer 的表达，不评估 Planner、检索、真实渠道投递或长期记忆。
 所有用例从零编写，均为虚构、无真实身份的日常交互；不读取应用配置、聊天记录、
 私人 SOUL、记忆库或现有生产场景。新用例也不得包含真实用户资料、凭据或私聊原文。
@@ -173,7 +168,6 @@ uv run --locked python -m evals.practice_verification
 uv run --locked --env-file .env.evals python -m evals.practice_verification --live
 ```
 
-同一虚构任务分别提供 verified/unverified 方法，使用真实存储、`format_memory` 和
-`memory_read` 两条展示路径，检查模型下一步是执行还是先向用户确认。合成工具只记录选择，
+同一虚构任务分别提供 verified/unverified 方法，使用真实存储和 `format_memory` 的展示，检查模型下一步是执行还是先向用户确认。合成工具只记录选择，
 不执行外部工作。结果写入 `/tmp/momoi-eval-practice-*`。默认仅脚本烟测，不代表真实模型表现；
 `--live` 才调用明确配置的付费模型。此评估不覆盖完整 Planner 调度或方法本身的正确性。

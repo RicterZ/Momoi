@@ -6,9 +6,8 @@ import pytest
 
 from momoi.memory import Memory, PlanningContext, TagCatalog
 from momoi.memory.text import format_memory
-from momoi.models import ToolCall, TurnDraft
+from momoi.models import ToolCall
 from momoi.runtime.workflows.memory_rendering import memory_element
-from momoi.tools.memory import MemoryTools
 from tests.test_memory_writing import decision, request
 
 
@@ -47,8 +46,6 @@ def test_write_read_render_and_tag_edit_preserve_practice_metadata(database):
     identifier = memory.apply(planned, operation_id='practice')['decisions'][0]['memory_ids'][0]
     row = memory.snapshots([identifier])[identifier]
     assert all(row['meta'][key] == value for key, value in meta.items())
-    result = MemoryTools(None, memory=memory).execute(ToolCall('r', 'memory_read', {'ids': [identifier]}), [], TurnDraft())
-    assert result['memories'][0]['meta'] == row['meta']
     root = fromstring(format_memory(row))
     assert root.findtext('basis') == meta['basis']
     assert root.findtext('pitfall') == meta['pitfalls'][0]
@@ -67,8 +64,6 @@ def test_unverified_warning_and_legacy_compatibility(database):
     legacy = deepcopy(row)
     legacy['meta'] = {'tags': []}
     assert fromstring(format_memory(legacy)).find('verification') is None
-    assert MemoryTools(None, memory=memory).execute(
-        ToolCall('r', 'memory_read', {'ids': [identifier]}), [], TurnDraft())['ok']
 
 
 def test_other_kinds_need_no_verification_and_cannot_claim_it(database):

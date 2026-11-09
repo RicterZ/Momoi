@@ -10,7 +10,7 @@ MEMORY_TOOL_POLICY = """### 记忆工具
 scope=current_state 只用于更新或删除已有的临时状态；新状态由后台状态维护创建。
 长期记忆的分类、激活条件和去重由后台审核处理。
 practice 的 meta.verification=unverified 表示方法未验证，执行前先向用户确认；verified 只证明所附依据中的情境，不替代当前任务的条件判断。
-memory_catalog 只说明各主题下有记录，不是事实依据。任务涉及某主题的偏好、限制或既往选择，而现有证据不足时，用 memory_browse 按主题浏览并用 memory_read 读取原文，不必猜关键词；证据已充分或主题无关时不要浏览。
+memory_catalog 只说明各主题下有记录，不是事实依据。任务涉及某主题的偏好、限制或既往选择，而现有证据不足时，用 recall 的 tags 按主题获取记忆，不必猜关键词；证据已充分或主题无关时不要获取。
 """
 
 
@@ -61,47 +61,6 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 },
             },
             "required": ["query"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "memory_browse",
-        "description": (
-            '按 memory_catalog 中的主题列出已确认记忆，无需关键词。返回 id、key 和正文摘录，摘录不足以作为依据时用 memory_read 读取原文。'
-            '某页没有目标条目不代表没有记忆；有 next_cursor 时续页。'
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "topic": {
-                    "type": "string",
-                    "enum": [*sorted(MOMOI_MEMORY_TAGS.tags), "untagged"],
-                    "description": "主题标签；untagged 表示未标主题的记忆。",
-                },
-                "scope": {
-                    "type": "string", "maxLength": 200,
-                    "pattern": "^(?:|heartbeat|webhook|goal:[^\\s]+)$",
-                    "description": "空字符串表示全局；也可明确指定 heartbeat、webhook 或已知的 goal:<任务ID>。",
-                },
-                "cursor": {"type": "integer", "minimum": 0, "description": "上一页返回的 next_cursor。"},
-            },
-            "required": ["topic"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "memory_read",
-        "description": '按 id 读取已确认记忆的完整现行正文；已删除、被替代或过期的 id 会列入 missing_ids。',
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "ids": {
-                    "type": "array", "uniqueItems": True, "minItems": 1, "maxItems": 10,
-                    "items": {"type": "integer", "minimum": 1},
-                    "description": "来自 memory_catalog 或 memory_browse 的记忆 id。",
-                },
-            },
-            "required": ["ids"],
             "additionalProperties": False,
         },
     },

@@ -69,10 +69,7 @@ class MemoryContextStore:
 
 
 def memory_catalog_text(repository, *, scope: str = "", now: float | None = None) -> str:
-    """Topic counts over recallable memory; small topics list their keys inline.
-
-    Buckets match memory_browse: one per catalog tag, plus untagged for rows without tags.
-    """
+    """Topic counts over recallable memory; small topics list their keys inline."""
     tags = repository.tags.tags
     topics: dict[str, list[dict]] = {}
     rows = repository.recall_rows(now=time.time() if now is None else now, filters={"scope": scope})
@@ -82,7 +79,7 @@ def memory_catalog_text(repository, *, scope: str = "", now: float | None = None
             topics.setdefault(name, []).append(row)
     if not topics:
         return ""
-    lines = ["仅表示有记录，不是事实依据；以 memory_browse / memory_read 的结果为准。"]
+    lines = ["仅表示有记录，不是事实依据；以 recall 的结果为准。"]
     for name in sorted(topics, key=lambda name: (name == "untagged", -len(topics[name]), name)):
         label = "untagged（未标主题）" if name == "untagged" else f"{name}（{tags[name]}）"
         if len(topics[name]) <= MEMORY_CATALOG_INLINE_LIMIT:
