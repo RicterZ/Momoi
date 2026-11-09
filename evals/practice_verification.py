@@ -7,10 +7,9 @@ import tempfile
 
 from momoi.integrations.adapters.openai import OpenAIProvider
 from momoi.memory.text import format_memory
-from momoi.models import ProviderResponse, ToolCall, TurnDraft
+from momoi.models import ProviderResponse, ToolCall
 from momoi.storage import Store
 from momoi.tools.contracts.memory import MEMORY_TOOL_POLICY
-from momoi.tools.memory import MemoryTools
 from .runner import TEMP_ROOT, model_config, write_json
 
 CASES = [
@@ -39,12 +38,8 @@ async def evaluate_practice(complete, directory):
                     {'kind': 'practice', 'key': key, 'content': content, 'activation': 'recall',
                      'expires_at': None, 'meta': meta}, [], source, [source], now=100)
                 row = store.memories.snapshots([identifier])[identifier]
-                for presentation in ('context', 'read'):
-                    if presentation == 'context':
-                        evidence = format_memory(row)
-                    else:
-                        evidence = json.dumps(MemoryTools(store).execute(
-                            ToolCall('read', 'memory_read', {'ids': [identifier]}), [], TurnDraft()), ensure_ascii=False)
+                for presentation in ('context',):
+                    evidence = format_memory(row)
                     response = await complete(
                         MEMORY_TOOL_POLICY + '\n这是虚构的演示环境，任务条件已满足。请选择下一步工具；不执行任何真实操作。',
                         [{'role': 'user', 'content': f'{evidence}\n{task}'}], TOOLS)

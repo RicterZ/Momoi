@@ -358,15 +358,6 @@ class MemoryRepository:
         ).fetchall()
         return [self._record(row) for row in rows]
 
-    def topic_rows(self, topic: str, *, scope: str = "", now: float | None = None):
-        """Recallable rows of one topic in stable id order; `untagged` means no tags."""
-        now = time.time() if now is None else now
-        if topic == "untagged":
-            rows = [row for row in self.recall_rows(now=now, filters={"scope": scope}) if not row["meta"]["tags"]]
-        else:
-            rows = self.recall_rows(now=now, filters={"scope": scope, "tags_any": [topic]})
-        return sorted(rows, key=lambda row: int(row["id"]))
-
     def search_rows(self, *, activation=None, include_scoped=False, filters=None):
         clause, params = self._filter_sql(filters)
         if include_scoped and (filters is None or "scope" not in filters):

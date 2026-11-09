@@ -16,10 +16,10 @@ class MemoryAccessStore:
         )]
         stats = self.memory_access_stats(ids, now=now)
         calls = {name: {"total": 0, "recent_30_days": 0}
-                 for name in ("memory_search", "memory_browse", "memory_read", "recall")}
+                 for name in ("memory_search", "recall")}
         for row in self._db.execute(
             """SELECT tool_name,COUNT(*) AS count,SUM(started_at>=?) AS recent
-               FROM tool_audit WHERE tool_name IN ('memory_search','memory_browse','memory_read','recall')
+               FROM tool_audit WHERE tool_name IN ('memory_search','recall')
                GROUP BY tool_name""", (now - 30 * DAY,),
         ):
             calls[row["tool_name"]] = {"total": row["count"], "recent_30_days": row["recent"]}
