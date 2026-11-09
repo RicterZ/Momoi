@@ -24,7 +24,6 @@ from .protocol import (
     handle_no_tool_response,
 )
 from .tool_batch import ToolBatchRequest, ToolBatchState
-from ..tool_contracts.conversation import end_turn_tool_spec, end_turn_correction
 from ..tool_contracts.context import recall_correction
 from ...storage.memory.current_state_contract import CURRENT_STATE_TRIGGER_STAGES
 from ..turn_support import (
@@ -108,7 +107,7 @@ class AgentLoop:
             circuit_reason = reason
             if stage == "owner" and (external_tool_used or self.store.turn_has_external_effect(turn_id)):
                 self.store.open_reconciliation(turn_id, "protocol_circuit_open")
-            permitted_tools = frozenset({"reply", "end_turn"})
+            permitted_tools = frozenset({"reply"})
             # The task has stopped. Its opening and business requirements must not
             # block the final notification, nor may recovery reopen task tools.
             harness = TurnHarness(
@@ -203,7 +202,7 @@ class AgentLoop:
                 required_tool = None
             # Keep the provider-facing tool surface stable across stages and rounds.
             # Stage-specific rules are enforced by the harness after the response.
-            request_tools = [tool for tool in tools if tool["name"] != "end_turn"]
+            request_tools = list(tools)
             llm_round += 1
             new_inputs = [event.event_id for event in current_events
                           if event.event_id not in observed_input_ids]
@@ -346,7 +345,7 @@ class AgentLoop:
                     if workflow.is_complete():
                         return workflow.completion_result() or {"ok": True}
                 completion_correction = None
-                if workflow is None and harness.spec.terminal_tool == "end_turn":
+                if workflow is None and harness.spec.auto_complete:
                     error = harness.completion_error()
                     missing_images = self.store.missing_image_summaries(current_events)
                     if error or missing_images:
@@ -360,6 +359,15 @@ class AgentLoop:
                             "content": assistant_history_message(response.content)["content"],
                             "results": [],
                         }, trust="runtime")
+                        if stage == "owner" and not circuit_reason:
+                            updates = await self._wait_owner_continuation(current_events, delivery_channel)
+                            if updates:
+                                messages.append(assistant_history_message(response.content, response.continuation))
+                                source_event_id = self._absorb_owner_updates(
+                                    updates, messages, delivery_channel, harness, draft
+                                )
+                                protocol_failures = thought_rounds = execution_failures = 0
+                                continue
                         if stage in CURRENT_STATE_TRIGGER_STAGES and not circuit_reason:
                             self.store.stage_current_state_task(
                                 turn_id, stage, model_round.request_system, model_round.request_tools,
@@ -448,21 +456,11 @@ class AgentLoop:
                 )
                 correction = []
                 # Stage-specific guidance belongs only in appended error results.
-                end_schema = (
-                    end_turn_tool_spec(stage)["input_schema"]
-                    if workflow is None and harness.spec.terminal_tool == "end_turn"
-                    else None
-                )
                 for call in response.tool_calls:
                     detail = {}
                     if harness_error == "recall_required_once_in_opening_batch":
                         detail = recall_correction(
                             "开场批次必须包含且只包含一个 recall；可以同时调用独立工具。"
-                        )
-                    elif call.name == "end_turn" and end_schema is not None:
-                        detail = end_turn_correction(
-                            harness_error, end_schema,
-                            call.arguments if isinstance(call.arguments, dict) else {},
                         )
                     correction.append(tool_result_block(call.id, {
                         "ok": False, "error": harness_error, **detail,
@@ -517,8 +515,7 @@ class AgentLoop:
                     context_messages=model_round.request_messages,
                     response=response,
                     messages=messages,
-                    request_tools=([*request_tools, end_turn_tool_spec(stage)]
-                                   if harness.spec.terminal_tool == "end_turn" else request_tools),
+                    request_tools=request_tools,
                     tools=tools,
                     enable_tool_groups=enable_tool_groups,
                     current_events=current_events,
@@ -560,22 +557,6 @@ class AgentLoop:
                 continue
             if resume_input is not None and self.background_pause_requested():
                 continue
-            if batch.ended:
-                if stage == "owner" and not circuit_reason:
-                    updates = await self._wait_owner_continuation(current_events, delivery_channel)
-                    if updates:
-                        source_event_id = self._absorb_owner_updates(
-                            updates, messages, delivery_channel, harness, draft
-                        )
-                        protocol_failures = thought_rounds = execution_failures = 0
-                        continue
-                if stage in CURRENT_STATE_TRIGGER_STAGES and not circuit_reason:
-                    self.store.stage_current_state_task(
-                        turn_id, stage, model_round.request_system,
-                        model_round.request_tools,
-                    )
-                reply = batch.reply
-                return AgentReply([]) if circuit_reason else reply
             if workflow is not None and workflow.is_complete():
                 return workflow.completion_result() or {"ok": True}
             if any(not block["is_error"] for block in results):

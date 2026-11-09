@@ -671,7 +671,6 @@ def test_explicit_cancellation_requeues_review(daemon):
 def test_private_harness_rejects_messaging_and_combined_finish():
     harness = TurnHarness.for_stage("memory_operation")
     assert harness.validate([ToolCall("1", "send_bubbles", {})]) == "tool_not_allowed"
-    assert harness.validate([ToolCall("1", "end_turn", {})]) == "tool_not_allowed"
     assert (
         harness.validate(
             [
@@ -836,13 +835,7 @@ def test_owner_recall_snapshot_reaches_private_queue(daemon):
                     },
                 )
             )
-        return response(
-            ToolCall(
-                "end",
-                "end_turn",
-                {},
-            )
-        )
+        return ProviderResponse([], [])
 
     daemon.provider = SimpleNamespace(
         complete=complete, config=SimpleNamespace(api_format="anthropic")
@@ -1076,7 +1069,7 @@ def test_owner_tool_loop_routes_temporary_state_immediately(daemon):
     source = event(daemon.store, text="按示例回应，保持24个小时")
     seed_temporary_state(daemon.store)
     daemon.store.begin_turn("state-turn", "owner", [source.event_id])
-    calls = [response(ToolCall("recall", "recall", {"semantic": ["用户的日常习惯"]})), response(state_call()), response(ToolCall("end", "end_turn", {}))]
+    calls = [response(ToolCall("recall", "recall", {"semantic": ["用户的日常习惯"]})), response(state_call()), ProviderResponse([], [])]
 
     async def complete(*args, **kwargs):
         if len(calls) == 1:

@@ -1,6 +1,5 @@
 from momoi.tools.validation import validate_tool_arguments
 from momoi.tools.contracts.agenda import GOAL_REVIEW_SCHEMA
-from momoi.runtime.tool_contracts.conversation import end_turn_tool_spec
 
 
 def test_nested_paths_and_array_items():
@@ -53,23 +52,3 @@ def test_validation_preserves_omission_null_and_open_maps():
     }
     args = {"payload": None, "extension": {"nested": 1}}
     assert validate_tool_arguments("test", args, schema) == (args, None)
-
-
-def test_stage_specific_end_turn():
-    assert (
-        validate_tool_arguments(
-            "end_turn", {}, end_turn_tool_spec("goal")["input_schema"]
-        )[1]
-        is None
-    )
-    assert validate_tool_arguments(
-        "end_turn", {}, end_turn_tool_spec("owner")["input_schema"]
-    )[1] is None
-    assert validate_tool_arguments(
-        "end_turn",
-        {
-            "mood": {"decision": "unchanged", "state": "happy"},
-
-        },
-        end_turn_tool_spec("owner")["input_schema"],
-    )[1]

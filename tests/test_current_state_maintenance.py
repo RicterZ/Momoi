@@ -156,7 +156,7 @@ def stage(store, source="source", kind="owner", *, commit=True):
 
 
 @pytest.mark.parametrize("kind", sorted(CURRENT_STATE_TRIGGER_STAGES))
-def test_allowed_end_turn_captures_tool_surface_and_waits_for_commit(daemon, kind):
+def test_completion_captures_tool_surface_and_waits_for_commit(daemon, kind):
     source = "source"
     daemon.store.begin_turn(source, kind, [])
     calls = []
@@ -193,12 +193,10 @@ def test_allowed_end_turn_captures_tool_surface_and_waits_for_commit(daemon, kin
                 ),
             ]
         )
-    end = {}
     if kind == "goal":
-        end = {}
         calls.append(response(ToolCall("review", "goal_review", {"status": "done", "result": "done"})))
         daemon.agenda_tools.finish_review = lambda *args: {"ok": True}
-    calls.append(response(ToolCall("end", "end_turn", end)))
+    calls.append(ProviderResponse([], []))
     systems = []
     surfaces = []
     request_chains = []

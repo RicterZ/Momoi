@@ -510,7 +510,7 @@ class OwnerWorkflow:
             delivery_channel=channel,
         )
         if reply is None:
-            raise RuntimeError("Owner Turn ended without end_turn")
+            raise RuntimeError("Owner Turn ended without completing")
 
         owner_content = self._render_batch(batch)
         self.store.commit_turn(

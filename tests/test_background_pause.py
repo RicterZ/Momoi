@@ -32,7 +32,6 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
     resumed = False
     begin_done = False
     draft = TurnDraft()
-    end = ToolCall('end', 'end_turn', {})
 
     async def read(call):
         calls.append(call.id)
@@ -88,7 +87,7 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
                 'activity': 'reading', 'result': '无需提醒，已收尾', 'next_check_minutes': 30, 'reason': 'owner done'})])
         if stage == 'goal' and not draft.goals:
             return response([ToolCall('review', 'goal_review', {'status': 'done', 'result': 'owner handled'})])
-        return response([end])
+        return ProviderResponse([], [])
 
     async def run():
         daemon.provider = with_owner_recall(SimpleNamespace(complete=complete))

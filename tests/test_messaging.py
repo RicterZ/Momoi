@@ -39,7 +39,6 @@ from momoi.models import (
 )
 from momoi.runtime.parsing import (
     parse_bubbles,
-    parse_response,
 )
 from momoi.storage import Store
 from tests.support import with_owner_recall
@@ -502,31 +501,7 @@ class MessagingTest(unittest.TestCase):
             self.assertEqual(restored.channel, "onebot")
             store.close()
 
-    def test_validates_terminal_response_tool(self) -> None:
-        reply, error = parse_response({})
-        self.assertIsNone(error)
-        self.assertEqual(reply.messages, [])
-        with_bubbles, error = parse_response(
-            {
-                "bubbles": ["旧协议气泡"],
-
-            }
-        )
-        self.assertIsNone(with_bubbles)
-        self.assertEqual(error, "bubbles_not_allowed_in_end_turn")
-        old_shape, error = parse_response(
-            {
-                "expects_reply": False,
-                "reply_expectation": "",
-            }
-        )
-        self.assertIsNone(old_shape)
-        self.assertEqual(error, "unexpected_end_turn_fields")
-        heartbeat, error = parse_response({
-            "heartbeat": {"next_check_minutes": 10, "reason": "later"},
-        })
-        self.assertIsNone(heartbeat)
-        self.assertEqual(error, "unexpected_end_turn_fields")
+    def test_validates_bubbles(self) -> None:
         empty_bubbles, error = parse_bubbles({"bubbles": []})
         self.assertIsNone(empty_bubbles)
         self.assertEqual(error, "bubbles_must_be_a_non_empty_array")
@@ -540,11 +515,6 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(error)
         self.assertEqual(single_line_break, ["第一行。\n第二行。"])
-        invalid, error = parse_response(
-            {}
-        )
-        self.assertIsNotNone(invalid)
-        self.assertIsNone(error)
         rich, error = parse_bubbles(
             {
                 "bubbles": [
@@ -708,11 +678,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 ])
                     else:
                         self.warning = json.dumps(messages[-1], ensure_ascii=False)
-                        call = ToolCall(
-                            "close-after-warning",
-                            "end_turn",
-                            {},
-                        )
+                        return ProviderResponse([], [])
                     return ProviderResponse([], [call])
 
             provider = Provider()
@@ -792,16 +758,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     **___: object,
                 ) -> ProviderResponse:
                     self.messages = messages
-                    return ProviderResponse(
-                        [],
-                        [
-                            ToolCall(
-                                "finish",
-                                "end_turn",
-                                {},
-                            )
-                        ],
-                    )
+                    return ProviderResponse([], [])
 
             provider = Provider()
             daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
@@ -906,12 +863,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     **___: object,
                 ) -> ProviderResponse:
                     case.assertNotIn("end_turn", {tool["name"] for tool in tools})
-                    call = ToolCall(
-                        "silent-close",
-                        "end_turn",
-                        {},
-                    )
-                    return ProviderResponse([], [call])
+                    return ProviderResponse([], [])
 
             provider = Provider()
             daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
@@ -966,16 +918,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 reply_call("live-question", bubbles=["老师会选哪一个？"])
                             ],
                         )
-                    return ProviderResponse(
-                        [],
-                        [
-                            ToolCall(
-                                "close-after-question",
-                                "end_turn",
-                                {},
-                            )
-                        ],
-                    )
+                    return ProviderResponse([], [])
 
             daemon.provider = with_owner_recall(Provider())  # type: ignore[assignment]
             event = IncomingMessage(
@@ -1084,22 +1027,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     self.system = system
                     self.messages = messages
-                    call = ToolCall(
-                        "image-response",
-                        "end_turn",
-                        {},
-                    )
-                    return ProviderResponse(
-                        [
-                            {
-                                "type": "tool_use",
-                                "id": call.id,
-                                "name": call.name,
-                                "input": call.arguments,
-                            }
-                        ],
-                        [call],
-                    )
+                    return ProviderResponse([], [])
 
             provider = Provider()
             daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
@@ -1181,12 +1109,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             json.loads(messages[-1]["content"][0]["content"])["bubbles"],
                             ["太好了", "emotion://happy-1", "这次我可厉害了", "emotion://proud-1"],
                         )
-                        call = ToolCall(
-                            "emotion-close",
-                            "end_turn",
-                            {},
-                        )
-                        return ProviderResponse([], [call])
+                        return ProviderResponse([], [])
                     call = reply_call("emotion-response", bubbles=[
                                 "太好了",
                                 "emotion://happy-1",
@@ -1289,8 +1212,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         tool_name = "reply"
                         arguments = reply_call("script", bubbles=[value]).arguments
                     else:
-                        tool_name = "end_turn"
-                        arguments = {}
+                        return ProviderResponse([], [])
                     call = ToolCall(
                         f"emotion-{self.calls}",
                         tool_name,
@@ -1517,16 +1439,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 reply_call(f"progress-{self.calls}", **arguments)
                             ],
                         )
-                    return ProviderResponse(
-                        [],
-                        [
-                            ToolCall(
-                                f"end_turn-{self.calls}",
-                                "end_turn",
-                                {},
-                            )
-                        ],
-                    )
+                    return ProviderResponse([], [])
 
             daemon.provider = with_owner_recall(Provider())  # type: ignore[assignment]
             now = time.time()

@@ -56,18 +56,17 @@ def activity(**overrides):
 def test_heartbeat_requires_successful_activity_and_reset_clears_gate():
     harness = TurnHarness.for_stage("heartbeat")
     with pytest.raises(ValueError, match="heartbeat_activity"):
-        harness.validate_surface({"heartbeat_begin", "end_turn"})
+        harness.validate_surface({"heartbeat_begin"})
     assert harness.validate([activity()]) == "heartbeat_begin_must_be_first_and_alone"
     harness.accept("heartbeat_begin")
-    end = ToolCall("end", "end_turn", {})
     harness.observe_calls([activity()])
-    assert harness.validate([end]) == "heartbeat_activity_required_before_end_turn"
-    assert harness.validate([activity(), end]) is None
+    assert harness.completion_error() == "heartbeat_activity_required"
+    assert harness.validate([activity()]) is None
     harness.accept("heartbeat_activity")
-    assert harness.validate([end]) is None
+    assert harness.completion_error() is None
     harness.reset()
     harness.accept("heartbeat_begin")
-    assert harness.validate([end]) == "heartbeat_activity_required_before_end_turn"
+    assert harness.completion_error() == "heartbeat_activity_required"
 
 
 def test_heartbeat_schedule_respects_configured_limits_without_mutating_on_error():
@@ -119,27 +118,21 @@ def test_real_heartbeat_retries_gate_and_commits_only_on_completion(daemon, canc
             "strategy": [],
         },
     )
-    end = ToolCall(
-        "end",
-        "end_turn",
-        {},
-    )
     invalid = activity(activity="")
-    calls = [begin, invalid, end, activity(), end]
+    calls = [begin, invalid, None, activity(), None]
 
     async def complete(_system, messages, tools, **_kwargs):
         assert calls, "unexpected retry"
         if len(calls) == 2:
-            assert "heartbeat_activity_required_before_end_turn" in str(messages[-1])
+            assert "heartbeat_activity_required" in str(messages[-1])
         if len(calls) == 1:
             assert daemon.store.self_state()["activity"] == before["activity"]
             if cancel:
                 raise asyncio.CancelledError
         call = calls.pop(0)
-        from momoi.runtime.tool_contracts.conversation import end_turn_tool_spec
-        schema = (end_turn_tool_spec("heartbeat")["input_schema"] if call.name == "end_turn" else next(
-            spec["input_schema"] for spec in tools if spec["name"] == call.name
-        ))
+        if call is None:
+            return ProviderResponse([], [])
+        schema = next(spec["input_schema"] for spec in tools if spec["name"] == call.name)
         assert Draft202012Validator(schema).is_valid(call.arguments) == (
             call is not invalid
         )

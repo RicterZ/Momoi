@@ -65,7 +65,7 @@ task. `<recent_events>` lists the historical event IDs in that transcript. No
 automatic memory or Episode pre-retrieval runs for Webhook Turns.
 
 The step may use HTTP to fetch data required by the event prompt. It may send
-new information or finish silently through `end_turn`; storing an event does not
+new information or finish silently by stopping tool calls; storing an event does not
 imply that a message was delivered. It cannot call arbitrary MCP or file tools.
 
 ## Add a fixed command step

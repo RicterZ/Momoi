@@ -262,25 +262,24 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         calls.append(ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "rest"}))
                         calls.append(ToolCall("recall", "recall", {"semantic": ["Prior discussion of this message"]}))
                     calls.append(reply_call("voice", text=self.text, mode="voice"))
-                    end = {}
                     if stage == "goal":
                         calls.append(ToolCall("review", "goal_review", {"status": "done", "result": "voice delivered"}))
-                        end = {}
-                    calls.append(ToolCall("end", "end_turn", end))
+                    calls.append(None)
 
                     async def complete(_system, _messages, tools, **kwargs):
                         self.assertIn("reply", {tool["name"] for tool in tools})
                         self.assertNotIn("send_voice", {tool["name"] for tool in tools})
                         self.assertTrue(calls, "unexpected protocol retry")
                         call = calls.pop(0)
-                        if call.name == "end_turn":
+                        if call is None:
                             sent = json.loads(_messages[-1]["content"][0]["content"])
                             self.assertNotIn("error", sent)
                             self.assertEqual(sent.get("state"), "staged" if stage == "goal" else None)
                             self.assertEqual(daemon.store.due_outbox()[0].kind, "voice")
                             self.assertTrue(daemon.outbox_changed.is_set())
+                            return ProviderResponse([], [])
                         return ProviderResponse([
-                            {"type": "text", "text": "" if call.name == "end_turn" else "Assistant commentary must not be delivered."},
+                            {"type": "text", "text": "Assistant commentary must not be delivered."},
                             {"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments},
                         ], [call])
 
@@ -322,17 +321,14 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
             async def complete(_system, messages, request_tools, **kwargs):
                 nonlocal rounds
                 rounds += 1
-                self.assertEqual(
-                    [tool for tool in request_tools if tool["name"] != "end_turn"],
-                    [tool for tool in tools if tool["name"] != "end_turn"],
-                )
+                self.assertEqual(request_tools, tools)
                 self.assertNotIn("end_turn", {tool["name"] for tool in request_tools})
                 if rounds == 1:
                     call = reply_call("voice", text=self.text, mode="voice")
                 else:
                     self.assertEqual(rounds, 2)
                     self.assertIn("voice_not_supported", str(messages[-1]))
-                    call = ToolCall("end", "end_turn", {})
+                    return ProviderResponse([], [])
                 return ProviderResponse([{
                     "type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments,
                 }], [call])
@@ -391,7 +387,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         else:
                             self.assertEqual(rounds, 4 if stage == "goal" else 3)
                             end = ({})
-                            call = ToolCall("end", "end_turn", end)
+                            return ProviderResponse([], [])
                         return ProviderResponse([{
                             "type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments,
                         }], [call])

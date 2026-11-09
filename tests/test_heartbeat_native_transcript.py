@@ -45,7 +45,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     "activity": "read news", "result": "Shared one update",
                     "next_check_minutes": 30, "reason": "Enough for now",
                 }),
-                ToolCall("finish", "end_turn", {}),
+                None,
             ]
             recall_count = 0
 
@@ -73,6 +73,8 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     if self.calls == 4:
                         case.assertIn("heartbeat_recall_required_before_send", str(messages[-1]))
                     self.calls += 1
+                    if call is None:
+                        return ProviderResponse([], [])
                     return ProviderResponse(
                         [{"type": "tool_use", "id": call.id, "name": call.name,
                           "input": call.arguments}], [call],
@@ -91,61 +93,56 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             ).fetchone()[0], 1)
 
     async def test_rest_retries_undelivered_text_then_finishes_silently(self) -> None:
-        for with_terminal in (False, True):
-            with self.subTest(with_terminal=with_terminal), tempfile.TemporaryDirectory() as directory:
-                daemon = MomoiDaemon(AppConfig(
-                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                    system_prompt="test",
-                    transcript_turns_min=4,
-                    transcript_turns_max=4,
-                    episode_unsummarized_tail_turns=2,
-                    memory_results=2,
-                    database=Path(directory) / "momoi.sqlite3",
-                    log_level="INFO",
-                ))
-                install_scripted_replyer(daemon)
-                self.addCleanup(daemon.store.close)
-                case = self
-                begin = ToolCall("begin", "heartbeat_begin", {
-                    "activity": "resting", "mode": "rest", "strategy": [],
-                })
-                finish = ToolCall("finish", "end_turn", {})
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(AppConfig(
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                system_prompt="test",
+                transcript_turns_min=4,
+                transcript_turns_max=4,
+                episode_unsummarized_tail_turns=2,
+                memory_results=2,
+                database=Path(directory) / "momoi.sqlite3",
+                log_level="INFO",
+            ))
+            install_scripted_replyer(daemon)
+            self.addCleanup(daemon.store.close)
+            case = self
+            begin = ToolCall("begin", "heartbeat_begin", {
+                "activity": "resting", "mode": "rest", "strategy": [],
+            })
 
-                class Provider:
-                    calls = 0
+            class Provider:
+                calls = 0
 
-                    async def complete(self, _system, messages, _tools, **_kwargs):
-                        self.calls += 1
-                        call = begin if self.calls == 1 else finish
-                        if self.calls == 3:
-                            call = ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "No activity was needed."})
-                        content = [{"type": "tool_use", "id": call.id,
-                                    "name": call.name, "input": call.arguments}]
-                        if self.calls == 2:
-                            text = {"type": "text", "text": "I will rest and end this turn."}
-                            return ProviderResponse(
-                                [text, *content] if with_terminal else [text],
-                                [call] if with_terminal else [],
-                            )
-                        if self.calls == 3:
-                            correction = str(messages[-1]["content"])
-                            if with_terminal:
-                                case.assertIn("heartbeat_activity_required_before_end_turn", correction)
-                            else:
-                                case.assertNotIn("send_bubbles", correction)
-                        case.assertLessEqual(self.calls, 4)
-                        return ProviderResponse(content, [call])
+                async def complete(self, _system, messages, _tools, **_kwargs):
+                    self.calls += 1
+                    if self.calls == 4:
+                        return ProviderResponse([], [])
+                    call = begin
+                    if self.calls == 3:
+                        call = ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "No activity was needed."})
+                    content = [{"type": "tool_use", "id": call.id,
+                                "name": call.name, "input": call.arguments}]
+                    if self.calls == 2:
+                        text = {"type": "text", "text": "I will rest and end this turn."}
+                        return ProviderResponse([text], [])
+                    if self.calls == 3:
+                        correction = str(messages[-1]["content"])
+                        case.assertIn("heartbeat_activity_required", correction)
+                        case.assertNotIn("send_bubbles", correction)
+                    case.assertLessEqual(self.calls, 4)
+                    return ProviderResponse(content, [call])
 
-                provider = Provider()
-                daemon.provider = provider
-                turn_id = daemon._turn_id("heartbeat-text-recovery")
-                daemon.store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
-                await daemon._complete_heartbeat(turn_id, owner_event_revision=0)
-                self.assertEqual(provider.calls, 4)
-                self.assertEqual(daemon.store._db.execute(
-                    "SELECT COUNT(*) FROM outbox WHERE turn_id=?", (turn_id,),
-                ).fetchone()[0], 0)
+            provider = Provider()
+            daemon.provider = provider
+            turn_id = daemon._turn_id("heartbeat-text-recovery")
+            daemon.store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
+            await daemon._complete_heartbeat(turn_id, owner_event_revision=0)
+            self.assertEqual(provider.calls, 4)
+            self.assertEqual(daemon.store._db.execute(
+                "SELECT COUNT(*) FROM outbox WHERE turn_id=?", (turn_id,),
+            ).fetchone()[0], 0)
 
     async def test_execution_reads_shared_conversation_as_native_messages(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -226,11 +223,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     elif self.calls == 2:
                         call = ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "No activity was needed."})
                     else:
-                        call = ToolCall(
-                            "finish",
-                            "end_turn",
-                            {},
-                        )
+                        return ProviderResponse([], [])
                     return ProviderResponse(
                         [
                             {
@@ -398,11 +391,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                         case.assertIn("dynamic heartbeat tool works", str(messages[-1]))
                         call = ToolCall("activity", "heartbeat_activity", {"activity": "inspect demo state", "result": "planning complete", "next_check_minutes": 30, "reason": "test"})
                     else:
-                        call = ToolCall(
-                            "finish",
-                            "end_turn",
-                            {},
-                        )
+                        return ProviderResponse([], [])
                     return ProviderResponse(
                         [
                             {

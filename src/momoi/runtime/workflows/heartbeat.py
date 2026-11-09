@@ -167,7 +167,7 @@ class HeartbeatWorkflow:
             delivery_channel=delivery_channel,
         )
         if not isinstance(reply, AgentReply):
-            raise RuntimeError("Heartbeat Turn ended without end_turn")
+            raise RuntimeError("Heartbeat Turn ended without completing")
         if draft.heartbeat_activity is None:
             raise RuntimeError("Heartbeat Turn ended without heartbeat_activity")
         decision = {

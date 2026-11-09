@@ -28,6 +28,8 @@ def future():
 
 
 def response(call):
+    if call is None:
+        return ProviderResponse([], [])
     return ProviderResponse(
         [
             {
@@ -120,29 +122,18 @@ class GoalBoundaryTest(unittest.TestCase):
 
     def test_goal_review_permission_and_completion_gate(self):
         review = ToolCall("review", "goal_review", {"status": "done", "result": "done"})
-        end = ToolCall("end", "end_turn", {})
         for stage in ("owner", "heartbeat", "webhook"):
             harness = TurnHarness.for_stage(
                 stage, permitted_tool_names=frozenset({"goal_review"})
             )
             self.assertEqual(harness.validate([review]), "tool_not_allowed")
         harness = TurnHarness.for_stage("goal")
-        self.assertEqual(
-            harness.validate([end]), "goal_review_required_before_end_turn"
-        )
+        self.assertEqual(harness.completion_error(), "goal_review_required")
         self.assertIsNone(harness.validate([review]))
-        self.assertIsNone(harness.validate([review, end]))
         harness.accept("goal_review")
-        self.assertIsNone(harness.validate([end]))
-        for args in ({"goal": {}}, {"mood": {}}, {"reply_wait": {"wait": False}}):
-            self.assertEqual(
-                harness.validate([ToolCall("bad", "end_turn", args)]),
-                "goal_end_turn_requires_empty_arguments",
-            )
+        self.assertIsNone(harness.completion_error())
         harness.reset()
-        self.assertEqual(
-            harness.validate([end]), "goal_review_required_before_end_turn"
-        )
+        self.assertEqual(harness.completion_error(), "goal_review_required")
 
 
 class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
@@ -205,7 +196,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
         )
         return remaining, seen
 
-    async def test_review_and_end_share_batch_but_failed_review_cannot_commit(self):
+    async def test_failed_review_cannot_commit_until_corrected(self):
         rounds = 0
 
         async def complete(system, messages, tools, **kwargs):
@@ -215,10 +206,11 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                 results = [json.loads(block["content"]) for block in messages[-1]["content"]]
                 self.assertTrue(all(not result["ok"] for result in results))
                 self.assertEqual(self.daemon.store.goal(self.goal_id)["status"], "active")
-            self.assertLessEqual(rounds, 2)
+            self.assertLessEqual(rounds, 3)
+            if rounds == 3:
+                return ProviderResponse([], [])
             calls = [
                 ToolCall(f"review-{rounds}", "goal_review", {"status": "done", "result": "" if rounds == 1 else "verified"}),
-                ToolCall(f"end-{rounds}", "end_turn", {}),
             ]
             return ProviderResponse([
                 {"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}
@@ -227,7 +219,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
 
         self.daemon.provider = SimpleNamespace(complete=complete)
         await self.daemon._complete_goal_turn(self.goal_id, asyncio.Event())
-        self.assertEqual(rounds, 2)
+        self.assertEqual(rounds, 3)
         self.assertEqual(self.daemon.store.goal(self.goal_id)["status"], "done")
 
     async def test_all_outcomes_stage_then_commit_goal_turn(self):
@@ -272,7 +264,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                 remaining, seen = self.provider(
                     [
                         ToolCall("end", "goal_review", outcome),
-                        ToolCall("commit", "end_turn", {}),
+                        None,
                     ],
                     inspect=inspect,
                 )
@@ -317,7 +309,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                         "result": "Checked: no notification needed",
                     },
                 ),
-                ToolCall("commit", "end_turn", {}),
+                None,
             ]
         )
         await self.daemon._complete_goal_turn(self.goal_id, asyncio.Event())
@@ -359,7 +351,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                         "result": "Second review complete",
                     },
                 ),
-                ToolCall("commit", "end_turn", {}),
+                None,
             ],
             inspect=inspect,
         )
@@ -411,7 +403,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                         "result": "Complete",
                     },
                 ),
-                ToolCall("commit", "end_turn", {}),
+                None,
             ],
             inspect=inspect,
         )
@@ -430,7 +422,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                         "next_action": "Check again",
                     },
                 ),
-                ToolCall("commit", "end_turn", {}),
+                None,
             ]
         )
         await self.daemon._complete_goal_turn(goal_id, asyncio.Event())
@@ -484,7 +476,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                 ToolCall(
                     "end", "goal_review", {"status": "done", "result": "File validated"}
                 ),
-                ToolCall("commit", "end_turn", {}),
+                None,
             ],
             inspect,
         )
@@ -533,7 +525,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                     )
                     if cancelled:
                         raise asyncio.CancelledError
-                    raise RuntimeError("provider unavailable before end_turn")
+                    raise RuntimeError("provider unavailable before completion")
 
             self.provider(
                 [
@@ -586,26 +578,20 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(draft.goals, {})
                 self.assertEqual(self.daemon.store.goal(self.goal_id), original)
 
-    async def test_webhook_cannot_update_goal_through_end_turn(self):
+    async def test_webhook_cannot_update_goal_through_goal_review(self):
         original = copy.deepcopy(self.daemon.store.goal(self.goal_id))
         self.daemon.agenda_tools.finish_review = AsyncMock(
             side_effect=AssertionError("must not execute")
         )
-        ordinary = {}
-
         def inspect(index, messages):
             if index == 1:
-                self.assertIn("invalid_tool_arguments", str(messages[-1]))
+                self.assertIn("tool_not_allowed", str(messages[-1]))
                 self.assertEqual(self.daemon.store.goal(self.goal_id), original)
 
         remaining, seen = self.provider(
             [
-                ToolCall(
-                    "wrong",
-                    "end_turn",
-                    {**ordinary, "goal": {"status": "done", "result": "wrong"}},
-                ),
-                ToolCall("correct", "end_turn", ordinary),
+                ToolCall("wrong", "goal_review", {"status": "done", "result": "wrong"}),
+                None,
             ],
             inspect,
         )
@@ -743,8 +729,8 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             [{"type": "text", "text": "plain text is invalid"}], []
                         )
                     if self.calls == 2:
-                        call = ToolCall("premature-finish", "end_turn", {})
-                    elif self.calls == 3:
+                        return ProviderResponse([], [])
+                    if self.calls == 3:
                         call = ToolCall(
                             "finish",
                             "goal_review",
@@ -759,7 +745,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             },
                         )
                     else:
-                        call = ToolCall("commit", "end_turn", {})
+                        return ProviderResponse([], [])
                     return ProviderResponse(
                         [
                             {

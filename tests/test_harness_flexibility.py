@@ -10,10 +10,6 @@ from momoi.runtime.agent.protocol import MAX_CONSECUTIVE_EXECUTION_FAILURES
 from tests.test_memory_operations import event, response
 
 
-def end_call():
-    return ToolCall("end", "end_turn", {})
-
-
 @pytest.mark.parametrize("internal_text", ["继续核对当前判断", "<bubble>这是思考里的示例</bubble>"])
 def test_internal_thought_then_silent_completion_does_not_send(daemon, internal_text):
     source = event(daemon.store, text="先想一想，不用发消息")
@@ -28,9 +24,7 @@ def test_internal_thought_then_silent_completion_does_not_send(daemon, internal_
             return ProviderResponse([{"type": "text", "text": internal_text}], [])
         assert internal_text in str(messages)
         assert "熔断" not in str(messages)
-        result = response(end_call())
-        result.content.insert(0, {"type": "text", "text": "内部结论：不需要发送"})
-        return result
+        return ProviderResponse([{"type": "text", "text": "内部结论：不需要发送"}], [])
 
     daemon.provider = SimpleNamespace(complete=complete)
     asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), turn_id))
@@ -63,12 +57,8 @@ def test_execution_failures_have_separate_budget_and_bounded_recovery(daemon, fa
             return response(ToolCall(str(rounds), "read_file", {"path": f"missing-{rounds}"}))
         assert ("熔断" in str(messages)) == (failures == MAX_CONSECUTIVE_EXECUTION_FAILURES)
         if failures == MAX_CONSECUTIVE_EXECUTION_FAILURES:
-            calls = [reply_call("notice", bubbles=["查找没有成功，先停下。"]), end_call()]
-            return ProviderResponse([
-                {"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments}
-                for c in calls
-            ], calls)
-        return response(end_call())
+            return response(reply_call("notice", bubbles=["查找没有成功，先停下。"]))
+        return ProviderResponse([], [])
 
     daemon.builtin_tools.execute = execute
     daemon.provider = SimpleNamespace(complete=complete)
@@ -77,15 +67,7 @@ def test_execution_failures_have_separate_budget_and_bounded_recovery(daemon, fa
     assert rounds == failures + 1
 
 
-def test_end_allows_internal_text_but_keeps_read_result_boundary():
-    harness = TurnHarness.for_stage("owner")
-    assert harness.validate([end_call()]) is None
-    assert harness.validate([ToolCall("voice", "reply", {}), end_call()]) is None
-    assert harness.validate([ToolCall("read", "read_file", {}), end_call()]) == "end_turn_must_be_alone"
-    assert harness.validate([end_call(), ToolCall("send", "reply", {})]) == "end_turn_must_be_alone"
-
-
-def test_heartbeat_activity_and_end_commit_only_after_success(daemon):
+def test_heartbeat_completes_only_after_successful_activity(daemon):
     turn_id = "heartbeat-batched-finish"
     daemon.store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
     rounds = 0
@@ -97,21 +79,19 @@ def test_heartbeat_activity_and_end_commit_only_after_success(daemon):
             return response(ToolCall("begin", "heartbeat_begin", {
                 "activity": "rest", "mode": "rest", "strategy": [],
             }))
-        assert rounds <= 3
+        assert rounds <= 4
+        if rounds == 4:
+            return ProviderResponse([], [])
         if rounds == 3:
-            assert "end_turn_delivery_failed" in str(messages[-1])
-        calls = [ToolCall(f"activity-{rounds}", "heartbeat_activity", {
+            assert "'is_error': True" in str(messages[-1])
+        return response(ToolCall(f"activity-{rounds}", "heartbeat_activity", {
             "activity": "rest", "result": "", "next_check_minutes": 0 if rounds == 2 else 30,
             "reason": "No new activity",
-        }), end_call()]
-        return ProviderResponse([
-            {"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments}
-            for c in calls
-        ], calls)
+        }))
 
     daemon.provider = SimpleNamespace(complete=complete)
     asyncio.run(daemon._complete_heartbeat(turn_id, owner_event_revision=0))
-    assert rounds == 3
+    assert rounds == 4
     assert daemon.store._db.execute("SELECT state FROM turns WHERE id=?", (turn_id,)).fetchone()[0] == "completed"
 
 
@@ -149,11 +129,11 @@ def test_circuit_recovery_is_bounded_and_cannot_restart_task(daemon, recovery):
         if step == 1 and recovery == "blocked_tool":
             return response(ToolCall("forbidden", "write_file", {"path": "no", "content": "no"}))
         if step == 1 and recovery == "silent_end":
-            return response(ToolCall("silent-end", "end_turn", {}))
+            return ProviderResponse([], [])
         if recovery == "sent_then_error" or step == 2:
             notices.append("任务没做完，工具连续出错，我先停下了。")
             return response(reply_call("notice", bubbles=notices[-1:]))
-        return response(ToolCall("finish", "end_turn", {}))
+        return ProviderResponse([], [])
 
     daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format="anthropic"))
     asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), turn_id))

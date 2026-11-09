@@ -22,31 +22,30 @@ class ImageTurnsTest(unittest.IsolatedAsyncioTestCase):
     async def test_summary_is_private_and_second_turn_can_reread_original(self):
         requests = []
         image_id = ""
-        finish = {}
         recall = recall_response().tool_calls[0]
         actions = [
             (recall.name, recall.arguments),
-            (
-                "end_turn",
-                finish,
-            ),  # Missing summary must be corrected, not silently forgotten.
+            None,  # Missing summary must be corrected, not silently forgotten.
             ("save_image_summary", {"summary": "白色小图，主体细节不明确。"}),
             ("reply", {"intent": "回应图片", "reference": json.dumps(["我看到这张图了。"], ensure_ascii=False)}),
-            ("end_turn", finish),
+            None,
             (recall.name, recall.arguments),
             ("read_image", {}),
             (
                 "save_image_summary",
                 {"summary": "重新查看：白色小图，没有可辨认的文字。"},
             ),
-            ("end_turn", finish),
+            None,
         ]
 
         async def completion(request):
             payload = await request.json()
             index = len(requests)
             requests.append(payload)
-            name, args = actions[min(index, len(actions) - 1)]
+            action = actions[min(index, len(actions) - 1)]
+            if action is None:
+                return web.json_response({"choices": [{"message": {"role": "assistant", "content": "完成"}}]})
+            name, args = action
             args = dict(args)
             if name in {"read_image", "save_image_summary"}:
                 args["image_id"] = image_id
@@ -123,7 +122,7 @@ class ImageTurnsTest(unittest.IsolatedAsyncioTestCase):
                         [second], asyncio.Event(), daemon._turn_id(second.event_id)
                     )
                 self.assertEqual(len(requests), len(actions))
-                self.assertIn("image_summary_required", json.dumps(requests[2]))
+                self.assertIn("save_image_summary: [", json.dumps(requests[2], ensure_ascii=False))
                 history = json.dumps(requests[5], ensure_ascii=False)
                 self.assertIn("白色小图", history)
                 self.assertIn(image_id, history)

@@ -9,7 +9,6 @@ from ..channel import (
     split_exclusive_media,
 )
 from ..storage.delivery.emotions import EMOTION_PREFIX
-from ..models import AgentReply
 from ..memory.storage.records import MEMORY_KINDS
 
 
@@ -82,18 +81,6 @@ def parse_bubbles(
             else:
                 bubbles.append(message)
     return bubbles, None
-
-
-def parse_response(
-    arguments: dict[str, Any],
-) -> tuple[AgentReply | None, str | None]:
-    if "bubbles" in arguments:
-        return None, "bubbles_not_allowed_in_end_turn"
-    if "activity" in arguments:
-        return None, "activity_not_allowed_in_end_turn"
-    if arguments:
-        return None, "unexpected_end_turn_fields"
-    return AgentReply([]), None
 
 
 CONVERSATION_ACTIONS = {"close"}

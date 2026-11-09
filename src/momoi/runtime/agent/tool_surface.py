@@ -221,7 +221,6 @@ class ToolSurface:
             "episode_relations",
             "tool_search",
             "tool_enable",
-            "end_turn",
             *shared,
             *agenda,
             *memory,
@@ -240,7 +239,6 @@ class ToolSurface:
                     "recall",
                     "episode_relations",
                     "heartbeat_activity",
-                    "end_turn",
                     *shared,
                     *agenda,
                     *memory,
@@ -251,7 +249,7 @@ class ToolSurface:
             )
         if stage == "webhook":
             return frozenset({"reply", "web_fetch", "read_tool_result",
-                              "goal_create", "read_image", "end_turn", *({"exec"} & external)})
+                              "goal_create", "read_image", *({"exec"} & external)})
         if stage == "goal":
             return frozenset(
                 {
@@ -263,7 +261,6 @@ class ToolSurface:
                     "read_tool_result",
                     "tool_search",
                     "tool_enable",
-                    "end_turn",
                     *external,
                 }
             )

@@ -147,10 +147,12 @@ def test_recall_tool_counts_only_each_observations_hits(daemon):
         ToolCall("recall-1", "recall", {"keyword": ["first"]}),
         ToolCall("recall-2", "recall", {"keyword": ["second"]}),
         reply_call("reply", bubbles=["已找到记录"]),
-        ToolCall("end", "end_turn", {}),
+        None,
     ])
     async def complete(*args, **kwargs):
         call = next(calls)
+        if call is None:
+            return ProviderResponse([], [])
         return ProviderResponse([{"type": "tool_use", "id": call.id, "name": call.name,
                                   "input": call.arguments}], [call])
     draft = TurnDraft()
