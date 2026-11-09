@@ -173,7 +173,6 @@ class HeartbeatWorkflow:
         decision = {
             **draft.heartbeat_activity,
             "messages": reply.messages,
-            "mood_update": reply.mood_update,
         }
         if not contact_window["allowed"]:
             decision["messages"] = []
@@ -184,7 +183,6 @@ class HeartbeatWorkflow:
             activity=decision["activity"],
             result=decision["result"],
             next_heartbeat_at=time.time() + decision["next_check_minutes"] * 60,
-            mood_update=decision["mood_update"],
             messages=decision["messages"],
             reason=decision["reason"],
             draft=draft,

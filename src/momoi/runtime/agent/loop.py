@@ -137,7 +137,6 @@ class AgentLoop:
                     harness.completed_tools.discard("goal_review")
                 self.store.commit_goal_draft(draft)
                 draft.goals.clear()
-                draft.mood_update = None
                 draft.heartbeat_activity = None
                 if stage == "heartbeat":
                     harness.completed_tools.discard("heartbeat_activity")
@@ -367,7 +366,7 @@ class AgentLoop:
                             )
                         log_event(logger, logging.DEBUG, "turn_auto_completed",
                                   stage=stage, turn_id=turn_id, reason="no_tool_calls")
-                        return AgentReply([], mood_update=None if circuit_reason else draft.mood_update)
+                        return AgentReply([])
                 if stage in {"owner", "heartbeat", "webhook", "goal", "plan_step"}:
                     self.store.append_turn_journal(
                         turn_id,
@@ -576,8 +575,6 @@ class AgentLoop:
                         model_round.request_tools,
                     )
                 reply = batch.reply
-                if reply is not None and draft.mood_update is not None:
-                    reply = replace(reply, mood_update=draft.mood_update)
                 return AgentReply([]) if circuit_reason else reply
             if workflow is not None and workflow.is_complete():
                 return workflow.completion_result() or {"ok": True}

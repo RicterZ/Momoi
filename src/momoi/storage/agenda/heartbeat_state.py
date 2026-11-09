@@ -1,11 +1,5 @@
 import json
-import logging
 import time
-
-from ...observability.events import log_event
-from ...observability.values import safe_preview
-
-logger = logging.getLogger(__name__)
 
 
 class HeartbeatStateStore:
@@ -41,8 +35,7 @@ class HeartbeatStateStore:
                                       visibility="internal", trust="runtime", created_at=time.time())
         return result
 
-    def self_state_context(self, now: float | None = None, *, affinity_enabled: bool = False) -> str:
-        now = time.time() if now is None else now
+    def self_state_context(self, *, affinity_enabled: bool = False) -> str:
         state = self.self_state()
 
         def timestamp(value: object) -> str | None:
@@ -50,15 +43,6 @@ class HeartbeatStateStore:
 
         return json.dumps(
             {
-                "mood": {
-                    "state": state["mood_state"],
-                    "intensity": state["mood_intensity"],
-                    "cause": state["mood_cause"],
-                    "updated_at": timestamp(state["mood_updated_at"]),
-                    "age_minutes": max(
-                        0, int((now - float(state["mood_updated_at"])) / 60)
-                    ),
-                },
                 **({"affinity": state["affinity"]} if affinity_enabled else {}),
                 "activity": {
                     "text": state["activity"],
@@ -69,34 +53,4 @@ class HeartbeatStateStore:
             },
             ensure_ascii=False,
             separators=(",", ":"),
-        )
-
-    def _apply_mood_update(
-        self, update: dict[str, object] | None, now: float
-    ) -> None:
-        if update is None:
-            return
-        previous = self._db.execute(
-            "SELECT mood_state, mood_intensity FROM self_state WHERE id=1"
-        ).fetchone()
-        self._db.execute(
-            """UPDATE self_state
-               SET mood_state=?, mood_intensity=?, mood_cause=?,
-                   mood_updated_at=?, updated_at=? WHERE id=1""",
-            (
-                update["state"],
-                update["intensity"],
-                str(update["cause"])[:300],
-                now,
-                now,
-            ),
-        )
-        log_event(
-            logger,
-            logging.DEBUG,
-            "mood_changed",
-            previous_state=previous["mood_state"] if previous else "unknown",
-            state=update["state"],
-            intensity=round(float(update["intensity"]), 2),
-            cause=safe_preview(update["cause"], 300),
         )

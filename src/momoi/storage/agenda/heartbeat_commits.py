@@ -16,7 +16,6 @@ class HeartbeatCommitStore:
         activity: str,
         result: str,
         next_heartbeat_at: float,
-        mood_update: dict[str, object] | None,
         messages: list[ChannelMessage],
         reason: str,
         draft: TurnDraft | None = None,
@@ -81,7 +80,6 @@ class HeartbeatCommitStore:
                     ),
                 )
             self._commit_memory_access(turn_id, draft.memory_access if draft else [])
-            self._apply_mood_update(mood_update, now)
             self._apply_goal_mutations(draft, now)
             self._queue_memory_operations(turn_id, draft, memory_events or [], now)
             activity_since = (

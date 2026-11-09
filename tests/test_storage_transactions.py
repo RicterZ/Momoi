@@ -40,7 +40,7 @@ def test_turn_commit_rolls_back_messages_and_outbox_on_failure(tmp_path, monkeyp
         store.add_event(event)
         def fail(*args):
             raise RuntimeError("fail after message and outbox writes")
-        monkeypatch.setattr(store, "_apply_mood_update", fail)
+        monkeypatch.setattr(store, "_queue_memory_operations", fail)
         with pytest.raises(RuntimeError):
             store.commit_turn([event], "hello", AgentReply(["reply"]), turn_id="turn")
         for table in ("messages", "outbox", "turns"):

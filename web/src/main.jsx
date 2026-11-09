@@ -1,5 +1,5 @@
 import { hasModelApiKey } from "./setupGuide.js";
-import { Fragment, StrictMode, createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, StrictMode, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import "./trajectory.css";
@@ -184,88 +184,6 @@ function StampMeta({ items }) {
         </span>
       ))}
     </p>
-  );
-}
-
-const HEART_PIXELS = [
-  "..##.##..",
-  ".#++#++#.",
-  "#++*++++#",
-  "#+++++++#",
-  ".#+++++#.",
-  "..#+++#..",
-  "...#+#...",
-  "....#....",
-];
-
-function heartFills(intensity, count = 5) {
-  const total =
-    Math.round(Math.max(0, Math.min(1, Number(intensity) || 0)) * count * 2) / 2;
-  return Array.from({ length: count }, (_, index) =>
-    Math.max(0, Math.min(1, total - index)),
-  );
-}
-
-function PixelHeart({ fill, clipId }) {
-  const pixels = HEART_PIXELS.flatMap((row, y) =>
-    [...row].flatMap((cell, x) => (cell === "." ? [] : [{ x, y, cell }])),
-  );
-  const layer = (className, clip = false) => (
-    <g
-      className={className}
-      clipPath={clip && fill < 1 ? `url(#${clipId})` : undefined}
-    >
-      {pixels.map(({ x, y, cell }) => (
-        <rect
-          key={`${className}-${x}-${y}`}
-          x={x}
-          y={y}
-          width="1"
-          height="1"
-          className={
-            cell === "#" ? "is-ink" : cell === "*" ? "is-shine" : "is-fill"
-          }
-        />
-      ))}
-    </g>
-  );
-  return (
-    <svg
-      className="pixel-heart"
-      viewBox={`0 0 ${HEART_PIXELS[0].length} ${HEART_PIXELS.length}`}
-      shapeRendering="crispEdges"
-      aria-hidden="true"
-    >
-      {fill > 0 && fill < 1 && (
-        <defs>
-          <clipPath id={clipId}>
-            <rect
-              width={HEART_PIXELS[0].length * fill}
-              height={HEART_PIXELS.length}
-            />
-          </clipPath>
-        </defs>
-      )}
-      {layer("pixel-heart-empty")}
-      {fill > 0 && layer("pixel-heart-fill", true)}
-    </svg>
-  );
-}
-
-function MoodHearts({ intensity }) {
-  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
-  const fills = heartFills(intensity);
-  const level = fills.reduce((sum, value) => sum + value, 0);
-  return (
-    <div
-      className="mood-hearts"
-      role="img"
-      aria-label={`情绪强度 ${level} / 5`}
-    >
-      {fills.map((fill, index) => (
-        <PixelHeart key={index} fill={fill} clipId={`${uid}-${index}`} />
-      ))}
-    </div>
   );
 }
 
@@ -558,7 +476,7 @@ function OverviewBody({ data, token, routeParam }) {
           days={narrow ? 7 : 30}
         />
       </OverviewSection>
-      <OverviewSection label="Now" note="当前状态、活动与心情">
+      <OverviewSection label="Now" note="当前状态与活动">
         <CurrentStatePanel state={data.current_state} token={token} />
         <div className="overview-grid">
           <article className="panel">
@@ -569,21 +487,13 @@ function OverviewBody({ data, token, routeParam }) {
             </p>
             <StampMeta items={activityMetaItems(data.activity, data.heartbeat)} />
           </article>
-          <article className="panel">
-            <span className="panel-label">Mood</span>
-            <div className="mood-title">
-              <h2 className="state-name">{data.mood.state}</h2>
-              <MoodHearts intensity={data.mood.intensity} />
-            </div>
-            <p className="state-detail">{data.mood.cause}</p>
-            {data.affinity?.enabled && <div className="affinity-meter">
+          {data.affinity?.enabled && <article className="panel">
+            <span className="panel-label">Affinity</span>
+            <div className="affinity-meter">
               <div className="affinity-meter-label"><span>好感度</span><span>{data.affinity.value}<small> / 100</small></span></div>
               <div className="affinity-meter-track" role="progressbar" aria-label="好感度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.affinity.value}><span style={{width: `${data.affinity.value}%`}} /></div>
-            </div>}
-            <StampMeta
-              items={[{ label: "更新于", value: formatDate(data.mood.updated_at) }]}
-            />
-          </article>
+            </div>
+          </article>}
         </div>
       </OverviewSection>
       <OverviewSection label="Records" note="生活记录与待办概览">

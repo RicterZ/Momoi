@@ -1159,9 +1159,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "end_turn-corrected",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse(
                         [
@@ -1235,9 +1233,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "corrected-response",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse(
                         [
@@ -1283,9 +1279,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                         "function": {
                                             "name": "end_turn",
                                             "arguments": json.dumps(
-                                                {
-                                                    "mood": {"decision": "unchanged"},
-                                                },
+                                                {},
                                                 ensure_ascii=False,
                                             ),
                                         },
@@ -1368,7 +1362,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
-                                    "mood": {"type": "object"},
                                 },
                             },
                         }
@@ -1434,9 +1427,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.tool_calls[0].name, "end_turn")
         self.assertEqual(
             response.tool_calls[0].arguments,
-            {
-                "mood": {"decision": "unchanged"},
-            },
+            {},
         )
         payload, authorization = requests[0]
         self.assertEqual(authorization, "Bearer openai-test-key")

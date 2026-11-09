@@ -680,38 +680,6 @@ main.is-record .error {
   letter-spacing: -.02em;
   font-variant-numeric: tabular-nums;
 }
-.mood-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 20px 0 8px;
-}
-.mood-title .state-name {
-  margin: 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mood-hearts {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  flex: none;
-}
-.pixel-heart {
-  display: block;
-  width: 18px;
-  height: 16px;
-  image-rendering: pixelated;
-}
-.pixel-heart-empty .is-ink { fill: var(--ink); }
-.pixel-heart-empty .is-fill,
-.pixel-heart-empty .is-shine { fill: var(--wash); }
-.pixel-heart-fill .is-ink { fill: var(--ink); }
-.pixel-heart-fill .is-fill { fill: var(--pink); }
-.pixel-heart-fill .is-shine { fill: #fff; }
 .pixel-meter {
   display: flex;
   gap: 2px;

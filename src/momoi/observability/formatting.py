@@ -98,7 +98,6 @@ _EVENT_GROUPS = {
     "thinking_record_failed": "THINKING",
     "thinking_tool_failure": "THINKING",
     "dashboard_start": "SERVICE",
-    "mood_changed": "TURN",
     "notification_queued": "DELIVERY",
     "owner_updates_injected": "OWNER",
     "goal_deferred": "AGENDA",

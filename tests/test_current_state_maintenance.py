@@ -193,7 +193,7 @@ def test_allowed_end_turn_captures_tool_surface_and_waits_for_commit(daemon, kin
                 ),
             ]
         )
-    end = {"mood": {"decision": "unchanged"}, }
+    end = {}
     if kind == "goal":
         end = {}
         calls.append(response(ToolCall("review", "goal_review", {"status": "done", "result": "done"})))

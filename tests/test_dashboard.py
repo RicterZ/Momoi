@@ -341,7 +341,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview["usage"]["today"]["requests"], 0)
         self.assertEqual(overview["balance"]["source"], "unavailable")
         self.assertEqual(overview["balance"]["total_balance"], "0")
-        self.assertGreater(overview["mood"]["updated_at"], 0)
+        self.assertNotIn("mood", overview)
         health = await (await self.client.get("/api/health", headers=auth)).json()
         self.assertTrue(health["ok"])
         self.assertTrue(str(health["version"]).strip())

@@ -119,12 +119,6 @@ def heartbeat_self_state_lines(value: str = "{}", *, current_time: str = "") -> 
     if not isinstance(state, dict):
         state = {}
     lines: list[str] = [f"<time now={quoteattr(current_time)} />"] if current_time else []
-    mood = state.get("mood")
-    if isinstance(mood, dict):
-        attributes = _attributes({key: mood.get(key) for key in (
-            "state", "intensity", "age_minutes", "updated_at",
-        )})
-        lines.append(f"<mood{attributes}><cause>{escape(str(mood.get('cause') or ''))}</cause></mood>")
     if "affinity" in state:
         lines.append(f"<affinity>{escape(str(state["affinity"]))}/100</affinity>")
     if state.get("last_heartbeat_at"):

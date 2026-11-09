@@ -29,7 +29,7 @@ def test_progress_reminder_counts_calls_and_resets_on_successful_reply(tmp_path,
         serial += 1
         calls = [ToolCall(f"{serial}-{index}", name,
                           {"url": "https://example.com"} if name == "web_fetch" else
-                          {"mood": {"decision": "unchanged"}} if name == "end_turn" else {})
+                          {} if name == "end_turn" else {})
                  for index, name in enumerate(names)]
         response = ProviderResponse([
             {"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}

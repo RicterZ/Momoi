@@ -327,14 +327,12 @@ def test_manual_reflection_transcript_and_timelines_stop_at_command(daemon, at, 
         transcript = json.dumps(messages[:-1], ensure_ascii=False)
         final_input = messages[-1]["content"][0]["text"]
         episode_timeline = re.search(r"<episode_timeline>\n(.*?)\n</episode_timeline>", final_input, re.S)[1]
-        mood_timeline = re.search(r"<mood_timeline>\n(.*?)\n</mood_timeline>", final_input, re.S)[1]
+        assert "<mood_timeline>" not in final_input
         assert ("inside完成项目" in transcript) == (offset > 0)
         assert ("id=inside " in episode_timeline) == (offset > 0)
-        assert ("state=inside " in mood_timeline) == (offset > 0)
         for name in ["before", "after"]:
             assert name + "完成项目" not in transcript
             assert f"id={name} " not in episode_timeline
-            assert f"state={name} " not in mood_timeline
         result = await workflow.execute_tool(ToolCall("finish", "reflection_finish", {
             "summary": "手动复盘", "memories": [], "conversation_actions": [],
         }))

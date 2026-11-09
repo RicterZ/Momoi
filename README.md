@@ -4,7 +4,7 @@ EN | [中文](./README.zh-CN.md)
 
 > A persistent, single-owner personal agent that lives in private chat.
 
-Momoi brings conversation, memory, tools, scheduled work, external events, mood,
+Momoi brings conversation, memory, tools, scheduled work, external events,
 and autonomous time into one continuous runtime. It currently connects through
 QQ (OneBot) and WeChat, uses Anthropic Messages-compatible or OpenAI
 Chat Completions-compatible models, and can extend its abilities through MCP.
@@ -37,7 +37,7 @@ confirmed, what remains unfinished, and which parts of the past matter now.
   multiple-times-per-day schedules. Heartbeats provide bounded initiative;
   Reflection and Episode maintenance happen quietly in the background.
 - **A recoverable private record.** Turns, messages, tool calls, delivery state,
-  memories, Episodes, Goals, mood, and thinking records live in the local
+  memories, Episodes, Goals, and thinking records live in the local
   workspace. Uncertain external effects are not silently repeated after restart.
 
 ## Architecture

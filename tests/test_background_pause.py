@@ -32,7 +32,7 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
     resumed = False
     begin_done = False
     draft = TurnDraft()
-    end = ToolCall('end', 'end_turn', {} if stage == 'goal' else {'mood': {'decision': 'unchanged'}})
+    end = ToolCall('end', 'end_turn', {})
 
     async def read(call):
         calls.append(call.id)

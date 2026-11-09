@@ -262,7 +262,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         calls.append(ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "rest"}))
                         calls.append(ToolCall("recall", "recall", {"semantic": ["Prior discussion of this message"]}))
                     calls.append(reply_call("voice", text=self.text, mode="voice"))
-                    end = {"mood": {"decision": "unchanged"}}
+                    end = {}
                     if stage == "goal":
                         calls.append(ToolCall("review", "goal_review", {"status": "done", "result": "voice delivered"}))
                         end = {}
@@ -332,9 +332,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                 else:
                     self.assertEqual(rounds, 2)
                     self.assertIn("voice_not_supported", str(messages[-1]))
-                    call = ToolCall("end", "end_turn", {
-                        "mood": {"decision": "unchanged"},
-                    })
+                    call = ToolCall("end", "end_turn", {})
                 return ProviderResponse([{
                     "type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments,
                 }], [call])
@@ -392,7 +390,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                             call = ToolCall("review", "goal_review", {"status": "done", "result": "text fallback prepared"})
                         else:
                             self.assertEqual(rounds, 4 if stage == "goal" else 3)
-                            end = ({} if stage == "goal" else {"mood": {"decision": "unchanged"}})
+                            end = ({})
                             call = ToolCall("end", "end_turn", end)
                         return ProviderResponse([{
                             "type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments,

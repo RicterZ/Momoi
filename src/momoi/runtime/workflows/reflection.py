@@ -163,7 +163,6 @@ class ReflectionWorkflow:
             ("open_conversations", self.store.open_conversation_inventory_context()),
             ("recall_memories", confirmed_memory),
             ("reflection_memories", learned),
-            ("mood_timeline", str(source.get("mood_timeline") or "(none)")),
             ("self_state", heartbeat_self_state_lines(
                 self.store.self_state_context(affinity_enabled=True),
             ) if self.config.affinity_enabled else ""),

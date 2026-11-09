@@ -14,7 +14,7 @@ from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
 from ..tool_contracts.episode_relations import EPISODE_RELATIONS_TOOL_SPEC
 from ..tool_contracts.current_state import current_state_finish_spec
 from ..tool_contracts.conversation import (
-    HEARTBEAT_ACTIVITY_TOOL_SPEC, GOAL_REVIEW_TOOL_SPEC, MOOD_CHANGE_TOOL_SPEC,
+    HEARTBEAT_ACTIVITY_TOOL_SPEC, GOAL_REVIEW_TOOL_SPEC,
 )
 from ..tool_contracts.runtime import (
     READ_TOOL_RESULT_SPEC, MCP_RELOAD_SPEC, WAIT_TOOL_SPEC,
@@ -180,7 +180,6 @@ class ToolSurface:
             copy.deepcopy(PHONE_RESULT_SPEC),
             copy.deepcopy(RECALL_TOOL_SPEC),
             copy.deepcopy(WAIT_TOOL_SPEC),
-            copy.deepcopy(MOOD_CHANGE_TOOL_SPEC),
             *(copy.deepcopy(AFFINITY_TOOLS) if self.affinity_enabled() else []),
             heartbeat_begin_spec(),
             copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC),
@@ -214,7 +213,7 @@ class ToolSurface:
         thinking = {str(spec["name"]) for spec in THINKING_TOOL_SPECS}
         channel_tools = {spec["name"] for group, specs in self.discovery_groups().items()
                          if group in {"builtin_qq_messages", "builtin_calls", "builtin_mcp_management"} for spec in specs}
-        shared = {"phone_result", "reply", "mood_change", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
+        shared = {"phone_result", "reply", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
         if self.affinity_enabled():
             shared.update(spec["name"] for spec in AFFINITY_TOOLS)
         general_chat = {
@@ -251,7 +250,7 @@ class ToolSurface:
                 }
             )
         if stage == "webhook":
-            return frozenset({"reply", "mood_change", "web_fetch", "read_tool_result",
+            return frozenset({"reply", "web_fetch", "read_tool_result",
                               "goal_create", "read_image", "end_turn", *({"exec"} & external)})
         if stage == "goal":
             return frozenset(

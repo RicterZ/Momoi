@@ -1,4 +1,3 @@
-from ...memory.text import truncate_tokens
 from .reflection_values import (
     _reflection_compact_value,
     _reflection_json,
@@ -13,24 +12,6 @@ class ReflectionSourceStore:
         self, local_date: str, *, at: str = "03:00", end_at: float | None = None,
     ) -> dict[str, object]:
         start, end = reflection_window(local_date, at, self._timezone, end_at=end_at)
-        mood_entries: list[str] = []
-        for row in self._db.execute(
-            """SELECT turn_id, created_at, payload_json FROM turn_journal
-               WHERE created_at>=? AND created_at<? AND item_type='final'
-               ORDER BY created_at, sequence""",
-            (start, end),
-        ).fetchall():
-            payload = _reflection_json(
-                row["payload_json"], {}, record_id=row["turn_id"], field="payload_json",
-            )
-            mood = payload.get("mood_change") if isinstance(payload, dict) else None
-            if isinstance(mood, dict) and mood.get("state"):
-                mood_entries.append(
-                    f"{self.context_timestamp(row['created_at'])} state={mood.get('state')} "
-                    f"intensity={mood.get('intensity', 'unknown')} "
-                    f"cause={_reflection_compact_value(mood.get('cause'), 180)}"
-                )
-
         episode_entries: list[str] = []
         episode_rows = self._db.execute(
             f"""SELECT id, title, status, narrative_summary,
@@ -98,9 +79,6 @@ class ReflectionSourceStore:
                 parts.append(f"open_loops={_reflection_compact_value(loops, 180)}")
             episode_entries.append("; ".join(parts))
         return {
-            "mood_timeline": truncate_tokens(
-                "\n".join(mood_entries), 1200
-            ) or "(no recorded mood changes)",
             "episode_timeline": "\n".join(episode_entries) or "(no episode in this period)",
             "start_at": start,
             "end_at": end,

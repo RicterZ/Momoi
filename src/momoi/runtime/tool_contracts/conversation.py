@@ -77,55 +77,6 @@ CHANNEL_BUBBLE_SCHEMA: dict[str, Any] = {
     ]
 }
 
-MOOD_UPDATE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "state": {
-            "type": "string",
-            "pattern": "^(?:[\u4e00-\u9fff]{2,6}|[a-z][a-z0-9_-]{0,31})$",
-            "description": "用 2–6 个汉字的简短词语描述当前情绪，例如好奇、平静、沮丧或疲惫；不要写英文标签或完整句子。",
-        },
-        "intensity": {"type": "number", "minimum": 0, "maximum": 1},
-        "cause": {"type": "string", "minLength": 1, "maxLength": 300},
-    },
-    "required": ["state", "intensity", "cause"],
-    "additionalProperties": False,
-}
-
-MOOD_CHANGE_TOOL_SPEC: dict[str, Any] = {
-    "name": "mood_change",
-    "description": "仅持续情绪发生变化时调用，包含自然平复。暂存当前情绪、强度和具体原因，正常结束本轮时提交；没有变化无需调用。",
-    "input_schema": MOOD_UPDATE_SCHEMA,
-}
-
-MOOD_DECISION_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "description": (
-        '根据情绪年龄和本轮情况评估持续情绪，忽略短暂反应。状态、强度和原因均准确时仅传 {"decision":"unchanged"}；任一变化（含自然平复）则传 updated 及 state、intensity、cause。必须是对象。'
-    ),
-    "properties": {
-        "decision": {"type": "string", "enum": ["unchanged", "updated"]},
-        **MOOD_UPDATE_SCHEMA["properties"],
-    },
-    "required": ["decision"],
-    "additionalProperties": False,
-    "examples": [
-        {"decision": "unchanged"},
-        {"decision": "updated", "state": "calm", "intensity": 0.3,
-         "cause": "The task is complete and I feel settled."},
-    ],
-    "oneOf": [
-        {
-            "properties": {"decision": {"enum": ["unchanged"]}},
-            "maxProperties": 1,
-        },
-        {
-            "properties": {"decision": {"enum": ["updated"]}},
-            "required": list(MOOD_UPDATE_SCHEMA["required"]),
-        },
-    ],
-}
-
 HEARTBEAT_ACTIVITY_TOOL_SPEC: dict[str, Any] = {
     "name": "heartbeat_activity",
     "description": (
@@ -172,55 +123,24 @@ GOAL_REVIEW_TOOL_SPEC: dict[str, Any] = {
 }
 
 
-END_TURN_EXAMPLE = {"mood": {"decision": "unchanged"}}
-
 END_TURN_TOOL_SPEC: dict[str, Any] = {
     "name": "end_turn",
-    "description": (
-        '结束本轮并提交其暂存状态。不发送消息。可单独调用或在 reply、heartbeat_activity、goal_review 或 save_image_summary 之后最后调用；这些前置调用必须成功。其他工作工具必须在更早的轮次中完成。对于 owner、webhook 和 heartbeat，需提供 mood 对象。Heartbeat 要求在结束前成功调用 heartbeat_activity。对于 Goal，必须先成功调用 goal_review，然后以空参数 {} 调用 end_turn。'
-    ),
+    "description": "结束本轮并提交其暂存状态。不发送消息，参数为 {}。Heartbeat 须先成功调用 heartbeat_activity，Goal 须先成功调用 goal_review。",
     "input_schema": {
         "type": "object",
-        "properties": {
-            "mood": MOOD_DECISION_SCHEMA,
-        },
-        "oneOf": [
-            {
-                "title": "Conversation completion",
-                "required": ["mood"],
-                "examples": [copy.deepcopy(END_TURN_EXAMPLE)],
-            },
-            {
-                "title": "Goal completion after goal_review",
-                "maxProperties": 0,
-                "examples": [{}],
-            },
-        ],
-        "examples": [
-            copy.deepcopy(END_TURN_EXAMPLE),
-            {},
-            {"mood": {"decision": "unchanged"}},
-        ],
+        "properties": {},
+        "required": [],
         "additionalProperties": False,
+        "examples": [{}],
     },
 }
 
 
 def end_turn_tool_spec(stage: str) -> dict[str, Any]:
     """Return a stage-specific copy for correction details only."""
-    spec = copy.deepcopy(END_TURN_TOOL_SPEC)
-    schema = spec["input_schema"]
-    schema.pop("oneOf")
-    if stage == "goal":
-        schema["properties"] = {}
-        schema["required"] = []
-        schema["examples"] = [{}]
-    elif stage in {"owner", "heartbeat", "webhook"}:
-        schema["required"] = ["mood"]
-        schema["examples"] = [copy.deepcopy(END_TURN_EXAMPLE)]
-    else:
+    if stage not in {"owner", "heartbeat", "webhook", "goal"}:
         raise ValueError(f"end_turn is not available in {stage}")
-    return spec
+    return copy.deepcopy(END_TURN_TOOL_SPEC)
 
 
 def end_turn_correction(error: str, schema: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
@@ -229,31 +149,14 @@ def end_turn_correction(error: str, schema: dict[str, Any], arguments: dict[str,
         "reply_required_before_end_turn": "This recovery phase requires a user-visible notification before ending.",
         "goal_review_required_before_end_turn": "Call goal_review successfully before end_turn({}); they may share a batch in that order.",
         "goal_end_turn_requires_empty_arguments": "Submit the Goal outcome through goal_review; end_turn accepts only {} in this stage.",
-        "unexpected_end_turn_fields": "end_turn accepts only mood. Submit Goal outcomes through goal_review and Heartbeat activity and schedule through heartbeat_activity.",
+        "unexpected_end_turn_fields": "end_turn accepts only {}. Submit Goal outcomes through goal_review and Heartbeat activity and schedule through heartbeat_activity.",
         "heartbeat_activity_required_before_end_turn": "Call heartbeat_activity successfully before end_turn; they may share a batch.",
-        "invalid_mood_decision": 'mood must be {"decision":"unchanged"} or {"decision":"updated","state":"平静","intensity":0.3,"cause":"具体原因"}. A string is invalid.',
         "bubbles_not_allowed_in_end_turn": "Send the response through reply first; remove bubbles from end_turn.",
         "activity_not_allowed_in_end_turn": "Remove activity; record Heartbeat activity through heartbeat_activity before ending.",
     }
     missing = [key for key in schema.get("required", []) if key not in arguments]
     message = hints.get(error, "Correct the arguments to match this stage's schema and retry end_turn as a native tool call.")
     field_errors = []
-    if error == "invalid_mood_decision":
-        mood = arguments.get("mood")
-        if isinstance(mood, dict) and mood.get("decision") == "unchanged":
-            extras = sorted(set(mood) - {"decision"})
-            if extras:
-                message = (
-                    "mood.decision=unchanged permits ONLY decision. Remove "
-                    + ", ".join("mood." + key for key in extras)
-                    + '. If the mood actually changed, use decision="updated" with state, intensity and cause instead.'
-                )
-                field_errors.extend({"path": "$.mood." + key, "issue": "forbidden_when_unchanged", "expected": "field omitted"} for key in extras)
-        elif isinstance(mood, dict) and mood.get("decision") == "updated":
-            absent = [key for key in MOOD_UPDATE_SCHEMA["required"] if key not in mood]
-            if absent:
-                message = "mood.decision=updated requires: " + ", ".join("mood." + key for key in absent) + "."
-                field_errors.extend({"path": "$.mood." + key, "issue": "required_when_updated"} for key in absent)
     for key in missing:
         field_errors.append({"path": "$." + key, "issue": "required_in_current_workflow"})
     if missing:

@@ -273,9 +273,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 else:
                     test.assertEqual(self.calls, 7)
                     test.assertIn("result", str(messages))
-                    call = ToolCall("end", "end_turn", {
-                        "mood": {"decision": "unchanged"},
-                    })
+                    call = ToolCall("end", "end_turn", {})
                 return ProviderResponse([], [call])
 
         provider = Provider()

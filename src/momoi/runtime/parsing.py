@@ -89,63 +89,11 @@ def parse_response(
 ) -> tuple[AgentReply | None, str | None]:
     if "bubbles" in arguments:
         return None, "bubbles_not_allowed_in_end_turn"
-    messages: list[ChannelMessage] = []
-    error: str | None = None
-    mood, error = parse_mood_decision(arguments.get("mood"))
-    if error is not None:
-        return None, error
     if "activity" in arguments:
         return None, "activity_not_allowed_in_end_turn"
-    if set(arguments) - {"mood"}:
+    if arguments:
         return None, "unexpected_end_turn_fields"
-    return AgentReply(
-        messages,
-        mood_update=mood,
-    ), None
-
-
-def parse_mood_decision(
-    value: object,
-) -> tuple[dict[str, Any] | None, str | None]:
-    if not isinstance(value, dict):
-        return None, "invalid_mood_decision"
-    decision = value.get("decision")
-    if decision == "unchanged" and set(value) == {"decision"}:
-        return None, None
-    if decision != "updated":
-        return None, "invalid_mood_decision"
-    update = {key: item for key, item in value.items() if key != "decision"}
-    mood, error = parse_mood_update(update)
-    return mood, "invalid_mood_decision" if error else None
-
-
-def parse_mood_update(
-    value: object,
-) -> tuple[dict[str, Any] | None, str | None]:
-    if value is None:
-        return None, None
-    if not isinstance(value, dict) or set(value) != {"state", "intensity", "cause"}:
-        return None, "invalid_mood_update"
-    state = value.get("state")
-    cause = value.get("cause")
-    intensity = value.get("intensity")
-    if (
-        not isinstance(state, str)
-        or re.fullmatch(r"[\u4e00-\u9fff]{2,6}|[a-z][a-z0-9_-]{0,31}", state) is None
-        or not isinstance(cause, str)
-        or not cause.strip()
-        or len(cause) > 300
-    ):
-        return None, "invalid_mood_update"
-    if isinstance(intensity, bool) or not isinstance(intensity, (int, float)):
-        return None, "invalid_mood_update"
-    if not 0 <= float(intensity) <= 1:
-        return None, "invalid_mood_update"
-    return {
-        "state": state,
-        "intensity": float(intensity),
-        "cause": cause.strip()[:300],
-    }, None
+    return AgentReply([]), None
 
 
 CONVERSATION_ACTIONS = {"close"}

@@ -356,9 +356,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         arguments = reply_call("script", bubbles=[text]).arguments
                     else:
                         tool_name = "end_turn"
-                        arguments = {
-                            "mood": {"decision": "unchanged"},
-                        }
+                        arguments = {}
                     call = ToolCall(
                         f"end_turn-{provider_self.calls}",
                         tool_name,
@@ -478,9 +476,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "final-end_turn",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse(
                         [
@@ -896,9 +892,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "finish",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse([], [call])
 
@@ -992,9 +986,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "finish-workspace",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse([], [call])
 
@@ -1099,7 +1091,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         assert {"reply", "recall"} <= {tool["name"] for tool in tools}
                         calls = [reply_call("notify", bubbles=["创建任务没成功，我先停下了。"]),
-                                 ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}, })]
+                                 ToolCall("end", "end_turn", {})]
                     return ProviderResponse(
                         [
                             {
@@ -1422,9 +1414,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "heartbeat-first-finish",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     elif self.calls == 5:
                         call = ToolCall(
@@ -1466,9 +1456,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             f"heartbeat-{self.calls}",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse(
                         [
@@ -1661,7 +1649,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                         assert self.calls == limit + 1
                                         assert {"reply", "recall"} <= {tool["name"] for tool in _args[2]}
                                         calls = [reply_call("notify", bubbles=["这次出错了，我先停下来，结果还没确认。"]),
-                                                 ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}, })]
+                                                 ToolCall("end", "end_turn", {})]
                                         return ProviderResponse([{"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments} for c in calls], calls)
                                     if external_effect and self.calls == 1:
                                         daemon.store.begin_tool_call(
@@ -1886,9 +1874,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "stop-response",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse(
                         [
@@ -1967,9 +1953,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "stop-after-tool",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse(
                         [

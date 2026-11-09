@@ -45,9 +45,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     "activity": "read news", "result": "Shared one update",
                     "next_check_minutes": 30, "reason": "Enough for now",
                 }),
-                ToolCall("finish", "end_turn", {
-                    "mood": {"decision": "unchanged"},
-                }),
+                ToolCall("finish", "end_turn", {}),
             ]
             recall_count = 0
 
@@ -112,9 +110,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 begin = ToolCall("begin", "heartbeat_begin", {
                     "activity": "resting", "mode": "rest", "strategy": [],
                 })
-                finish = ToolCall("finish", "end_turn", {
-                    "mood": {"decision": "unchanged"},
-                })
+                finish = ToolCall("finish", "end_turn", {})
 
                 class Provider:
                     calls = 0
@@ -191,7 +187,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     activity=f"历史活动{index}",
                     result=f"历史结果{index}",
                     next_heartbeat_at=0,
-                    mood_update=None,
                     messages=[],
                     reason="test",
                 )
@@ -234,9 +229,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "finish",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse(
                         [
@@ -408,9 +401,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "finish",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse(
                         [

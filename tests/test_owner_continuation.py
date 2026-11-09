@@ -25,7 +25,7 @@ def test_multiple_natural_endings_continue_one_turn(tmp_path, phone):
     rounds = []
     async def complete(system, messages, tools, **kwargs):
         rounds.append(json.dumps(messages, ensure_ascii=False))
-        call = ToolCall(f"end-{len(rounds)}", "end_turn", {"mood": {"decision": "unchanged"}})
+        call = ToolCall(f"end-{len(rounds)}", "end_turn", {})
         return ProviderResponse([{"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}], [call])
     async def run():
         daemon.provider = with_owner_recall(SimpleNamespace(complete=complete))

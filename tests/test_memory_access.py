@@ -147,7 +147,7 @@ def test_recall_tool_counts_only_each_observations_hits(daemon):
         ToolCall("recall-1", "recall", {"keyword": ["first"]}),
         ToolCall("recall-2", "recall", {"keyword": ["second"]}),
         reply_call("reply", bubbles=["已找到记录"]),
-        ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}}),
+        ToolCall("end", "end_turn", {}),
     ])
     async def complete(*args, **kwargs):
         call = next(calls)

@@ -60,7 +60,7 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
 Before a `message` step runs, the runtime stores its rendered event prompt. After
 the Turn completes, the event appears in the shared transcript as `<event>` with
 a stable ID, workflow source and reception timestamp. Momoi receives the shared
-timeline, always/recent memory, current mood and activity, and the current event
+timeline, always/recent memory, current activity, and the current event
 task. `<recent_events>` lists the historical event IDs in that transcript. No
 automatic memory or Episode pre-retrieval runs for Webhook Turns.
 

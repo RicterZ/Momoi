@@ -226,7 +226,7 @@ def test_affinity_checker_thinking_record_links_to_planner(tmp_path, monkeypatch
         store.close()
 
 
-def test_affinity_shares_mood_context_only_when_enabled(tmp_path):
+def test_affinity_context_only_when_enabled(tmp_path):
     import json
     from momoi.runtime.context.presentation import heartbeat_self_state_lines
     store = Store(tmp_path / "db")
@@ -236,7 +236,7 @@ def test_affinity_shares_mood_context_only_when_enabled(tmp_path):
         assert "<affinity>" not in heartbeat_self_state_lines(disabled)
         enabled = store.self_state_context(affinity_enabled=True)
         text = heartbeat_self_state_lines(enabled)
-        assert "<mood" in text and "<affinity>20/100</affinity>" in text
+        assert "<mood" not in text and "<affinity>20/100</affinity>" in text
     finally:
         store.close()
 

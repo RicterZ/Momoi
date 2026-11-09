@@ -352,9 +352,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "finish",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse(
                         [
@@ -478,11 +476,6 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 store.begin_turn(turn_id, "webhook", [turn_id])
                 return AgentReply(
                     ["门口好像有人，需要我继续帮你留意吗？"],
-                    mood_update={
-                        "state": "focused",
-                        "intensity": 0.5,
-                        "cause": "门口出现需要关注的动态",
-                    },
                 )
 
             service = WebhookService(
@@ -524,7 +517,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(generated, ["门口检测到有人，请自然提醒我。"])
             self.assertEqual(rows[0].text, "门口好像有人，需要我继续帮你留意吗？")
             self.assertIsNone(store.next_heartbeat_due_at(False))
-            self.assertEqual(store.self_state()["mood_state"], "focused")
+            self.assertEqual(store.self_state()["mood_state"], "平静")
             self.assertEqual(
                 store.webhook_run(str(first["id"]))["state"], "waiting_delivery"
             )
