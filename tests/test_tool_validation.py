@@ -64,7 +64,7 @@ def test_stage_specific_end_turn():
     )
     assert validate_tool_arguments(
         "end_turn", {}, end_turn_tool_spec("owner")["input_schema"]
-    )[1]
+    )[1] is None
     assert validate_tool_arguments(
         "end_turn",
         {

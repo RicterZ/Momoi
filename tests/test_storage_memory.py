@@ -2390,23 +2390,14 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertTrue(any("检查完成" in item["content"] for item in archived))
             store.close()
 
-    def test_mood_update_persists_until_next_decision(self) -> None:
+    def test_turn_commit_preserves_legacy_mood(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             event = IncomingMessage("qq:1:mood", "mood", "今天真开心", 1, 1)
             store.add_event(event)
-            store.commit_turn(
-                [event],
-                event.text,
-                AgentReply(
-                    ["我也是！"],
-                    mood_update={
-                        "state": "excited",
-                        "intensity": 0.8,
-                        "cause": "一起分享了开心的事",
-                    },
-                ),
-            )
+            with store._db:
+                store._db.execute("UPDATE self_state SET mood_state='excited', mood_intensity=0.8, mood_cause='一起分享了开心的事' WHERE id=1")
+            store.commit_turn([event], event.text, AgentReply(["我也是！"]))
             active = store.self_state()
             self.assertEqual(active["mood_state"], "excited")
             self.assertEqual(active["mood_intensity"], 0.8)
@@ -2447,7 +2438,6 @@ class StorageMemoryTest(unittest.TestCase):
                     activity="整理关卡灵感",
                     result="记录了一个点子",
                     next_heartbeat_at=now - 1,
-                    mood_update=None,
                     messages=[],
                     reason="test",
                 )
@@ -2491,7 +2481,6 @@ class StorageMemoryTest(unittest.TestCase):
                 activity="整理微博使用方式",
                 result="记下规则",
                 next_heartbeat_at=time.time() + 3600,
-                mood_update=None,
                 messages=[],
                 reason="test",
                 draft=draft,
@@ -2519,7 +2508,6 @@ class StorageMemoryTest(unittest.TestCase):
                 activity="继续想刚才的游戏机制",
                 result="形成了一点看法",
                 next_heartbeat_at=2000,
-                mood_update=None,
                 messages=["那就说得通了。", "你会舍不得开大，对不对？"],
                 reason="继续刚才的话题",
             )
@@ -2551,7 +2539,6 @@ class StorageMemoryTest(unittest.TestCase):
                 activity="整理自己的关卡灵感",
                 result="留下一个新点子",
                 next_heartbeat_at=2000,
-                mood_update=None,
                 messages=["最后再补一句。"],
                 reason="这次确实有值得分享的内容",
                 notification_channel="onebot",
@@ -2612,7 +2599,6 @@ class StorageMemoryTest(unittest.TestCase):
                     activity="继续想游戏机制",
                     result="形成了一点看法",
                     next_heartbeat_at=2000,
-                    mood_update=None,
                     messages=["这次有新的进展。"],
                     reason="继续话题",
                 )
@@ -2637,7 +2623,6 @@ class StorageMemoryTest(unittest.TestCase):
                     activity="想起游戏机制",
                     result="形成了一点看法",
                     next_heartbeat_at=2000,
-                    mood_update=None,
                     messages=["这是一句瞬时聊天。"],
                     reason="自然分享",
                 )

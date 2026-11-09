@@ -503,14 +503,13 @@ class MessagingTest(unittest.TestCase):
             store.close()
 
     def test_validates_terminal_response_tool(self) -> None:
-        reply, error = parse_response({"mood": {"decision": "unchanged"}})
+        reply, error = parse_response({})
         self.assertIsNone(error)
         self.assertEqual(reply.messages, [])
         with_bubbles, error = parse_response(
             {
                 "bubbles": ["旧协议气泡"],
 
-                "mood": {"decision": "unchanged"},
             }
         )
         self.assertIsNone(with_bubbles)
@@ -519,13 +518,11 @@ class MessagingTest(unittest.TestCase):
             {
                 "expects_reply": False,
                 "reply_expectation": "",
-                "mood": {"decision": "unchanged"},
             }
         )
         self.assertIsNone(old_shape)
         self.assertEqual(error, "unexpected_end_turn_fields")
         heartbeat, error = parse_response({
-            "mood": {"decision": "unchanged"},
             "heartbeat": {"next_check_minutes": 10, "reason": "later"},
         })
         self.assertIsNone(heartbeat)
@@ -544,9 +541,7 @@ class MessagingTest(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(single_line_break, ["第一行。\n第二行。"])
         invalid, error = parse_response(
-            {
-                "mood": {"decision": "unchanged"},
-            }
+            {}
         )
         self.assertIsNotNone(invalid)
         self.assertIsNone(error)
@@ -716,9 +711,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "close-after-warning",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                     return ProviderResponse([], [call])
 
@@ -805,9 +798,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             ToolCall(
                                 "finish",
                                 "end_turn",
-                                {
-                                    "mood": {"decision": "unchanged"},
-                                },
+                                {},
                             )
                         ],
                     )
@@ -918,9 +909,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     call = ToolCall(
                         "silent-close",
                         "end_turn",
-                        {
-                            "mood": {"decision": "unchanged"},
-                        },
+                        {},
                     )
                     return ProviderResponse([], [call])
 
@@ -983,9 +972,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             ToolCall(
                                 "close-after-question",
                                 "end_turn",
-                                {
-                                    "mood": {"decision": "unchanged"},
-                                },
+                                {},
                             )
                         ],
                     )
@@ -1100,9 +1087,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     call = ToolCall(
                         "image-response",
                         "end_turn",
-                        {
-                            "mood": {"decision": "unchanged"},
-                        },
+                        {},
                     )
                     return ProviderResponse(
                         [
@@ -1199,9 +1184,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "emotion-close",
                             "end_turn",
-                            {
-                                "mood": {"decision": "unchanged"},
-                            },
+                            {},
                         )
                         return ProviderResponse([], [call])
                     call = reply_call("emotion-response", bubbles=[
@@ -1307,9 +1290,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         arguments = reply_call("script", bubbles=[value]).arguments
                     else:
                         tool_name = "end_turn"
-                        arguments = {
-                            "mood": {"decision": "unchanged"},
-                        }
+                        arguments = {}
                     call = ToolCall(
                         f"emotion-{self.calls}",
                         tool_name,
@@ -1542,9 +1523,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             ToolCall(
                                 f"end_turn-{self.calls}",
                                 "end_turn",
-                                {
-                                    "mood": {"decision": "unchanged"},
-                                },
+                                {},
                             )
                         ],
                     )

@@ -21,7 +21,6 @@ from ..turn_support import (
     tool_result_block,
 )
 from ..tool_contracts.conversation import end_turn_correction, end_turn_tool_spec
-from ..parsing import parse_mood_update
 from ...tools.validation import validate_tool_arguments
 from .harness import TurnHarness
 from .protocol import assistant_history_message, parse_end_turn
@@ -329,16 +328,6 @@ class ToolBatchExecutor:
                 limit_error = request.harness.affinity_limit_error(call.arguments.get("direction"), self.store.affinity_daily_increases())
                 result = ({"ok": False, "allowed": False, "error": "affinity_daily_limit", "reason": limit_error}
                           if limit_error else await review_affinity(self.config, self.store, self.provider, call, request))
-            elif call.name == "mood_change":
-                if execution.stage not in {"owner", "heartbeat", "webhook"}:
-                    result = {"ok": False, "error": "tool_not_allowed"}
-                else:
-                    mood, error = parse_mood_update(call.arguments)
-                    if error:
-                        result = {"ok": False, "error": error}
-                    else:
-                        request.draft.mood_update = mood
-                        result = {"ok": True, "state": "staged"}
             elif call.name == "heartbeat_activity":
                 result = record_heartbeat_activity(
                     call, heartbeat_turn=execution.heartbeat, draft=request.draft,
@@ -467,8 +456,7 @@ class ToolBatchExecutor:
                 log_event(
                     logger, TRACE, "end_turn_accepted" if ended else "end_turn_rejected",
                     **fields,
-                    **({"mood_decision": "updated" if reply and reply.mood_update else "unchanged"}
-                       if ended else {"reason": result.get("error")}),
+                    **({} if ended else {"reason": result.get("error")}),
                 )
             elif call.name == "phone_result" and not (
                 request.workflow is not None and call.name in request.workflow.tool_names

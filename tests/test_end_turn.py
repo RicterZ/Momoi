@@ -8,15 +8,7 @@ class EndTurnTest(unittest.TestCase):
     STAGES = ("owner", "heartbeat", "webhook")
 
     def arguments(self, stage):
-        result = {
-            "mood": {
-                "decision": "updated",
-                "state": "frustrated",
-                "intensity": 0.6,
-                "cause": "The shared game ended badly",
-            },
-        }
-        return result
+        return {}
 
     def parse(self, stage, arguments):
         execution = TurnExecutionSpec(
@@ -33,7 +25,6 @@ class EndTurnTest(unittest.TestCase):
                 reply, error = self.parse(stage, self.arguments(stage))
                 self.assertIsNone(error)
                 self.assertEqual(reply.messages, [])
-                self.assertEqual(reply.mood_update["state"], "frustrated")
 
 
     def test_silent_close_is_allowed_for_every_chat_stage(self):
@@ -48,7 +39,7 @@ class EndTurnTest(unittest.TestCase):
 
     def test_business_fields_are_rejected_by_every_chat_stage(self):
         for stage in self.STAGES:
-            for field in ("heartbeat", "goal", "unknown"):
+            for field in ("heartbeat", "goal", "unknown", "mood"):
                 with self.subTest(stage=stage, field=field):
                     reply, error = self.parse(stage, {**self.arguments(stage), field: {}})
                     self.assertIsNone(reply)
@@ -84,9 +75,9 @@ class EndTurnSchemaTest(unittest.TestCase):
 
         arguments = EndTurnTest()
         expected = {
-            'owner': {'mood'},
-            'heartbeat': {'mood'},
-            'webhook': {'mood'},
+            'owner': set(),
+            'heartbeat': set(),
+            'webhook': set(),
             'goal': set(),
         }
         for stage, required in expected.items():

@@ -171,7 +171,7 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
                     case.assertIn('dashboard', next(tool for tool in tools if tool['name'] == 'reply')['input_schema']['properties']['channel']['enum'])
                 if self.calls % 2:
                     return ProviderResponse([], [reply_call(f'reply-{self.calls}', bubbles=['老师，我记得！'])])
-                return ProviderResponse([], [ToolCall(f'end-{self.calls}', 'end_turn', {'mood': {'decision': 'unchanged'}})])
+                return ProviderResponse([], [ToolCall(f'end-{self.calls}', 'end_turn', {})])
         daemon.provider = with_owner_recall(Provider())
         for index, (channel, text) in enumerate((('onebot', '昨日在 QQ 聊的游戏'), ('dashboard', '接着聊吧'))):
             stamp = time.time()
@@ -206,7 +206,7 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
                 self.calls += 1
                 if self.calls == 1:
                     return ProviderResponse([], [reply_call('web-reply', bubbles=['老师，网页上也可以聊天！'])])
-                return ProviderResponse([], [ToolCall('web-end', 'end_turn', {'mood': {'decision': 'unchanged'}})])
+                return ProviderResponse([], [ToolCall('web-end', 'end_turn', {})])
         daemon.provider = with_owner_recall(Provider())
         self.runtime.daemon = daemon
         self.client.session.headers['Authorization'] = self.auth

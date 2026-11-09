@@ -17,7 +17,7 @@ def test_phone_prompt_and_tool_free_completion(tmp_path, output):
     store = Mock()
     store.always_memory_context.return_value = '常驻记忆'
     store.scoped_memory_context.return_value = '当前状态'
-    store.self_state_context.return_value = '心情'
+    store.self_state_context.return_value = '{"activity": {"text": "休息"}}'
     store.turn_exchanges.return_value = {}
     store.phone_history_rows.return_value = [
         {'turn_id': 'old', 'role': 'user', 'content': '之前的话'},

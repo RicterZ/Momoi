@@ -22,7 +22,7 @@ class ImageTurnsTest(unittest.IsolatedAsyncioTestCase):
     async def test_summary_is_private_and_second_turn_can_reread_original(self):
         requests = []
         image_id = ""
-        finish = {"mood": {"decision": "unchanged"}}
+        finish = {}
         recall = recall_response().tool_calls[0]
         actions = [
             (recall.name, recall.arguments),

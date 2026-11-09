@@ -23,7 +23,6 @@ class HeartbeatEpisodeTests(unittest.TestCase):
                 activity="刷微博",
                 result=f"记录 {turn_id}",
                 next_heartbeat_at=now + 60,
-                mood_update=None,
                 messages=[],
                 reason="test",
             )
@@ -111,7 +110,6 @@ class HeartbeatTimelineTests(unittest.TestCase):
                 activity=activity,
                 result=f"记录 {turn_id}",
                 next_heartbeat_at=now + 60,
-                mood_update=None,
                 messages=[],
                 reason="test",
             )

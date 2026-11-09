@@ -122,10 +122,7 @@ def test_real_heartbeat_retries_gate_and_commits_only_on_completion(daemon, canc
     end = ToolCall(
         "end",
         "end_turn",
-        {
-            "mood": {"decision": "unchanged"},
-
-        },
+        {},
     )
     invalid = activity(activity="")
     calls = [begin, invalid, end, activity(), end]

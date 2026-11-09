@@ -591,7 +591,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
         self.daemon.agenda_tools.finish_review = AsyncMock(
             side_effect=AssertionError("must not execute")
         )
-        ordinary = {"mood": {"decision": "unchanged"}}
+        ordinary = {}
 
         def inspect(index, messages):
             if index == 1:

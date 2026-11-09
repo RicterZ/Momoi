@@ -4,7 +4,7 @@
 
 > 一个常驻在私聊中的、只属于一位主人的个人 Agent。
 
-Momoi 把对话、记忆、工具、定时工作、外部事件、情绪和自主时间放进同一个持续运行的
+Momoi 把对话、记忆、工具、定时工作、外部事件和自主时间放进同一个持续运行的
 系统。目前可通过 QQ（OneBot）、WeChat 交流，支持兼容 Anthropic Messages 或
 OpenAI Chat Completions 的模型，并可通过 MCP 扩展能力。
 
@@ -26,7 +26,7 @@ Momoi 的重点不只是给 LLM 加一个角色。`SOUL.md` 定义 Momoi 是谁�
 - **把时间纳入 Agent。** Goal 支持单次、间隔和每日多个时间点；Heartbeat 提供有边界
   的主动性，Reflection 与 Episode 维护则在后台安静运行。
 - **可恢复的私人记录。** Turn、消息、工具调用、投递状态、记忆、Episode、Goal、
-  情绪和思考记录都保存在本地 workspace。结果不确定的外部操作不会在重启后被悄悄重做。
+  思考记录都保存在本地 workspace。结果不确定的外部操作不会在重启后被悄悄重做。
 
 ## 架构
 

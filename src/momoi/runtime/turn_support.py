@@ -98,7 +98,6 @@ USER_CONTEXT_SECTION_ORDER = (
     "state_update_contract",
     "followup",
     "due_goal",
-    "mood_timeline",
     "episode_timeline",
     "current_webhook_task",
     "autonomous_heartbeat",

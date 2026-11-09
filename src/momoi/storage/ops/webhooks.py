@@ -244,7 +244,6 @@ class WebhookStore:
                        VALUES (?, 'assistant', ?, ?, ?, ?, 'queued')""",
                     (turn_id, text, now, source, outbox.lastrowid),
                 )
-            self._apply_mood_update(reply.mood_update, now)
             outbox_ids = [
                 int(row["id"])
                 for row in self._db.execute(

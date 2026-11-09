@@ -248,7 +248,7 @@ def test_reply_declared_memory_use_requires_visible_id_and_success(daemon, succe
     rounds = 0
     async def complete(*args, **kwargs):
         nonlocal rounds
-        call = calls[0] if rounds == 0 else ToolCall('end', 'end_turn', {'mood': {'decision': 'unchanged'}})
+        call = calls[0] if rounds == 0 else ToolCall('end', 'end_turn', {})
         rounds += 1
         return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
     if not succeed:

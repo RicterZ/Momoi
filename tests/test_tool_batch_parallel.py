@@ -57,7 +57,7 @@ def test_reply_and_read_overlap_and_cancel_together(tmp_path, cancel):
             assert all(not block["is_error"] for block in results)
             assert "搜索结果" in json.dumps(results, ensure_ascii=False)
             assert finished == {"reply", "read"}
-            calls = [ToolCall("end", "end_turn", {"mood": {"decision": "unchanged"}})]
+            calls = [ToolCall("end", "end_turn", {})]
         return ProviderResponse(
             [{"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments}
              for c in calls], calls)
@@ -124,7 +124,7 @@ def test_owner_update_preserves_goal_and_skips_stale_reply(tmp_path, arrival):
             assert '未执行' in results['stale']['message']
             assert '[用户中途插话]' in json.dumps(messages, ensure_ascii=False)
             assert json.dumps(messages, ensure_ascii=False).count('头发还湿着') == 1
-            calls = [ToolCall('end', 'end_turn', {'mood': {'decision': 'unchanged'}})]
+            calls = [ToolCall('end', 'end_turn', {})]
         return ProviderResponse([{'type': 'tool_use', 'id': c.id, 'name': c.name, 'input': c.arguments}
                                  for c in calls], calls)
 

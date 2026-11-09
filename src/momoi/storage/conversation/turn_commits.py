@@ -111,7 +111,6 @@ class TurnCommitStore:
                     ),
                 )
             self._index_turn_episode_terms(turn_id)
-            self._apply_mood_update(reply.mood_update, now)
             self._queue_memory_operations(turn_id, draft, events, now)
             self._commit_memory_access(turn_id, draft.memory_access if draft else reply.memory_access)
             self._apply_goal_mutations(draft, now)
@@ -120,7 +119,6 @@ class TurnCommitStore:
                 "final",
                 {
                     "channel": target_channel,
-                    "mood_change": reply.mood_update,
                     "mutations": {
                         "memory_operations": draft.memory_operations if draft else [],
                         "goals": list(draft.goals.values()) if draft else [],

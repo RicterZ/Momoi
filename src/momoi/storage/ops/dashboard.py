@@ -66,12 +66,6 @@ class DashboardStore:
             "counts": counts,
             "current_state": self.dashboard_current_state(),
             "affinity": {"value": state["affinity"], "maximum": 100},
-            "mood": {
-                "state": state["mood_state"],
-                "intensity": state["mood_intensity"],
-                "cause": state["mood_cause"],
-                "updated_at": _dashboard_unix(state["mood_updated_at"]),
-            },
             "activity": {
                 "name": state["activity"],
                 "result": state.get("activity_result") or "",

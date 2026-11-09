@@ -99,7 +99,7 @@ def test_real_worker_media_receipt_reaches_planner(tmp_path, source):
             assert sent[1]['segments'] == media['segments']
             assert result['bubbles'][1].startswith('[image:')
             observed.append(result)
-            call = ToolCall('end', 'end_turn', {'mood': {'decision': 'unchanged'}})
+            call = ToolCall('end', 'end_turn', {})
         return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name,
                                   'input': call.arguments}], [call])
 
@@ -204,7 +204,7 @@ def test_real_worker_partial_reply_steers_same_turn(tmp_path):
             call = reply_call('second-reply', bubbles=['收到改动'])
         else:
             assert sent == ['第一句', '收到改动']
-            call = ToolCall('end', 'end_turn', {'mood': {'decision': 'unchanged'}})
+            call = ToolCall('end', 'end_turn', {})
         return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
 
     async def run():

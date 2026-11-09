@@ -11,9 +11,7 @@ from tests.test_memory_operations import event, response
 
 
 def end_call():
-    return ToolCall("end", "end_turn", {
-        "mood": {"decision": "unchanged"},
-    })
+    return ToolCall("end", "end_turn", {})
 
 
 @pytest.mark.parametrize("internal_text", ["继续核对当前判断", "<bubble>这是思考里的示例</bubble>"])
@@ -151,15 +149,11 @@ def test_circuit_recovery_is_bounded_and_cannot_restart_task(daemon, recovery):
         if step == 1 and recovery == "blocked_tool":
             return response(ToolCall("forbidden", "write_file", {"path": "no", "content": "no"}))
         if step == 1 and recovery == "silent_end":
-            return response(ToolCall("silent-end", "end_turn", {
-                "mood": {"decision": "unchanged"},
-            }))
+            return response(ToolCall("silent-end", "end_turn", {}))
         if recovery == "sent_then_error" or step == 2:
             notices.append("任务没做完，工具连续出错，我先停下了。")
             return response(reply_call("notice", bubbles=notices[-1:]))
-        return response(ToolCall("finish", "end_turn", {
-            "mood": {"decision": "unchanged"},
-        }))
+        return response(ToolCall("finish", "end_turn", {}))
 
     daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format="anthropic"))
     asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), turn_id))
