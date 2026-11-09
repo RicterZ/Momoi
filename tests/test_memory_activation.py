@@ -248,8 +248,10 @@ def test_reply_declared_memory_use_requires_visible_id_and_success(daemon, succe
     rounds = 0
     async def complete(*args, **kwargs):
         nonlocal rounds
-        call = calls[0] if rounds == 0 else ToolCall('end', 'end_turn', {})
+        call = calls[0] if rounds == 0 else None
         rounds += 1
+        if call is None:
+            return ProviderResponse([], [])
         return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
     if not succeed:
         daemon.tool_batch.replyer.generate = AsyncMock(side_effect=ValueError('cannot express reply'))

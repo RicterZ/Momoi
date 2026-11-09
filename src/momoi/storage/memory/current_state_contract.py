@@ -1,7 +1,7 @@
 """Single source for state mutation fields, limits and model-facing guidance.
 
 The private maintenance workflow uses this schema and passes its arguments to
-CurrentStateManager.apply_arguments. Foreground end_turn does not carry state.
+CurrentStateManager.apply_arguments. Foreground Turn completion does not carry state.
 """
 
 MAX_SLOTS = 12

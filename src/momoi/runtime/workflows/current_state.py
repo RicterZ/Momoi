@@ -1,4 +1,4 @@
-"""A private standard workflow following committed conversational end_turns."""
+"""A private standard workflow following committed conversational Turns."""
 
 import asyncio
 import copy

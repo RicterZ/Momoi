@@ -98,13 +98,18 @@ class TurnHarnessTest(unittest.TestCase):
         self.assertTrue(harness.started)
         recall = ToolCall("recall", "recall", {})
         send = ToolCall("send", "reply", {"bubbles": ["ok"]})
-        end = ToolCall("end", "end_turn", {})
         search = ToolCall("search", "memory_search", {"query": "x"})
-        for calls in ([send], [search], [end], [send, end], [recall], [recall, send]):
+        for calls in ([send], [search], [recall], [recall, send]):
             self.assertIsNone(harness.validate(calls))
         harness.accept_owner_update()
-        self.assertIsNone(harness.validate([send, end]))
-        self.assertEqual(harness.validate([recall, end]), "end_turn_must_be_alone")
+        self.assertIsNone(harness.validate([send]))
+
+    def test_conversation_stages_complete_automatically_without_end_turn(self) -> None:
+        for stage in ("owner", "heartbeat", "webhook", "goal"):
+            with self.subTest(stage=stage):
+                harness = TurnHarness.for_stage(stage)
+                self.assertTrue(harness.spec.auto_complete)
+                self.assertIsNone(harness.spec.terminal_tool)
 
     def test_webhook_harness_rejects_tools_outside_its_contract(self) -> None:
         harness = TurnHarness.for_stage("webhook")
@@ -137,15 +142,14 @@ class TurnHarnessTest(unittest.TestCase):
         self.assertEqual(
             harness.validate(
                 [ToolCall("work", "goal_update", {})],
-                required_tool="end_turn",
+                required_tool="goal_review",
             ),
-            "end_turn_required",
+            "goal_review_required",
         )
-        harness.accept("goal_review")
         self.assertIsNone(
             harness.validate(
-                [ToolCall("finish", "end_turn", {})],
-                required_tool="end_turn",
+                [ToolCall("review", "goal_review", {})],
+                required_tool="goal_review",
             )
         )
 
@@ -183,6 +187,8 @@ class TurnHarnessTest(unittest.TestCase):
     def test_terminal_tool_must_be_alone_for_every_stage(self) -> None:
         work = ToolCall("work", "work", {})
         for stage, spec in TURN_HARNESS_SPECS.items():
+            if spec.auto_complete:
+                continue
             if spec.terminal_tool is None:
                 harness = TurnHarness.for_stage(stage)
                 harness.validate_surface({"episode_classify_turns"})

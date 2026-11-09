@@ -349,7 +349,7 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_contex
                 **({'reply_to_message_id': 'event'} if quote and not delivery_context else {})})
         else:
             assert ('请用 qq://poke' if expression == '[QQ 动作：戳一戳用户]' else expression) in str(history)
-            call = ToolCall('done', 'end_turn', {})
+            return ProviderResponse([], [])
         return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
 
     daemon.provider = SimpleNamespace(complete=complete)
@@ -501,7 +501,7 @@ def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
             call = ToolCall('voice-dispatch', 'reply', {'intent': '接住语音请求', 'reference': '', 'mode': 'voice'})
         else:
             assert '生成的第二句' in str(history)
-            call = ToolCall('done', 'end_turn', {})
+            return ProviderResponse([], [])
         return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
 
     daemon.provider = SimpleNamespace(complete=complete)

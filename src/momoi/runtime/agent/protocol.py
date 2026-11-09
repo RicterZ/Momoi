@@ -3,10 +3,8 @@ from dataclasses import dataclass
 from typing import Literal
 from typing import Any
 
-from ...models import AgentReply
-from ..parsing import parse_response
 from ..turn_support import ExternalToolTurnError
-from .workflow import TurnExecutionSpec, WorkflowProtocolError
+from .workflow import WorkflowProtocolError
 
 MAX_CONSECUTIVE_THOUGHT_ROUNDS = 6
 MAX_CONSECUTIVE_EXECUTION_FAILURES = 8
@@ -85,13 +83,3 @@ def owner_request_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any
     """Build an Owner-only wire copy without changing canonical Turn history."""
 
     return copy.deepcopy(messages)
-
-
-def parse_end_turn(
-    arguments: dict[str, Any],
-    *,
-    execution: TurnExecutionSpec,
-) -> tuple[AgentReply | None, str | None]:
-    if not execution.require_response:
-        return None, "end_turn_not_allowed"
-    return parse_response(arguments)

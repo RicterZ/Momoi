@@ -1,4 +1,3 @@
-import copy
 from typing import Any
 
 from ...tools.contracts.agenda import GOAL_REVIEW_SCHEMA
@@ -121,49 +120,3 @@ GOAL_REVIEW_TOOL_SPEC: dict[str, Any] = {
     ),
     "input_schema": GOAL_REVIEW_SCHEMA,
 }
-
-
-END_TURN_TOOL_SPEC: dict[str, Any] = {
-    "name": "end_turn",
-    "description": "结束本轮并提交其暂存状态。不发送消息，参数为 {}。Heartbeat 须先成功调用 heartbeat_activity，Goal 须先成功调用 goal_review。",
-    "input_schema": {
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "additionalProperties": False,
-        "examples": [{}],
-    },
-}
-
-
-def end_turn_tool_spec(stage: str) -> dict[str, Any]:
-    """Return a stage-specific copy for correction details only."""
-    if stage not in {"owner", "heartbeat", "webhook", "goal"}:
-        raise ValueError(f"end_turn is not available in {stage}")
-    return copy.deepcopy(END_TURN_TOOL_SPEC)
-
-
-def end_turn_correction(error: str, schema: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
-    hints = {
-        "end_turn_must_be_alone": "Call end_turn alone or last after reply, heartbeat_activity, goal_review or save_image_summary. Finish other work tools in earlier rounds.",
-        "reply_required_before_end_turn": "This recovery phase requires a user-visible notification before ending.",
-        "goal_review_required_before_end_turn": "Call goal_review successfully before end_turn({}); they may share a batch in that order.",
-        "goal_end_turn_requires_empty_arguments": "Submit the Goal outcome through goal_review; end_turn accepts only {} in this stage.",
-        "unexpected_end_turn_fields": "end_turn accepts only {}. Submit Goal outcomes through goal_review and Heartbeat activity and schedule through heartbeat_activity.",
-        "heartbeat_activity_required_before_end_turn": "Call heartbeat_activity successfully before end_turn; they may share a batch.",
-        "bubbles_not_allowed_in_end_turn": "Send the response through reply first; remove bubbles from end_turn.",
-        "activity_not_allowed_in_end_turn": "Remove activity; record Heartbeat activity through heartbeat_activity before ending.",
-    }
-    missing = [key for key in schema.get("required", []) if key not in arguments]
-    message = hints.get(error, "Correct the arguments to match this stage's schema and retry end_turn as a native tool call.")
-    field_errors = []
-    for key in missing:
-        field_errors.append({"path": "$." + key, "issue": "required_in_current_workflow"})
-    if missing:
-        message = "Supply all missing fields: " + ", ".join(missing) + ". " + message
-    return {
-        "field_errors": field_errors,
-        "message": message,
-        "hint": "The example illustrates structure only. Preserve truthful state decisions and do not resend messages already delivered.",
-        "example_arguments": copy.deepcopy(schema["examples"][0]),
-    }

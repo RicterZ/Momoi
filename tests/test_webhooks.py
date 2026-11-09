@@ -349,11 +349,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assert_tool_result(messages)
                         call = reply_call("notify-owner", bubbles=["有一个快递到了，取件码是 1234。"])
                     else:
-                        call = ToolCall(
-                            "finish",
-                            "end_turn",
-                            {},
-                        )
+                        return ProviderResponse([], [])
                     return ProviderResponse(
                         [
                             {

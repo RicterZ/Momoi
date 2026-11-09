@@ -13,23 +13,26 @@ class TurnHarnessSpec:
     permitted_tools: frozenset[str] | None = None
     required_before_end: frozenset[str] = frozenset()
     terminal_alone: bool = True
+    auto_complete: bool = False
 
 
 TURN_HARNESS_SPECS = {
     spec.stage: spec
     for spec in (
-        TurnHarnessSpec("owner", None, "end_turn"),
-        TurnHarnessSpec("heartbeat", "heartbeat_begin", "end_turn",
+        TurnHarnessSpec("owner", None, None, auto_complete=True),
+        TurnHarnessSpec("heartbeat", "heartbeat_begin", None, auto_complete=True,
                         required_before_end=frozenset({"heartbeat_activity"})),
         TurnHarnessSpec(
             "webhook",
             None,
-            "end_turn",
+            None,
             permitted_tools=frozenset(
-                {"reply", "web_fetch", "exec", "read_tool_result", "goal_create", "read_image", "end_turn"}
+                {"reply", "web_fetch", "exec", "read_tool_result", "goal_create", "read_image"}
             ),
+            auto_complete=True,
         ),
-        TurnHarnessSpec("goal", None, "end_turn", required_before_end=frozenset({"goal_review"})),
+        TurnHarnessSpec("goal", None, None, auto_complete=True,
+                        required_before_end=frozenset({"goal_review"})),
         TurnHarnessSpec("plan_step", None, "plan_step_finish", terminal_alone=False),
         TurnHarnessSpec("reflection", None, "reflection_finish"),
         TurnHarnessSpec("weekly_reflection", None, "weekly_reflection_finish",
@@ -99,7 +102,7 @@ class TurnHarness:
 
     def validate_surface(self, tool_names: set[str]) -> None:
         required = set(self.spec.required_before_end)
-        if self.spec.terminal_tool is not None and self.spec.terminal_tool != "end_turn":
+        if self.spec.terminal_tool is not None:
             required.add(self.spec.terminal_tool)
         if self.spec.first_tool is not None:
             required.add(self.spec.first_tool)
@@ -141,14 +144,10 @@ class TurnHarness:
         first = self.spec.first_tool
         first_names = {first}
         if first is not None and not self.started:
-            opening_send_and_end = (
-                first == "reply" and len(names) == 2
-                and names[0] in first_names and names[1] == "end_turn"
-            )
             if first == "recall":
                 if names.count("recall") != 1:
                     return "recall_required_once_in_opening_batch"
-            elif not opening_send_and_end and (len(names) != 1 or names[0] not in first_names):
+            elif len(names) != 1 or names[0] not in first_names:
                 return f"{first}_must_be_first_and_alone"
         elif first is not None and first != "recall" and any(name in first_names for name in names):
             return f"{first}_already_completed"
@@ -159,21 +158,12 @@ class TurnHarness:
         ):
             return f"{required_tool}_required"
         terminal = self.spec.terminal_tool
-        declarations_and_end = (
-            terminal == "end_turn" and names[-1:] == [terminal]
-            and all(name in {"reply", "heartbeat_activity", "goal_review", "save_image_summary"} for name in names[:-1])
-        )
-        review_and_end = self.spec.stage == "goal" and names == ["goal_review", "end_turn"]
-        if self.spec.terminal_alone and terminal in names and not review_and_end and not declarations_and_end and (len(names) != 1 or names[0] != terminal):
+        if self.spec.terminal_alone and terminal in names and names != [terminal]:
             return f"{terminal}_must_be_alone"
         if terminal in names:
             missing = self.spec.required_before_end - self.completed_tools
-            if review_and_end:
-                missing = missing - {"goal_review"}
-            if declarations_and_end:
-                missing = missing - set(names[:-1])
             if missing:
-                return f"{sorted(missing)[0]}_required_before_end_turn"
+                return f"{sorted(missing)[0]}_required_before_{terminal}"
         permitted = (
             self.permitted_tool_names
             if self.permitted_tool_names is not None
@@ -181,14 +171,6 @@ class TurnHarness:
         )
         if permitted is not None and any(name not in permitted for name in names):
             return "tool_not_allowed"
-        for call in calls:
-            if call.name != "end_turn":
-                continue
-            if call.argument_error or not isinstance(call.arguments, dict):
-                return "invalid_end_turn_arguments"
-            if self.spec.stage == "goal":
-                if call.arguments:
-                    return "goal_end_turn_requires_empty_arguments"
         return None
 
     def observe_calls(self, calls: list[ToolCall]) -> None:

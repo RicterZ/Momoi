@@ -5,7 +5,6 @@ from jsonschema import Draft202012Validator
 from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
 from momoi.runtime.tool_contracts.conversation import (
     HEARTBEAT_ACTIVITY_TOOL_SPEC,
-    end_turn_tool_spec,
 )
 from momoi.runtime.tool_contracts.reflection import REFLECTION_FINISH_SPEC
 from momoi.runtime.tool_contracts.runtime import READ_TOOL_RESULT_SPEC, TOOL_ENABLE_SPEC, tool_search_spec
@@ -42,9 +41,6 @@ def test_model_tool_schemas_compile_and_examples_validate():
         *BUILTIN_TOOL_SPECS,
         *MEMORY_TOOL_SPECS,
         *THINKING_TOOL_SPECS,
-        *(end_turn_tool_spec(stage) for stage in (
-            "owner", "goal", "heartbeat", "webhook",
-        )),
     ]
     for spec in specs:
         schema = spec["input_schema"]

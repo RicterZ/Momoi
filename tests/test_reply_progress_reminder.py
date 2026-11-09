@@ -28,8 +28,7 @@ def test_progress_reminder_counts_calls_and_resets_on_successful_reply(tmp_path,
         nonlocal state, serial
         serial += 1
         calls = [ToolCall(f"{serial}-{index}", name,
-                          {"url": "https://example.com"} if name == "web_fetch" else
-                          {} if name == "end_turn" else {})
+                          {"url": "https://example.com"} if name == "web_fetch" else {})
                  for index, name in enumerate(names)]
         response = ProviderResponse([
             {"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}
@@ -37,7 +36,7 @@ def test_progress_reminder_counts_calls_and_resets_on_successful_reply(tmp_path,
         ], calls)
         request = ToolBatchRequest(
             response=response, messages=messages,
-            request_tools=[{"name": name} for name in {"web_fetch", "reply", "end_turn"}],
+            request_tools=[{"name": name} for name in {"web_fetch", "reply"}],
             tools=[], enable_tool_groups={}, current_events=[], draft=TurnDraft(),
             harness=harness, execution=TurnExecutionSpec(stage), source_event_id="",
             turn_id="progress", call_id=f"round-{serial}", round_number=serial,
@@ -90,7 +89,6 @@ def test_progress_reminder_counts_calls_and_resets_on_successful_reply(tmp_path,
         assert len(rows) == (4 if stage == "owner" and not sidecar else 0)
         assert all(json.loads(row[0])["type"] == "reply_progress_reminder" for row in rows)
         assert not await batch(["web_fetch", "web_fetch"])
-        assert not await batch(["end_turn"])
         assert state.calls_since_reply == (2 if stage == "owner" and not sidecar else 0)
 
     try:

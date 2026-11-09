@@ -62,7 +62,7 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
 always/recent 记忆、当前情绪与活动，以及本次事件任务；`<recent_events>` 列出
 transcript 中的历史事件 ID。Webhook Turn 不自动预检索记忆或 Episode。
 
-步骤可以使用 HTTP 获取任务需要的数据，发送新信息或直接调用 `end_turn` 静默结束。
+步骤可以使用 HTTP 获取任务需要的数据，发送新信息，或停止调用工具静默结束。
 事件落库不代表消息已投递。它不能调用任意 MCP 或文件工具。
 
 ## 添加固定命令步骤

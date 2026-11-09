@@ -355,10 +355,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         tool_name = "reply"
                         arguments = reply_call("script", bubbles=[text]).arguments
                     else:
-                        tool_name = "end_turn"
-                        arguments = {}
+                        return ProviderResponse([], [])
                     call = ToolCall(
-                        f"end_turn-{provider_self.calls}",
+                        f"script-{provider_self.calls}",
                         tool_name,
                         arguments,
                     )
@@ -473,11 +472,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertIn('"state": "recalled"', rendered.replace('\\"', '"'))
                         call = reply_call("updated-reply", bubbles=["收到，不查了"])
                     else:
-                        call = ToolCall(
-                            "final-end_turn",
-                            "end_turn",
-                            {},
-                        )
+                        return ProviderResponse([], [])
                     return ProviderResponse(
                         [
                             {
@@ -889,11 +884,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         self.assertIn("mcp__demo__read", names)
                         self.assertIn("dynamic tool works", json.dumps(messages))
-                        call = ToolCall(
-                            "finish",
-                            "end_turn",
-                            {},
-                        )
+                        return ProviderResponse([], [])
                     return ProviderResponse([], [call])
 
             provider = Provider()
@@ -983,11 +974,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "workspace group loaded",
                             json.dumps(messages, ensure_ascii=False),
                         )
-                        call = ToolCall(
-                            "finish-workspace",
-                            "end_turn",
-                            {},
-                        )
+                        return ProviderResponse([], [])
                     return ProviderResponse([], [call])
 
             provider = Provider()
@@ -1088,10 +1075,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 arguments,
                             )
                         )
-                    else:
+                    elif self.calls == 4:
                         assert {"reply", "recall"} <= {tool["name"] for tool in tools}
-                        calls = [reply_call("notify", bubbles=["创建任务没成功，我先停下了。"]),
-                                 ToolCall("end", "end_turn", {})]
+                        calls = [reply_call("notify", bubbles=["创建任务没成功，我先停下了。"])]
+                    else:
+                        return ProviderResponse([], [])
                     return ProviderResponse(
                         [
                             {
@@ -1113,7 +1101,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 await daemon._complete_batch_turn(
                     [event], asyncio.Event(), daemon._turn_id(event.event_id)
                 )
-            self.assertEqual(provider.calls, 4)
+            self.assertEqual(provider.calls, 5)
             self.assertTrue(
                 any("创建任务没成功" in row.text for row in daemon.store.due_outbox())
             )
@@ -1411,11 +1399,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "next_check_minutes": 2, "reason": "完成本次灵感整理",
                         })
                     elif self.calls == 4:
-                        call = ToolCall(
-                            "heartbeat-first-finish",
-                            "end_turn",
-                            {},
-                        )
+                        return ProviderResponse([], [])
                     elif self.calls == 5:
                         call = ToolCall(
                             "heartbeat-begin-two",
@@ -1453,11 +1437,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "next_check_minutes": 2, "reason": "有具体的新点子才分享",
                         })
                     else:
-                        call = ToolCall(
-                            f"heartbeat-{self.calls}",
-                            "end_turn",
-                            {},
-                        )
+                        return ProviderResponse([], [])
                     return ProviderResponse(
                         [
                             {
@@ -1648,8 +1628,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     if self.calls > limit:
                                         assert self.calls == limit + 1
                                         assert {"reply", "recall"} <= {tool["name"] for tool in _args[2]}
-                                        calls = [reply_call("notify", bubbles=["这次出错了，我先停下来，结果还没确认。"]),
-                                                 ToolCall("end", "end_turn", {})]
+                                        calls = [reply_call("notify", bubbles=["这次出错了，我先停下来，结果还没确认。"])]
                                         return ProviderResponse([{"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments} for c in calls], calls)
                                     if external_effect and self.calls == 1:
                                         daemon.store.begin_tool_call(
@@ -1871,11 +1850,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if self.calls == 2:
                         call = reply_call("stop-message", bubbles=["已经停下来了"])
                     else:
-                        call = ToolCall(
-                            "stop-response",
-                            "end_turn",
-                            {},
-                        )
+                        return ProviderResponse([], [])
                     return ProviderResponse(
                         [
                             {
@@ -1950,11 +1925,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     elif self.calls == 2:
                         call = reply_call("stop-message", bubbles=["已经终止当前任务"])
                     else:
-                        call = ToolCall(
-                            "stop-after-tool",
-                            "end_turn",
-                            {},
-                        )
+                        return ProviderResponse([], [])
                     return ProviderResponse(
                         [
                             {

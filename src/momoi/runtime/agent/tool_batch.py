@@ -12,18 +12,15 @@ from typing import Any
 from ...channel import Channel, ChannelMessage
 from ...storage.core.timestamps import context_timestamp
 from ...observability.context import log_context
-from ...models import MessageRecalled, AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
+from ...models import MessageRecalled, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
 from ...mcp.content import attachment_blocks
-from ...observability.events import TRACE, log_event
-from ...observability.values import safe_preview
 from ..turn_support import (
     tool_error_block,
     tool_result_block,
 )
-from ..tool_contracts.conversation import end_turn_correction, end_turn_tool_spec
 from ...tools.validation import validate_tool_arguments
 from .harness import TurnHarness
-from .protocol import assistant_history_message, parse_end_turn
+from .protocol import assistant_history_message
 from .runtime_tools import (
     begin_heartbeat, search_tools, enable_tools, recall_owner_context, record_heartbeat_activity,
 )
@@ -86,8 +83,6 @@ class ToolBatchResult:
     external_effect: bool
     state: ToolBatchState
     last_tool_error: str
-    ended: bool
-    reply: AgentReply | None
     protocol_error: bool = False
     updates_in_result: bool = False
 
@@ -132,8 +127,6 @@ class ToolBatchExecutor:
         last_sent_channel = state.last_sent_channel
         last_tool_error = ""
         external_effect = False
-        ended = False
-        reply = None
         protocol_error = False
         updates_in_result = False
 
@@ -149,7 +142,7 @@ class ToolBatchExecutor:
 
         async def execute_call(call: ToolCall) -> str:
             nonlocal previous_tool_name, last_sent_bubbles, last_sent_channel
-            nonlocal last_tool_error, external_effect, ended, reply, protocol_error
+            nonlocal last_tool_error, external_effect, protocol_error
             nonlocal updates_in_result, owner_updates
             source = (
                 "workflow"
@@ -206,7 +199,7 @@ class ToolBatchExecutor:
             elif request.pause_requested and request.pause_requested():
                 result = {"ok": False, "error": "paused_for_owner",
                           "message": "用户开始聊天，本次调用尚未执行。任务已暂停；处理用户消息后会用最新上下文重新判断，勿自动补发或重放。"}
-            elif owner_updates and call.name in {"reply", "wait", "end_turn"} and not first_call_reply:
+            elif owner_updates and call.name in {"reply", "wait"} and not first_call_reply:
                 result = {
                     "ok": False, "error": "superseded_by_owner_update",
                     "message": f"用户在执行前补充了新消息，本次 {call.name} 未执行。请阅读后续用户插话再决定下一步；其他工具以各自结果为准，运行时没有接管未完成任务。",
@@ -408,56 +401,6 @@ class ToolBatchExecutor:
                     )}
                 except (KeyError, TypeError, ValueError) as error:
                     result = {"ok": False, "error": "invalid_episode_relations", "message": str(error)}
-            elif call.name == "end_turn" and (
-                missing_images := self.store.missing_image_summaries(request.current_events)
-            ):
-                result = {
-                    "ok": False,
-                    "error": "image_summary_required",
-                    "image_ids": missing_images,
-                    "message": (
-                        "Privately call save_image_summary for these images before "
-                        "end_turn. Do not resend delivered messages."
-                    ),
-                }
-            elif call.name == "end_turn":
-                fields = dict(
-                    stage=execution.stage, turn_id=request.turn_id,
-                    call_id=request.call_id, round=request.round_number,
-                    channel=request.delivery_channel.name,
-                )
-                log_event(
-                    logger, TRACE, "end_turn_received", **fields,
-                    arguments=safe_preview(call.arguments, 1000),
-                )
-                if any(block["is_error"] for block in results):
-                    result = {
-                        "ok": False, "error": "end_turn_delivery_failed",
-                        "message": (
-                            "Handle the failed delivery before finishing. "
-                            "Do not resend committed bubbles."
-                        ),
-                    }
-                elif execution.goal_id:
-                    result = {"ok": True, "state": "completed"}
-                else:
-                    reply, error = parse_end_turn(
-                        call.arguments,
-                        execution=execution,
-                    )
-                    result = (
-                        {"ok": True, "state": "completed"}
-                        if reply is not None else {"ok": False, "error": error}
-                    )
-                    if error:
-                        schema = end_turn_tool_spec(execution.stage)["input_schema"]
-                        result.update(end_turn_correction(error, schema, call.arguments))
-                ended = bool(result.get("ok"))
-                log_event(
-                    logger, TRACE, "end_turn_accepted" if ended else "end_turn_rejected",
-                    **fields,
-                    **({} if ended else {"reason": result.get("error")}),
-                )
             elif call.name == "phone_result" and not (
                 request.workflow is not None and call.name in request.workflow.tool_names
             ):
@@ -788,8 +731,6 @@ class ToolBatchExecutor:
                     for pending in calls[index:]
                 )
                 break
-            if ended:
-                break
             if call.name == "wait" and result.get("ok"):
                 # Always return to the model before any action planned before waiting.
                 results.extend(tool_error_block(pending.id, "reconsider_after_wait")
@@ -809,9 +750,9 @@ class ToolBatchExecutor:
                 calls_since_reply = 0
             else:
                 calls_since_reply += sum(
-                    name not in {"reply", "end_turn"} for name, _ in completed_calls
+                    name != "reply" for name, _ in completed_calls
                 )
-                if (not ended and calls_since_reply // 3 > state.calls_since_reply // 3):
+                if (calls_since_reply // 3 > state.calls_since_reply // 3):
                     text = (
                         '<runtime_notice type="reply_progress_reminder">\n'
                         f'自本轮开始或上次成功 reply 以来，已连续执行 {calls_since_reply} 次非 reply 工具调用，'
@@ -854,8 +795,6 @@ class ToolBatchExecutor:
                 calls_since_reply=calls_since_reply,
             ),
             last_tool_error=last_tool_error,
-            ended=ended,
-            reply=reply,
             protocol_error=protocol_error,
             updates_in_result=updates_in_result,
         )

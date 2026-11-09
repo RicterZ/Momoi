@@ -65,5 +65,5 @@ class WebhookWorkflow:
             delivery_channel=channel,
         )
         if not isinstance(reply, AgentReply):
-            raise RuntimeError("Webhook Turn ended without end_turn")
+            raise RuntimeError("Webhook Turn ended without completing")
         return replace(reply, memory_access=draft.memory_access)
