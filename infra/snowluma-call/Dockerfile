@@ -1,4 +1,4 @@
-ARG SNOWLUMA_IMAGE=motricseven7/snowluma:v2.2.0
+ARG SNOWLUMA_IMAGE=ricterz/snowluma:v2.2.0
 FROM ${SNOWLUMA_IMAGE}
 USER root
 ARG BRIDGE_REV=22f30c021cd3170f75af9dff66cc959a07ebda4b

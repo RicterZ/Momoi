@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: infra/snowluma-call/Dockerfile
       args:
-        SNOWLUMA_IMAGE: ${SNOWLUMA_IMAGE:-motricseven7/snowluma:v2.2.0}
+        SNOWLUMA_IMAGE: ${SNOWLUMA_IMAGE:-ricterz/snowluma:v2.2.0}
     image: momoi-snowluma-call:local
     environment:
       QQ_CALL_ENABLED: "1"
