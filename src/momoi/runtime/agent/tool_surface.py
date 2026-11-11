@@ -39,7 +39,7 @@ PHONE_RESULT_SPEC = {
 logger = logging.getLogger("momoi.runtime.turns")
 
 DEFERRED_TOOLS = frozenset({
-    "thinking_search", "thinking_read", "episode_relations", "episode_search", "memory_search",
+    "thinking_search", "thinking_read", "episode_relations", "memory_search",
     "write_file", "apply_patch", "makedirs", "move_file", "delete_file",
     "skill_install", "skill_uninstall",
 })
