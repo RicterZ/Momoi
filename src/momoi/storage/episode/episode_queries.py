@@ -238,8 +238,11 @@ class EpisodeQueryStore:
         if max_results <= 0 or offset < 0 or not queries:
             return []
         rows_by_id, documents = (self._episode_topic_documents()
-            if topics_only and after is None and before is None else
+            if topics_only else
             self._episode_search_documents(after=after, before=before))
+        if topics_only and (after is not None or before is not None):
+            in_window = self._episode_ids_with_messages(after, before)
+            documents = [document for document in documents if document.episode_id in in_window]
         excluded = set(exclude_episode_ids)
         documents = [document for document in documents if document.episode_id not in excluded]
         matches = self._episode_query.match_many(
@@ -371,10 +374,20 @@ class EpisodeQueryStore:
         return {"matches": matches, "matched_message_count": len(hits),
                 "matched_message_chars": sum(len(row["content"]) for row, _ in hits)}
 
-    def search_topic_queries(self, queries, max_results, *, dense_evidence=None, minimum_confidence=None, exclude_episode_ids=()):
+    def _episode_ids_with_messages(self, after: float | None, before: float | None) -> set[str]:
+        rows = self._db.execute(
+            """SELECT DISTINCT et.episode_id FROM episode_turns AS et
+               JOIN messages AS m ON m.turn_id=et.turn_id
+               WHERE (? IS NULL OR m.created_at>=?) AND (? IS NULL OR m.created_at<?)""",
+            (after, after, before, before),
+        ).fetchall()
+        return {str(row[0]) for row in rows}
+
+    def search_topic_queries(self, queries, max_results, *, dense_evidence=None, minimum_confidence=None,
+                             exclude_episode_ids=(), after=None, before=None):
         return self._ranked_episode_results(queries, max_results,
             topics_only=True, dense_evidence=dense_evidence, minimum_confidence=minimum_confidence,
-            exclude_episode_ids=exclude_episode_ids)
+            exclude_episode_ids=exclude_episode_ids, after=after, before=before)
 
     def search_episode_queries(
         self,

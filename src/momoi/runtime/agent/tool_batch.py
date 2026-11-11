@@ -361,6 +361,7 @@ class ToolBatchExecutor:
                                 "recall_queries": [{"semantic": value, "keywords": search["keyword"]}
                                                    for value in (search["semantic"] or [""])],
                                 "memory_filters": search["filters"],
+                                "episode_time_range": search["time_range"],
                                 "strategy": ["Check the candidate message against prior discussion."],
                             })
                             request.draft.memory_context.update(prepared["memory_snapshots"])
