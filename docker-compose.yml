@@ -1,6 +1,6 @@
 services:
   snowluma:
-    image: ${SNOWLUMA_IMAGE:-motricseven7/snowluma:v2.2.0}
+    image: ${SNOWLUMA_IMAGE:-ricterz/snowluma:v2.2.0}
     container_name: ${SNOWLUMA_CONTAINER:-snowluma}
     restart: unless-stopped
     shm_size: 1gb

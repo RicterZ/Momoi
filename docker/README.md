@@ -25,6 +25,14 @@ Pin a version tag from the Tags tab if you do not want `latest`.
 The published Compose file starts Momoi and SnowLuma. BGE is included in the image and
 runs in the same process, with no encoder port or separate container. Web Settings
 can disable semantic memory or select a remote embedding provider.
+
+SnowLuma is pinned to `ricterz/snowluma:v2.2.0` for Linux amd64 and arm64.
+This is an unchanged backup of `motricseven7/snowluma:v2.2.0`, recovered from
+`docker.m.daocloud.io/motricseven7/snowluma` after the upstream repository became
+unavailable. The original multi-platform index digest is
+`sha256:34b4ec03738a698231cbad39c5650747330f5a96d953494fb6c12e1273974c0b`.
+Set `SNOWLUMA_IMAGE` to override the image for both Compose and the call overlay.
+
 Existing default `embedding:8002` configurations migrate automatically; after
 verifying the upgrade, remove the old encoder container and any `depends_on` entry
 from a custom deployment file. QQ uses the SnowLuma service in the same Compose
