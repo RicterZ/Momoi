@@ -15,20 +15,21 @@ from ...memory.storage.records import MEMORY_KINDS
 
 _MEMORY_FILTERS = copy.deepcopy(next(s for s in MEMORY_TOOL_SPECS if s["name"] == "memory_search")["input_schema"]["properties"]["filters"])
 _MEMORY_FILTERS["properties"].pop("kinds")
+_EPISODE_TIME_RANGE = next(s for s in MEMORY_TOOL_SPECS if s["name"] == "episode_search")["input_schema"]["properties"]["time_range"]
 
 
 RECALL_SCOPE_CONTRACT = (
     'semantic 和 keyword 可省略或为空；仅指定 kind、tags 或 scope 时按条件获取记忆，不检索 Episode。'
     '至少提供一个查询或筛选条件。semantic 可提供互补查询，无需凑满数量，不把未知答案写成事实。'
     'keyword 是所有查询共用的字面 OR 锚点。tags 和 scope 只过滤已确认记忆，不限制 Episode 话题；'
-    '普通搜索省略 tags，避免漏掉未标标签的相关记忆。需要原文时用 episode_read。'
+    '普通搜索省略 tags，避免漏掉未标标签的相关记忆。time_range 只限定 Episode 话题。需要原文时用 episode_read。'
 )
 
 
 def recall_correction(message: str) -> dict[str, Any]:
     return {
         "message": message + " 请重新以原生 recall 工具调用；本次检索尚未成功。",
-        "hint": "semantic、keyword、tags、kind、scope 均可省略，至少提供一个有效查询或筛选条件。"
+        "hint": "semantic、keyword、tags、kind、scope、time_range 均可省略，至少提供一个有效查询或筛选条件。"
                 "不传 units、intent、mode 或来源轮次，不把数组编码为字符串。",
     }
 
@@ -64,12 +65,22 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
             },
             "tags": copy.deepcopy(_MEMORY_FILTERS["properties"]["tags_any"]),
             "scope": copy.deepcopy(_MEMORY_FILTERS["properties"]["scope"]),
+            "time_range": {
+                **copy.deepcopy(_EPISODE_TIME_RANGE),
+                "description": (
+                    '可选，只限定 Episode 话题：保留在该时间窗口内有消息的话题，不过滤已确认记忆。默认不限时间。'
+                    '“今天”“昨晚”“某天”等时间本身是条件时使用，不要把日期写进 keyword。'
+                    'range 的 from/to 为 ISO 8601 本地时间，例如 {"kind":"range","from":"2026-11-11T00:00","to":"2026-11-12T00:00"}；'
+                    '仅提供 time_range 时按时间倒序浏览该窗口内的话题。'
+                ),
+            },
         },
         "additionalProperties": False,
         "anyOf": [
             {"required": [name], "properties": {name: {"minItems": 1}}}
             for name in ("semantic", "keyword", "kind", "tags")
-        ] + [{"required": ["scope"], "properties": {"scope": {"minLength": 1}}}],
+        ] + [{"required": ["scope"], "properties": {"scope": {"minLength": 1}}},
+             {"required": ["time_range"]}],
     },
 }
 
@@ -80,11 +91,24 @@ def recall_search_arguments(arguments):
     parsed, error = validate_tool_arguments("recall", arguments, RECALL_TOOL_SPEC["input_schema"])
     if error:
         raise ValueError("recall requires a query or filter; invalid fields or values")
-    return {
+    from ...tools.time_range import parse_history_time_range
+    window = None
+    if "time_range" in parsed:
+        try:
+            _after, _before, window = parse_history_time_range(parsed["time_range"])
+        except ValueError:
+            raise ValueError("recall time_range must be recent with optional days, range with from/to, or all") from None
+        if window["kind"] == "all":
+            window = None
+    search = {
+        "time_range": window,
         "semantic": list(dict.fromkeys(" ".join(value.split()) for value in parsed.get("semantic", []))),
         "keyword": list(dict.fromkeys(" ".join(value.split()) for value in parsed.get("keyword", []))),
         "filters": {"tags_any": parsed.get("tags", []), "kinds": parsed.get("kind", []), "scope": parsed.get("scope", "")},
     }
+    if window is None and not (search["semantic"] or search["keyword"] or any(search["filters"].values())):
+        raise ValueError("recall requires a query or filter; time_range all alone does not narrow anything")
+    return search
 
 
 def heartbeat_begin_spec() -> dict[str, Any]:

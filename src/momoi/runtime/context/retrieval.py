@@ -43,6 +43,8 @@ def select_plan_recall_queries(
                 "recall_queries": activity["recall_queries"],
                 "kind": activity.get("kind", []),
                 "memory_filters": activity.get("memory_filters", {}),
+                **({"episode_time_range": activity["episode_time_range"]}
+                   if activity.get("episode_time_range") else {}),
             }
         )
     reused_units_by_turn: dict[str, list[str]] = {}
@@ -64,6 +66,7 @@ def select_plan_recall_queries(
         kinds = tuple(dict.fromkeys(str(kind) for kind in raw_kinds))
         unit_kinds[unit_id] = kinds
         queries: list[dict[str, object]] = []
+        window = unit.get("episode_time_range") or None
         for raw_query in unit.get("recall_queries") or []:
             if not isinstance(raw_query, dict):
                 raise ValueError("context plan recall query is not normalized")
@@ -78,26 +81,26 @@ def select_plan_recall_queries(
                 "semantic": semantic,
                 "keywords": list(dict.fromkeys(keywords)),
             }
-            if (semantic or keywords or any(unit.get("memory_filters", {}).values())) and query not in queries:
+            if (semantic or keywords or window or any(unit.get("memory_filters", {}).values())) and query not in queries:
                 queries.append(query)
         if queries:
-            unit_queries.append((unit_id, kinds, queries, unit.get("memory_filters", {})))
+            unit_queries.append((unit_id, kinds, queries, unit.get("memory_filters", {}), window))
     emitted_queries = {
         str(query["semantic"])
-        for _unit_id, _kinds, queries, _filters in unit_queries
+        for _unit_id, _kinds, queries, _filters, _window in unit_queries
         for query in queries
     }
     selected_by_query = {}
     selected: list[dict[str, object]] = []
     skipped_unit_ids: set[str] = set()
-    for query_rank in range(max((len(queries) for _, _kinds, queries, _filters in unit_queries), default=0)):
-        for unit_id, kinds, queries, filters in unit_queries:
+    for query_rank in range(max((len(queries) for _, _kinds, queries, _filters, _window in unit_queries), default=0)):
+        for unit_id, kinds, queries, filters, window in unit_queries:
             if query_rank >= len(queries):
                 continue
             query = queries[query_rank]
             semantic = str(query["semantic"])
             keywords = list(query["keywords"])
-            query_key = (semantic, kinds, json.dumps(filters, sort_keys=True))
+            query_key = (semantic, kinds, json.dumps(filters, sort_keys=True), json.dumps(window, sort_keys=True))
             existing = selected_by_query.get(query_key)
             if existing is not None:
                 unit_ids = existing["unit_ids"]
@@ -125,11 +128,23 @@ def select_plan_recall_queries(
             }
             if filters:
                 item["memory_filters"] = filters
+            if window:
+                item["episode_time_range"] = window
             if kinds:
                 item["kinds"] = list(kinds)
             selected_by_query[query_key] = item
             selected.append(item)
     return selected, reused_units_by_turn, emitted_queries, skipped_unit_ids
+
+
+def recall_episode_window(selected: list[dict[str, object]]) -> tuple[float | None, float | None]:
+    """Resolve the Episode window shared by one recall call's queries."""
+    from ...tools.time_range import parse_history_time_range
+    window = next((item["episode_time_range"] for item in selected if item.get("episode_time_range")), None)
+    if not window:
+        return None, None
+    after, before, _ = parse_history_time_range(window)
+    return after, before
 
 
 def _recall_log_text(value: object, limit: int = 300) -> str:
@@ -293,10 +308,13 @@ def build_plan_retrieval(
         )
         for item in recall_queries
     ]
+    episode_after, episode_before = recall_episode_window(recall_queries)
     episode_rows = selected_episode_rows if selected_episode_rows is not None else store.search_topic_queries(
         episode_queries,
         max(0, config.summary_results),
         dense_evidence=dense_evidence,
+        after=episode_after,
+        before=episode_before,
     )
     episode_hit_query_set = {
         str(query.get("expression") or "")

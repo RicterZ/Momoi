@@ -13,7 +13,7 @@ from ..agent.context_window import context_compaction_tokens
 from ..turn_support import context_data_message
 from .presentation import heartbeat_self_state_lines, recent_episode_lines, recall_context_lines
 from .rendering import assemble_main_context
-from .retrieval import build_plan_retrieval, select_plan_recall_queries
+from .retrieval import build_plan_retrieval, recall_episode_window, select_plan_recall_queries
 
 
 class ContextService:
@@ -29,17 +29,23 @@ class ContextService:
             )
         if not selected:
             return RecallSelection([], [], [])
+        after, before = recall_episode_window(selected)
+        windowed = after is not None or before is not None
         if all(not item["semantic_expression"] and not item["expression"] for item in selected):
-            memories = self.memory.rank(
-                [], min(6, max(0, self.config.memory_results)),
-                filters=selected[0].get("memory_filters"),
-            )
+            memories = []
+            if any((selected[0].get("memory_filters") or {}).values()) or not windowed:
+                memories = self.memory.rank(
+                    [], min(6, max(0, self.config.memory_results)),
+                    filters=selected[0].get("memory_filters"),
+                )
             for row in memories:
                 row["unit_ids"] = selected[0]["unit_ids"]
+            episodes = self._browse_recall_window(selected[0], after, before, exclude_episode_ids) if windowed else []
             if diagnostics is not None:
-                diagnostics.update(status="skipped", skip_reason="metadata_only",
+                diagnostics.update(status="skipped", skip_reason="time_window_browse" if windowed else "metadata_only",
+                                   candidate_count=len(episodes), selected_ids=[str(row["id"]) for row in episodes],
                                    memory_candidates=memories, selected_memory_ids=[row["id"] for row in memories])
-            return RecallSelection([], memories, [])
+            return RecallSelection(episodes, memories, [])
         queries = [EpisodeRecallQuery(
             expression=str(item["expression"]),
             unit_ids=tuple(str(value) for value in item["unit_ids"]),
@@ -51,6 +57,7 @@ class ContextService:
                 queries, TOPIC_CANDIDATE_LIMIT, dense_evidence=dense_evidence,
                 minimum_confidence=0,
                 exclude_episode_ids=exclude_episode_ids,
+                after=after, before=before,
             )
             if self.config.summary_results > 0 else []
         )
@@ -96,6 +103,15 @@ class ContextService:
             [row for row in memories if row["source"] == "confirmed"],
             [row for row in memories if row["source"] == "reflection"],
         )
+
+    def _browse_recall_window(self, query, after, before, exclude_episode_ids=()):
+        limit = max(0, self.config.summary_results)
+        excluded = set(exclude_episode_ids)
+        rows = [row for row in self.store.search_episodes("", limit + len(excluded), after=after, before=before)
+                if str(row["id"]) not in excluded][:limit]
+        for row in rows:
+            row["matched_queries"] = [{"expression": "", "unit_ids": list(query["unit_ids"]), "priority": 0}]
+        return rows
 
     def _context_compaction_tokens(self) -> int:
         return context_compaction_tokens(self.config)
@@ -263,6 +279,7 @@ class ContextService:
             "id": f"u{index}", "event_ids": event_ids, "intent": semantic,
             "recall_queries": [{"semantic": semantic, "keywords": search["keyword"]}],
             "memory_filters": search["filters"],
+            **({"episode_time_range": search["time_range"]} if search["time_range"] else {}),
         } for index, semantic in enumerate(search["semantic"] or [""], 1)]
         return {
             "version": 7,
@@ -501,6 +518,8 @@ class ContextService:
                 "memory_filters": MOMOI_MEMORY_TAGS.filters(arguments.get("memory_filters")),
                 "recall_mode": recall_mode,
                 "recall_queries": queries if recall_mode == "search" else [],
+                **({"episode_time_range": arguments["episode_time_range"]}
+                   if recall_mode == "search" and arguments.get("episode_time_range") else {}),
             },
             "strategy": strategy,
         }
