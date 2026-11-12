@@ -81,7 +81,7 @@ class ModelRoundRunner:
             round=round_number,
             channel=channel,
             goal_id=goal_id,
-        ), model_request(thinking_effort=self.thinking_stages.get(stage, "low" if stage == "weekly_reflection" else None)):
+        ), model_request(thinking_effort=self.thinking_stages.get(stage, "low" if stage in {"weekly_reflection", "memory_verification"} else None)):
             if not preserve_transcript:
                 history_messages = self.context_window.fit(
                     request_system,

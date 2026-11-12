@@ -70,6 +70,9 @@ class LifecycleStore:
             "UPDATE weekly_reflections SET state='pending', claimed_at=NULL WHERE state='running'"
         )
         self._db.execute(
+            "UPDATE memory_verification_runs SET state='pending', claimed_at=NULL WHERE state='running'"
+        )
+        self._db.execute(
             "UPDATE conversation_episodes SET summary_claimed_at=NULL"
         )
         self._db.execute("UPDATE episode_relation_jobs SET claimed_at=NULL")

@@ -1299,6 +1299,39 @@ function ActivationSuggestions({ data, token, onMutated }) {
   </section>;
 }
 
+const verificationLabels = { possibly_outdated: "可能已过时", conflicts_with: "与其他记忆冲突" };
+
+function MemoryVerifications({ data, token, onMutated }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const confirm = useConfirm();
+  async function act(item, remove) {
+    if (remove && !await confirm({ title: "删除这条记忆？", message: `将删除「${item.content}」。`, confirmLabel: "删除", cancelLabel: "取消" })) return;
+    setBusy(true);
+    setError("");
+    try {
+      if (remove) await api(`/api/memories/${item.memory_id}`, { method: "DELETE", token });
+      else await api(`/api/memory-verifications/${item.id}/keep`, { method: "POST", token });
+      onMutated();
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+  if (!data.items.length && !error) return null;
+  return <section className="memory-section">
+    <h3>待核对记忆</h3>
+    <p>每周核对的结论不会自动修改记忆；需要改写时可在下方记忆列表中编辑。</p>
+    {data.items.map(item => <article className="memory-card" key={item.id}>
+      <p>{verificationLabels[item.verdict] || item.verdict} · {item.content}</p>
+      {item.conflicts_with && <p>冲突记忆：{item.conflicts_with.content}</p>}
+      <p>{item.reason}</p>
+      {item.citations.map((citation, index) => <blockquote key={index}>{citation.quote}</blockquote>)}
+      <button type="button" disabled={busy} onClick={() => act(item, false)}>仍然成立</button>
+      <button type="button" disabled={busy} onClick={() => act(item, true)}>删除记忆</button>
+    </article>)}
+    {error && <p className="form-error" role="alert">{error}</p>}
+  </section>;
+}
+
 function Memories({ refreshKey, token, onMutated }) {
   const [activation, setActivation] = useState("always");
   const [query, setQuery] = useState("");
@@ -1306,6 +1339,9 @@ function Memories({ refreshKey, token, onMutated }) {
   const path = candidateMode ? "/api/reflection-candidates" : "/api/memories?limit=400";
   return (
     <>
+    <DataView path="/api/memory-verifications" refreshKey={refreshKey} token={token}>
+      {data => <MemoryVerifications {...{ data, token, onMutated }} />}
+    </DataView>
     <DataView path="/api/memory-activation-suggestions" refreshKey={refreshKey} token={token}>
       {data => <ActivationSuggestions {...{ data, token, onMutated }} />}
     </DataView>

@@ -181,4 +181,4 @@ def test_summary_counts_calls_separately_from_hits_and_includes_unused(store):
     summary = store.memory_access_summary()
     assert summary["memories"] == 2 and summary["unused_memories"] == 1
     assert summary["tool_calls"]["memory_search"] == {"total": 2, "recent_30_days": 2}
-    assert summary["tool_calls"]["recall"]["total"] == 0
+    assert set(summary["tool_calls"]) == {"memory_search"}

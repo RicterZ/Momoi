@@ -122,6 +122,7 @@ class WeeklyReflectionStore(ReflectionCandidateStore):
                 raise ValueError('weekly_reflection_not_running')
             self.apply_reflection_candidates(json.loads(record['input_json']), result['findings'])
             self.generate_memory_activation_suggestions(now=now)
+            self._queue_memory_verification(period_end, now)
             changed = self._db.execute(
                 "UPDATE weekly_reflections SET state='completed', claimed_at=NULL, "
                 "retry_at=NULL, error=NULL, result_json=?, completed_at=? "

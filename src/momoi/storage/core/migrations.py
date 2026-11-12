@@ -683,6 +683,10 @@ def _add_weekly_reflection_workflow(database):
     _add_turn_workflow(database, "weekly_reflection")
 
 
+def _add_memory_verification_workflow(database):
+    _add_turn_workflow(database, "memory_verification")
+
+
 def _add_memory_metadata(database):
     if "meta_json" not in _columns(database, "memories"):
         database.execute("ALTER TABLE memories ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
@@ -894,6 +898,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_usage_pricing,
     _add_webhook_video,
     _add_reflection_candidate_operation,
+    _add_memory_verification_workflow,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 
