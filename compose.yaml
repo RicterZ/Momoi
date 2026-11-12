@@ -3,7 +3,8 @@ services:
     extends:
       file: docker-compose.yml
       service: momoi
-    image: momoi:local
+    image: momoi:latest
+    pull_policy: build
     build:
       context: .
       target: release

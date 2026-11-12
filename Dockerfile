@@ -1,4 +1,6 @@
-FROM node:24-slim AS dashboard-dependencies
+FROM node:24-slim AS node-base
+
+FROM node-base AS dashboard-dependencies
 
 WORKDIR /build
 COPY package.json package-lock.json ./
@@ -6,7 +8,7 @@ RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
 
-FROM node:24-slim AS wechaty-dependencies
+FROM node-base AS wechaty-dependencies
 WORKDIR /opt/momoi/wechaty/worker
 COPY src/momoi/channel/wechaty/worker/package.json src/momoi/channel/wechaty/worker/package-lock.json ./
 RUN npm ci --omit=dev
@@ -19,7 +21,9 @@ COPY web ./web
 RUN npm run build
 
 
-FROM python:3.13-slim-trixie AS python-dependencies
+FROM python:3.13-slim-trixie AS python-base
+
+FROM python-base AS python-dependencies
 
 WORKDIR /build
 COPY pyproject.toml ./
@@ -46,7 +50,7 @@ COPY --from=dashboard-build /build/src/momoi/dashboard/static ./src/momoi/dashbo
 RUN pip wheel --no-deps --wheel-dir /dist .
 
 
-FROM python:3.13-slim-trixie AS release
+FROM python-base AS release
 
 ARG VERSION=1.1.2
 
