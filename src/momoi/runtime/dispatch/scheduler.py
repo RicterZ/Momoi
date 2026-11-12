@@ -243,6 +243,10 @@ class Scheduler:
             if weekly is not None:
                 await self.autonomous.put(AutonomousJob('weekly_reflection', weekly['period_end']))
                 continue
+            verification = self.store.claim_due_memory_verification(self.config.reflection)
+            if verification is not None:
+                await self.autonomous.put(AutonomousJob('memory_verification', verification['period_end']))
+                continue
             # Memory maintenance is paused pending its architecture replacement.
             heartbeat = self.store.claim_due_heartbeat(
                 self.config.heartbeat, self.config.notifications
@@ -270,6 +274,7 @@ class Scheduler:
                         replace(self.config.reflection, enabled=True) if self.config.affinity_enabled else self.config.reflection,
                     ),
                     self.store.next_weekly_reflection_due_at(self.config.reflection),
+                    self.store.next_memory_verification_due_at(self.config.reflection),
                     self.store.next_heartbeat_due_at(self.config.heartbeat.enabled),
                 )
                 if due is not None

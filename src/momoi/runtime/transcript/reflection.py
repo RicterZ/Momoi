@@ -9,7 +9,7 @@ BACKGROUND_TOOLS = {
     "goal_create", "goal_update", "goal_finish", "goal_cancel", "goal_review",
     "recall", "memory_search", "episode_search", "episode_read", "read_tool_result",
     "thinking_search", "thinking_read",
-    "weekly_reflection_finish", "reflection_finish", "episode_summary_finish", "episode_relation_finish",
+    "weekly_reflection_finish", "memory_verification_finish", "reflection_finish", "episode_summary_finish", "episode_relation_finish",
     "episode_classify_turns", "current_state_finish",
     "episode_consolidation_finish",  # Keep retired tools recognizable in historical transcripts.
     "memory_maintenance_finish", "memory_operation_finish",

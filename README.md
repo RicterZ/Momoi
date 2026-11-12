@@ -198,6 +198,19 @@ reduction. Use `--live` with explicit `MOMOI_EVAL_BASE_URL`, `MOMOI_EVAL_API_KEY
 and `MOMOI_EVAL_MODEL` to measure model adherence on synthetic address and dietary
 restriction cases. Offline scores check the harness only.
 
+After each weekly reflection completes, a separate weekly memory verification step
+checks up to 15 confirmed memories: volatile kinds (`preference`,
+`cross_event_state`, `profile`) first, then memories recently used without new
+evidence for 60 days, then memories sharing a key topic. The model sees the
+memory, its evidence, the evidence Episodes, their later `follows_up` / `revises`
+Episodes and the most recent same-topic Episodes, and returns `still_valid`,
+`possibly_outdated`, `conflicts_with` or `insufficient_evidence` with verbatim
+citations. Verification never edits memories: `possibly_outdated` and
+`conflicts_with` appear under “待核对记忆” in the Dashboard. A memory is not
+re-checked for 30 days unless it gains new evidence. Run
+`uv run --locked --group test python -m evals.memory_verification` (add `--live`
+with the `MOMOI_EVAL_*` variables) to check overturned and still-valid cases.
+
 ### Memory architecture
 
 ```mermaid

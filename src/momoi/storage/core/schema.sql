@@ -236,7 +236,7 @@ CREATE TABLE IF NOT EXISTS turns (
     kind TEXT NOT NULL CHECK (kind IN ('owner', 'autonomous')),
     workflow_kind TEXT CHECK (workflow_kind IN (
         'owner', 'webhook', 'goal', 'heartbeat', 'reply_followup',
-        'reflection', 'weekly_reflection', 'memory_maintenance', 'memory_operation', 'episode_consolidate',
+        'reflection', 'weekly_reflection', 'memory_maintenance', 'memory_verification', 'memory_operation', 'episode_consolidate',
         'episode_anneal', 'episode_relation', 'current_state_maintenance', 'plan_step', 'channel_event'
     )),
     source_ids_json TEXT NOT NULL,
@@ -898,3 +898,36 @@ CREATE TABLE IF NOT EXISTS memory_activation_suggestions (
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','stale')),
     created_at REAL NOT NULL, UNIQUE(memory_id,target)
 );
+-- Runs after a completed weekly reflection; findings never modify memories directly.
+CREATE TABLE IF NOT EXISTS memory_verification_runs (
+    period_end TEXT PRIMARY KEY,
+    state TEXT NOT NULL CHECK (state IN ('pending', 'running', 'completed')),
+    claimed_at REAL,
+    retry_at REAL,
+    input_json TEXT,
+    result_json TEXT,
+    error TEXT,
+    created_at REAL NOT NULL,
+    completed_at REAL
+);
+CREATE TABLE IF NOT EXISTS memory_verifications (
+    id INTEGER PRIMARY KEY,
+    period_end TEXT NOT NULL,
+    memory_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    verdict TEXT NOT NULL CHECK (verdict IN (
+        'still_valid', 'possibly_outdated', 'conflicts_with', 'insufficient_evidence'
+    )),
+    conflicts_with INTEGER,
+    reason TEXT NOT NULL,
+    citations_json TEXT NOT NULL,
+    snapshot_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('recorded', 'pending', 'kept')),
+    created_at REAL NOT NULL,
+    reviewed_at REAL,
+    UNIQUE(period_end, memory_id)
+);
+CREATE INDEX IF NOT EXISTS memory_verifications_identity
+    ON memory_verifications(kind, key, scope_key, created_at);

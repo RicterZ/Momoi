@@ -572,6 +572,17 @@ def create_dashboard_app(
             raise web.HTTPConflict(text=str(error)) from None
         return web.json_response(result)
 
+    async def memory_verifications(request: web.Request) -> web.Response:
+        return web.json_response(store.memory_verification_reviews())
+
+    async def keep_verified_memory(request: web.Request) -> web.Response:
+        try:
+            return web.json_response(store.keep_verified_memory(int(request.match_info['verification_id'])))
+        except ValueError:
+            raise web.HTTPBadRequest(text='invalid verification id') from None
+        except LookupError:
+            raise web.HTTPNotFound(text='verification not found') from None
+
     async def update_memory(request: web.Request) -> web.Response:
         sync_memory_budget()
         try:
@@ -846,6 +857,8 @@ def create_dashboard_app(
     app.router.add_get("/api/conversations/episode/{record_id}", episode_conversation)
     app.router.add_get("/api/conversations/turn/{record_id}", turn_conversation)
     app.router.add_get('/api/memory-activation-suggestions', memory_activation_suggestions)
+    app.router.add_get('/api/memory-verifications', memory_verifications)
+    app.router.add_post('/api/memory-verifications/{verification_id}/keep', keep_verified_memory)
     app.router.add_post('/api/memory-activation-suggestions/{suggestion_id}/review', review_memory_activation)
     app.router.add_get('/api/reflection-candidates', reflection_candidates)
     app.router.add_patch('/api/reflection-candidates/{candidate_id}', change_reflection_candidate)

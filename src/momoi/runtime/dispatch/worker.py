@@ -80,6 +80,8 @@ class AgentWorker:
                         work = self._complete_reflection_turn(job.id, stop)
                     elif job.kind == "weekly_reflection":
                         work = self._complete_weekly_reflection_turn(job.id, stop)
+                    elif job.kind == "memory_verification":
+                        work = self._complete_memory_verification_turn(job.id, stop)
                     elif job.kind == "memory_operation":
                         work = self._complete_memory_operation_turn(job.id, stop)
                     else:
@@ -269,6 +271,9 @@ class AgentWorker:
             return {}
         if job.kind == "weekly_reflection":
             self.store.release_weekly_reflection(job.id, "owner_stop", delay_seconds=3600)
+            return {"period_end": job.id}
+        if job.kind == "memory_verification":
+            self.store.release_memory_verification(job.id, "owner_stop", delay_seconds=3600)
             return {"period_end": job.id}
         if job.kind == "reflection":
             self.store.release_reflection(job.id, "owner_stop", delay_seconds=3600)

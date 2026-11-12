@@ -19,12 +19,14 @@ from .workflows import (
 
 
 from .workflows.weekly_reflection import WeeklyReflectionWorkflow
+from .workflows.memory_verification import MemoryVerificationWorkflow
 from .workflows.plan import PlanWorkflow
 
 
 class TurnRunner(
     PlanWorkflow,
     WeeklyReflectionWorkflow,
+    MemoryVerificationWorkflow,
     CurrentStateWorkflow,
     EpisodeAnnealingWorkflow,
     EpisodeRelationWorkflow,
