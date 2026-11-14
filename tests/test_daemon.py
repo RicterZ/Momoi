@@ -2152,8 +2152,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("You are Momoi.", llm_requests[0]["system"][0]["text"])
         self.assertIn("You are Momoi.", llm_requests[0]["system"][1]["text"])
         self.assertEqual(len(llm_requests[0]["system"]), 4)
-        self.assertNotIn("当前阶段：", str(llm_requests[0]["system"]))
-        self.assertIn("当前阶段：owner", str(llm_requests[0]["messages"][-1]))
+        self.assertNotIn("当前阶段：", str(llm_requests[0]))
         self.assertNotIn("heartbeat_activity", llm_requests[0]["system"][2]["text"])
         self.assertEqual(len(llm_requests[6]["system"]), 4)
         self.assertEqual(llm_requests[0]["system"], llm_requests[6]["system"])
@@ -2179,7 +2178,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("</current_messages>", current_text)
         self.assertIn("<workflow_contract>", current_text)
         self.assertNotIn("Owner Turn: recall first", current_text)
-        self.assertIn("当前阶段：owner", current_text)
         self.assertNotIn("Every response in this Turn", current_text)
         self.assertIn("<self_state>", current_text)
         self.assertLess(

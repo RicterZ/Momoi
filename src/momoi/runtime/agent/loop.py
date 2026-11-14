@@ -84,7 +84,6 @@ class AgentLoop:
         last_tool_error = ""
         history_messages = max(0, len(messages) - 1)
         batch_state = ToolBatchState()
-        last_round_directives = ""
         observed_input_ids = {event.event_id for event in current_events}
         llm_round = 0
         enable_tool_groups = self.tool_surface.discovery_groups()
@@ -149,7 +148,6 @@ class AgentLoop:
                     "任务记录以最新状态为准；未结束的 Goal 重新提交 goal_review，Heartbeat 重新提交 heartbeat_activity。",
                 }]
                 history_messages = len(shared["messages"])
-                last_round_directives = ""
                 protocol_failures = thought_rounds = execution_failures = 0
                 harness.accept_owner_update()
                 if execution.goal_id:
@@ -244,35 +242,6 @@ class AgentLoop:
                 finally:
                     self.store.touch_transcript_context(turn_id, now=time())
 
-            allowed = permitted_tools if permitted_tools is not None else harness.spec.permitted_tools
-            callable_names = sorted(
-                str(tool["name"]) for tool in request_tools
-                if (allowed is None or tool["name"] in allowed)
-                and tool["name"] not in harness.blocked_tool_names
-            )
-            round_directives = (
-                f"当前阶段：{stage}。禁止调用："
-                + (", ".join(sorted(str(tool["name"]) for tool in request_tools
-                                     if tool["name"] not in callable_names)) or "无")
-                + "。未加载工具通过 tool_search 查找、tool_enable 加载；加载不解除阶段限制。"
-            ) if llm_round == 1 and stage in {"owner", "heartbeat", "goal", "webhook", "plan_step"} else ""
-            if round_directives and round_directives != last_round_directives:
-                directive = "<runtime_directives>\n" + round_directives + "\n</runtime_directives>"
-                if not last_round_directives and messages[-1].get("role") == "user":
-                    content = messages[-1].get("content")
-                    if isinstance(content, str):
-                        messages[-1]["content"] = content + "\n\n" + directive
-                    else:
-                        messages[-1]["content"] = [*(content or []), {
-                            "type": "text", "text": directive,
-                            "cache_control": {"type": "ephemeral"},
-                        }]
-                        # Keep a single cache boundary at the end of current input.
-                        for block in messages[-1]["content"][:-1]:
-                            block.pop("cache_control", None)
-                else:
-                    messages.append({"role": "user", "content": directive})
-                last_round_directives = round_directives
             try:
                 model_round = await self.model_round.run(
                     system,
