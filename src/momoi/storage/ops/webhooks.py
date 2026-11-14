@@ -247,7 +247,9 @@ class WebhookStore:
             outbox_ids = [
                 int(row["id"])
                 for row in self._db.execute(
-                    "SELECT id FROM outbox WHERE turn_id=? ORDER BY id", (turn_id,)
+                    """SELECT id FROM outbox WHERE turn_id=?
+                       AND dedupe_key NOT LIKE 'webhook-video:%' ORDER BY id""",
+                    (turn_id,),
                 ).fetchall()
             ]
             result = {"outbox_ids": outbox_ids}
@@ -469,19 +471,34 @@ class WebhookStore:
             (run_id,),
         ).fetchone() is None
 
+    def settle_webhook_video_send(self, run_id: str, step_index: int, delivery: str) -> bool:
+        """Reopen an agent-delivered clip for review once its automatic send settles."""
+        with self._db:
+            cursor = self._db.execute(
+                """UPDATE webhook_steps SET state='running', result_json=json_set(
+                       result_json, '$.status', 'sent', '$.video_delivery', ?)
+                   WHERE run_id=? AND step_index=? AND kind='video' AND state='waiting_delivery'
+                     AND json_extract(result_json, '$.status')='video_enqueued'""",
+                (delivery, run_id, step_index),
+            )
+            if cursor.rowcount:
+                self._refresh_webhook_video_run(run_id)
+        return bool(cursor.rowcount)
+
     def begin_webhook_video_review(self, run_id: str, step_index: int) -> bool:
         with self._db:
             cursor = self._db.execute(
                 """UPDATE webhook_steps SET result_json=json_set(result_json, '$.status', 'reviewing')
                    WHERE run_id=? AND step_index=? AND kind='video' AND state='running'
                      AND json_extract(result_json, '$.status') IN
-                         ('recorded', 'record_failed', 'reviewing')""",
+                         ('recorded', 'sent', 'record_failed', 'reviewing')""",
                 (run_id, step_index),
             )
         return bool(cursor.rowcount)
 
     def enqueue_webhook_video(
-        self, run_id: str, step_index: int, target_channel: str = ""
+        self, run_id: str, step_index: int, target_channel: str = "",
+        status: str = "enqueued",
     ) -> list[int]:
         with self._db:
             step = self.webhook_step(run_id, step_index)
@@ -536,7 +553,7 @@ class WebhookStore:
             self._db.execute(
                 """UPDATE webhook_steps SET state='waiting_delivery', result_json=?
                    WHERE run_id=? AND step_index=?""",
-                (json.dumps({**result, "status": "enqueued", "outbox_ids": [outbox_id]}),
+                (json.dumps({**result, "status": status, "outbox_ids": [outbox_id]}),
                  run_id, step_index),
             )
             self._refresh_webhook_video_run(run_id)

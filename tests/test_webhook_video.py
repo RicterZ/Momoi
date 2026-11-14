@@ -386,17 +386,23 @@ class AgentVideoServiceTests(unittest.IsolatedAsyncioTestCase):
         ))
         run_id = json.loads(response.text)["run_id"]
         await self.service._execute(self.store.claim_webhook_run(), asyncio.Event())
+        rows = lambda: self.store._db.execute(
+            "SELECT id, text, media_path FROM outbox ORDER BY id"
+        ).fetchall()
+        await self.eventually(lambda: len(rows()) == 1)
+        self.assertTrue(rows()[0]["text"].startswith("[视频"))
+        self.assertEqual(len(self.prompts), 1)
+        self.store._db.execute("UPDATE outbox SET state='failed'")
+        self.store._db.commit()
+        self.service._video_changed.set()
         await self.eventually(lambda: len(self.prompts) == 2)
         notify, review = self.prompts
         self.assertIn("由你判断", notify[1])
         self.assertEqual(review[0], f"webhook:{run_id}:1")
+        self.assertIn("自动发送失败", review[1])
         self.assertIn(str(self.service.recorder.directory / f"{run_id}.mp4"), review[1])
-        rows = lambda: self.store._db.execute(
-            "SELECT id, text, media_path FROM outbox ORDER BY id"
-        ).fetchall()
-        await self.eventually(lambda: len(rows()) == 2)
-        self.assertFalse(any(row["text"].startswith("[视频") for row in rows()))
-        self.assertEqual(rows()[1]["media_path"],
+        await self.eventually(lambda: len(rows()) == 3)
+        self.assertEqual(rows()[2]["media_path"],
                          str(self.service.recorder.directory / f"{run_id}.mp4"))
         step = self.store.webhook_step(run_id, 1)
         self.assertEqual(step["result"]["status"], "enqueued")
@@ -405,12 +411,19 @@ class AgentVideoServiceTests(unittest.IsolatedAsyncioTestCase):
         self.store._db.commit()
         await self.eventually(lambda: self.store.webhook_run(run_id)["state"] == "succeeded")
 
-    async def test_agent_may_stay_silent_after_review(self):
+    async def test_agent_reviews_after_clip_is_sent_and_may_stay_silent(self):
         run_id = await self.run_event()
+        await self.eventually(lambda: len(self.store.due_outbox()) == 1)
+        self.assertEqual(len(self.prompts), 1)
+        self.store._db.execute("UPDATE outbox SET state='sent'")
+        self.store._db.commit()
         await self.eventually(lambda: self.store.webhook_run(run_id)["state"] == "succeeded")
         self.assertEqual(len(self.prompts), 2)
+        self.assertIn("已自动发送", self.prompts[1][1])
+        self.assertNotIn("attachments", self.prompts[1][1])
         self.assertEqual(self.store.due_outbox(), [])
-        self.assertEqual(self.store.webhook_step(run_id, 1)["result"]["status"], "reviewed")
+        step = self.store.webhook_step(run_id, 1)["result"]
+        self.assertEqual((step["status"], step["video_delivery"]), ("reviewed", "succeeded"))
 
     async def test_agent_hears_about_failed_recording(self):
         self.record_error = "recording_invalid_media:InvalidDataError"

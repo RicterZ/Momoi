@@ -218,7 +218,22 @@ class WebhookService:
                 if record is None or record["state"] in {"succeeded", "failed", "ambiguous"}:
                     return
                 status = record["result"].get("status")
-                if agent and status in {"recorded", "record_failed", "reviewing"}:
+                if agent and status == "recorded":
+                    # The clip always reaches the owner; the agent review follows.
+                    ids = self.store.enqueue_webhook_video(
+                        run_id, index, self.primary_channel, status="video_enqueued",
+                    )
+                    if ids:
+                        self.wake_outbox()
+                        continue
+                elif agent and status == "video_enqueued":
+                    delivery = self.store.webhook_delivery_state(run_id, index)
+                    if delivery != "pending":
+                        self.store.settle_webhook_video_send(run_id, index, delivery)
+                        continue
+                    await asyncio.sleep(0.5)
+                    continue
+                elif agent and status in {"sent", "record_failed", "reviewing"}:
                     if self.store.webhook_messages_settled(run_id):
                         await self._review_video(run_id, index, step)
                         continue
@@ -265,16 +280,22 @@ class WebhookService:
             prompt = (f"[系统通知] 摄像头视频录制失败（{result['record_error']}），"
                       "没有可以查看或发送的视频。")
         else:
-            attachment = {"segments": [{"type": step.get("send_as", "file"), "data": {
-                "file": result["path"], "name": Path(str(result["path"])).name,
-            }}]}
-            prompt = (
+            head = (
                 f"[系统通知] 摄像头视频录制完成，时长约 "
                 f"{float(result.get('duration_seconds') or 0):.0f} 秒，文件：{result['path']}。"
-                "是否查看画面、是否回复、是否发送视频由你决定；"
-                "发送视频时，在 reply 的 attachments 中放入 "
-                f"{json.dumps(attachment, ensure_ascii=False)}。"
             )
+            if result.get("video_delivery") == "succeeded":
+                prompt = head + ("视频已自动发送给用户，不要再附带视频。"
+                                 "是否查看画面、是否补充说明由你决定。")
+            else:
+                attachment = {"segments": [{"type": step.get("send_as", "file"), "data": {
+                    "file": result["path"], "name": Path(str(result["path"])).name,
+                }}]}
+                prompt = head + (
+                    "视频自动发送失败。是否查看画面、是否回复、是否重新发送视频由你决定；"
+                    "发送视频时，在 reply 的 attachments 中放入 "
+                    f"{json.dumps(attachment, ensure_ascii=False)}。"
+                )
         self.store.record_webhook_event(run_id, turn_id, prompt)
         try:
             with log_context(stage="webhook", run_id=run_id, step_index=index, turn_id=turn_id):
@@ -359,9 +380,9 @@ class WebhookService:
                     prompt = str(step["prompt"])
                     if video is not None and video.get("deliver", "auto") == "agent":
                         prompt += (f"\n\n[系统上下文] 摄像头视频（约 {video['duration_seconds']} 秒）"
-                                   "正在后台录制。录制结束后你会再收到一条系统通知，届时可以查看画面，"
-                                   "并自行决定是否发送视频。现在先说点什么，还是等看完视频再一起说，"
-                                   "由你判断。")
+                                   "正在后台录制，完成后会自动发送给用户。之后你会再收到一条系统通知，"
+                                   "届时可以查看画面并决定是否补充说明。现在先说点什么，"
+                                   "还是等看完视频再说，由你判断。")
                     elif video is not None:
                         prompt += (f"\n\n[系统上下文] 摄像头视频（约 {video['duration_seconds']} 秒）"
                                    "正在后台录制，完成后会单独发送，不需要你再发送或承诺具体时间。")
