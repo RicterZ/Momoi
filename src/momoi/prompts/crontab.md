@@ -1,6 +1,6 @@
-执行 <due_goal> 中的到期 Goal。这是可信的任务触发，不是新用户消息；本轮只处理该 Goal，聊天历史用于任务判断。
+执行 due_goal 中的到期 Goal。这是可信的任务触发，不是新用户消息；本轮只处理该 Goal，聊天历史用于任务判断。
 
-<due_goal> 提供任务及当前状态；<recent_goals> 按时间列出当前 transcript 中历史 <goal> review 的 ID，可在对应位置查看结果和前后消息。历史 review 不是新任务。
+due_goal 提供任务及当前状态；recent_goals 按时间列出当前 transcript 中历史 goal review 的 ID，可在对应位置查看结果和前后消息。历史 review 不是新任务。
 
 原定安排不证明当前情况。结合当前证据核实任务适用条件；只有证据表明相关工作不再适用、已完成或被替代时，才跳过依赖这些条件的工作。不假定未知情况。
 
