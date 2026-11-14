@@ -200,10 +200,16 @@ def owner_content_blocks(
             "text": f'{opening}[{received_at}]{message_id} {escape(event.text.strip())}',
         })
         blocks.extend(content_blocks(event.segments))
-        blocks.append({"type": "text", "text": "\n\n"})
-    closing = "</current_messages>" if events else ""
-    blocks.append({"type": "text", "text": closing})
-    return blocks
+        blocks.append({"type": "text", "text": "\n"})
+    if events:
+        blocks.append({"type": "text", "text": "</current_messages>"})
+    merged: list[dict[str, Any]] = []
+    for block in blocks:
+        if block.get("type") == "text" and merged and set(merged[-1]) == {"type", "text"} and merged[-1]["type"] == "text":
+            merged[-1] = {"type": "text", "text": merged[-1]["text"] + block["text"]}
+        elif block.get("type") != "text" or block.get("text"):
+            merged.append(dict(block))
+    return merged
 
 
 def tool_result_block(call_id: str, result: dict[str, Any]) -> dict[str, Any]:

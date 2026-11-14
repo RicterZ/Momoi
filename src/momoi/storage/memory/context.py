@@ -8,14 +8,14 @@ MEMORY_CATALOG_INLINE_LIMIT = 8
 
 
 class MemoryContextStore:
-    def _memory_context(self, rows):
-        return "\n".join(format_memory(dict(row)) for row in sorted(rows, key=lambda row: (row["kind"], row["key"], row["id"])))
+    def _memory_context(self, rows, *, id_only: bool = False):
+        return "\n".join(format_memory(dict(row), id_only=id_only) for row in sorted(rows, key=lambda row: (row["kind"], row["key"], row["id"])))
 
     def always_memory_context(self) -> str:
         return self._memory_context(self.memories.repository.rows("always"))
 
     def scoped_memory_context(self, scope: str) -> str:
-        return self._memory_context(self.memories.repository.rows("scoped", scope=scope))
+        return self._memory_context(self.memories.repository.rows("scoped", scope=scope), id_only=True)
 
     def memory_catalog_context(self, *, scope: str = "") -> str:
         return memory_catalog_text(self.memories.repository, scope=scope)

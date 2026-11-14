@@ -1,3 +1,4 @@
+import re
 import json
 import time
 from types import SimpleNamespace
@@ -35,6 +36,7 @@ def test_scoped_memory_only_appears_in_matching_workflow(store):
     assert "心跳" not in store.scoped_memory_context(f"goal:{goal_id}")
     assert "心跳" in store.scoped_memory_context("heartbeat")
     assert "webhook" in store.scoped_memory_context("webhook")
+    assert re.fullmatch(r'<memory id="\d+">只在 webhook 显示</memory>', store.scoped_memory_context("webhook"))
     assert not store.always_memory_context()
     assert not store.memories.search_literal("喝水|心跳|webhook", 10)
     assert store.memories.search_literal("喝水", 10, include_scoped=True)
