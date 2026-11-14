@@ -10,7 +10,7 @@ from momoi.runtime.transcript.building import (
     select_groups,
 )
 from momoi.runtime.transcript.rendering import (
-    owner_idle_gap_message,
+    owner_idle_gap_line,
     render_messages as _render_messages,
     turn_labels,
 )
@@ -67,20 +67,17 @@ def test_owner_idle_gap_uses_last_owner_message_across_runtime_records():
         {"id": 2, "turn_id": "webhook", "role": "event", "content": "天气", "created_at": BASE + 3600},
         {"id": 3, "turn_id": "heartbeat", "role": "heartbeat", "content": "工作记录", "created_at": BASE + 5400},
     ]
-    message = owner_idle_gap_message(
-        rows, now=BASE + 3600, timezone=TEST_TIMEZONE
+    line = owner_idle_gap_line(
+        rows, now=BASE + 3600 + 23 * 60, timezone=TEST_TIMEZONE
     )
-    assert message is not None
-    assert message["role"] == "user"
-    assert "2026-08-31T20:00:00+08:00" in text(message)
-    assert "1h" in text(message)
+    assert line == "用户最后一条消息在 2026-08-31 20:00，已 1 小时 23 分未发送消息。"
 
 
 def test_owner_idle_gap_is_transient_and_below_threshold_is_omitted():
     rows = [owner(1, "刚说完", offset=0)]
-    assert owner_idle_gap_message(
+    assert owner_idle_gap_line(
         rows, now=BASE + 29 * 60, timezone=TEST_TIMEZONE
-    ) is None
+    ) == ""
 
 
 def owner(

@@ -139,14 +139,12 @@ class ContextService:
             current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
         ))
 
-    def autonomous_turn_messages(self, shared: dict[str, object], current_input: str) -> list[dict[str, object]]:
-        from ..transcript.rendering import owner_idle_gap_message
+    def owner_idle_gap(self, shared: dict[str, object]) -> str:
+        from ..transcript.rendering import owner_idle_gap_line
 
-        idle_gap = owner_idle_gap_message(shared["rows"], now=time.time(), timezone=self.store.timezone)
-        if idle_gap:
-            current_input += "\n\n" + "\n".join(
-                block["text"] for block in idle_gap["content"] if block.get("type") == "text"
-            )
+        return owner_idle_gap_line(shared["rows"], now=time.time(), timezone=self.store.timezone)
+
+    def autonomous_turn_messages(self, shared: dict[str, object], current_input: str) -> list[dict[str, object]]:
         return [
             *shared["messages"],
             {"role": "user", "content": [

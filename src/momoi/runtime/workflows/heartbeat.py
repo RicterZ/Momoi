@@ -138,7 +138,7 @@ class HeartbeatWorkflow:
                 self.store, "heartbeat",
                 ("scoped_memories", self.store.scoped_memory_context("heartbeat")),
                 ("workflow_contract", self._heartbeat_system_prompt()),
-                ("autonomous_heartbeat", heartbeat_event),
+                ("autonomous_heartbeat", "\n".join(filter(None, (self.owner_idle_gap(shared), heartbeat_event)))),
                 self.self_state_section(),
             )
 

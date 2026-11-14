@@ -113,7 +113,9 @@ class GoalWorkflow:
                     "workflow_contract",
                     _live_prompt(GOAL_PROMPT_PATH, GOAL_SYSTEM_PROMPT),
                 ),
-                ("due_goal", due_goal_lines(self.store.goal(goal_id) or {"id": goal_id, "status": "deleted"}, scheduled_review_at=review_at)),
+                ("due_goal", due_goal_lines(self.store.goal(goal_id) or {"id": goal_id, "status": "deleted"}, scheduled_review_at=review_at) + (
+                    "\n" + idle_gap if (idle_gap := self.owner_idle_gap(shared)) else ""
+                )),
                 self.self_state_section(),
                 ("recent_goals", recent_goals),
             )

@@ -29,33 +29,34 @@ def _elapsed(seconds: float) -> str:
 OWNER_IDLE_GAP_SECONDS = 30 * 60
 
 
-def owner_idle_gap_message(
+def _elapsed_zh(seconds: float) -> str:
+    minutes = max(1, round(seconds / 60))
+    days, minutes = divmod(minutes, 1440)
+    hours, minutes = divmod(minutes, 60)
+    parts = [f"{days} 天" if days else "", f"{hours} 小时" if hours else "", f"{minutes} 分" if minutes else ""]
+    return " ".join(part for part in parts if part)
+
+
+def owner_idle_gap_line(
     rows: Sequence[Mapping[str, object]], *, now: float, timezone: ZoneInfo,
-) -> dict[str, object] | None:
-    """Build transient context for an autonomous Turn after owner silence.
+) -> str:
+    """Describe owner silence for an autonomous Turn's task section.
 
     Runtime records also use a user-role API message, so only persisted rows
     whose native role is exactly ``user`` establish the silence baseline.
-    The returned message is request-local and must never be committed.
     """
     owner_rows = [row for row in rows if text_value(row.get("role")) == "user"]
     if not owner_rows:
-        return None
+        return ""
     latest = max(owner_rows, key=lambda row: float(row.get("created_at") or 0.0))
     at = float(latest.get("created_at") or 0.0)
     if at <= 0:
-        return None
+        return ""
     elapsed = max(0.0, now - at)
     if elapsed < OWNER_IDLE_GAP_SECONDS:
-        return None
-    local = datetime.fromtimestamp(at, timezone).isoformat(timespec="seconds")
-    return text_message(
-        "user",
-        "[runtime time gap]\n"
-        f"The owner's last message was at {local}; no newer owner message has arrived "
-        f"for {_elapsed(elapsed)}. Re-evaluate time-sensitive activities using ordinary "
-        "real-world durations; do not mechanically keep an earlier phase active.",
-    )
+        return ""
+    local = datetime.fromtimestamp(at, timezone).strftime("%Y-%m-%d %H:%M")
+    return f"用户最后一条消息在 {local}，已 {_elapsed_zh(elapsed)}未发送消息。"
 
 def turn_labels(groups: Sequence[TranscriptGroup]) -> dict[str, str]:
     ordered = [

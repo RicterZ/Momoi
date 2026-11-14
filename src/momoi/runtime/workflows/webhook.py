@@ -29,7 +29,7 @@ class WebhookWorkflow:
                     "workflow_contract",
                     _live_prompt(WEBHOOK_PROMPT_PATH, WEBHOOK_SYSTEM_PROMPT),
                 ),
-                ("current_webhook_task", prompt),
+                ("current_webhook_task", "\n".join(filter(None, (prompt, self.owner_idle_gap(shared))))),
                 self.self_state_section(),
                 ("recent_events", recent_events),
             )
