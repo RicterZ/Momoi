@@ -398,24 +398,13 @@ class OwnerWorkflow:
             await self._complete_phone_batch(batch, turn_id, channel)
             return
         prepared_at = time.monotonic()
-        if channel.name == "qq_call":
-            log_event(logger, logging.INFO, "qq_call_turn_started", channel=channel.name, turn_id=turn_id,
-                      recognition_wait_ms=round((time.time() - batch[-1].received_at) * 1000))
         self.owner_context_baseline()
         reconciliation_control = self._apply_reconciliation_commands(batch)
-        channel_label = {"dashboard": "网页聊天", "onebot": "QQ 私聊", "weixin": "微信私聊", "qq_call": "QQ 电话"}.get(channel.name, channel.name)
-        directives: list[str] = [
-            f"当前消息渠道：{channel.name}（{channel_label}）。"
-            "reply 省略 channel 时回复此渠道；历史对话或默认渠道不代表当前消息来源。",
-            "调用 reply 前核对：intent 里称呼对方用 SOUL 中对用户的称呼（没有时写“用户”），不用“他/她”；用户分享的消息、图片、链接或视频，intent 写自己看完的感受和看法，"
-            "reference 只留表达这份感受所需的一两个细节，内容介绍和逐段描述留在你自己的思考里。",
-        ]
+        directives: list[str] = []
         background = getattr(self, "_background_pause", None)
         if background is not None and background.context:
             directives.append(background.context)
         directives.extend(self._interruption_notices.pop(channel.name, []))
-        if channel.name == "qq_call":
-            directives.append("当前是主人通过 QQ 电话的发言，使用 reply(mode=voice) 回应；保持自然口语，结束本轮不等于挂断电话。")
         for plan in self.store.paused_task_plans(channel.name):
             if plan["status"] == "paused" and self.store.plan_resume_safety(plan) == "owner_decision_required":
                 directives.append(

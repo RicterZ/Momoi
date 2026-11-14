@@ -164,9 +164,9 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
             async def complete(self, _, messages, tools, **kwargs):
                 self.calls += 1
                 if self.calls == 1:
-                    case.assertIn('当前消息渠道：onebot（QQ 私聊）', json.dumps(messages, ensure_ascii=False))
+                    case.assertNotIn('当前消息渠道', json.dumps(messages, ensure_ascii=False))
                 if self.calls == 3:
-                    case.assertIn('当前消息渠道：dashboard（网页聊天）', json.dumps(messages, ensure_ascii=False))
+                    case.assertNotIn('当前消息渠道', json.dumps(messages, ensure_ascii=False))
                     case.assertIn('昨日在 QQ 聊的游戏', json.dumps(messages, ensure_ascii=False))
                     case.assertIn('dashboard', next(tool for tool in tools if tool['name'] == 'reply')['input_schema']['properties']['channel']['enum'])
                 if self.calls % 2:

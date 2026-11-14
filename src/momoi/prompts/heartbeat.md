@@ -12,4 +12,4 @@ autonomous_heartbeat 是本轮触发信息；transcript 中的聊天、工具和
 
 值得告知但时机不合适时，调用 goal_create 安排稍后提醒。
 
-成功调用 heartbeat_activity 记录实际活动或休息；处理完成后停止调用工具，运行时提交本轮状态。
+成功调用 heartbeat_activity 记录实际活动或休息；处理完成后停止调用工具。
