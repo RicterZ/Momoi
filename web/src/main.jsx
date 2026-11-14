@@ -2449,8 +2449,11 @@ function TrajectoryStepRow({ group, step, active, onSelect }) {
 
 function trajectoryInputLabel(input) {
   const kind = String(input.kind || "");
-  const source = kind === "webhook" ? "Webhook" : kind.startsWith("heartbeat") ? "心跳" : kind.endsWith(".recall") ? "撤回" : kind.includes(".") ? "消息" : kind || "输入";
-  return input.interjection ? `插话 · ${source}` : `输入 · ${source}`;
+  if (input.interjection) return "INPUT // 中途插话";
+  if (kind === "webhook") return "INPUT // Webhook";
+  if (kind.endsWith(".recall")) return "INPUT // 消息撤回";
+  if (kind.endsWith(".message")) return "INPUT // 主人消息";
+  return `INPUT // ${kind || "输入"}`;
 }
 
 function TrajectoryInputRow({ group, entry, active, onSelect }) {
