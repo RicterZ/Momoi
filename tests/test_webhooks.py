@@ -459,6 +459,33 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("<owner_preferences>", context_text)
             daemon.store.close()
 
+    async def test_webhook_turn_capabilities_admit_exec(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = AppConfig(
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                system_prompt="contract\n{{SOUL}}",
+                transcript_turns_min=12,
+                transcript_turns_max=12,
+                episode_unsummarized_tail_turns=2,
+                memory_results=2,
+                database=Path(directory) / "momoi.sqlite3",
+                log_level="INFO",
+            )
+            daemon = MomoiDaemon(config)
+            captured = {}
+
+            async def run_tool_loop(*_args, execution, **_kwargs):
+                captured["execution"] = execution
+                return AgentReply([])
+
+            with patch.object(daemon, "_run_tool_loop", run_tool_loop):
+                await daemon._complete_webhook_turn("查看录像", "webhook:caps:1")
+            capability = daemon.tool_executor.builtin_tools.capability(
+                ToolCall("call", "exec", {"command": "true"})
+            )
+            self.assertIn(capability, captured["execution"].allowed_capabilities)
+
     async def test_message_webhook_is_idempotent_and_waits_for_outbox_delivery(
         self,
     ) -> None:
