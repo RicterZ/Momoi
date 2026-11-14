@@ -2367,14 +2367,23 @@ function trajectoryGroup(item, data) {
       records: (call.actions || []).map((action, actionIndex) => ({ id: `${call.call_id}-act-${action.id || actionIndex}`, kind: "tool", action })),
     };
   });
-  const inputs = flow.inputs || [];
-  const starts = [...inputs.map((input) => trajectorySeconds(input.occurred_at)), ...steps.map((step) => step.start)].filter((value) => value !== null);
+  const inputs = [
+    ...(flow.inputs || []).map((input) => ({ ...input, interjection: false })),
+    ...(flow.interjections || []).map((input) => ({ ...input, interjection: true })),
+  ].map((input) => ({ id: `input-${input.id}`, input, time: trajectorySeconds(input.occurred_at) }));
+  const starts = [...inputs.map((input) => input.time), ...steps.map((step) => step.start)].filter((value) => value !== null);
   const start = starts.length ? Math.min(...starts) : 0;
   const end = Math.max(start, ...steps.map((step) => step.end ?? start));
+  const entries = [
+    ...inputs.map((entry) => ({ ...entry, order: entry.input.before_call_id ? steps.find((step) => step.call.call_id === entry.input.before_call_id)?.start ?? entry.time : entry.time })),
+    ...steps.map((step) => ({ id: step.id, step, order: step.start })),
+  ].sort((left, right) => (left.order ?? Infinity) - (right.order ?? Infinity) || (left.input ? -1 : 0) - (right.input ? -1 : 0));
   return {
     id: item.id,
     item,
     steps,
+    inputs,
+    entries,
     running: Boolean(flow.running),
     start,
     span: Math.max(end - start, 1),
@@ -2435,6 +2444,47 @@ function TrajectoryStepRow({ group, step, active, onSelect }) {
         <span className="trajectory-step-duration">{trajectoryDuration(step.duration) || "—"}</span>
       </button>
     </li>
+  );
+}
+
+function trajectoryInputLabel(input) {
+  const kind = String(input.kind || "");
+  const source = kind === "webhook" ? "Webhook" : kind.startsWith("heartbeat") ? "心跳" : kind.endsWith(".recall") ? "撤回" : kind.includes(".") ? "消息" : kind || "输入";
+  return input.interjection ? `插话 · ${source}` : `输入 · ${source}`;
+}
+
+function TrajectoryInputRow({ group, entry, active, onSelect }) {
+  return (
+    <li>
+      <button type="button" className={`trajectory-step is-input${active ? " is-active" : ""}`} onClick={onSelect}>
+        <time>{trajectoryOffset(entry.time === null ? null : entry.time - group.start)}</time>
+        <span className="trajectory-step-stage">{trajectoryInputLabel(entry.input)}</span>
+        <span className="trajectory-step-summary">{String(entry.input.content || "（空）").replace(/\s+/g, " ").trim()}</span>
+        <span className="trajectory-step-tools" />
+        <span className="trajectory-step-duration">—</span>
+      </button>
+    </li>
+  );
+}
+
+function TrajectoryInputPanel({ group, entry, onClose }) {
+  return (
+    <aside className="trajectory-panel" aria-label="输入详情">
+      <header className="trajectory-panel-head">
+        <strong>{trajectoryInputLabel(entry.input)}</strong>
+        <span>
+          {trajectoryOffset(entry.time === null ? null : entry.time - group.start)}
+          {entry.input.kind ? ` · ${entry.input.kind}` : ""}
+        </span>
+        <button type="button" aria-label="关闭" onClick={onClose}>×</button>
+      </header>
+      <div className="trajectory-panel-body">
+        <section>
+          <h4>内容</h4>
+          <pre className="flow-json">{entry.input.content || "（空）"}</pre>
+        </section>
+      </div>
+    </aside>
   );
 }
 
@@ -2594,10 +2644,11 @@ function ThinkingLayout({ items: olderItems, token, hasMore, loadingMore, onLoad
   }
 
   const active = selected && groups.find((group) => group.id === selected.group)?.steps.find((step) => step.id === selected.step);
-  const activeGroup = active && groups.find((group) => group.id === selected.group);
+  const activeInput = selected && groups.find((group) => group.id === selected.group)?.inputs.find((entry) => entry.id === selected.step);
+  const activeGroup = (active || activeInput) && groups.find((group) => group.id === selected.group);
 
   return (
-    <section className={`trajectory-page${active ? " has-panel" : ""}`}>
+    <section className={`trajectory-page${active || activeInput ? " has-panel" : ""}`}>
       <div className="trajectory-stream" ref={scrollRef} onScroll={onScroll}>
         {!ready ? <Loading>正在读取轨迹…</Loading> : null}
         {ready ? <p className="trajectory-stream-edge">
@@ -2607,13 +2658,21 @@ function ThinkingLayout({ items: olderItems, token, hasMore, loadingMore, onLoad
           {groups.map((group) => (
             <Fragment key={group.id}>
               <TrajectoryGroupHead group={group} />
-              {group.steps.map((step) => (
-                <TrajectoryStepRow
-                  key={step.id}
+              {group.entries.map((entry) => entry.input ? (
+                <TrajectoryInputRow
+                  key={entry.id}
                   group={group}
-                  step={step}
-                  active={active === step}
-                  onSelect={() => setSelected({ group: group.id, step: step.id })}
+                  entry={entry}
+                  active={activeInput === entry}
+                  onSelect={() => setSelected({ group: group.id, step: entry.id })}
+                />
+              ) : (
+                <TrajectoryStepRow
+                  key={entry.id}
+                  group={group}
+                  step={entry.step}
+                  active={active === entry.step}
+                  onSelect={() => setSelected({ group: group.id, step: entry.id })}
                 />
               ))}
             </Fragment>
@@ -2622,6 +2681,7 @@ function ThinkingLayout({ items: olderItems, token, hasMore, loadingMore, onLoad
         {ready && !groups.length && !busy ? <Empty text="还没有轨迹记录。" /> : null}
       </div>
       {active ? <TrajectoryStepPanel key={active.id} group={activeGroup} step={active} onClose={() => setSelected(null)} /> : null}
+      {activeInput ? <TrajectoryInputPanel key={activeInput.id} group={activeGroup} entry={activeInput} onClose={() => setSelected(null)} /> : null}
     </section>
   );
 }

@@ -95,6 +95,9 @@
 .trajectory-step.is-planner .trajectory-step-stage { color: var(--blue); }
 .trajectory-step.is-reply .trajectory-step-stage { color: var(--pink); }
 .trajectory-step.is-error .trajectory-step-stage { color: var(--pink); }
+.trajectory-step.is-input { box-shadow: inset 3px 0 0 var(--blue); }
+.trajectory-step.is-input .trajectory-step-stage { color: var(--blue); }
+.trajectory-step.is-input.is-active { box-shadow: inset 4px 0 0 var(--pink); }
 .trajectory-step-summary { overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .trajectory-step-tools { display: flex; justify-content: flex-start; gap: 6px; min-width: 0; overflow: hidden; }
 .trajectory-step-tools code {

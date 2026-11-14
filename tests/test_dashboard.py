@@ -687,6 +687,14 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         detail = await (await self.client.get("/api/thinking/flow-owner", headers=self._auth())).json()
         self.assertEqual(detail["flow"]["deliveries"][0]["state"], "sent")
 
+    async def test_webhook_turn_flow_includes_event_content(self):
+        self.store.record_webhook_event("run", "webhook-turn", "GitHub 推送了新提交")
+        self.store.record_thinking_call(created_at=time.time(), turn_id="webhook-turn",
+                                       call_id="webhook-call", stage="webhook", reasoning="看看提交")
+        detail = await (await self.client.get("/api/thinking/webhook-turn", headers=self._auth())).json()
+        self.assertEqual([(item["kind"], item["content"]) for item in detail["flow"]["inputs"]],
+                         [("webhook", "GitHub 推送了新提交")])
+
     async def test_interjections_stay_at_first_injection_when_turn_rounds_restart(self):
         from momoi.models import IncomingMessage
         now = time.time()

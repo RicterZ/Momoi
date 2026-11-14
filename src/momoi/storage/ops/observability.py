@@ -259,6 +259,13 @@ class ObservabilityStore:
             f"""SELECT DISTINCT e.id, e.content, e.occurred_at, e.kind FROM turns t,
                 json_each(t.source_ids_json) src JOIN events e ON e.id=src.value
                 WHERE t.id IN ({placeholders}) ORDER BY e.occurred_at""", members)]
+        inputs += [dict(row) for row in self._db.execute(
+            f"""SELECT 'message:' || m.id AS id, m.content, m.created_at AS occurred_at,
+                       COALESCE(t.workflow_kind, 'event') AS kind
+                FROM messages m LEFT JOIN turns t ON t.id=m.turn_id
+                WHERE m.turn_id IN ({placeholders}) AND m.role='event'
+                ORDER BY m.id""", members)]
+        inputs.sort(key=lambda item: float(item["occurred_at"] or 0))
         interjections = []
         interjection_ids = set()
         for row in self._db.execute(
