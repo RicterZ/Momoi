@@ -73,6 +73,11 @@ def sections(*items: tuple[str, str]) -> str:
 # Query-specific recall and conversation evidence come after that stable
 # semantic prefix.
 USER_CONTEXT_SECTION_ORDER = (
+    # The Turn's own task leads; after the runtime sections its constraints
+    # read as background and get skipped.
+    "due_goal",
+    "current_webhook_task",
+    "autonomous_heartbeat",
     "long_term_memories",
     "memory_overrides",
     "goal_directory",
@@ -97,10 +102,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "workflow_contract",
     "state_update_contract",
     "followup",
-    "due_goal",
     "episode_timeline",
-    "current_webhook_task",
-    "autonomous_heartbeat",
     "triggered_memories",
     "triggered_episodes",
     "current_messages",

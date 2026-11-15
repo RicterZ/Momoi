@@ -453,8 +453,8 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("以后回家时帮我留意快递", context_text)
             self.assertNotIn("好，回家时我会留意", context_text)
             self.assertLess(
+                context_text.index("</current_webhook_task>"),
                 context_text.index("<self_state>"),
-                context_text.index("<current_webhook_task>"),
             )
             self.assertNotIn("<owner_preferences>", context_text)
             daemon.store.close()
