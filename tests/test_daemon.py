@@ -2172,7 +2172,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("你好", current_text)
         self.assertNotIn("Trusted runtime context", current_text)
-        # The tail carries what moves with the Turn, ending in owner speech.
+        # The tail carries what moves with the Turn, opening with owner speech.
         # Slow-changing memory sits ahead of the transcript instead.
         self.assertIn("<current_messages>", current_text)
         self.assertIn("</current_messages>", current_text)
@@ -2181,8 +2181,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Every response in this Turn", current_text)
         self.assertIn("<self_state>", current_text)
         self.assertLess(
+            current_text.index("</current_messages>"),
             current_text.index("<self_state>"),
-            current_text.index("<current_messages>"),
         )
         self.assertNotIn("<long_term_memories>", current_text)
         self.assertNotIn("<context_resolution>", current_text)

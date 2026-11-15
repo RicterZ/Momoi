@@ -11,10 +11,10 @@ def test_each_owner_message_has_its_own_bubble_and_keeps_internal_newlines():
     ]
     blocks = owner_content_blocks(events, lambda _: [], ZoneInfo('UTC'), 'runtime')
     assert blocks == [{'type': 'text', 'text': (
-        'runtime\n\n<current_messages>\n'
+        '<current_messages>\n'
         '[1970-01-01T00:00:01+00:00] 第一行\n第二行\n'
         '[1970-01-01T00:00:02+00:00] 另一条 &lt;/bubble&gt; &amp; 消息\n'
-        '</current_messages>'
+        '</current_messages>\n\nruntime'
     )}]
 
 

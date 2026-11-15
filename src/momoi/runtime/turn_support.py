@@ -179,10 +179,6 @@ def owner_content_blocks(
     """
 
     blocks: list[dict[str, Any]] = []
-    if runtime_text:
-        # Blocks are concatenated without a separator on the wire, so the gap
-        # that keeps the sections readable has to be part of the text.
-        blocks.append({"type": "text", "text": f"{runtime_text}\n\n"})
     for index, event in enumerate(events):
         if event.delivery_context.get("channel_notice"):
             opening = "<current_messages>\n" if index == 0 else ""
@@ -203,6 +199,12 @@ def owner_content_blocks(
         blocks.append({"type": "text", "text": "\n"})
     if events:
         blocks.append({"type": "text", "text": "</current_messages>"})
+    if runtime_text:
+        # Placed after the runtime sections, the owner's words read as one more
+        # piece of situation and their constraints get skipped. Blocks are
+        # concatenated without a separator on the wire, so the gap has to be
+        # part of the text.
+        blocks.append({"type": "text", "text": f"\n\n{runtime_text}" if events else runtime_text})
     merged: list[dict[str, Any]] = []
     for block in blocks:
         if block.get("type") == "text" and merged and set(merged[-1]) == {"type", "text"} and merged[-1]["type"] == "text":

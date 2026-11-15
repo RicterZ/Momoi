@@ -88,7 +88,7 @@ def test_real_workflows_inject_only_current_input_and_preserve_history(daemon, s
     assert "STATE_ONLY" not in json.dumps(captured["system"])
     assert "STATE_ONLY" not in json.dumps(captured["tools"])
     text = "".join(block.get("text", "") for block in messages[-1]["content"])
-    assert text.startswith("<current_state>")
+    assert text.startswith("<current_messages>" if stage == "owner" else "<current_state>")
     root = ElementTree.fromstring("<input>" + text + "</input>")
     entries = root.findall("current_state/state")
     assert len(entries) == 1

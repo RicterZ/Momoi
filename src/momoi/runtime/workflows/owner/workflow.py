@@ -79,11 +79,10 @@ class OwnerWorkflow:
             (f"<affinity>{self.store.self_state()['affinity']}/100</affinity>\n\n" if self.config.affinity_enabled else "")
             + (f"<triggered_memories>\n{triggered}\n</triggered_memories>\n\n" if triggered else "")
             + triggered_episode_context(self.store, updates)
-            + "[用户中途插话]"
-        )
-        content = _owner_content_blocks(
+        ).strip()
+        content = [{"type": "text", "text": "[用户中途插话]\n"}, *_owner_content_blocks(
             updates, channel.content_blocks, self.store.timezone, runtime_text
-        )
+        )]
         content[-1]["cache_control"] = {"type": "ephemeral"}
         return {"role": "user", "content": content}
 

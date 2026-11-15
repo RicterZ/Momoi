@@ -213,7 +213,7 @@ def test_owner_initial_and_interruption_inject_current_user_only(daemon):
     daemon._absorb_owner_updates(updates, messages, daemon.channel, TurnHarness.for_stage('owner'), draft)
     text = ''.join(b.get('text', '') for b in messages[-1]['content'])
     assert '<triggered_memories>' in text and identifier in draft.memory_context
-    assert text.index('</triggered_memories>') < text.index('[用户中途插话]') < text.index('<current_messages>')
+    assert text.index('[用户中途插话]') < text.index('</current_messages>') < text.index('<triggered_memories>')
     daemon._absorb_owner_updates(updates, messages, daemon.channel, TurnHarness.for_stage('owner'), draft)
     assert '<triggered_memories>' not in str(messages[-1])
     notice = IncomingMessage('notice', 'owner', '喵', time.time(), time.time(), delivery_context={'channel_notice': 'message_recall'})
