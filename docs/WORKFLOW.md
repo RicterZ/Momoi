@@ -66,7 +66,7 @@ automatic memory or Episode pre-retrieval runs for Webhook Turns.
 
 The step may use HTTP to fetch data required by the event prompt. It may send
 new information or finish silently by stopping tool calls; storing an event does not
-imply that a message was delivered. It cannot call arbitrary MCP or file tools.
+imply that a message was delivered. It has the same tool access as an owner turn.
 
 ## Add a fixed command step
 

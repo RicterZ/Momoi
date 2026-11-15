@@ -66,9 +66,8 @@ def test_enabled_schema_persists_across_surfaces_and_restart(tmp_path):
     enable_tools(ToolCall('enable', 'tool_enable', {'tools': ['mcp__web__find']}),
                  enable_tool_groups=groups, tools=tools, tool_surface=current)
     assert current.conversation_specs() == tools
-    for stage in ('owner', 'heartbeat', 'goal'):
+    for stage in ('owner', 'heartbeat', 'webhook', 'goal'):
         assert 'tool_enable' in current.permitted_names(stage)
-    assert 'tool_enable' not in current.permitted_names('webhook')
     store.close()
     store = Store(path)
     try:

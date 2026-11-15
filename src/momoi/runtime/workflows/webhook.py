@@ -47,8 +47,6 @@ class WebhookWorkflow:
             resume_input=build_input,
             execution=TurnExecutionSpec(
                 "webhook",
-                # permitted_tools keeps exec as the only external-effect tool.
-                allowed_capabilities=frozenset({"read", "external_effect"}),
                 permitted_tools=self.tool_surface.permitted_names("webhook"),
             ),
             source_event_id=turn_id,

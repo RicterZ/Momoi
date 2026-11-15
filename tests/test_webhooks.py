@@ -459,7 +459,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("<owner_preferences>", context_text)
             daemon.store.close()
 
-    async def test_webhook_turn_capabilities_admit_exec(self) -> None:
+    async def test_webhook_turn_shares_owner_tool_access(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
@@ -481,10 +481,13 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             with patch.object(daemon, "_run_tool_loop", run_tool_loop):
                 await daemon._complete_webhook_turn("查看录像", "webhook:caps:1")
-            capability = daemon.tool_executor.builtin_tools.capability(
-                ToolCall("call", "exec", {"command": "true"})
-            )
-            self.assertIn(capability, captured["execution"].allowed_capabilities)
+            execution = captured["execution"]
+            self.assertIsNone(execution.allowed_capabilities)
+            owner = daemon.tool_surface.permitted_names("owner")
+            self.assertLessEqual(execution.permitted_tools, owner)
+            self.assertNotIn("wait", execution.permitted_tools)
+            self.assertTrue({"recall", "tool_search", "tool_enable", "skill_load"}
+                            <= execution.permitted_tools)
 
     async def test_message_webhook_is_idempotent_and_waits_for_outbox_delivery(
         self,

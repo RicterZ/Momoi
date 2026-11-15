@@ -440,7 +440,7 @@ def test_reload_is_deferred_and_discoverable_before_first_install(tmp_path):
     assert result["ok"]
     assert "mcp_reload" in {spec["name"] for spec in tools}
     assert "mcp_reload" in surface.permitted_names("owner")
-    assert "mcp_reload" not in surface.permitted_names("webhook")
+    assert "mcp_reload" in surface.permitted_names("webhook")
 
 
 def test_description_is_required_even_for_disabled_servers():

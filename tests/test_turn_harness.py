@@ -111,12 +111,11 @@ class TurnHarnessTest(unittest.TestCase):
                 self.assertTrue(harness.spec.auto_complete)
                 self.assertIsNone(harness.spec.terminal_tool)
 
-    def test_webhook_harness_rejects_tools_outside_its_contract(self) -> None:
+    def test_webhook_harness_admits_general_tools(self) -> None:
         harness = TurnHarness.for_stage("webhook")
 
-        self.assertEqual(
-            harness.validate([ToolCall("memory", "memory_search", {"query": "x"})]),
-            "tool_not_allowed",
+        self.assertIsNone(
+            harness.validate([ToolCall("memory", "memory_search", {"query": "x"})])
         )
         self.assertIsNone(
             harness.validate([ToolCall("web_fetch", "web_fetch", {"url": "https://x"})])
