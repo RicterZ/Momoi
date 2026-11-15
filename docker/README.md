@@ -26,11 +26,16 @@ The published Compose file starts Momoi and SnowLuma. BGE is included in the ima
 runs in the same process, with no encoder port or separate container. Web Settings
 can disable semantic memory or select a remote embedding provider.
 
-SnowLuma is pinned to `ricterz/snowluma:v2.2.0` for Linux amd64 and arm64.
-This is an unchanged backup of `motricseven7/snowluma:v2.2.0`, recovered from
-`docker.m.daocloud.io/motricseven7/snowluma` after the upstream repository became
-unavailable. The original multi-platform index digest is
+SnowLuma is pinned to `ricterz/snowluma:v2.2.0-momoi.1` for Linux amd64 and arm64.
+It is `ricterz/snowluma:v2.2.0` with the fixes in [`infra/snowluma`](../infra/snowluma/Dockerfile):
+private quotes of the bot's own messages are matched by quote time before the
+conversation sequence, so they no longer resolve to an unrelated older message.
+`ricterz/snowluma:v2.2.0` is an unchanged backup of `motricseven7/snowluma:v2.2.0`,
+recovered from `docker.m.daocloud.io/motricseven7/snowluma` after the upstream
+repository became unavailable. The original multi-platform index digest is
 `sha256:34b4ec03738a698231cbad39c5650747330f5a96d953494fb6c12e1273974c0b`.
+Rebuild the fixed image with
+`docker buildx build --platform linux/amd64,linux/arm64 -f infra/snowluma/Dockerfile -t ricterz/snowluma:<tag> --push .`.
 Set `SNOWLUMA_IMAGE` to override the image for both Compose and the call overlay.
 
 Existing default `embedding:8002` configurations migrate automatically; after
