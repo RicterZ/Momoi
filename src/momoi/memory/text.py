@@ -110,19 +110,9 @@ def token_chunk(text: str, offset: int, token_budget: int) -> tuple[str, int | N
     return remaining[:low] + marker, offset + low
 
 
-def format_memory(row: Mapping[str, object], *, id_only: bool = False) -> str:
-    attributes = {"id": row["id"]} if id_only else {"id": row["id"], "kind": row["kind"], "key": row["key"]}
+def format_memory(row: Mapping[str, object]) -> str:
     meta = row.get("meta") or {}
-    if not id_only:
-        if row.get("activation"):
-            attributes["activation"] = row["activation"]
-        if meta.get("scope"):
-            attributes["scope"] = meta["scope"]
-        if meta.get("tags"):
-            attributes["tags"] = ",".join(meta["tags"])
-    header = " ".join(
-        f"{key}={quoteattr(str(value))}" for key, value in attributes.items()
-    )
+    header = f"id={quoteattr(str(row['id']))}"
     content = escape(str(row['content']))
     if row["kind"] == "practice":
         status = meta.get("verification")
