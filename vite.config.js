@@ -132,6 +132,10 @@ function previewThinkingCalls() {
       reasoning:
         "当前意图依赖刚才 Webhook 的处理记录。提交洗衣完成、提醒和静默处理的历史 scope；Episode 继续当天的洗衣事件。",
       request_metrics: { input_tokens: 8421, output_tokens: 312, duration_ms: 2140 },
+      trace: { memory_context: {
+        triggered_memories: '<usage>历史记忆，以用户当前意图为准。</usage><memory id="42" kind="rule" key="laundry.reminder"><trigger>衣服</trigger><trigger>洗好</trigger><content>衣服洗好后，及时提醒老师取出晾晒。</content></memory>',
+        scoped_memories: '<memory id="73">处理洗衣完成通知时，先确认设备状态与发送记录，避免重复提醒。</memory>',
+      } },
       actions: [
         {
           id: "act-recall-1",

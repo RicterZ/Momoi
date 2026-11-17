@@ -194,7 +194,8 @@ def test_registry_owns_both_models_and_bypasses_recognition_for_multimodal(multi
             async with registry:
                 with log_context(stage="owner", turn_id="test-turn", call_id="primary-call", round=1, channel="test"):
                     await model.complete("System", [{"role": "user", "content": [{"type": "image", "source": {
-                        "type": "base64", "media_type": "image/png", "data": "AAAA"}}]}])
+                        "type": "base64", "media_type": "image/png", "data": "AAAA"}},
+                        {"type": "text", "text": '<triggered_memories><memory id="1">cat</memory></triggered_memories>'}]}])
                     assert current_log_context()["call_id"] == "primary-call"
             assert [item["model"] for item in requests] == (["primary"] if multimodal else ["vision", "primary"])
             assert ("AAAA" in str(requests[-1])) is multimodal
@@ -213,6 +214,9 @@ def test_registry_owns_both_models_and_bypasses_recognition_for_multimodal(multi
                 assert "omitted 4 base64 chars" in str(dump)
             assert thinking[-1]["stage"] == "owner"
             assert thinking[-1]["call_id"] == "primary-call"
+            assert thinking[-1]["trace"]["memory_context"] == {
+                "triggered_memories": '<memory id="1">cat</memory>', "scoped_memories": "",
+            }
             assert usage[-1]["model"] == "primary"
             assert registry._stack is None
 

@@ -10,6 +10,7 @@ import MemoryMetadata, { MemoryTriggerTags } from "./MemoryMetadata.jsx";
 import { filterMemories, memoryTagLabels } from "./memoryInventory.js";
 import Tools from "./Tools.jsx";
 import EmotionContent from "./EmotionContent.jsx";
+import TrajectoryMemories from "./TrajectoryMemories.jsx";
 import ConfigurationSettings, { ApplyDialog, SaveBar, Icon } from "./ConfigurationSettings.jsx";
 
 const TOKEN_KEY = "momoi-dashboard-token";
@@ -2526,6 +2527,7 @@ function TrajectoryStepPanel({ group, step, onClose }) {
             <EmotionContent className="message-content trajectory-text" text={call.reasoning || call.excerpt} />
           </section>
         ) : null}
+        <TrajectoryMemories snapshot={call.trace?.memory_context} />
         {call.assistant_text ? (
           <section>
             <h4>{call.stage === "replyer" ? "发言" : "正文"}</h4>

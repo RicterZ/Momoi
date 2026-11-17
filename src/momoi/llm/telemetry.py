@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 from time import monotonic, time
 from typing import Any, Callable
@@ -15,6 +16,24 @@ from ..storage.ops.thinking import persist_thinking_failure
 
 logger = logging.getLogger(__name__)
 _tool_schema_hashes: dict[str, str] = {}
+_MEMORY_SECTIONS = re.compile(r"<(triggered_memories|scoped_memories)>\s*(.*?)</\1>", re.DOTALL)
+
+
+def injected_memory_context(messages: list[dict[str, Any]]) -> dict[str, str]:
+    """Snapshot the memory sections actually present in this request, including interjections."""
+    sections: dict[str, list[str]] = {"triggered_memories": [], "scoped_memories": []}
+    for message in messages:
+        if message.get("role") != "user":
+            continue
+        content = message.get("content") or ""
+        text = content if isinstance(content, str) else "".join(
+            block.get("text", "") for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+        for name, value in _MEMORY_SECTIONS.findall(text):
+            if value.strip():
+                sections[name].append(value.strip())
+    return {name: "\n\n".join(values) for name, values in sections.items()}
 
 
 def usage_metrics(data: dict[str, Any]) -> dict[str, float | int | bool] | None:
@@ -96,6 +115,7 @@ def persist_thinking(
     tool_calls: list[dict[str, Any]] | None = None,
     dump_file: str = "",
     protocol: str = "",
+    memory_context: dict[str, str] | None = None,
 ) -> None:
     if sink is None:
         return
@@ -112,6 +132,7 @@ def persist_thinking(
             reasoning=reasoning,
             assistant_text=assistant_text,
             trace={"tool_calls": tool_calls or [], "dump_file": dump_file, "protocol": protocol,
+                   **({"memory_context": memory_context} if memory_context is not None else {}),
                    **{key: context[key] for key in ("parent_call_id", "tool_call_id", "channel") if key in context}},
         )
     except Exception as error:

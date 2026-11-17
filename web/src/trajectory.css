@@ -225,3 +225,17 @@
 .trajectory-usage dt { margin: 0; color: var(--muted); }
 .trajectory-usage dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .trajectory-panel .flow-json { max-height: none; overflow: visible; }
+
+.trajectory-memory-count { color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.trajectory-memory-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.trajectory-memory { min-width: 0; padding: 12px; border: 2px solid var(--ink); border-radius: 8px; background: var(--surface); box-shadow: 2px 2px 0 var(--blue); }
+.trajectory-memory-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; font-size: 11px; }
+.trajectory-memory-source { padding: 3px 7px; border: 1px solid currentColor; border-radius: 4px; color: var(--pink); background: var(--pink-soft); font-size: 11px; font-weight: 750; }
+.trajectory-memory-source.is-scoped_memories { color: var(--blue); background: var(--blue-soft); }
+.trajectory-memory-head code, .trajectory-memory-key { color: var(--muted); overflow-wrap: anywhere; }
+.trajectory-panel-body .trajectory-memory-content { font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.trajectory-memory .memory-trigger-list { margin-top: 10px; }
+.trajectory-memory details { margin-top: 10px; min-width: 0; }
+.trajectory-memory summary { color: var(--muted); font-size: 11px; cursor: pointer; }
+.trajectory-memory details .flow-json { margin: 8px 0 0; }
+.trajectory-panel-body .trajectory-memory-empty { color: var(--muted); font-size: 12px; line-height: 1.6; }
