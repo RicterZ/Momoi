@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any
 
 from ..tools.contracts.agenda import AGENDA_TOOL_POLICY
@@ -16,6 +17,13 @@ from .turn_support import (
 
 
 logger = logging.getLogger(__name__)
+# Workspace prompts written for the old template still carry the placeholder;
+# SOUL is now injected after the Planner prompt instead.
+_SOUL_PLACEHOLDER = re.compile(r"<soul>\s*\{\{SOUL\}\}\s*</soul>|\{\{SOUL\}\}")
+
+
+def _strip_soul_placeholder(text: str) -> str:
+    return _SOUL_PLACEHOLDER.sub("", text)
 
 
 class PromptRenderer:
@@ -60,27 +68,22 @@ class PromptRenderer:
         return text
 
     def _contract(self) -> str:
-        """The operating contract, without the Soul.
-
-        The Soul is delivered as its own leading block, so a contract template
-        that embeds `{{SOUL}}` is split here and the placeholder dropped.
-        """
+        """The operating contract: the workspace SYSTEM.md, or the built-in rules."""
+        path = self.config.soul_prompt_path.parent / "SYSTEM.md" if self.config.soul_prompt_path else None
         template = self.config.system_prompt
-        if self.config.soul_prompt_path is not None:
-            template = _live_prompt(SYSTEM_PROMPT_PATH, template)
-        if "{{SOUL}}" not in template:
-            return template.strip()
-        head, _, tail = template.partition("{{SOUL}}")
-        return "\n\n".join(part.strip() for part in (head, tail) if part.strip())
+        if path is not None:
+            template = _live_prompt(path, "", optional=True) or _live_prompt(SYSTEM_PROMPT_PATH, template)
+        return _strip_soul_placeholder(template).strip()
 
     def _system(self, *, planner: bool = False) -> list[dict[str, Any]]:
-        soul_prompt = self._workspace_soul() or "未配置额外的 SOUL。"
+        soul_prompt = f"# SOUL\n<soul>\n{self._workspace_soul() or '未配置额外的 SOUL。'}\n</soul>"
         if planner:
             from importlib.resources import files
             default = files("momoi").joinpath("prompts/planner.md").read_text(encoding="utf-8")
             path = self.config.soul_prompt_path.parent / "PLANNER.md" if self.config.soul_prompt_path else None
             prompt = _live_prompt(path, default, optional=True) if path else default
-            soul_prompt = prompt.replace("{{AFFINITY}}", "").replace("{{SOUL}}", soul_prompt).rstrip()
+            prompt = _strip_soul_placeholder(prompt.replace("{{AFFINITY}}", "")).strip()
+            soul_prompt = "\n\n".join(part for part in (prompt, soul_prompt) if part)
         if getattr(getattr(self, "config", None), "affinity_enabled", False):
             from importlib.resources import files
             default_affinity = files("momoi").joinpath("prompts/affinity.md").read_text(encoding="utf-8")
