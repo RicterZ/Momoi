@@ -54,7 +54,7 @@ def test_builtin_skill_index_and_uninstall(tmp_path):
     assert "description" in loaded["content"] and "mcp_reload" in loaded["content"]
     assert Path(loaded["directory"]) == tmp_path / "skills/mcp-install"
     surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {}, skills=service)
-    assert "mcp-install" in surface.tool_index()
+    assert "mcp-install" not in surface.tool_index()
     assert "mcp-install" in surface.tool_index("worker")
     assert "mcp-install" not in json.dumps(surface.worker_specs())
     assert {"skill_load"} <= {spec["name"] for spec in surface.worker_specs()}
