@@ -121,7 +121,8 @@ def test_history_is_visible_in_real_replyer():
     messages = json.dumps(result['exchanges'][0]['messages'], ensure_ascii=False)
     assert '演示选绿色' in messages
     assert '改蓝色' in messages
-    assert '<history>' in messages
+    assert '<history>' not in messages
+    assert any(message['role'] == 'assistant' for message in result['exchanges'][0]['messages'])
 
 
 def test_distributions_hide_small_sample_tail_percentiles():
@@ -172,6 +173,7 @@ def test_feature_suite_covers_readme_capabilities_and_voice():
     result = asyncio.run(run_case(voice, None))
     assert result['status'] == 'unscored'
     messages = json.dumps(result['exchanges'][0]['messages'], ensure_ascii=False)
-    assert '发送形式：语音' in messages
-    assert '适合朗读' in messages
+    assert '<intent>' in messages and '<reference>' in messages
+    assert '发送形式：语音' not in messages
+    assert '只输出适合朗读的实际发言' not in messages
     assert all(c['coverage_layer'] == 'replyer_expression_with_supplied_evidence' for c in cases)

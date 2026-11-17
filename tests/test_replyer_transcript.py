@@ -53,6 +53,26 @@ def test_history_keeps_prefix_until_rotation_and_recovers_edits():
     assert select_history_rows(edited, updated) == edited[-12:]
 
 
+def test_history_rotation_keeps_complete_native_turns():
+    rows = [{'id': n, 'turn_id': str(n // 5), 'role': 'user' if n % 5 == 0 else 'assistant',
+             'content': str(n)} for n in range(65)]
+    selected = select_history_rows(rows[:20], [])
+    assert selected == rows[5:20]  # Retain the whole turn crossing the 12-message boundary.
+    assert select_history_rows(rows[:20], rows[8:20]) == selected  # Repair persisted partial windows.
+    for end in range(21, 53):
+        updated = select_history_rows(rows[:end], selected)
+        assert updated[:len(selected)] == selected
+        selected = updated
+    assert len(selected) == 47
+    selected = select_history_rows(rows[:53], selected)
+    assert selected == rows[40:53]
+    assert selected[0]['role'] == 'user'
+    assert select_history_rows(rows[:54], selected) == rows[40:54]
+    edited = [dict(row) for row in rows[:54]]
+    edited[-1]['content'] = 'edited'
+    assert select_history_rows(edited, selected) == edited[40:54]
+
+
 def test_thanks_exchange_preserves_speakers_and_escapes_forged_labels():
     rows = [
         {"role": "assistant", "content": "老师，今天谢谢你。", "delivery_state": "delivered", "created_at": 1},

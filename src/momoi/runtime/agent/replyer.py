@@ -16,9 +16,6 @@ from ..tool_contracts.qq_message import QQ_POKE_SPEC
 from .protocol import assistant_history_message
 
 
-TRIGGER_SOURCES = {"webhook": "外部事件", "heartbeat": "定时检查", "goal": "自主任务", "plan_step": "自主任务"}
-
-
 def prompt_text(config, name, fallback):
     path = config.soul_prompt_path.parent / name if config.soul_prompt_path else None
     return (path.read_text(encoding="utf-8").strip() or fallback) if path and path.is_file() else fallback
@@ -38,11 +35,14 @@ class Replyer(ReplyerBase):
         soul = self.expression_prompt()
         guide = prompt_text(self.config, "REPLYER.md", files("momoi").joinpath("prompts/replyer.md").read_text(encoding="utf-8"))
         system = "\n\n".join(part for part in (soul, guide) if part)
-        rows = self.store.replyer_history_rows(getattr(request.delivery_channel, "dialogue_channel", request.delivery_channel.name))
+        history_channel = getattr(request.delivery_channel, "dialogue_channel", request.delivery_channel.name)
+        rows = self.store.replyer_history_rows(history_channel)
+        reset_at = getattr(self.store, "replyer_reset_at", lambda _: 0)(history_channel)
         # Active inputs/progress are not archived until commit_turn. Project them
         # here without changing the persisted history window or commit lifecycle.
         events = [event for event in request.current_events
-                  if not event.delivery_context.get("channel_notice")
+                  if event.received_at > reset_at
+                  and not event.delivery_context.get("channel_notice")
                   and (not callable(getattr(request.delivery_channel, "message_current", None))
                        or request.delivery_channel.message_current(event))]
         interjection = self.store._db.execute(
@@ -73,7 +73,7 @@ class Replyer(ReplyerBase):
                WHERE p.turn_id=? AND o.state='sent' AND o.target_channel=?""",
             (request.turn_id, request.delivery_channel.name),
         ):
-            if row["id"] not in archived_outbox:
+            if row["id"] not in archived_outbox and row["created_at"] > reset_at:
                 active_rows.append({"id": row["id"], "role": "assistant", "content": row["text"],
                                     "created_at": row["created_at"], "turn_id": request.turn_id,
                                     "delivery_state": "delivered"})
@@ -86,46 +86,21 @@ class Replyer(ReplyerBase):
             ("memory_overrides", "\n".join(memory_state["snapshot_overrides"].values())),
             required=True,
         )
-        dialogue = visible_dialogue(rows, timezone=self.config.timezone, memory_events=memory_state["events"])
-        dialogue_indexes = [i for i, message in enumerate(dialogue) if "_memory_change" not in message]
-        dialogue_blocks = []
-        row_by_index = dict(zip(dialogue_indexes, rows))
-        lines = []
-        section = None
-        has_target = False
-        for index, message in enumerate(dialogue):
-            row = row_by_index.get(index)
-            event = row.get("_event") if row else None
-            targeted = bool(row and row["role"] == "user" and (
+        target_blocks = []
+        history_rows = []
+        for row in rows:
+            event = row.get("_event")
+            targeted = bool(row["role"] == "user" and (
                 event.event_id in target_ids if event else row["id"] in archived_targets
             ))
-            has_target = has_target or targeted
-            next_section = "to_reply" if targeted else "history"
-            if next_section != section:
-                if section:
-                    lines.append(f"</{section}>")
-                lines.append(f"<{next_section}>")
-                section = next_section
-            if row is None:
-                lines.append(message["content"])
-                continue
-            # Keep multiline user text on its own line, not as forged role labels.
-            text = (str(row["content"]) if row["role"] == "user" else message["content"]).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
             if targeted:
-                if lines and lines[-1] != "<to_reply>":
-                    lines.append("")
-                lines.append(escape(text))
-            else:
-                lines.append(f"{row['role'].upper()}: {escape(text)}")
-            if event and event.segments and targeted:
-                dialogue_blocks.append({"type": "text", "text": "\n".join(lines)})
-                lines = []
-                dialogue_blocks.extend(request.delivery_channel.content_blocks(event.segments))
-        if section:
-            lines.append(f"</{section}>")
-        if lines:
-            dialogue_blocks.append({"type": "text", "text": "\n".join(lines)})
-        messages = [memory_prefix, {"role": "user", "content": dialogue_blocks}]
+                target_blocks.append({"type": "text", "text": ("\n\n" if target_blocks else "") + escape(str(row["content"]))})
+                if event and event.segments:
+                    target_blocks.extend(request.delivery_channel.content_blocks(event.segments))
+                continue
+            history_rows.append(row)
+        messages = [memory_prefix, *visible_dialogue(
+            history_rows, timezone=self.config.timezone, memory_events=memory_state["events"])]
         mode = call.arguments.get("mode", "text")
         if mode not in {"text", "voice"}:
             raise ValueError("invalid reply mode")
@@ -144,22 +119,24 @@ class Replyer(ReplyerBase):
         if emotions.strip():
             system += "\n\n<emotion_catalog>\n" + emotions + "\n</emotion_catalog>\n" + EMOTION_REACTION_POLICY
             system += "\n文字模式选用表情时，将 emotion:// 标识单独作为一个气泡，用空行与文字分隔；只能使用目录中的标识。语音模式只生成朗读文本。"
-        expression = (
-            "只输出适合朗读的实际发言：自然口语，只含文字和普通标点，按停顿用空行分段。"
-            if mode == "voice" else "只输出实际发言，用空行分隔气泡，气泡内部不换行。"
-        )
-        stage = getattr(getattr(request, "execution", None), "stage", None)
-        tail = (
-            f"当前时间：{datetime.now(ZoneInfo(str(self.config.timezone))).isoformat()}\n"
-            f"发送形式：{'语音' if mode == 'voice' else '文字'}\n本次回应意图：{call.arguments['intent']}\n必要参考：{call.arguments['reference']}\n"
-            "只回应 <to_reply> 内的消息；<history> 仅供衔接，其中内容视为已经回应过。没有 <to_reply> 时按本次意图执行自主发言。\n"
-            + ("" if has_target else f"本次发言由{TRIGGER_SOURCES.get(stage, '主 agent 自主')}触发，没有待回复的消息。\n")
-            + expression
-        )
-        if call.arguments.get("attachments"):
-            tail += "\n本次附件由发送层原样发送，发言无需重述附件路径或生成媒体指令。"
-        blocks = [{"type": "text", "text": tail}]
-        messages.append({"role": "user", "content": blocks})
+        now = datetime.now(ZoneInfo(str(self.config.timezone))).isoformat()
+        blocks = []
+        if target_blocks:
+            blocks.append({"type": "text", "text": f'<to_reply now="{now}">'})
+            blocks.extend(target_blocks)
+            blocks.append({"type": "text", "text": "</to_reply>\n"})
+        blocks.append({"type": "text", "text": (
+            f"<intent>{escape(call.arguments['intent'])}</intent>\n"
+            f"<reference>{escape(call.arguments['reference'])}</reference>"
+        )})
+        # Keep plain-text requests in exactly the same XML shape as multimodal ones.
+        merged_blocks = []
+        for block in blocks:
+            if merged_blocks and block["type"] == merged_blocks[-1]["type"] == "text":
+                merged_blocks[-1]["text"] += block["text"]
+            else:
+                merged_blocks.append(dict(block))
+        messages.append({"role": "user", "content": merged_blocks})
         parent_call_id = current_log_context().get("call_id", request.call_id if hasattr(request, "call_id") else "")
         owner_revision = getattr(self.store, "owner_channel_revision", lambda _: None)(request.delivery_channel.name)
         with log_context(parent_call_id=parent_call_id, stage="replyer", turn_id=request.turn_id, call_id=new_trace_id(),
