@@ -235,6 +235,10 @@
 .trajectory-memory-head code, .trajectory-memory-key { color: var(--muted); overflow-wrap: anywhere; }
 .trajectory-panel-body .trajectory-memory-content { font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .trajectory-memory .memory-trigger-list { margin-top: 10px; }
+.trajectory-memory-notes { margin: 10px 0 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.trajectory-memory-notes > div { margin-top: 4px; }
+.trajectory-memory-notes dt { color: var(--muted); }
+.trajectory-memory-notes dd { margin: 0; white-space: pre-wrap; }
 .trajectory-memory details { margin-top: 10px; min-width: 0; }
 .trajectory-memory summary { color: var(--muted); font-size: 11px; cursor: pointer; }
 .trajectory-memory details .flow-json { margin: 8px 0 0; }

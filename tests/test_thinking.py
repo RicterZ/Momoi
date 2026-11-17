@@ -26,6 +26,13 @@ from momoi.tools.thinking import ThinkingTools
 from momoi.runtime.turn_support import context_data_message, owner_content_blocks
 
 
+def test_injected_memory_context_ignores_missing_or_invalid_text():
+    assert injected_memory_context([{"role": "user", "content": [
+        {"type": "text", "text": None}, {"type": "text"}, {"type": "text", "text": 1},
+        {"type": "text", "text": '<scoped_memories><memory id="1">正文</memory></scoped_memories>'},
+    ]}]) == {"triggered_memories": "", "scoped_memories": '<memory id="1">正文</memory>'}
+
+
 def test_injected_memory_snapshot_includes_interjections_and_survives_storage(tmp_path):
     triggered = '<memory id="12" kind="fact" key="pet"><trigger>猫</trigger><content>猫 &amp; 狗</content></memory>'
     scoped = '<memory id="21">定时检查 &lt;任务&gt;</memory>'

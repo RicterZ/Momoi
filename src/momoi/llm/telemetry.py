@@ -28,7 +28,7 @@ def injected_memory_context(messages: list[dict[str, Any]]) -> dict[str, str]:
         content = message.get("content") or ""
         text = content if isinstance(content, str) else "".join(
             block.get("text", "") for block in content
-            if isinstance(block, dict) and block.get("type") == "text"
+            if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)
         )
         for name, value in _MEMORY_SECTIONS.findall(text):
             if value.strip():
