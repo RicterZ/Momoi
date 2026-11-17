@@ -2378,12 +2378,24 @@ function trajectoryGroup(item, data) {
   const entries = [
     ...inputs.map((entry) => ({ ...entry, order: entry.input.before_call_id ? steps.find((step) => step.call.call_id === entry.input.before_call_id)?.start ?? entry.time : entry.time })),
     ...steps.map((step) => ({ id: step.id, step, order: step.start })),
-  ].sort((left, right) => (left.order ?? Infinity) - (right.order ?? Infinity) || (left.input ? -1 : 0) - (right.input ? -1 : 0));
+  ].sort((left, right) => (left.order ?? Infinity) - (right.order ?? Infinity) || (left.input ? -1 : 0) - (right.input ? -1 : 0))
+    .reduce((merged, entry) => {
+      const previous = merged[merged.length - 1];
+      if (entry.input && previous?.input && trajectoryInputLabel(entry.input) === trajectoryInputLabel(previous.input)) {
+        merged[merged.length - 1] = {
+          ...previous,
+          input: { ...previous.input, content: `${previous.input.content || ""}\n${entry.input.content || ""}` },
+        };
+      } else {
+        merged.push(entry);
+      }
+      return merged;
+    }, []);
   return {
     id: item.id,
     item,
     steps,
-    inputs,
+    inputs: entries.filter((entry) => entry.input),
     entries,
     running: Boolean(flow.running),
     start,
