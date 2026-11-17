@@ -135,7 +135,8 @@ class ToolSurface:
             worker += [f"- {spec['name']}: {str(spec.get('description') or '').split('。')[0]}"
                        for spec in self.builtin_specs if spec["name"] not in DEFERRED_TOOLS
                        and spec["name"] not in PLANNER_BUILTINS and not spec["name"].startswith("skill_")]
-            worker += [f"- Skill {item['name']}: {item['description']}" for item in skills]
+            worker += [f"- Skill {item['name']}: {str(item['description']).split('。')[0].split('. ')[0][:120]}"
+                       for item in skills]
             if worker:
                 sections.append("Worker 能力索引（通过 create_subagent 派发）：\n"
                                 + "\n".join(worker))
