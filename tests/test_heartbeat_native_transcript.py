@@ -363,7 +363,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             tool for tool in tools if tool["name"] == "heartbeat_begin"
                         )
                         case.assertNotIn("tool_groups", begin["input_schema"]["properties"])
-                        case.assertIn("tool_search", names)
+                        case.assertNotIn("tool_search", names)
                         call = ToolCall(
                             "begin",
                             "heartbeat_begin",

@@ -463,8 +463,8 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             owner = daemon.tool_surface.permitted_names("owner")
             self.assertLessEqual(execution.permitted_tools, owner)
             self.assertNotIn("wait", execution.permitted_tools)
-            self.assertTrue({"recall", "tool_search", "tool_enable", "create_subagent"}
-                            <= execution.permitted_tools)
+            self.assertTrue({"recall", "thinking_search", "create_subagent"} <= execution.permitted_tools)
+            self.assertFalse({"tool_search", "tool_enable"} & execution.permitted_tools)
             self.assertNotIn("skill_load", execution.permitted_tools)
 
     async def test_message_webhook_is_idempotent_and_waits_for_outbox_delivery(

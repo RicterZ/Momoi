@@ -51,28 +51,26 @@ def test_search_ranking_limits_and_short_system_index():
     assert search('missing', groups, current)['tools'] == []
     for query, limit in [('', 1), ('web', 0), ('web', True), ('web', 21)]:
         assert not search(query, groups, current, limit)['ok']
-    assert '- web: 网页搜索与浏览' in current.tool_index()
-    assert 'Search webpages' not in current.tool_index()
-    spec = next(spec for spec in current.conversation_specs() if spec['name'] == 'tool_search')
+    assert '- web: 网页搜索与浏览' in current.tool_index('worker')
+    assert 'Search webpages' not in current.tool_index('worker')
+    spec = next(spec for spec in current.worker_specs() if spec['name'] == 'tool_search')
     assert '网页搜索与浏览' not in spec['description']
 
 
-def test_enabled_schema_persists_across_surfaces_and_restart(tmp_path):
-    path = tmp_path / 'db'
-    store = Store(path)
-    current = surface({}, store=store)
-    groups = current.discovery_groups()
-    tools = current.conversation_specs()
-    enable_tools(ToolCall('enable', 'tool_enable', {'tools': ['thinking_read']}),
-                 enable_tool_groups=groups, tools=tools, tool_surface=current)
-    assert 'thinking_read' in {spec['name'] for spec in tools}
-    assert current.conversation_specs() == tools
-    for stage in ('owner', 'heartbeat', 'webhook', 'goal'):
-        assert 'tool_enable' in current.permitted_names(stage)
-    store.close()
-    store = Store(path)
+def test_planner_surface_is_resident_and_ignores_enabled_tool_records(tmp_path):
+    store = Store(tmp_path / 'db')
     try:
-        assert surface({}, store=store).conversation_specs() == tools
+        current = surface({}, store=store)
+        tools = current.conversation_specs()
+        names = {spec['name'] for spec in tools}
+        assert {'memory_search', 'thinking_search', 'thinking_read', 'episode_relations'} <= names
+        assert not {'tool_search', 'tool_enable'} & names
+        assert current.discovery_groups() == {}
+        store.enable_transcript_tools(['write_file', 'thinking_read'])
+        assert current.conversation_specs() == tools
+        for stage in ('owner', 'heartbeat', 'webhook', 'goal'):
+            assert 'thinking_read' in current.permitted_names(stage)
+            assert 'tool_enable' not in current.permitted_names(stage)
     finally:
         store.close()
 
@@ -139,38 +137,6 @@ def test_system_index_is_independent_of_enabled_tool_schema(tmp_path):
         store.close()
 
 
-def test_builtin_discovery_loads_requested_tools_and_persists_until_compact(tmp_path):
-    from momoi.runtime.agent.tool_surface import DEFERRED_TOOLS
-    store = Store(tmp_path / 'db')
-    try:
-        current = surface({}, store=store)
-        groups = current.discovery_groups()
-        tools = current.conversation_specs()
-        assert not DEFERRED_TOOLS & {spec['name'] for spec in tools}
-        assert {'tool_search', 'tool_enable', 'reply', 'recall', 'episode_read'} <= {spec['name'] for spec in tools}
-        assert 'builtin_history' in current.tool_index() and 'builtin_files' not in current.tool_index()
-        assert 'builtin_files' in current.tool_index('worker')
-        planner_deferred = {spec['name'] for specs in groups.values() for spec in specs}
-        assert 'write_file' not in planner_deferred
-        for name in sorted(planner_deferred):
-            result = search(name, groups, current)
-            assert result['tools'][0]['name'] == name
-        names = ['thinking_read', 'memory_search', 'episode_relations']
-        result = enable_tools(ToolCall('enable', 'tool_enable', {'tools': names}),
-                              enable_tool_groups=groups, tools=tools, tool_surface=current)
-        assert result['newly_loaded_tools'] == names
-        assert current.conversation_specs() == tools
-        assert store.transcript_enabled_tools() == names
-        store.close()
-        store = Store(tmp_path / 'db')
-        reopened = surface({}, store=store)
-        assert reopened.conversation_specs() == tools
-        store.transcript_window_turn_limit(1, 3, force_compact=True)
-        assert not DEFERRED_TOOLS & {spec['name'] for spec in reopened.conversation_specs()}
-    finally:
-        store.close()
-
-
 def test_replyer_poke_not_a_planner_tool_and_qq_control_is_permitted(tmp_path):
     store = Store(tmp_path / 'db')
     try:
@@ -180,18 +146,10 @@ def test_replyer_poke_not_a_planner_tool_and_qq_control_is_permitted(tmp_path):
         tools = current.conversation_specs()
         names = [spec['name'] for spec in tools]
         assert 'qq_poke' not in names
-        assert 'qq_recall_message' not in names
+        assert {'qq_recall_message', 'qq_call_status'} <= set(names)
         assert '戳一戳' in next(spec['description'] for spec in tools if spec['name'] == 'reply')
         for stage in ('owner', 'heartbeat', 'goal'):
             assert {'qq_recall_message', 'qq_call_status'} <= current.permitted_names(stage)
             assert 'qq_poke' not in current.permitted_names(stage)
-        groups = current.discovery_groups()
-        assert not any(spec['name'] == 'qq_poke' for specs in groups.values() for spec in specs)
-        enabled = enable_tools(ToolCall('enable', 'tool_enable', {'tools': ['qq_recall_message']}),
-                               enable_tool_groups=groups, tools=tools, tool_surface=current)
-        assert enabled['ok']
-        assert enabled['newly_loaded_tools'] == ['qq_recall_message']
-        store.transcript_window_turn_limit(1, 3, force_compact=True)
-        assert 'qq_recall_message' not in {spec['name'] for spec in current.conversation_specs()}
     finally:
         store.close()

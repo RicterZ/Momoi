@@ -45,14 +45,10 @@ DEFERRED_TOOLS = frozenset({
 })
 # Persona-bound work such as fiction writing needs SOUL, so the Planner keeps its own shell.
 PLANNER_BUILTINS = frozenset({"exec"})
-PLANNER_GROUPS = frozenset({"builtin_history", "builtin_qq_messages", "builtin_calls"})
 BUILTIN_GROUP_DESCRIPTIONS = {
     "builtin_skill_management": "安装或卸载工作区 skills 中的 Skill 工作流。",
     "builtin_mcp_management": "重载 MCP 工具服务连接，应用安装或配置变更并检查可用工具。",
-    "builtin_history": "查询记忆、历史话题与关联话题，查看过去的思考记录。",
     "builtin_files": "写入、修改、移动、删除文件和创建目录。",
-    "builtin_qq_messages": "撤回机器人已经发送到 QQ 私聊的消息。",
-    "builtin_calls": "查询 QQ 语音电话的当前状态和基础服务是否就绪。",
 }
 
 
@@ -88,18 +84,19 @@ class ToolSurface:
             groups.setdefault(group, []).append(spec)
         return dict(sorted(groups.items()))
 
+    def planner_resident_specs(self) -> list[dict[str, Any]]:
+        history = [spec for spec in [*MEMORY_TOOL_SPECS, *THINKING_TOOL_SPECS, EPISODE_RELATIONS_TOOL_SPEC]
+                   if spec["name"] in DEFERRED_TOOLS]
+        if "onebot" in self.channel_names:
+            history.append(QQ_RECALL_MESSAGE_SPEC)
+        if "qq_call" in self.channel_names:
+            history.append(QQ_CALL_STATUS_SPEC)
+        return self.public_specs(history)
+
     def discovery_groups(self, role: str = "planner") -> dict[str, list[dict[str, Any]]]:
-        """Deferred tools a role may load; external capabilities belong to the Worker."""
+        """Deferred tools a role may load; the Planner's whole surface is resident."""
         if role == "planner":
-            groups = {}
-            history = [spec for spec in [*MEMORY_TOOL_SPECS, *THINKING_TOOL_SPECS, EPISODE_RELATIONS_TOOL_SPEC]
-                       if spec["name"] in DEFERRED_TOOLS]
-            groups["builtin_history"] = self.public_specs(history)
-            if "onebot" in self.channel_names:
-                groups["builtin_qq_messages"] = self.public_specs([QQ_RECALL_MESSAGE_SPEC])
-            if "qq_call" in self.channel_names:
-                groups["builtin_calls"] = self.public_specs([QQ_CALL_STATUS_SPEC])
-            return groups
+            return {}
         groups = self.mcp_server_groups()
         if getattr(self.mcp, "path", None) is not None:
             groups["builtin_mcp_management"] = self.public_specs([MCP_RELOAD_SPEC])
@@ -180,7 +177,6 @@ class ToolSurface:
         return added
 
     def conversation_specs(self) -> list[dict[str, Any]]:
-        groups = self.discovery_groups()
         reply_spec = copy.deepcopy(REPLY_TOOL_SPEC)
         reply_spec["input_schema"]["properties"]["channel"] = {
             "type": "string", "enum": self.channel_names,
@@ -205,12 +201,9 @@ class ToolSurface:
             *self.public_specs(AGENDA_TOOL_SPECS),
             *copy.deepcopy(PLANNER_SUBAGENT_TOOLS),
             *self.public_specs([spec for spec in self.builtin_specs if spec["name"] in PLANNER_BUILTINS]),
-            *([tool_search_spec(), copy.deepcopy(TOOL_ENABLE_SPEC)] if groups else []),
+            *self.planner_resident_specs(),
             current_state_finish_spec(),
         ]
-        catalog = {spec["name"]: spec for specs in groups.values() for spec in specs}
-        if self.store is not None:
-            self.append_visible(tools, [catalog[name] for name in self.store.transcript_enabled_tools() if name in catalog])
         self._log_conversation_surface(tools)
         return tools
 
@@ -232,8 +225,8 @@ class ToolSurface:
         agenda = {str(spec["name"]) for spec in AGENDA_TOOL_SPECS}
         memory = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}
         thinking = {str(spec["name"]) for spec in THINKING_TOOL_SPECS}
-        channel_tools = {spec["name"] for group, specs in self.discovery_groups().items()
-                         if group in {"builtin_qq_messages", "builtin_calls"} for spec in specs}
+        channel_tools = {spec["name"] for spec in self.planner_resident_specs()
+                         if spec["name"] in {"qq_recall_message", "qq_call_status"}}
         delegation = {spec["name"] for spec in PLANNER_SUBAGENT_TOOLS}
         delegation.update(spec["name"] for spec in self.builtin_specs if spec["name"] in PLANNER_BUILTINS)
         shared = {"phone_result", "reply", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
@@ -242,8 +235,6 @@ class ToolSurface:
         general_chat = {
             "recall",
             "episode_relations",
-            "tool_search",
-            "tool_enable",
             *shared,
             *agenda,
             *memory,
@@ -267,8 +258,7 @@ class ToolSurface:
                     "goal_create",
                     "memory_search",
                     "read_tool_result",
-                    "tool_search",
-                    "tool_enable",
+                    *thinking,
                 }
             )
         raise ValueError(f"stage does not use the conversation tool surface: {stage}")
