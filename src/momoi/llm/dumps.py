@@ -9,6 +9,20 @@ from ..observability.events import TRACE, log_event
 from ..observability.context import current_log_context
 
 logger = logging.getLogger(__name__)
+PLANNER_STAGES = frozenset({"owner", "heartbeat", "webhook", "goal", "reply_followup"})
+REPLYER_STAGES = frozenset({"replyer", "phone_replyer"})
+
+
+def dump_role(stage: Any) -> str:
+    """Filename prefix that separates Planner, Replyer and Worker requests."""
+    stage = str(stage or "")
+    if stage == "subagent":
+        return "worker"
+    if stage in PLANNER_STAGES:
+        return "planner"
+    if stage in REPLYER_STAGES:
+        return "replyer"
+    return "".join(char if char.isalnum() or char == "_" else "_" for char in stage)[:40] or "unknown"
 
 
 def dump_request(
@@ -22,7 +36,9 @@ def dump_request(
     try:
         timestamp = datetime.now(timezone.utc)
         dump_dir.mkdir(parents=True, exist_ok=True)
+        context = current_log_context()
         path = dump_dir / (
+            f"{dump_role(context.get('stage'))}-"
             f"{timestamp.strftime('%Y%m%dT%H%M%S.%fZ')}-{uuid.uuid4().hex}.json"
         )
         safe_payload = redact_dump_media(redact_mcp_tool_data(payload))
@@ -31,7 +47,7 @@ def dump_request(
                 {
                     "timestamp": timestamp.isoformat(),
                     "provider": provider,
-                    "context": current_log_context(),
+                    "context": context,
                     "require_tool": require_tool,
                     "payload": safe_payload,
                 },

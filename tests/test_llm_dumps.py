@@ -41,3 +41,16 @@ def test_trace_dump_accepts_schema_types_and_still_redacts_media(tmp_path, caplo
     assert "private-image" not in path.read_text()
     assert "llm_dump_failed" not in caplog.text
     assert payload == original
+
+
+@pytest.mark.parametrize("stage,prefix", [
+    ("subagent", "worker-"), ("owner", "planner-"), ("heartbeat", "planner-"),
+    ("replyer", "replyer-"), ("phone_replyer", "replyer-"),
+    ("episode_consolidate", "episode_consolidate-"), (None, "unknown-"),
+])
+def test_dump_filename_starts_with_agent_role(tmp_path, caplog, stage, prefix):
+    from momoi.observability.context import log_context
+    caplog.set_level(TRACE, logger="momoi.llm.dumps")
+    with log_context(stage=stage):
+        path = dump_request(tmp_path, "anthropic", {}, False)
+    assert path.name.startswith(prefix)
