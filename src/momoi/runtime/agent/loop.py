@@ -24,6 +24,7 @@ from .protocol import (
     handle_no_tool_response,
 )
 from .tool_batch import ToolBatchRequest, ToolBatchState
+from .workflow import ASSISTANT_EXCHANGE_STAGES, CIRCUIT_BREAKER_STAGES
 from ..tool_contracts.context import recall_correction
 from ...storage.memory.current_state_contract import CURRENT_STATE_TRIGGER_STAGES
 from ..turn_support import (
@@ -108,7 +109,7 @@ class AgentLoop:
         harness.validate_surface({str(tool["name"]) for tool in tools})
         def open_circuit(reason: str) -> bool:
             nonlocal circuit_reason, harness, permitted_tools, tools
-            if circuit_reason or workflow is not None or stage not in {"owner", "webhook", "subagent_report", "goal", "heartbeat"}:
+            if circuit_reason or workflow is not None or stage not in CIRCUIT_BREAKER_STAGES:
                 return False
             circuit_reason = reason
             if stage == "owner" and (external_tool_used or self.store.turn_has_external_effect(turn_id)):
@@ -351,7 +352,7 @@ class AgentLoop:
                         log_event(logger, logging.DEBUG, "turn_auto_completed",
                                   stage=stage, turn_id=turn_id, reason="no_tool_calls")
                         return AgentReply([])
-                if stage in {"owner", "heartbeat", "webhook", "subagent_report", "goal", "subagent"}:
+                if stage in ASSISTANT_EXCHANGE_STAGES:
                     self.store.append_turn_journal(
                         turn_id,
                         "assistant_exchange",
@@ -469,7 +470,6 @@ class AgentLoop:
                         return AgentReply([])
                     raise error_type(harness_error)
                 continue
-            harness.observe_calls(response.tool_calls)
             assistant_text = response_text(response.content)
             log_event(
                 logger,

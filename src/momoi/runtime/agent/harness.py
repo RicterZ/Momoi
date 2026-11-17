@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from ...models import ToolCall
 
@@ -6,6 +8,12 @@ from ...models import ToolCall
 @dataclass(frozen=True)
 class TurnHarnessSpec:
     """Protocol-only state transitions for one kind of model Turn."""
+
+    exclusive_tools: ClassVar[dict[str, Callable[["TurnHarnessSpec"], bool]]] = {
+        "goal_review": lambda spec: spec.stage == "goal",
+        "current_state_finish": lambda spec: spec.stage == "current_state_maintenance",
+        "heartbeat_activity": lambda spec: "heartbeat_activity" in spec.required_before_end,
+    }
 
     stage: str
     first_tool: str | None
@@ -122,11 +130,10 @@ class TurnHarness:
         required_tool: str | None = None,
     ) -> str | None:
         names = [call.name for call in calls]
-        if "goal_review" in names and self.spec.stage != "goal":
-            return "tool_not_allowed"
-        if "current_state_finish" in names and self.spec.stage != "current_state_maintenance":
-            return "tool_not_allowed"
-        if "heartbeat_activity" in names and "heartbeat_activity" not in self.spec.required_before_end:
+        if any(
+            name in names and not allowed(self.spec)
+            for name, allowed in self.spec.exclusive_tools.items()
+        ):
             return "tool_not_allowed"
         if "heartbeat_activity" in names and self.heartbeat_deferred:
             return "heartbeat_activity_after_worker_finishes"
@@ -176,10 +183,6 @@ class TurnHarness:
         if permitted is not None and any(name not in permitted for name in names):
             return "tool_not_allowed"
         return None
-
-    def observe_calls(self, calls: list[ToolCall]) -> None:
-        """Record protocol-visible calls without interpreting tool results."""
-
 
     def accept(self, tool_name: str) -> None:
         self.completed_tools.add(tool_name)

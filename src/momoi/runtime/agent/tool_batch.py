@@ -24,7 +24,7 @@ from .protocol import assistant_history_message
 from .runtime_tools import (
     begin_heartbeat, search_tools, enable_tools, recall_owner_context, record_heartbeat_activity,
 )
-from .workflow import AgentWorkflow, TurnExecutionSpec
+from .workflow import ASSISTANT_EXCHANGE_STAGES, AgentWorkflow, TurnExecutionSpec
 from ..tool_contracts.subagent import PLANNER_SUBAGENT_TOOL_NAMES
 
 
@@ -764,7 +764,7 @@ class ToolBatchExecutor:
         # Keep the model's actual assistant text and native tool exchange for
         # later Turns. Delivered speech is confirmed separately by the stored
         # conversation rows; a plain assistant text response never implies send.
-        if execution.stage in {"owner", "heartbeat", "webhook", "subagent_report", "goal", "subagent"}:
+        if execution.stage in ASSISTANT_EXCHANGE_STAGES:
             self.store.append_turn_journal(
                 request.turn_id,
                 "assistant_exchange",
