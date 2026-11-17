@@ -1993,7 +1993,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             payload = await request.json()
             if [tool["name"] for tool in payload.get("tools", [])] == ["qq_poke"]:
                 replyer_requests.append(payload)
-                self.assertIn("发送形式：文字", str(payload["messages"][-1]))
+                self.assertIn("<intent>测试回应</intent>", str(payload["messages"][-1]))
+                self.assertNotIn("发送形式：文字", str(payload["messages"]))
                 speech = "我先处理一下" if len(replyer_requests) == 1 else "测试回复一\n\n测试回复二"
                 return web.json_response({"content": [{"type": "text", "text": speech}]})
             llm_requests.append(payload)

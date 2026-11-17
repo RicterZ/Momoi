@@ -418,17 +418,15 @@ def test_replyer_window_migrates_existing_database(tmp_path):
 
 
 @pytest.mark.parametrize("mode", ["text", "voice"])
-def test_replyer_receives_mode_and_splits_bubbles(mode):
+def test_replyer_does_not_append_runtime_prose_and_splits_bubbles(mode):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
     store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[],
                               turn_id="turn", round_number=1)
 
     async def complete(system, messages, tools):
-        tail = messages[1]["content"][-1]["text"]
-        assert f"发送形式：{'语音' if mode == 'voice' else '文字'}" in tail
-        assert ("只输出适合朗读的实际发言" in tail) == (mode == "voice")
-        assert ("只输出实际发言，用空行分隔气泡" in tail) == (mode == "text")
+        assert messages[1]['content'] == [{'type': 'text', 'text': '<history>\n</history>'}]
+        assert messages[-1]['content'] == [{'type': 'text', 'text': '<intent>回应</intent>\n<reference></reference>'}]
         assert [tool['name'] for tool in tools] == ['qq_poke']
         return ProviderResponse([{"type": "text", "text": "第一句\n\n第二句"}], [])
 
@@ -495,7 +493,7 @@ def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
     async def complete(system, history, tools, **kwargs):
         nonlocal rounds
         if [tool['name'] for tool in tools] == ['qq_poke']:
-            assert '发送形式：语音' in str(history[1])
+            assert '<intent>接住语音请求</intent>' in str(history[-1])
             return ProviderResponse([{'type': 'text', 'text': '生成的语音第一句。\n\n生成的第二句。'}], [])
         assert not {'send_bubbles', 'send_voice'} & {tool['name'] for tool in tools}
         rounds += 1
@@ -552,12 +550,9 @@ def test_replyer_text_and_voice_have_identical_system_and_history():
     for mode in ("text", "voice"):
         asyncio.run(replyer.generate(ToolCall("c", "reply", {"intent": "回应", "reference": "", "mode": mode}), request))
     assert requests[0][0] == requests[1][0]
-    assert requests[0][1][0] == requests[1][1][0]
-    assert requests[0][1][1]['content'][0] == requests[1][1][1]['content'][0]
+    assert requests[0][1] == requests[1][1]
     assert requests[0][2] == requests[1][2]
     assert [tool['name'] for tool in requests[0][2]] == ['qq_poke']
-    assert requests[0][1][-1] == requests[1][1][-1]
-    assert requests[0][1][1]['content'][-1] != requests[1][1][1]['content'][-1]
 
 
 @pytest.mark.parametrize("channel_name, mode, output, accepted", [
@@ -673,7 +668,7 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
         assert 'USER: LATEST_INPUT' not in text
         assert 'event_id=' not in text
         assert 'image-event' not in text and 'new-event' not in text
-        assert '只回应 <to_reply>' in text
+        assert len(messages[1]['content']) == 1
         assert '没有待回复的消息' not in text
         assert '旧消息、旧图片和已经演过的情节视为已经回应过' in system
         channel.content_blocks.assert_not_called()
@@ -687,7 +682,7 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
         store.close()
 
 
-def test_replyer_without_target_marks_proactive_speech(tmp_path):
+def test_replyer_without_target_contains_only_intent_and_reference(tmp_path):
     store = Store(tmp_path / 'db')
     owner = IncomingMessage('owner-event', 'owner-event', '我不是说了吗', 10, 10, channel='test')
     store.add_event(owner)
@@ -705,7 +700,8 @@ def test_replyer_without_target_marks_proactive_speech(tmp_path):
         assert '<to_reply>' not in messages[1]['content'][0]['text']
         task = ElementTree.fromstring('<task>' + messages[-1]['content'][0]['text'] + '</task>')
         assert [node.tag for node in task] == ['intent', 'reference']
-        assert '本次发言由外部事件触发，没有待回复的消息。' in text
+        assert len(messages[1]['content']) == 1
+        assert '本次发言由' not in text
         return ProviderResponse([{'type': 'text', 'text': '路上慢点'}], [])
 
     try:

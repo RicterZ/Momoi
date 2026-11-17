@@ -172,6 +172,7 @@ def test_feature_suite_covers_readme_capabilities_and_voice():
     result = asyncio.run(run_case(voice, None))
     assert result['status'] == 'unscored'
     messages = json.dumps(result['exchanges'][0]['messages'], ensure_ascii=False)
-    assert '发送形式：语音' in messages
-    assert '适合朗读' in messages
+    assert '<intent>' in messages and '<reference>' in messages
+    assert '发送形式：语音' not in messages
+    assert '只输出适合朗读的实际发言' not in messages
     assert all(c['coverage_layer'] == 'replyer_expression_with_supplied_evidence' for c in cases)
