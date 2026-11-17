@@ -140,7 +140,7 @@ class ToolSurface:
                        and spec["name"] not in PLANNER_BUILTINS and not spec["name"].startswith("skill_")]
             worker += [f"- Skill {item['name']}: {item['description']}" for item in skills]
             if worker:
-                sections.append("Worker 能力索引（你不能直接调用，需要时用 create_subagent 派发）：\n"
+                sections.append("Worker 能力索引（通过 create_subagent 派发）：\n"
                                 + "\n".join(worker))
         elif skills:
             sections.append("Skill 索引：\n" + "\n".join(
