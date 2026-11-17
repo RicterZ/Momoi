@@ -22,6 +22,7 @@ class TurnExecutionSpec:
     artifact_root: Path | None = None
     permitted_tools: frozenset[str] | None = None
     absorb_owner_updates: bool = True
+    required_before_end: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if self.stage not in TURN_HARNESS_SPECS:

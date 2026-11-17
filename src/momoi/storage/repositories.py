@@ -10,6 +10,9 @@ class RepositoryFacade:
     def subagent_tasks(self, channel: str, *, limit: int=10) -> list[dict[str, Any]]:
         return self.subagents.subagent_tasks(channel, limit=limit)
 
+    def subagent_tasks_for_turn(self, source_turn_id: str) -> list[dict[str, Any]]:
+        return self.subagents.subagent_tasks_for_turn(source_turn_id)
+
     def create_subagent_task(self, source_turn_id: str, channel: str, title: str, task: str) -> dict[str, Any]:
         return self.subagents.create_subagent_task(source_turn_id, channel, title, task)
 

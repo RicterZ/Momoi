@@ -312,7 +312,8 @@ class ToolBatchExecutor:
                           if limit_error else await review_affinity(self.config, self.store, self.provider, call, request))
             elif call.name == "heartbeat_activity":
                 result = record_heartbeat_activity(
-                    call, heartbeat_turn=execution.heartbeat, draft=request.draft,
+                    call, heartbeat_turn="heartbeat_activity" in request.harness.spec.required_before_end,
+                    draft=request.draft,
                     minimum_seconds=self.config.heartbeat.min_interval_seconds,
                     maximum_seconds=self.config.heartbeat.max_interval_seconds,
                 )

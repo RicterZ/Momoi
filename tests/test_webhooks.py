@@ -476,6 +476,12 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             row = daemon.store._db.execute(
                 "SELECT workflow_kind FROM turns WHERE id='subagent-report:1'").fetchone()
             self.assertEqual(row["workflow_kind"], "subagent_report")
+            with patch.object(daemon, "_run_tool_loop", run_tool_loop):
+                await daemon._complete_subagent_report_turn(
+                    "Worker 结果", "subagent-report:2", heartbeat_turn_id="heartbeat-1")
+            execution = captured["execution"]
+            self.assertEqual(execution.required_before_end, frozenset({"heartbeat_activity"}))
+            self.assertIn("heartbeat_activity", execution.permitted_tools)
 
     async def test_message_webhook_is_idempotent_and_waits_for_outbox_delivery(
         self,

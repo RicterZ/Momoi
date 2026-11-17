@@ -27,19 +27,21 @@ class WebhookWorkflow:
 
     async def _complete_subagent_report_turn(
         self, prompt: str, turn_id: str, channel: Channel | None = None,
-        *, parent_turn_id: str | None = None,
+        *, parent_turn_id: str | None = None, heartbeat_turn_id: str = "",
     ) -> AgentReply:
+        required = frozenset({"heartbeat_activity"}) if heartbeat_turn_id else frozenset()
         return await self._complete_event_turn(
             "subagent_report", prompt, turn_id, channel, parent_turn_id=parent_turn_id,
             contract_prompt=(SUBAGENT_REPORT_PROMPT_PATH, SUBAGENT_REPORT_SYSTEM_PROMPT),
             task_section="worker_report",
             scoped_memories="",
+            required_before_end=required,
         )
 
     async def _complete_event_turn(
         self, stage: str, prompt: str, turn_id: str, channel: Channel | None,
         *, parent_turn_id: str | None, contract_prompt: tuple, task_section: str,
-        scoped_memories: str,
+        scoped_memories: str, required_before_end: frozenset[str] = frozenset(),
     ) -> AgentReply:
         channel = channel or self.channel
         state = self.store.begin_turn(turn_id, stage, [turn_id], parent_turn_id=parent_turn_id)
@@ -70,7 +72,8 @@ class WebhookWorkflow:
             resume_input=build_input,
             execution=TurnExecutionSpec(
                 stage,
-                permitted_tools=self.tool_surface.permitted_names(stage),
+                permitted_tools=self.tool_surface.permitted_names(stage) | required_before_end,
+                required_before_end=required_before_end,
             ),
             source_event_id=turn_id,
             turn_id=turn_id,
@@ -78,4 +81,4 @@ class WebhookWorkflow:
         )
         if not isinstance(reply, AgentReply):
             raise RuntimeError(f"{stage} Turn ended without completing")
-        return replace(reply, memory_access=draft.memory_access)
+        return replace(reply, memory_access=draft.memory_access, heartbeat_activity=draft.heartbeat_activity)

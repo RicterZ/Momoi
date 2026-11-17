@@ -99,6 +99,12 @@ class AgentLoop:
             permitted_tool_names=permitted_tools,
             blocked_tool_names=frozenset({"send_bubbles", "send_voice"}),
         )
+        if execution.required_before_end:
+            harness = TurnHarness(
+                replace(harness.spec, required_before_end=harness.spec.required_before_end | execution.required_before_end),
+                permitted_tool_names=permitted_tools,
+                blocked_tool_names=harness.blocked_tool_names,
+            )
         harness.validate_surface({str(tool["name"]) for tool in tools})
         def open_circuit(reason: str) -> bool:
             nonlocal circuit_reason, harness, permitted_tools, tools

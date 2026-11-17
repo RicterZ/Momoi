@@ -168,12 +168,22 @@ class HeartbeatWorkflow:
         )
         if not isinstance(reply, AgentReply):
             raise RuntimeError("Heartbeat Turn ended without completing")
-        if draft.heartbeat_activity is None:
+        workers = self.store.subagent_tasks_for_turn(turn_id)
+        if workers:
+            decision = {
+                "activity": "等待 Worker 完成：" + "、".join(task["title"] for task in workers),
+                "result": "",
+                "next_check_minutes": self.config.heartbeat.max_interval_seconds // 60,
+                "reason": "heartbeat_awaits_worker",
+                "messages": reply.messages,
+            }
+        elif draft.heartbeat_activity is None:
             raise RuntimeError("Heartbeat Turn ended without heartbeat_activity")
-        decision = {
-            **draft.heartbeat_activity,
-            "messages": reply.messages,
-        }
+        else:
+            decision = {
+                **draft.heartbeat_activity,
+                "messages": reply.messages,
+            }
         if not contact_window["allowed"]:
             decision["messages"] = []
         committed_messages = self.store.commit_heartbeat(
@@ -187,6 +197,7 @@ class HeartbeatWorkflow:
             reason=decision["reason"],
             draft=draft,
             notification_channel=delivery_channel.name,
+            record=not workers,
         )
         self.agenda_changed.set()
         if committed_messages:

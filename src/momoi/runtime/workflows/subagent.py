@@ -5,6 +5,7 @@ and the final result wake a Planner turn, which decides what to tell the user.
 """
 import asyncio
 import logging
+import math
 from datetime import datetime
 from importlib.resources import files
 from time import time
@@ -219,6 +220,17 @@ class SubagentWorkflow:
                 f"Worker 任务「{current['title']}」（task_id={current['id']}）仍在执行，阶段汇报：{progress}",
                 "判断是否值得告诉用户这条进展；没有必要时不回复，Worker 会继续执行。",
             ]
+        heartbeat_turn_id = (
+            current["source_turn_id"]
+            if kind == "finished" and self.store.heartbeat_awaiting_worker(current["source_turn_id"]) else ""
+        )
+        if heartbeat_turn_id:
+            lines.append(
+                "这项任务是心跳时派发的，那次心跳的活动等结果回来才记录：处理完后调用 heartbeat_activity，"
+                "写明这次心跳实际做了什么、结果和下次检查时间（next_check_minutes 为 "
+                f"{max(1, math.ceil(self.config.heartbeat.min_interval_seconds / 60))}-"
+                f"{min(1440, math.floor(self.config.heartbeat.max_interval_seconds / 60))} 分钟）。"
+            )
         prompt = "\n".join(lines)
         turn_id = self._turn_id("subagent-report", current["id"], kind, len(current.get("reports") or []))
         if kind == "finished":
@@ -232,10 +244,11 @@ class SubagentWorkflow:
                 reply = await self._request_webhook_turn(
                     prompt, turn_id, channel=self._subagent_reply_channel(current["channel"]),
                     parent_turn_id=worker_turn_id, contract="subagent",
+                    heartbeat_turn_id=heartbeat_turn_id,
                 )
                 try:
                     target = self._subagent_reply_channel(current["channel"]) if current["channel"] else ""
-                    if self.store.commit_subagent_report_reply(turn_id, reply, target):
+                    if self.store.commit_subagent_report_reply(turn_id, reply, target, heartbeat_turn_id):
                         self.outbox_changed.set()
                     if kind == "finished":
                         self.store.mark_subagent_notified(current["id"])

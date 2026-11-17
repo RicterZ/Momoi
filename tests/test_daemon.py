@@ -1476,13 +1476,21 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 0,
             )
             self.assertEqual(
-                daemon.store.self_state()["activity"], "整理小游戏关卡灵感"
+                daemon.store.self_state()["activity"], "等待 Worker 完成：读游戏新闻"
             )
-            self.assertEqual(
-                daemon.store.self_state()["activity_result"],
-                "读完一条游戏新闻并记下玩法联想",
-            )
+            self.assertEqual(daemon.store.self_state()["activity_result"], "")
+            heartbeat_turn = daemon.store.subagent_tasks("onebot")[0]["source_turn_id"]
+            self.assertTrue(daemon.store.heartbeat_awaiting_worker(heartbeat_turn))
             self.assertEqual(daemon.store.claim_subagent_task()["title"], "读游戏新闻")
+            report_turn = "subagent-report:heartbeat"
+            daemon.store.begin_turn(report_turn, "subagent_report", [report_turn])
+            daemon.store.commit_subagent_report_reply(report_turn, AgentReply([], heartbeat_activity={
+                "activity": "整理小游戏关卡灵感", "result": "读完一条游戏新闻并记下玩法联想",
+                "next_check_minutes": 2, "reason": "完成本次灵感整理",
+            }), "", heartbeat_turn)
+            self.assertEqual(daemon.store.self_state()["activity"], "整理小游戏关卡灵感")
+            self.assertEqual(daemon.store.self_state()["activity_result"], "读完一条游戏新闻并记下玩法联想")
+            self.assertFalse(daemon.store.heartbeat_awaiting_worker(heartbeat_turn))
 
             daemon.store._db.execute(
                 "UPDATE self_state SET next_heartbeat_at=? WHERE id=1",
