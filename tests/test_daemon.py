@@ -96,7 +96,7 @@ class DaemonTest(unittest.TestCase):
                                      daemon._system_with_tool_policies(daemon._system(planner=True), []))
             self.assertIn("自定义运行指引", custom_system)
             self.assertNotIn("{{SOUL}}", custom_system)
-            self.assertIn("自定义运行指引\n\n# SOUL\n<soul>\nNew soul\n</soul>", custom_system)
+            self.assertIn("自定义运行指引\n\n# 人格设定\n<soul>\nNew soul\n</soul>", custom_system)
             planner.write_text("自定义运行指引\n# 人格\n<soul>\n{{SOUL}}\n</soul>")
             self.assertEqual(daemon._system(planner=True)[0]["text"].count("<soul>"), 1)
             self.assertIn("运行与核心规则", daemon._system(planner=True)[1]["text"])
