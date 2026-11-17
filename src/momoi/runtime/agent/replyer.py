@@ -8,6 +8,7 @@ from xml.sax.saxutils import escape
 from ...integrations.request_context import model_request
 from ...observability.context import log_context, new_trace_id, current_log_context
 from ...memory.text import estimate_tokens
+from ...storage.conversation.transcripts import mark_recalled_messages
 from ...storage.delivery.emotions import EMOTION_REACTION_POLICY
 from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_DESCRIPTION
 from ..transcript.replyer import visible_dialogue
@@ -37,14 +38,13 @@ class Replyer(ReplyerBase):
         actions = []
         for row in self.store._db.execute(
             f"""SELECT id, turn_id, tool_name, result_json, completed_at FROM tool_audit
-                WHERE state='completed' AND ok=1 AND tool_name IN ('qq_poke', 'qq_recall_message')
+                WHERE state='completed' AND ok=1 AND tool_name='qq_poke'
                 AND completed_at>? AND turn_id IN ({",".join("?" * len(turn_ids))})""",
             (floor, *turn_ids),
         ):
             result = json.loads(row["result_json"])
-            arguments = {"message_id": result["message_id"]} if row["tool_name"] == "qq_recall_message" else {}
             actions.append({"id": f"history_action_{row['id']}", "role": "action", "name": row["tool_name"],
-                            "input": arguments, "result": result, "created_at": row["completed_at"],
+                            "input": {}, "result": result, "created_at": row["completed_at"],
                             "turn_id": row["turn_id"]})
         return actions
 
@@ -91,10 +91,10 @@ class Replyer(ReplyerBase):
             (request.turn_id, request.delivery_channel.name),
         ):
             if row["id"] not in archived_outbox and row["created_at"] > reset_at:
-                active_rows.append({"id": row["id"], "role": "assistant", "content": row["text"],
+                active_rows.append({"id": row["id"], "outbox_id": row["id"], "role": "assistant", "content": row["text"],
                                     "created_at": row["created_at"], "turn_id": request.turn_id,
                                     "delivery_state": "delivered"})
-        rows = sorted([*rows, *active_rows], key=lambda row: row["created_at"])
+        rows = sorted([*rows, *mark_recalled_messages(self.store._db, active_rows)], key=lambda row: row["created_at"])
         turn_ids = list(dict.fromkeys(str(row["turn_id"]) for row in rows))
         rows = sorted([*rows, *self.interaction_rows([*turn_ids, request.turn_id], rows, reset_at)],
                       key=lambda row: row["created_at"])
