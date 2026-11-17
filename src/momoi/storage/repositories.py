@@ -1,56 +1,44 @@
 """Compatibility entry points; implementations live in composed repositories."""
 from __future__ import annotations
 from typing import Any
-from .contracts import PlanCreateInput, PlanRecord, PlanStepInput, RequestMetricRecord, MetricsPage
+from .contracts import RequestMetricRecord, MetricsPage
 
 class RepositoryFacade:
-    def task_plan(self, plan_id: str) -> PlanRecord | None:
-        return self.plans.task_plan(plan_id)
+    def subagent_task(self, task_id: str) -> dict[str, Any] | None:
+        return self.subagents.subagent_task(task_id)
 
-    def create_task_plan(self, args: PlanCreateInput, turn_id: str, channel: str) -> PlanRecord:
-        return self.plans.create_task_plan(args, turn_id, channel)
+    def subagent_tasks(self, channel: str, *, limit: int=10) -> list[dict[str, Any]]:
+        return self.subagents.subagent_tasks(channel, limit=limit)
 
-    def update_task_plan(self, plan_id: str, channel: str, version: int, steps: list[PlanStepInput], request: str | None=None) -> PlanRecord:
-        return self.plans.update_task_plan(plan_id, channel, version, steps, request)
+    def create_subagent_task(self, source_turn_id: str, channel: str, title: str, task: str) -> dict[str, Any]:
+        return self.subagents.create_subagent_task(source_turn_id, channel, title, task)
 
-    def pause_task_plan(self, plan_id: str, turn_id: str) -> PlanRecord | None:
-        return self.plans.pause_task_plan(plan_id, turn_id)
+    def claim_subagent_task(self) -> dict[str, Any] | None:
+        return self.subagents.claim_subagent_task()
 
-    def paused_task_plans(self, channel: str) -> list[PlanRecord]:
-        return self.plans.paused_task_plans(channel)
+    def attach_subagent_turn(self, task_id: str, turn_id: str) -> None:
+        return self.subagents.attach_subagent_turn(task_id, turn_id)
 
-    def plan_resume_safety(self, plan: PlanRecord) -> str:
-        return self.plans.plan_resume_safety(plan)
+    def add_subagent_report(self, task_id: str, progress: str) -> dict[str, Any]:
+        return self.subagents.add_subagent_report(task_id, progress)
 
-    def resume_task_plan(self, plan_id: str, channel: str, version: int, context: dict[str, Any], *, owner_feedback: dict[str, Any] | None=None) -> PlanRecord:
-        return self.plans.resume_task_plan(plan_id, channel, version, context, owner_feedback=owner_feedback)
+    def finish_subagent_task(self, task_id: str, outcome: str, summary: str, output_refs: list[str]) -> dict[str, Any] | None:
+        return self.subagents.finish_subagent_task(task_id, outcome, summary, output_refs)
 
-    def pause_task_plan_for_limit(self, plan_id: str, turn_id: str) -> None:
-        return self.plans.pause_task_plan_for_limit(plan_id, turn_id)
+    def cancel_subagent_task(self, task_id: str, channel: str) -> dict[str, Any]:
+        return self.subagents.cancel_subagent_task(task_id, channel)
 
-    def save_plan_limit_handoff(self, plan_id: str, summary: str, output_refs: list[str]) -> None:
-        return self.plans.save_plan_limit_handoff(plan_id, summary, output_refs)
+    def cancel_subagent_tasks(self, channel: str | None=None) -> list[str]:
+        return self.subagents.cancel_subagent_tasks(channel)
 
-    def cancel_task_plan(self, plan_id: str, channel: str) -> PlanRecord:
-        return self.plans.cancel_task_plan(plan_id, channel)
+    def mark_subagent_notified(self, task_id: str) -> None:
+        return self.subagents.mark_subagent_notified(task_id)
 
-    def submit_task_plan(self, plan_id: str, channel: str, version: int, summary: str, evidence: str, validation: str, turn_id: str) -> PlanRecord:
-        return self.plans.submit_task_plan(plan_id, channel, version, summary, evidence, validation, turn_id)
+    def unnotified_subagent_tasks(self, *, max_age_seconds: float) -> list[dict[str, Any]]:
+        return self.subagents.unnotified_subagent_tasks(max_age_seconds=max_age_seconds)
 
-    def start_task_plan(self, plan_id: str, channel: str, context: dict[str, Any] | None=None, *, version: int | None=None, approval: dict[str, Any] | None=None) -> PlanRecord:
-        return self.plans.start_task_plan(plan_id, channel, context, version=version, approval=approval)
-
-    def claim_task_plan(self) -> PlanRecord | None:
-        return self.plans.claim_task_plan()
-
-    def stop_task_plans(self, channel: str | None=None) -> None:
-        return self.plans.stop_task_plans(channel)
-
-    def recover_task_plans(self, plan_id: str | None=None) -> None:
-        return self.plans.recover_task_plans(plan_id)
-
-    def finish_task_plan_step(self, plan_id: str, turn_id: str, outcome: str, summary: str, output_refs: list[str], abort: bool=False) -> dict[str, Any]:
-        return self.plans.finish_task_plan_step(plan_id, turn_id, outcome, summary, output_refs, abort)
+    def recover_subagent_tasks(self) -> None:
+        return self.subagents.recover_subagent_tasks()
 
     def record_first_tool(self, turn_id: str, call_id: str, name: str) -> None:
         return self.request_metrics.record_first_tool(turn_id, call_id, name)

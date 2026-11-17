@@ -36,8 +36,7 @@ def test_budget_rejects_add_replacement_and_manual_edit_atomically(store):
     repository.always_token_budget = store.always_memory_tokens()
     before = store.memories.snapshots([old])
     for change in [lambda: seed(store.memories, 'new', [], activation='always'),
-                   lambda: store.update_memory_content(old, '很长的新内容' * 100),
-                   lambda: repository.update_meta(before[old], {'tags': ['health']})]:
+                   lambda: store.update_memory_content(old, '很长的新内容' * 100)]:
         with pytest.raises(ValueError, match='token budget exceeded'):
             change()
         assert store.memories.snapshots([old]) == before
@@ -178,8 +177,9 @@ def test_prefix_order_stays_stable_when_version_id_changes(store):
     a = seed(store.memories, 'a', [], activation='always')
     assert [row['key'] for row in store.memories.repository.rows('always')] == ['a', 'z']
     store.update_memory_content(a, '改写')
+    ids = [row['id'] for row in store.memories.repository.rows('always') if row['key'] in {'a', 'z'}]
     text = store.always_memory_context()
-    assert text.index('key="a"') < text.index('key="z"')
+    assert text.index(f'id="{ids[0]}"') < text.index(f'id="{ids[1]}"')
 
 
 def test_activation_api_requires_auth_and_explicit_confirmation(store):

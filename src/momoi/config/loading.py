@@ -41,6 +41,7 @@ def remove_retired_thinking_stages(raw: dict) -> None:
     if isinstance(stages, dict):
         stages.pop("reply_followup", None)
         stages.pop("memory_maintenance", None)
+        stages.pop("plan_step", None)
 
 
 def load_config(path: str | Path) -> AppConfig:

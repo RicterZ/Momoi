@@ -81,7 +81,7 @@ class ToolExecutor:
             "goal_review",
             "qq_call_status",
             "qq_recall_message",
-            "plan_create", "plan_submit", "plan_start", "plan_get", "plan_update", "plan_cancel", "plan_resume",
+            "create_subagent", "subagent_status", "subagent_cancel",
         }:
             return "runtime"
         if self.mcp.has_tool(name):

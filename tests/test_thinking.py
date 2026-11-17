@@ -308,24 +308,27 @@ class ThinkingStoreTests(unittest.TestCase):
             )
             store.close()
 
-    def test_dashboard_groups_plan_steps_before_pagination(self) -> None:
+    def test_dashboard_groups_worker_and_report_turns_with_dispatcher(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            plan = store.create_task_plan(
-                {"title": "两步测试", "request": "执行两步", "steps": [
-                    {"task": "第一步", "on_failure": "stop"},
-                    {"task": "第二步", "on_failure": "stop"},
-                ]}, "owner-plan", "weixin")
-            with store._db:
-                store._db.execute("UPDATE task_plans SET steps_json=? WHERE id=?", (json.dumps([
-                    {"id": "1", "task": "第一步", "on_failure": "stop", "status": "succeeded", "turn_id": "step-one"},
-                    {"id": "2", "task": "第二步", "on_failure": "stop", "status": "succeeded", "turn_id": "step-two"},
-                ]), plan["id"]))
-            for turn, call, at in (("step-one", "c1", time.time()), ("step-two", "c2", time.time() + 1)):
-                store.record_thinking_call(created_at=at, turn_id=turn, call_id=call, stage="plan_step", reasoning=turn)
-            listed = store.dashboard_thinking(month="all", limit=1)
-            self.assertEqual(listed["items"][0]["id"], f"plan:{plan['id']}")
-            self.assertEqual(listed["items"][0]["step_count"], 2)
+            store.begin_turn("owner-turn", "owner", [])
+            store.begin_turn("worker-turn", "subagent", ["subagent:t"], parent_turn_id="owner-turn")
+            store.begin_turn("report-turn", "webhook", ["report-turn"], parent_turn_id="worker-turn")
+            now = time.time()
+            for index, (turn, stage) in enumerate((
+                ("owner-turn", "owner"), ("worker-turn", "subagent"), ("report-turn", "webhook"),
+            )):
+                store.record_thinking_call(created_at=now + index, turn_id=turn, call_id=f"c{index}",
+                                           stage=stage, reasoning=turn)
+            listed = store.dashboard_thinking(month="all")
+            self.assertEqual(listed["count"], 1)
+            self.assertEqual(listed["items"][0]["turn_ids"], ["owner-turn", "worker-turn", "report-turn"])
+            store._db.execute(
+                "INSERT INTO messages (turn_id, role, content, created_at, source_event_ids_json) VALUES ('report-turn', 'event', 'Worker 完成', ?, '[]')",
+                (now,))
+            detail = store.dashboard_thinking_detail("report-turn")
+            self.assertEqual([call["stage"] for call in detail["calls"]], ["owner", "subagent", "subagent_report"])
+            self.assertEqual([item["kind"] for item in detail["flow"]["inputs"]], ["subagent_report"])
             store.close()
 
 

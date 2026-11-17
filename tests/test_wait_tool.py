@@ -31,7 +31,7 @@ def test_wait_returns_messages_in_result_and_prevents_stale_actions(tmp_path, wi
                 assert 'wait' in {t['name'] for t in tools}
                 if len(captured) == 1:
                     return response(ToolCall('wait-1', 'wait', {'seconds': 60}),
-                                    ToolCall('stale', 'read_file', {'path': 'must-not-read'}))
+                                    ToolCall('stale', 'episode_search', {'query': 'must-not-read'}))
                 assert len(captured) == 2
                 return response(ToolCall('end', 'end_turn', {}))
         daemon.provider = Provider()

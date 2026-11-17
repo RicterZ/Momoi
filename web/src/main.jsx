@@ -54,6 +54,8 @@ const thinkingStageLabels = {
   reflection: "MEMORY // 每日复盘",
   goal: "GOAL // 执行",
   plan_step: "PLAN // 步骤执行",
+  subagent: "WORKER // 后台执行",
+  subagent_report: "CHAT // 处理 Worker 汇报",
   memory_maintenance: "MEMORY // 维护整理",
   memory_operation: "MEMORY // 操作",
   episode_anneal: "CHAT // 话题摘要",
@@ -2161,7 +2163,6 @@ function olderMonths(available, month) {
 }
 
 function thinkingFlowTitle(item) {
-  if (item?.plan_id || item?.plan) return thinkingStageLabel("plan_step");
   const stages = (item.stages || [item.stage]).filter((stage) => stage !== undefined);
   const auxiliaryStages = new Set(["topic_selection", "episode_cue_admit", "image_recognition"]);
   // CUES is an internal retrieval phase of its enclosing business Turn, not a
@@ -2340,7 +2341,7 @@ function thinkingHasMore(state) {
 const TRAJECTORY_PAGE_STEPS = 50;
 
 function trajectoryTurnPath(item) {
-  const turnId = String(item?.plan_id ? `plan:${item.plan_id}` : item?.turn_id || "").trim();
+  const turnId = String(item?.turn_id || "").trim();
   if (turnId) return `/api/thinking/${encodeURIComponent(turnId)}`;
   return `/api/thinking/calls/${encodeURIComponent(String(item?.id || "").replace(/^call:/, ""))}`;
 }
@@ -2377,12 +2378,24 @@ function trajectoryGroup(item, data) {
   const entries = [
     ...inputs.map((entry) => ({ ...entry, order: entry.input.before_call_id ? steps.find((step) => step.call.call_id === entry.input.before_call_id)?.start ?? entry.time : entry.time })),
     ...steps.map((step) => ({ id: step.id, step, order: step.start })),
-  ].sort((left, right) => (left.order ?? Infinity) - (right.order ?? Infinity) || (left.input ? -1 : 0) - (right.input ? -1 : 0));
+  ].sort((left, right) => (left.order ?? Infinity) - (right.order ?? Infinity) || (left.input ? -1 : 0) - (right.input ? -1 : 0))
+    .reduce((merged, entry) => {
+      const previous = merged[merged.length - 1];
+      if (entry.input && previous?.input && trajectoryInputLabel(entry.input) === trajectoryInputLabel(previous.input)) {
+        merged[merged.length - 1] = {
+          ...previous,
+          input: { ...previous.input, content: `${previous.input.content || ""}\n${entry.input.content || ""}` },
+        };
+      } else {
+        merged.push(entry);
+      }
+      return merged;
+    }, []);
   return {
     id: item.id,
     item,
     steps,
-    inputs,
+    inputs: entries.filter((entry) => entry.input),
     entries,
     running: Boolean(flow.running),
     start,
@@ -2451,6 +2464,7 @@ function trajectoryInputLabel(input) {
   const kind = String(input.kind || "");
   if (input.interjection) return "INPUT // 中途插话";
   if (kind === "webhook") return "INPUT // Webhook";
+  if (kind === "subagent_report") return "INPUT // Worker 汇报";
   if (kind.endsWith(".recall")) return "INPUT // 消息撤回";
   if (kind.endsWith(".message")) return "INPUT // 主人消息";
   return `INPUT // ${kind || "输入"}`;
@@ -2690,7 +2704,7 @@ function ThinkingLayout({ items: olderItems, token, hasMore, loadingMore, onLoad
 }
 
 // Keep retired follow-up records readable in historical thinking logs.
-const plannerStages = new Set(["owner", "heartbeat", "webhook", "goal", "plan_step", "reply_followup"]);
+const plannerStages = new Set(["owner", "heartbeat", "webhook", "subagent_report", "goal", "reply_followup"]);
 
 function trajectoryActionSummary(action) {
   if (action.name === "reply") return action.arguments?.intent || "派发发言生成";
@@ -2708,6 +2722,7 @@ const trajectoryDeliveryState = { pending: "排队中", sending: "发送中", se
 function trajectoryStageTone(stage) {
   if (stage === "replyer") return "reply";
   if (plannerStages.has(stage)) return "planner";
+  if (stage === "subagent") return "worker";
   return "workflow";
 }
 

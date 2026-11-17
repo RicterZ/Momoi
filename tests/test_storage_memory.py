@@ -3096,7 +3096,7 @@ class StorageMemoryTest(unittest.TestCase):
             ranked_context, _ = store.ranked_memory_context("骑车", 6)
             ranked_memory = ElementTree.fromstring(ranked_context)
             self.assertEqual(ranked_memory.tag, "memory")
-            self.assertEqual(ranked_memory.get("key"), "hobby.cycling")
+            self.assertEqual(set(ranked_memory.attrib), {"id"})
             self.assertEqual(ranked_memory.text, "老师喜欢骑车")
             self.assertEqual(always.count("波浪号"), 1)
             row = store._db.execute(
@@ -3104,10 +3104,7 @@ class StorageMemoryTest(unittest.TestCase):
             ).fetchone()
             memory = ElementTree.fromstring(always)
             self.assertEqual(memory.tag, "memory")
-            self.assertEqual(memory.attrib, {
-                "id": str(row["id"]), "kind": row["kind"],
-                "key": row["key"], "activation": "always",
-            })
+            self.assertEqual(memory.attrib, {"id": str(row["id"])})
             self.assertEqual(memory.text, row["content"])
             store.close()
 
@@ -3142,8 +3139,8 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(text.count(content), 2)
             document = ElementTree.fromstring(f"<context>{text}</context>")
             self.assertEqual(
-                [item.get("key") for item in document.findall("long_term_memories/memory")],
-                ["always.rule.0", "always.rule.1"],
+                [set(item.attrib) for item in document.findall("long_term_memories/memory")],
+                [{"id"}, {"id"}],
             )
             store.add_event(IncomingMessage("later", "later", "无关的新消息", 1, 1))
             self.assertEqual(prefix(), before)

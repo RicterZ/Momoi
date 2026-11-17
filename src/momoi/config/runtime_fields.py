@@ -12,7 +12,7 @@ THINKING_STAGES = {
     "heartbeat": "心跳",
     "webhook": "Webhook",
     "goal": "目标执行",
-    "plan_step": "Plan 步骤执行",
+    "subagent": "后台 Worker",
     "reflection": "每日复盘",
     "weekly_reflection": "每周观察盘点",
     "memory_verification": "每周记忆核对",

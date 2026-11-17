@@ -373,7 +373,7 @@ Enabling Bash hides and rejects direct calls to seven file tools; disabling it r
 | `move_file` | `mv` moves and renames files |
 | `delete_file` | `rm` deletes files |
 
-`apply_patch` retains structured edits without shell escaping; `web_fetch` retains consistent web extraction.
+`web_fetch` retains consistent web extraction.
 Memory, plan, messaging, and MCP tools are unaffected. Bash commands follow their own semantics;
 they do not inherit the file tools' hash checks, atomic writes, or overwrite protection.
 

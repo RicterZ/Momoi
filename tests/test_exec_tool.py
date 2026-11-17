@@ -1,4 +1,5 @@
 import asyncio
+import asyncio
 import json
 import os
 import shlex
@@ -47,10 +48,10 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
         mcp = SimpleNamespace(tool_specs=[], configs={})
         for enabled in (False, True):
             surface = ToolSurface(mcp, {}, exec_enabled=enabled)
-            self.assertEqual("exec" in {item["name"] for item in surface.conversation_specs()}, enabled)
-            for stage in ("owner", "heartbeat", "goal"):
-                self.assertEqual("exec" in surface.permitted_names(stage), enabled)
-            self.assertEqual("exec" in surface.permitted_names("webhook"), enabled)
+            self.assertEqual("exec" in {item["name"] for item in surface.worker_specs()}, enabled)
+            self.assertNotIn("exec", {item["name"] for item in surface.conversation_specs()})
+            for stage in ("owner", "heartbeat", "webhook", "goal"):
+                self.assertNotIn("exec", surface.permitted_names(stage))
         self.assertEqual(self.tools.capability(call), "external_effect")
 
     async def test_bash_toggle_replaces_file_tools_in_catalog_permissions_and_dispatch(self):
@@ -63,16 +64,14 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
         for enabled in (False, True, False):
             surface = ToolSurface(mcp, {}, exec_enabled=enabled)
             expected = catalog - (replaced if enabled else {"exec"}) - {"search_web", "fetch_web"}
-            visible = {spec["name"] for spec in surface.conversation_specs()}
+            visible = {spec["name"] for spec in surface.worker_specs()}
             from momoi.runtime.agent.tool_surface import DEFERRED_TOOLS
             self.assertEqual(visible & catalog, expected - DEFERRED_TOOLS)
-            discovered = {spec["name"] for specs in surface.discovery_groups().values() for spec in specs}
+            discovered = {spec["name"] for specs in surface.discovery_groups("worker").values() for spec in specs}
             self.assertEqual((visible | discovered) & catalog, expected)
+            self.assertEqual({spec["name"] for spec in surface.conversation_specs()} & catalog, replaced)
             for stage in ("owner", "heartbeat", "webhook", "goal"):
-                self.assertEqual(surface.permitted_names(stage) & catalog, expected)
-        for name in replaced:
-            result = await self.tools.execute(ToolCall("hidden", name, {}))
-            self.assertEqual(result, {"ok": False, "error": "tool_not_allowed"})
+                self.assertEqual(surface.permitted_names(stage) & catalog, replaced)
         # Turning Bash off restores actual file operations as well as their schemas.
         tools = BuiltinTools(self.root)
         for name, arguments in (
@@ -192,3 +191,11 @@ class ExecConfigTest(unittest.TestCase):
                 self.assertTrue(manager.validate().exec_enabled)
             manager.save_runtime({"tools": {"exec_enabled": False}}, manager.revision())
             self.assertFalse(manager.validate().exec_enabled)
+
+
+def test_planner_file_tools_run_when_exec_is_enabled(tmp_path):
+    tools = BuiltinTools(tmp_path, exec_enabled=True)
+    written = asyncio.run(tools.execute(ToolCall("w", "write_file", {"path": "note.md", "content": "草稿"})))
+    assert written["ok"] is True
+    read = asyncio.run(tools.execute(ToolCall("r", "read_file", {"path": "note.md"})))
+    assert read["ok"] is True and "草稿" in str(read)

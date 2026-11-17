@@ -127,7 +127,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         current = self.runtime.daemon
         self.assertIs(current, first)
         specs = {spec["name"]: spec for spec in current.surface.conversation_specs()}
-        index = current.surface.tool_index()
+        index = current.surface.tool_index("worker")
         for name in ("changed", "new group", "stable"):
             self.assertIn(f"- {name}:", index)
         self.assertIn("Updated description", index)
@@ -148,7 +148,8 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.write({})
         await self.runtime.apply()
         empty = {spec["name"]: spec for spec in self.runtime.daemon.surface.conversation_specs()}
-        self.assertIn("tool_search", empty)
+        self.assertNotIn("tool_search", empty)
+        self.assertIn("tool_search", {spec["name"] for spec in self.runtime.daemon.surface.worker_specs()})
         self.assertNotIn("tool_groups", empty["heartbeat_begin"]["input_schema"]["properties"])
 
     async def test_invalid_file_preserves_runtime_and_connection_failure_allows_startup(self):
@@ -231,16 +232,15 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(session in self.closed for session in before))
         self.assertEqual(manager.generation, 1)
 
-    async def test_agent_installs_reloads_and_calls_new_tool_in_same_turn(self):
+    async def test_worker_installs_reloads_and_calls_new_tool_in_same_turn(self):
+        from unittest.mock import AsyncMock
         from momoi.runtime import MomoiDaemon
-        from momoi.runtime.agent import TurnExecutionSpec
-        from momoi.models import AgentReply, IncomingMessage, ProviderResponse, TurnDraft
+        from momoi.models import ProviderResponse
         daemon = MomoiDaemon(self.configuration.validate())
         self.addCleanup(daemon.store.close)
-        event = IncomingMessage("install", "install", "安装工具", 1, 1)
-        daemon.store.add_event(event)
-        turn_id = daemon._turn_id(event.event_id)
-        daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+        daemon.store.create_subagent_task("source-turn", next(iter(daemon.channels)), "安装工具", "安装并调用新的 MCP 工具")
+        task = daemon.store.claim_subagent_task()
+        daemon._request_webhook_turn = AsyncMock()
         test = self
 
         class Provider:
@@ -251,7 +251,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 names = {spec["name"] for spec in tools}
                 if self.calls == 1:
                     test.assertIn("mcp-install", str(system))
-                    test.assertNotIn("skill_search", names)
+                    test.assertNotIn("reply", names)
                     call = ToolCall("load-workflow", "skill_load", {"name": "mcp-install"})
                 elif self.calls == 2:
                     test.assertIn("PowerShell", str(messages))
@@ -273,21 +273,23 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 else:
                     test.assertEqual(self.calls, 7)
                     test.assertIn("result", str(messages))
-                    return ProviderResponse([], [])
+                    call = ToolCall("finish", "subagent_finish",
+                                    {"outcome": "succeeded", "summary": "已安装并调用", "output_refs": []})
                 return ProviderResponse([], [call])
 
         provider = Provider()
-        from tests.support import with_owner_recall
-        daemon.provider = with_owner_recall(provider)
+        daemon.provider = provider
         async with daemon.mcp:
-            result = await daemon._run_tool_loop(
-                daemon._system(), [{"role": "user", "content": "安装工具"}],
-                daemon.tool_surface.conversation_specs(), [event], TurnDraft(),
-                execution=TurnExecutionSpec("owner", permitted_tools=daemon.tool_surface.permitted_names("owner")),
-                source_event_id=event.event_id, turn_id=turn_id, delivery_channel=daemon.channel,
-            )
-        self.assertIsInstance(result, AgentReply)
+            await daemon._run_subagent_task(task)
+            await asyncio.gather(*daemon._subagent_wakeups)
         self.assertEqual(provider.calls, 7)
+        finished = daemon.store.subagent_task(task["id"])
+        self.assertEqual((finished["status"], finished["summary"]), ("succeeded", "已安装并调用"))
+        self.assertFalse(daemon.store.transcript_enabled_tools())
+        prompt = daemon._request_webhook_turn.await_args
+        self.assertIn("已安装并调用", prompt.args[0])
+        self.assertEqual(prompt.kwargs["parent_turn_id"], finished["turn_id"])
+        self.assertEqual(prompt.kwargs["contract"], "subagent")
 
     async def test_reload_waits_for_inflight_call(self):
         self.write({"before": {"command": "working"}})
@@ -410,28 +412,30 @@ def test_brave_web_search_is_visible_without_enabling_other_group_tools():
     mcp = SimpleNamespace(tool_specs=[local, web], configs={},
                           tool_group=lambda name: "brave-search")
     surface = ToolSurface(mcp, {})
-    tools = surface.conversation_specs()
+    tools = surface.worker_specs()
     names = [spec["name"] for spec in tools]
     assert names.count(web["name"]) == 1
     assert local["name"] not in names
+    assert web["name"] not in {spec["name"] for spec in surface.conversation_specs()}
     for stage in ("owner", "heartbeat", "goal"):
-        assert web["name"] in surface.permitted_names(stage)
+        assert web["name"] not in surface.permitted_names(stage)
     added = surface.append_visible(tools, surface.mcp_server_groups()["brave-search"])
     assert added == [local["name"]]
     assert sum(spec["name"] == web["name"] for spec in tools) == 1
 
     mcp.tool_specs = []
-    assert web["name"] not in {spec["name"] for spec in surface.conversation_specs()}
+    assert web["name"] not in {spec["name"] for spec in surface.worker_specs()}
 
 
 def test_reload_is_deferred_and_discoverable_before_first_install(tmp_path):
     from momoi.runtime.agent.runtime_tools import search_tools
     manager = MCPManager(tmp_path / "mcp.json", servers={})
     surface = ToolSurface(manager, {})
-    tools = surface.conversation_specs()
+    tools = surface.worker_specs()
     assert "mcp_reload" not in {spec["name"] for spec in tools}
-    assert "builtin_mcp_management" in surface.tool_index()
-    groups = surface.discovery_groups()
+    assert "builtin_mcp_management" in surface.tool_index("worker")
+    assert "builtin_mcp_management" not in surface.tool_index()
+    groups = surface.discovery_groups("worker")
     found = search_tools(ToolCall("find", "tool_search", {"query": "mcp_reload"}),
                          enable_tool_groups=groups, tool_surface=surface)
     assert found["tools"][0]["name"] == "mcp_reload"
@@ -439,8 +443,8 @@ def test_reload_is_deferred_and_discoverable_before_first_install(tmp_path):
                           enable_tool_groups=groups, tools=tools, tool_surface=surface)
     assert result["ok"]
     assert "mcp_reload" in {spec["name"] for spec in tools}
-    assert "mcp_reload" in surface.permitted_names("owner")
-    assert "mcp_reload" in surface.permitted_names("webhook")
+    assert "mcp_reload" not in surface.permitted_names("owner")
+    assert "mcp_reload" not in surface.permitted_names("webhook")
 
 
 def test_description_is_required_even_for_disabled_servers():

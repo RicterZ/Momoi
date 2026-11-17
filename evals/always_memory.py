@@ -70,7 +70,7 @@ async def evaluate_always(complete, directory):
 
 async def scripted_complete(system, messages, tools):
     prompt = str(messages)
-    assert 'key="relevant"' in prompt
+    assert any(case['memory'] in prompt for case in CASES)
     text = '阿澈，早呀。' if '叫我一声' in prompt else '牛肉面备注：不加香菜。'
     return ProviderResponse([{'type': 'text', 'text': text}], [])
 

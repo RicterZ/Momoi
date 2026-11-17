@@ -5,6 +5,8 @@ from ...models import AgentReply, TurnDraft
 from ..agent import TurnExecutionSpec
 from ..context.current_state import pack_current_turn_context
 from ..turn_support import (
+    SUBAGENT_REPORT_PROMPT_PATH,
+    SUBAGENT_REPORT_SYSTEM_PROMPT,
     WEBHOOK_PROMPT_PATH,
     WEBHOOK_SYSTEM_PROMPT,
     live_prompt as _live_prompt,
@@ -13,10 +15,15 @@ from ..turn_support import (
 
 class WebhookWorkflow:
     async def _complete_webhook_turn(
-        self, prompt: str, turn_id: str, channel: Channel | None = None
+        self, prompt: str, turn_id: str, channel: Channel | None = None,
+        *, parent_turn_id: str | None = None, contract: str = "webhook",
     ) -> AgentReply:
         channel = channel or self.channel
-        state = self.store.begin_turn(turn_id, "webhook", [turn_id])
+        state = self.store.begin_turn(turn_id, "webhook", [turn_id], parent_turn_id=parent_turn_id)
+        contract_prompt = (
+            (SUBAGENT_REPORT_PROMPT_PATH, SUBAGENT_REPORT_SYSTEM_PROMPT)
+            if contract == "subagent" else (WEBHOOK_PROMPT_PATH, WEBHOOK_SYSTEM_PROMPT)
+        )
         if state in {"completed", "cancelled", "needs_reconciliation"}:
             raise RuntimeError(f"webhook turn is {state}")
         shared = self.shared_turn_context(turn_id)
@@ -27,7 +34,7 @@ class WebhookWorkflow:
                 ("scoped_memories", self.store.scoped_memory_context("webhook")),
                 (
                     "workflow_contract",
-                    _live_prompt(WEBHOOK_PROMPT_PATH, WEBHOOK_SYSTEM_PROMPT),
+                    _live_prompt(*contract_prompt),
                 ),
                 ("current_webhook_task", "\n".join(filter(None, (prompt, self.owner_idle_gap(shared))))),
                 self.self_state_section(),

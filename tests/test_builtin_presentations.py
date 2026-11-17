@@ -59,18 +59,16 @@ def test_episode_default_shows_message_pages_and_execution_entry(tmp_path):
     assert present_result(shown, tool_name='episode_read') == shown
 
 
-def test_plan_writes_return_version_status_and_identity_not_full_plan(tmp_path):
-    raw = {'ok': True, 'plan_id': 'p', 'title': 'work', 'status': 'awaiting_approval', 'version': 2,
-           'step_index': 0, 'resume_safety': 'requires_review', 'request': 'long request',
-           'steps': [{'task': 'long task'}], 'review': {'validation': 'long review'}}
-    for name in ['plan_create', 'plan_submit', 'plan_start', 'plan_update', 'plan_cancel', 'plan_resume']:
+def test_subagent_writes_return_identity_and_status_not_full_task(tmp_path):
+    raw = {'ok': True, 'task_id': 't', 'title': 'search', 'status': 'queued', 'queue_position': 1,
+           'message': '已排队', 'task': 'long task text', 'reports': ['long report']}
+    for name in ['create_subagent', 'subagent_cancel']:
         shown, snapshots = normalized(tmp_path, name, raw)
-        assert shown['status'] == 'awaiting_approval' and shown['version'] == 2
-        assert shown['plan_id'] == 'p' and shown['resume_safety'] == 'requires_review'
-        assert not {'request', 'steps', 'review'} & shown.keys()
-        assert snapshots.historical_payload(shown['result_ref'])['steps'] == raw['steps']
-    shown, _ = normalized(tmp_path, 'plan_get', raw)
-    assert shown['steps'] == raw['steps']
+        assert shown['task_id'] == 't' and shown['status'] == 'queued' and shown['queue_position'] == 1
+        assert not {'task', 'reports'} & shown.keys()
+        assert snapshots.historical_payload(shown['result_ref'])['task'] == raw['task']
+    shown, _ = normalized(tmp_path, 'subagent_status', raw)
+    assert shown['task'] == raw['task']
 
 
 def test_goal_write_preserves_staged_state_and_calculated_schedule(tmp_path):

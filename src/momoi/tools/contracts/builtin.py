@@ -6,7 +6,7 @@ from .skills import SKILL_TOOL_SPECS
 from ...contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 
 # Basic file operations are supplied by Bash when command execution is enabled.
-# Keep patching and web extraction as dedicated tools.
+# Keep web extraction as a dedicated tool.
 BASH_REPLACED_TOOLS = frozenset({
     "read_file", "write_file", "list_dir", "glob_files",
     "makedirs", "move_file", "delete_file",
@@ -147,26 +147,6 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
                 },
             },
             "required": ["path", "content"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "apply_patch",
-        "description": (
-            '应用统一差异或 *** Begin Patch 结构化补丁。支持多文件的添加、更新、移动和删除。'
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "patch": {"type": "string"},
-                "cwd": {
-                    "type": "string",
-                    "description": (
-                        '补丁基础目录；默认为工作区。'
-                    ),
-                },
-            },
-            "required": ["patch"],
             "additionalProperties": False,
         },
     },

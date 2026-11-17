@@ -20,11 +20,11 @@ from .workflows import (
 
 from .workflows.weekly_reflection import WeeklyReflectionWorkflow
 from .workflows.memory_verification import MemoryVerificationWorkflow
-from .workflows.plan import PlanWorkflow
+from .workflows.subagent import SubagentWorkflow
 
 
 class TurnRunner(
-    PlanWorkflow,
+    SubagentWorkflow,
     WeeklyReflectionWorkflow,
     MemoryVerificationWorkflow,
     CurrentStateWorkflow,

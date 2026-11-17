@@ -48,7 +48,6 @@ class TurnExecutionSpec:
             "heartbeat",
             "webhook",
             "goal",
-            "plan_step",
             "current_state_maintenance",
         }
 

@@ -1,3 +1,4 @@
+import asyncio
 from tests.support import reply_call, install_scripted_replyer
 from tests.support import provider_catalog
 import copy
@@ -259,8 +260,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("<autonomous_heartbeat>", rendered)
             self.assertNotIn("<heartbeat_plan>", rendered)
             self.assertIn("heartbeat_begin", provider.first_tools)
-            self.assertNotIn("apply_patch", provider.first_tools)
-            self.assertNotIn("delete_file", provider.first_tools)
             self.assertNotIn("sleep", provider.first_tools)
             self.assertEqual(
                 provider.first_tools,
@@ -362,7 +361,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             tool for tool in tools if tool["name"] == "heartbeat_begin"
                         )
                         case.assertNotIn("tool_groups", begin["input_schema"]["properties"])
-                        case.assertIn("tool_search", names)
+                        case.assertNotIn("tool_search", names)
                         call = ToolCall(
                             "begin",
                             "heartbeat_begin",
@@ -378,18 +377,11 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     elif self.calls == 2:
                         case.assertNotIn("mcp__demo__read", names)
                         case.assertIn('"state": "started"', str(messages[-1]))
-                        call = ToolCall("search-demo", "tool_search", {"query": "mcp__demo__read", "limit": 1})
+                        call = ToolCall("delegate", "create_subagent",
+                                        {"title": "读取 demo", "task": "读取 demo 当前状态并汇报"})
                     elif self.calls == 3:
-                        case.assertNotIn("mcp__demo__read", names)
-                        case.assertIn("mcp__demo__read", str(messages[-1]))
-                        call = ToolCall("enable-demo", "tool_enable", {"tools": ["mcp__demo__read"]})
-                    elif self.calls == 4:
-                        case.assertIn("mcp__demo__read", names)
-                        call = ToolCall("read-demo", "mcp__demo__read", {})
-                    elif self.calls == 5:
-                        case.assertIn("mcp__demo__read", names)
-                        case.assertIn("dynamic heartbeat tool works", str(messages[-1]))
-                        call = ToolCall("activity", "heartbeat_activity", {"activity": "inspect demo state", "result": "planning complete", "next_check_minutes": 30, "reason": "test"})
+                        case.assertIn('"queued"', str(messages[-1]))
+                        call = ToolCall("activity", "heartbeat_activity", {"activity": "inspect demo state", "result": "delegated", "next_check_minutes": 30, "reason": "test"})
                     else:
                         return ProviderResponse([], [])
                     return ProviderResponse(
@@ -412,12 +404,44 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 turn_id,
                 owner_event_revision=0,
             )
-            self.assertEqual(provider.calls, 6)
-            self.assertEqual(provider.surfaces[0], provider.surfaces[1])
-            self.assertEqual(provider.surfaces[1], provider.surfaces[2])
-            self.assertNotEqual(provider.surfaces[2], provider.surfaces[3])
-            self.assertEqual(provider.surfaces[3], provider.surfaces[4])
-            self.assertEqual(provider.surfaces[4], provider.surfaces[5])
+            self.assertEqual(provider.calls, 4)
+            self.assertTrue(all("mcp__demo__read" not in names for names in provider.surfaces))
+            task = daemon.store.claim_subagent_task()
+            self.assertEqual(task["source_turn_id"], turn_id)
+
+            class Worker:
+                calls = 0
+                surfaces: list[list[str]] = []
+
+                async def complete(self, _system, messages, tools, **_kwargs):
+                    self.calls += 1
+                    names = [str(tool["name"]) for tool in tools]
+                    self.surfaces.append(names)
+                    if self.calls == 1:
+                        case.assertNotIn("mcp__demo__read", names)
+                        call = ToolCall("search-demo", "tool_search", {"query": "mcp__demo__read", "limit": 1})
+                    elif self.calls == 2:
+                        case.assertIn("mcp__demo__read", str(messages[-1]))
+                        call = ToolCall("enable-demo", "tool_enable", {"tools": ["mcp__demo__read"]})
+                    elif self.calls == 3:
+                        case.assertIn("mcp__demo__read", names)
+                        call = ToolCall("read-demo", "mcp__demo__read", {})
+                    else:
+                        case.assertIn("dynamic heartbeat tool works", str(messages[-1]))
+                        call = ToolCall("finish", "subagent_finish",
+                                        {"outcome": "succeeded", "summary": "demo 正常", "output_refs": []})
+                    return ProviderResponse([], [call])
+
+            worker = Worker()
+            daemon.provider = worker  # type: ignore[assignment]
+            daemon._request_webhook_turn = AsyncMock()  # type: ignore[method-assign]
+            await daemon._run_subagent_task(task)
+            await asyncio.gather(*daemon._subagent_wakeups)
+            self.assertEqual(worker.calls, 4)
+            self.assertEqual(worker.surfaces[0], worker.surfaces[1])
+            self.assertNotEqual(worker.surfaces[1], worker.surfaces[2])
+            self.assertEqual(daemon.store.subagent_task(task["id"])["status"], "succeeded")
+            self.assertEqual(daemon._request_webhook_turn.await_args.kwargs["contract"], "subagent")
             daemon.store.close()
 
 

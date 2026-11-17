@@ -72,7 +72,8 @@ class TranscriptMemoryStore:
             for node in list(root):
                 identifier = node.get("id")
                 memory = node.find("memory")
-                is_always = memory is not None and memory.get("activation") == "always"
+                # Change events are only produced for always memories; legacy events carry the attribute.
+                is_always = memory is not None and memory.get("activation") in (None, "always")
                 if is_always:
                     tracked.add(identifier)
                 elif node.tag == "delete" and identifier in tracked:
@@ -160,8 +161,7 @@ class TranscriptMemoryStore:
                         "此记忆已撤销。旧快照及历史检索中的同 ID 内容不再作为当前事实或偏好依据。"
                     )
                     changes.append(
-                        f'<{operation} id={quoteattr(identifier)} revision="{state["revision"]}"'
-                        f' key={quoteattr(str((new or old)["key"]))}>'
+                        f'<{operation} id={quoteattr(identifier)} revision="{state["revision"]}">'
                         f'{body}</{operation}>'
                     )
                     if old is not None or identifier in state["overrides"]:

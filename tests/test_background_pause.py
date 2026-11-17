@@ -33,7 +33,7 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
     begin_done = False
     draft = TurnDraft()
 
-    async def read(call):
+    async def read(call, *args, **kwargs):
         calls.append(call.id)
         if call.id == 'done-read':
             await daemon._receive(IncomingMessage('owner-update', 'owner-update', '现在不用提醒了',
@@ -57,9 +57,9 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
             return response([ToolCall('begin', 'heartbeat_begin', {'activity': 'reading', 'mode': 'rest', 'strategy': []})])
         if not started:
             started = True
-            return response([ToolCall('done-read', 'web_fetch', {'url': 'https://example.com'}),
+            return response([ToolCall('done-read', 'episode_search', {'query': '提醒'}),
                              *([reply_call('stale-reply', bubbles=['不要补发'])] if stage != 'heartbeat' else []),
-                             ToolCall('not-run', 'web_fetch', {'url': 'https://example.com/next'})])
+                             ToolCall('not-run', 'episode_search', {'query': '下一步'})])
         assert owner_done
         text = json.dumps(messages, ensure_ascii=False)
         assert '现在不用提醒了' in text
@@ -108,7 +108,7 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
                 turn_id='background', delivery_channel=daemon.channel,
                 resume_input=lambda: 'FRESH_TASK')
         daemon.start_active_turn(work, stage=stage, channel=daemon.channel.name)
-        with patch.object(daemon.tool_batch.tool_executor.builtin_tools, 'execute', side_effect=read):
+        with patch.object(daemon.tool_batch.memory_tools, 'execute_async', side_effect=read):
             if stop_owner:
                 with pytest.raises(asyncio.CancelledError):
                     await asyncio.wait_for(daemon.await_background_turn(asyncio.Event()), 5)

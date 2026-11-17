@@ -94,9 +94,9 @@ class ModelRoundRunner:
                 if authority == "owner"
                 else messages
             )
-            # Plans use round-based audit/pause limits, not cumulative time or
-            # token budgets. Context fitting above still protects the input window.
-            if stage != "plan_step":
+            # Workers use a round limit, not cumulative time or token budgets.
+            # Context fitting above still protects the input window.
+            if stage != "subagent":
                 self.context_window.check_budget(
                     turn_id, request_system, request_messages, request_tools
                 )

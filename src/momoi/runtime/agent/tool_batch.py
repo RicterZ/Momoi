@@ -25,9 +25,13 @@ from .runtime_tools import (
     begin_heartbeat, search_tools, enable_tools, recall_owner_context, record_heartbeat_activity,
 )
 from .workflow import AgentWorkflow, TurnExecutionSpec
+from ..tool_contracts.subagent import PLANNER_SUBAGENT_TOOL_NAMES
 
 
 logger = logging.getLogger("momoi.runtime.turns")
+PARALLEL_HISTORY_READS = frozenset({
+    "episode_search", "episode_read", "memory_search", "thinking_search", "thinking_read",
+})
 
 
 SettleOwnerUpdates = Callable[
@@ -87,6 +91,20 @@ class ToolBatchResult:
     updates_in_result: bool = False
 
 
+def subagent_view(task: dict[str, Any], *, detail: bool = False) -> dict[str, Any]:
+    view = {"task_id": task["id"], "title": task["title"], "status": task["status"]}
+    if task.get("queue_position") is not None:
+        view["queue_position"] = task["queue_position"]
+    if task["reports"]:
+        view["latest_report"] = task["reports"][-1]["progress"]
+    if task.get("summary"):
+        view["summary"] = task["summary"]
+    if detail:
+        view.update(task=task["task"], reports=[item["progress"] for item in task["reports"]],
+                    output_refs=task["output_refs"])
+    return view
+
+
 class ToolBatchExecutor:
     """Overlap independent reads and one reply; keep state-changing tools ordered."""
 
@@ -118,6 +136,35 @@ class ToolBatchExecutor:
         self.tool_results = tool_results
         self.outbox_changed = outbox_changed
         self.replyer = replyer
+        self.subagent_changed: Callable[[], None] = lambda: None
+        self.subagent_cancelled: Callable[[str], None] = lambda task_id: None
+
+    def _subagent_tool(self, call: ToolCall, request: "ToolBatchRequest") -> dict[str, Any]:
+        channel = request.delivery_channel.name
+        try:
+            if call.name == "create_subagent":
+                task = self.store.create_subagent_task(
+                    request.turn_id, channel, call.arguments["title"], call.arguments["task"],
+                )
+                self.subagent_changed()
+                return {"ok": True, **subagent_view(task), "message": (
+                    "已派发，Worker 正在执行。" if not task.get("queue_position")
+                    else f"已排队，前面还有 {task['queue_position']} 个任务。"
+                ) + "Worker 汇报时会唤醒你。"}
+            if call.name == "subagent_cancel":
+                task = self.store.cancel_subagent_task(call.arguments["task_id"], channel)
+                self.subagent_cancelled(task["id"])
+                self.subagent_changed()
+                return {"ok": True, **subagent_view(task)}
+            task_id = call.arguments.get("task_id")
+            if task_id:
+                task = self.store.subagent_task(task_id)
+                if task is None or task["channel"] != channel:
+                    raise ValueError("task not found in this channel")
+                return {"ok": True, **subagent_view(task, detail=True)}
+            return {"ok": True, "tasks": [subagent_view(task) for task in self.store.subagent_tasks(channel)]}
+        except (ValueError, KeyError, TypeError) as error:
+            return {"ok": False, "error": "invalid_subagent_arguments", "message": str(error)}
 
     async def execute(self, request: ToolBatchRequest) -> ToolBatchResult:
         execution = request.execution
@@ -237,66 +284,8 @@ class ToolBatchExecutor:
                               "received_messages": len(received),
                               "message": "等待结束，以下是期间收到的用户消息。" if received else "等待结束，未收到新消息。",
                               "messages": received}
-            elif call.name in {"plan_create", "plan_submit", "plan_start", "plan_get", "plan_update", "plan_cancel", "plan_resume"}:
-                try:
-                    if call.name == "plan_create":
-                        plan = self.store.create_task_plan(call.arguments, request.turn_id, request.delivery_channel.name)
-                    elif call.name == "plan_start":
-                        event = next((event for event in request.current_events
-                                      if call.arguments.get("approval_quote", "").strip() in event.text
-                                      and event.channel == request.delivery_channel.name), None)
-                        quote = call.arguments.get("approval_quote", "")
-                        if event is None or not quote.strip() or quote not in event.text:
-                            raise ValueError("approval_quote must quote the current owner approval message")
-                        context_messages = copy.deepcopy(request.context_messages or request.messages[:-1])
-                        plan = self.store.start_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, {"system": request.system, "tools": request.request_tools, "messages": context_messages}, version=call.arguments.get("version"), approval={"event_id": event.event_id, "quote": quote, "received_at": event.received_at, "turn_id": request.turn_id})
-                    elif call.name == "plan_submit":
-                        args = call.arguments
-                        plan = self.store.task_plan(args["plan_id"])
-                        if plan is None or plan["channel"] != request.delivery_channel.name:
-                            raise ValueError("plan not found in this channel")
-                        if plan["version"] != args["version"] or plan["status"] not in {"draft", "awaiting_approval"}:
-                            raise ValueError("submit the current draft version")
-                        if any(not isinstance(args.get(key), str) or not args[key].strip()
-                               or len(args[key]) > 12000 for key in ("summary", "evidence", "validation")):
-                            raise ValueError("summary, evidence and validation must be nonempty")
-                        if plan["status"] == "draft":
-                            delivery = self.bubble_delivery.dispatch(
-                                ToolCall(call.id + "-summary", "send_bubbles", {"bubbles": [args["summary"]]}),
-                                turn_id=request.turn_id, stage=execution.stage,
-                                round_number=request.round_number, delivery_channel=request.delivery_channel,
-                                heartbeat_turn=execution.heartbeat,
-                                heartbeat_owner_event_revision=request.heartbeat_owner_event_revision,
-                                current_events=request.current_events,
-                                previous_tool_name=previous_tool_name, previous_bubbles=last_sent_bubbles,
-                                previous_channel=last_sent_channel,
-                                allow_paragraphs=True,
-                            )
-                            if not delivery.result.get("ok"):
-                                raise ValueError("proposal delivery failed: " + str(
-                                    delivery.result.get("message") or delivery.result.get("error") or "unknown error"
-                                ))
-                            last_sent_bubbles = copy.deepcopy(delivery.bubbles)
-                            last_sent_channel = delivery.channel
-                        plan = self.store.submit_task_plan(args["plan_id"], request.delivery_channel.name,
-                            args["version"], args["summary"], args["evidence"], args["validation"], request.turn_id)
-                    elif call.name == "plan_get":
-                        plan = self.store.task_plan(call.arguments.get("plan_id"))
-                        if plan is None or plan["channel"] != request.delivery_channel.name: raise ValueError("plan not found")
-                    elif call.name == "plan_update":
-                        plan = self.store.update_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, call.arguments.get("version"), call.arguments.get("steps"), call.arguments.get("request"))
-                    elif call.name == "plan_resume":
-                        context_messages = copy.deepcopy(request.context_messages or request.messages[:-1])
-                        quote = call.arguments.get("owner_feedback", "")
-                        event = next((e for e in request.current_events if quote.strip() and quote in e.text
-                                      and e.channel == request.delivery_channel.name), None)
-                        feedback = {"event_id": event.event_id, "quote": quote, "received_at": event.received_at} if event else None
-                        plan = self.store.resume_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name, call.arguments.get("version"), {"system": request.system, "tools": request.request_tools, "messages": context_messages}, owner_feedback=feedback)
-                    else:
-                        plan = self.store.cancel_task_plan(call.arguments.get("plan_id"), request.delivery_channel.name)
-                    result = {"ok": True, "plan_id": plan["id"], "title": plan["title"], "request": plan["request"], "status": plan["status"], "version": plan.get("version", 1), "step_index": plan["step_index"], "resume_safety": self.store.plan_resume_safety(plan), "steps": plan["steps"], "review": plan["review"]}
-                except (ValueError, TypeError, KeyError) as error:
-                    result = {"ok": False, "error": "invalid_plan_arguments", "message": str(error)}
+            elif call.name in PLANNER_SUBAGENT_TOOL_NAMES:
+                result = self._subagent_tool(call, request)
             elif call.name == "heartbeat_begin":
                 with log_context(
                     stage=execution.stage,
@@ -535,6 +524,7 @@ class ToolBatchExecutor:
                 result = enable_tools(
                     call, enable_tool_groups=request.enable_tool_groups,
                     tools=request.tools, tool_surface=self.tool_surface,
+                    persist=execution.stage != "subagent",
                 )
             elif call.name == "mcp_reload":
                 if execution.allowed_capabilities is not None and "external_effect" not in execution.allowed_capabilities:
@@ -568,7 +558,7 @@ class ToolBatchExecutor:
                     tool_call_id=call.id,
                     tool_name=call.name,
                 ):
-                    if call.name == "plan_step_finish" and call.arguments.get("outcome") == "succeeded" and any(
+                    if call.name == "subagent_finish" and call.arguments.get("outcome") == "succeeded" and any(
                         block.get("is_error") for block in results
                     ):
                         result = {"ok": False, "error": "verify_failed_batch_before_finishing"}
@@ -684,7 +674,7 @@ class ToolBatchExecutor:
                 return False
             if call.argument_error or call.name not in allowed_tool_names:
                 return False
-            if call.name == "reply":
+            if call.name == "reply" or call.name in PARALLEL_HISTORY_READS:
                 return True
             if not self.tool_executor.is_external(call.name):
                 return False
@@ -773,7 +763,7 @@ class ToolBatchExecutor:
         # Keep the model's actual assistant text and native tool exchange for
         # later Turns. Delivered speech is confirmed separately by the stored
         # conversation rows; a plain assistant text response never implies send.
-        if execution.stage in {"owner", "heartbeat", "webhook", "goal", "plan_step"}:
+        if execution.stage in {"owner", "heartbeat", "webhook", "goal", "subagent"}:
             self.store.append_turn_journal(
                 request.turn_id,
                 "assistant_exchange",

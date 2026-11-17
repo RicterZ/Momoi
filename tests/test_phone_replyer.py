@@ -402,7 +402,7 @@ def test_shared_transcript_prefix_is_identical_for_owner_and_background_stages(t
         source = Path(__file__).resolve().parents[1] / 'src/momoi/runtime'
         expected = {
             'workflows/owner/workflow.py', 'workflows/heartbeat.py',
-            'workflows/webhook.py', 'workflows/plan.py',
+            'workflows/webhook.py',
             'workflows/crontab.py', 'workflows/current_state.py',
         }
         for relative in expected:

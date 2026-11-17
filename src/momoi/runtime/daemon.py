@@ -110,7 +110,7 @@ class MomoiDaemon(
         legacy_pricing = self.services.legacy_pricing
         if legacy_pricing:
             self.store.backfill_usage_pricing(legacy_pricing)
-        self.store.recover_task_plans()
+        self.store.recover_subagent_tasks()
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
         self.memory_tools = MemoryTools(
@@ -252,6 +252,12 @@ class MomoiDaemon(
         self._queued_memory_operations: set[str] = set()
         self._queued_current_state: set[str] = set()
         self._webhook_commits: dict[str, asyncio.Future[None]] = {}
+        self._webhook_routes: dict[str, tuple[str | None, str | None, str]] = {}
+        self._subagent_changed = asyncio.Event()
+        self._running_subagent: tuple[str, asyncio.Task[None]] | None = None
+        self._subagent_wakeups: set[asyncio.Task[None]] = set()
+        self.tool_batch.subagent_changed = self.notify_subagents_changed
+        self.tool_batch.subagent_cancelled = self.cancel_running_subagent
         self.webhooks = (
             WebhookService(
                 config.webhooks,
@@ -306,6 +312,7 @@ class MomoiDaemon(
                                  if callable(getattr(item, "sync_emotions", None)))
                     tasks.append(group.create_task(self._agent_worker(stop)))
                     tasks.append(group.create_task(self._scheduler_worker(stop)))
+                    tasks.append(group.create_task(self._subagent_worker(stop)))
                     tasks.append(group.create_task(self._outbox_worker(stop)))
                     tasks.append(
                         group.create_task(

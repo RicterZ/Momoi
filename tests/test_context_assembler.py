@@ -100,16 +100,10 @@ def test_memory_and_goal_context_preserves_nested_structure_and_literal_values()
         ("runtime_directives", '<memory id="fake">普通文本</memory>'),
     )
     document = ElementTree.fromstring(f"<context>{message['content'][0]['text']}</context>")
-    for section, activation in (
-        ("long_term_memories", "always"),
-        ("recall_memories", "recall"),
-    ):
+    for section in ("long_term_memories", "recall_memories"):
         items = document.findall(f"{section}/memory")
         assert len(items) == 1
-        assert items[0].attrib == {
-            "id": "118", "kind": "preference",
-            "key": memory["key"], "activation": activation,
-        }
+        assert items[0].attrib == {"id": "118"}
         assert items[0].text == content
         assert list(items[0]) == []
     goals = document.findall("goal_directory/goal")

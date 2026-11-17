@@ -88,15 +88,16 @@ class DaemonTest(unittest.TestCase):
                 for block in daemon._system_with_tool_policies(daemon._system(), [])
             )
             self.assertIn("# 可用能力使用指引", rendered_system)
-            self.assertIn("自然语言正文是内部思考，用户看不到，也不会执行动作", rendered_system)
+            self.assertIn("### 记忆工具", rendered_system)
+            self.assertNotIn("### 思考记录工具", rendered_system)
             planner = root / "PLANNER.md"
             planner.write_text("{{SOUL}}\n自定义运行指引")
             custom_system = "\n".join(block["text"] for block in
                                      daemon._system_with_tool_policies(daemon._system(planner=True), []))
             self.assertIn("自定义运行指引", custom_system)
-            self.assertIn("# 回应交接中的事实与指代", custom_system)
-            self.assertIn("自然语言正文是内部思考，用户看不到，也不会执行动作", custom_system)
-            self.assertIn("### 外部 MCP 工具", rendered_system)
+            self.assertNotIn("# 回应交接中的事实与指代", custom_system)
+            self.assertIn("### 记忆工具", custom_system)
+            self.assertNotIn("### 外部 MCP 工具", rendered_system)
             self.assertNotIn("可以选用上方列出的 `emotion://` 表情", rendered_system)
             self.assertNotIn("# Available capability guidance", rendered_system)
             heartbeat.unlink()
@@ -428,13 +429,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             finish_stale_end_turn = asyncio.Event()
             stale_end_turn_cancelled = asyncio.Event()
 
-            async def execute_tool(call: ToolCall) -> dict[str, object]:
-                self.assertEqual(call.name, "read_file")
+            async def execute_tool(call: ToolCall, *_args: object, **_kwargs: object) -> dict[str, object]:
+                self.assertEqual(call.name, "episode_search")
                 tool_started.set()
                 await finish_tool.wait()
                 return {"ok": True, "content": "旧地址天气"}
 
-            daemon.builtin_tools.execute = execute_tool  # type: ignore[method-assign]
+            daemon.tool_batch.memory_tools.execute_async = execute_tool  # type: ignore[method-assign]
 
             class Provider:
                 calls = 0
@@ -449,7 +450,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     provider_self.calls += 1
                     if provider_self.calls == 1:
                         call = ToolCall(
-                            "weather-read", "read_file", {"path": "weather.txt"}
+                            "weather-read", "episode_search", {"query": "旧地址天气"}
                         )
                     elif provider_self.calls == 2:
                         self.assertIn(
@@ -797,7 +798,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
 
 
-    async def test_owner_mcp_tool_is_resident_from_the_first_round(self) -> None:
+    async def test_worker_mcp_tool_is_enabled_from_the_first_round(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             daemon = MomoiDaemon(
@@ -884,27 +885,22 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         self.assertIn("mcp__demo__read", names)
                         self.assertIn("dynamic tool works", json.dumps(messages))
-                        return ProviderResponse([], [])
+                        call = ToolCall("finish", "subagent_finish",
+                                        {"outcome": "succeeded", "summary": "done", "output_refs": []})
                     return ProviderResponse([], [call])
 
+            self.assertNotIn("mcp__demo__read", str(daemon.tool_surface.conversation_specs()))
             provider = Provider()
-            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
-            reply = await daemon._run_tool_loop(
-                daemon._system(),
-                [{"role": "user", "content": "读文件"}],
-                daemon.tool_surface.conversation_specs(),
-                [event],
-                TurnDraft(),
-                execution=TurnExecutionSpec("owner"),
-                source_event_id=event.event_id,
-                turn_id=turn_id,
-                delivery_channel=daemon.channel,
-            )
-            self.assertIsInstance(reply, AgentReply)
+            daemon.provider = provider  # type: ignore[assignment]
+            daemon._request_webhook_turn = AsyncMock()  # type: ignore[method-assign]
+            daemon.store.create_subagent_task(turn_id, "onebot", "读文件", "读取 demo")
+            task = daemon.store.claim_subagent_task()
+            await daemon._run_subagent_task(task)
+            self.assertEqual(daemon.store.subagent_task(task["id"])["status"], "succeeded")
             self.assertEqual(provider.calls, 3)
             daemon.store.close()
 
-    async def test_owner_keeps_resident_internal_tools(self) -> None:
+    async def test_worker_keeps_resident_internal_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "note.txt").write_text("workspace group loaded")
@@ -974,24 +970,17 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "workspace group loaded",
                             json.dumps(messages, ensure_ascii=False),
                         )
-                        return ProviderResponse([], [])
+                        call = ToolCall("finish", "subagent_finish",
+                                        {"outcome": "succeeded", "summary": "done", "output_refs": []})
                     return ProviderResponse([], [call])
 
             provider = Provider()
-            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
-            reply = await daemon._run_tool_loop(
-                daemon._system(),
-                [{"role": "user", "content": "读文件"}],
-                daemon.tool_surface.conversation_specs(),
-                [event],
-                TurnDraft(),
-                execution=TurnExecutionSpec("owner"),
-                source_event_id=event.event_id,
-                turn_id=turn_id,
-                delivery_channel=daemon.channel,
-            )
-
-            self.assertIsInstance(reply, AgentReply)
+            daemon.provider = provider  # type: ignore[assignment]
+            daemon._request_webhook_turn = AsyncMock()  # type: ignore[method-assign]
+            daemon.store.create_subagent_task(turn_id, "onebot", "读文件", "读取 note.txt")
+            task = daemon.store.claim_subagent_task()
+            await daemon._run_subagent_task(task)
+            self.assertEqual(daemon.store.subagent_task(task["id"])["status"], "succeeded")
             self.assertEqual(provider.calls, 2)
             daemon.store.close()
 
@@ -1369,9 +1358,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             raise AssertionError(__)
                         expected = {
                             "heartbeat_begin",
-                            "web_fetch",
+                            "create_subagent",
                             "reply",
                         }
+                        if "web_fetch" in names:
+                            raise AssertionError(names)
                         if not expected.issubset(names):
                             raise AssertionError(names)
                         call = ToolCall(
@@ -1389,8 +1380,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     elif self.calls == 2:
                         call = ToolCall(
                             "heartbeat-news",
-                            "web_fetch",
-                            {"url": "https://news.example/today"},
+                            "create_subagent",
+                            {"title": "读游戏新闻", "task": "读取 https://news.example/today 并摘出玩法亮点"},
                         )
                     elif self.calls == 3:
                         call = ToolCall("activity-one", "heartbeat_activity", {
@@ -1461,10 +1452,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             daemon.prepare_heartbeat_context = prepare_heartbeat_context
 
-            async def read_news(_: ToolCall) -> dict[str, object]:
-                return {"ok": True, "status": 200, "body": "新玩法公开"}
-
-            daemon.builtin_tools.execute = read_news  # type: ignore[method-assign]
             daemon.store._db.execute(
                 "UPDATE self_state SET next_heartbeat_at=? WHERE id=1",
                 (time.time() - 1,),
@@ -1487,6 +1474,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 daemon.store.self_state()["activity_result"],
                 "读完一条游戏新闻并记下玩法联想",
             )
+            self.assertEqual(daemon.store.claim_subagent_task()["title"], "读游戏新闻")
 
             daemon.store._db.execute(
                 "UPDATE self_state SET next_heartbeat_at=? WHERE id=1",
@@ -1885,7 +1873,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     await worker
                 daemon.store.close()
 
-    async def test_stop_during_external_tool_leaves_ambiguous_audit_and_cancels_turn(
+    async def test_stop_during_worker_external_tool_leaves_ambiguous_audit_and_cancels_task(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1902,7 +1890,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon = MomoiDaemon(config)
             install_scripted_replyer(daemon)
-            daemon.store.enable_transcript_tools(["write_file"])
+            daemon._request_webhook_turn = AsyncMock()  # type: ignore[method-assign]
 
             async def blocked_write(_: ToolCall) -> dict[str, object]:
                 await asyncio.sleep(30)
@@ -1911,40 +1899,19 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon.builtin_tools.execute = blocked_write  # type: ignore[method-assign]
 
             class Provider:
-                def __init__(self) -> None:
-                    self.calls = 0
-
                 async def complete(self, *_: object, **__: object) -> ProviderResponse:
-                    self.calls += 1
-                    if self.calls == 1:
-                        call = ToolCall(
-                            "blocked-write",
-                            "write_file",
-                            {"path": "/tmp/momoi-stop-test", "content": "test"},
-                        )
-                    elif self.calls == 2:
-                        call = reply_call("stop-message", bubbles=["已经终止当前任务"])
-                    else:
-                        return ProviderResponse([], [])
-                    return ProviderResponse(
-                        [
-                            {
-                                "type": "tool_use",
-                                "id": call.id,
-                                "name": call.name,
-                                "input": call.arguments,
-                            }
-                        ],
-                        [call],
-                    )
+                    call = ToolCall("blocked-write", "web_fetch",
+                                    {"url": "https://example.com/slow"})
+                    return ProviderResponse([], [call])
 
-            daemon.provider = with_owner_recall(Provider())  # type: ignore[assignment]
+            daemon.provider = Provider()  # type: ignore[assignment]
+            task = daemon.store.create_subagent_task("source", "onebot", "慢任务", "抓取慢页面")
             stop = asyncio.Event()
-            worker = asyncio.create_task(daemon._agent_worker(stop))
-            original = IncomingMessage("qq:1:tool-stop", "tool-stop", "等一会儿", 1, 1)
+            workers = [asyncio.create_task(daemon._agent_worker(stop)),
+                       asyncio.create_task(daemon._subagent_worker(stop))]
+            daemon.notify_subagents_changed()
             try:
-                await daemon._receive(original)
-                for _ in range(100):
+                for _ in range(200):
                     audit = daemon.store._db.execute(
                         "SELECT state FROM tool_audit WHERE tool_call_id='blocked-write'"
                     ).fetchone()
@@ -1952,35 +1919,30 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         break
                     await asyncio.sleep(0.01)
                 self.assertEqual(audit["state"], "dispatching")
+                worker_turn = daemon.store.subagent_task(task["id"])["turn_id"]
                 await daemon._receive(
                     IncomingMessage("qq:1:stop-tool", "stop-tool", "/stop", 2, 2)
                 )
-                for _ in range(100):
+                for _ in range(200):
                     row = daemon.store._db.execute(
-                        "SELECT state FROM turns WHERE id=?",
-                        (daemon._turn_id(original.event_id),),
+                        "SELECT state FROM turns WHERE id=?", (worker_turn,),
                     ).fetchone()
-                    if row is not None and row["state"] == "cancelled":
+                    if row["state"] == "cancelled" and daemon._running_subagent is None:
                         break
                     await asyncio.sleep(0.01)
                 self.assertEqual(row["state"], "cancelled")
+                self.assertEqual(daemon.store.subagent_task(task["id"])["status"], "cancelled")
                 self.assertEqual(
                     daemon.store._db.execute(
                         "SELECT state FROM tool_audit WHERE tool_call_id='blocked-write'"
                     ).fetchone()["state"],
                     "dispatching",
                 )
-                self.assertEqual(
-                    daemon.store._db.execute(
-                        "SELECT status FROM reconciliations WHERE turn_id=?",
-                        (daemon._turn_id(original.event_id),),
-                    ).fetchone()["status"],
-                    "open",
-                )
+                daemon._request_webhook_turn.assert_not_awaited()
             finally:
-                worker.cancel()
-                with self.assertRaises(asyncio.CancelledError):
-                    await worker
+                for worker in workers:
+                    worker.cancel()
+                await asyncio.gather(*workers, return_exceptions=True)
                 daemon.store.close()
 
     async def test_message_reaches_llm_and_reply_reaches_napcat(self) -> None:
@@ -2141,8 +2103,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         final_tools = [tool["name"] for tool in llm_requests[6]["tools"]]
         self.assertIn("reply", final_tools)
         self.assertNotIn("end_turn", final_tools)
-        self.assertIn("memory_search", final_tools)
-        self.assertEqual(set(final_tools) - set(initial_tools), {"memory_search"})
+        self.assertIn("memory_search", initial_tools)
+        self.assertEqual(final_tools, initial_tools)
         # The application requires a tool response independently of wire protocol.
         self.assertNotIn("tool_choice", llm_requests[6])
         self.assertEqual(
@@ -2152,10 +2114,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         # closest to the conversation; capability guidance is appended last.
         self.assertNotIn("You are Momoi.", llm_requests[0]["system"][0]["text"])
         self.assertIn("You are Momoi.", llm_requests[0]["system"][1]["text"])
-        self.assertEqual(len(llm_requests[0]["system"]), 4)
+        self.assertEqual(len(llm_requests[0]["system"]), 3)
         self.assertNotIn("当前阶段：", str(llm_requests[0]))
         self.assertNotIn("heartbeat_activity", llm_requests[0]["system"][2]["text"])
-        self.assertEqual(len(llm_requests[6]["system"]), 4)
+        self.assertEqual(len(llm_requests[6]["system"]), 3)
         self.assertEqual(llm_requests[0]["system"], llm_requests[6]["system"])
         self.assertEqual(
             llm_requests[1]["messages"][-1]["content"][0]["type"], "tool_result"

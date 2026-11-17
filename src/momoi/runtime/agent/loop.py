@@ -86,10 +86,11 @@ class AgentLoop:
         batch_state = ToolBatchState()
         observed_input_ids = {event.event_id for event in current_events}
         llm_round = 0
-        enable_tool_groups = self.tool_surface.discovery_groups()
+        stage = execution.stage
+        tool_role = "worker" if stage == "subagent" else "planner"
+        enable_tool_groups = self.tool_surface.discovery_groups(tool_role)
         mcp_generation = getattr(self.tool_surface.mcp, "generation", 0)
         mcp_names = {spec["name"] for spec in self.tool_surface.mcp.tool_specs}
-        stage = execution.stage
         permitted_tools = execution.permitted_tools
         if workflow is not None and workflow.stage != stage:
             raise ValueError("workflow and execution stages do not match")
@@ -159,7 +160,7 @@ class AgentLoop:
                 self.store.append_turn_journal(turn_id, "background_context_refreshed", {"history_messages": history_messages})
             generation = getattr(self.tool_surface.mcp, "generation", 0)
             if generation != mcp_generation:
-                enable_tool_groups = self.tool_surface.discovery_groups()
+                enable_tool_groups = self.tool_surface.discovery_groups(tool_role)
                 catalog = {spec["name"]: spec for specs in enable_tool_groups.values() for spec in specs}
                 tools[:] = [catalog.get(spec["name"], spec) for spec in tools
                             if spec["name"] not in mcp_names or spec["name"] in catalog]
@@ -170,7 +171,7 @@ class AgentLoop:
                 mcp_names, mcp_generation = new_mcp_names, generation
                 messages.append({"role": "user", "content":
                     "<runtime_directives>\nMCP 工具目录已更新：\n"
-                    + self.tool_surface.tool_index() + "\n</runtime_directives>"})
+                    + self.tool_surface.tool_index(tool_role) + "\n</runtime_directives>"})
             if circuit_reason:
                 if circuit_rounds >= 3:
                     if "reply" in harness.completed_tools:
@@ -344,7 +345,7 @@ class AgentLoop:
                         log_event(logger, logging.DEBUG, "turn_auto_completed",
                                   stage=stage, turn_id=turn_id, reason="no_tool_calls")
                         return AgentReply([])
-                if stage in {"owner", "heartbeat", "webhook", "goal", "plan_step"}:
+                if stage in {"owner", "heartbeat", "webhook", "goal", "subagent"}:
                     self.store.append_turn_journal(
                         turn_id,
                         "assistant_exchange",
