@@ -43,6 +43,8 @@ DEFERRED_TOOLS = frozenset({
     "write_file", "apply_patch", "makedirs", "move_file", "delete_file",
     "skill_install", "skill_uninstall",
 })
+# Persona-bound work such as fiction writing needs SOUL, so the Planner keeps its own shell.
+PLANNER_BUILTINS = frozenset({"exec"})
 PLANNER_GROUPS = frozenset({"builtin_history", "builtin_qq_messages", "builtin_calls"})
 BUILTIN_GROUP_DESCRIPTIONS = {
     "builtin_skill_management": "安装或卸载工作区 skills 中的 Skill 工作流。",
@@ -135,7 +137,7 @@ class ToolSurface:
                       for group in self.mcp_server_groups()]
             worker += [f"- {spec['name']}: {str(spec.get('description') or '').split('。')[0]}"
                        for spec in self.builtin_specs if spec["name"] not in DEFERRED_TOOLS
-                       and not spec["name"].startswith("skill_")]
+                       and spec["name"] not in PLANNER_BUILTINS and not spec["name"].startswith("skill_")]
             worker += [f"- Skill {item['name']}: {item['description']}" for item in skills]
             if worker:
                 sections.append("Worker 能力索引（你不能直接调用，需要时用 create_subagent 派发）：\n"
@@ -202,6 +204,7 @@ class ToolSurface:
             *copy.deepcopy(IMAGE_TOOL_SPECS),
             *self.public_specs(AGENDA_TOOL_SPECS),
             *copy.deepcopy(PLANNER_SUBAGENT_TOOLS),
+            *self.public_specs([spec for spec in self.builtin_specs if spec["name"] in PLANNER_BUILTINS]),
             *([tool_search_spec(), copy.deepcopy(TOOL_ENABLE_SPEC)] if groups else []),
             current_state_finish_spec(),
         ]
@@ -232,6 +235,7 @@ class ToolSurface:
         channel_tools = {spec["name"] for group, specs in self.discovery_groups().items()
                          if group in {"builtin_qq_messages", "builtin_calls"} for spec in specs}
         delegation = {spec["name"] for spec in PLANNER_SUBAGENT_TOOLS}
+        delegation.update(spec["name"] for spec in self.builtin_specs if spec["name"] in PLANNER_BUILTINS)
         shared = {"phone_result", "reply", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
         if self.affinity_enabled():
             shared.update(spec["name"] for spec in AFFINITY_TOOLS)

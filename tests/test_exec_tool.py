@@ -48,9 +48,9 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
         for enabled in (False, True):
             surface = ToolSurface(mcp, {}, exec_enabled=enabled)
             self.assertEqual("exec" in {item["name"] for item in surface.worker_specs()}, enabled)
-            self.assertNotIn("exec", {item["name"] for item in surface.conversation_specs()})
+            self.assertEqual("exec" in {item["name"] for item in surface.conversation_specs()}, enabled)
             for stage in ("owner", "heartbeat", "webhook", "goal"):
-                self.assertNotIn("exec", surface.permitted_names(stage))
+                self.assertEqual("exec" in surface.permitted_names(stage), enabled)
         self.assertEqual(self.tools.capability(call), "external_effect")
 
     async def test_bash_toggle_replaces_file_tools_in_catalog_permissions_and_dispatch(self):
@@ -68,9 +68,10 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(visible & catalog, expected - DEFERRED_TOOLS)
             discovered = {spec["name"] for specs in surface.discovery_groups("worker").values() for spec in specs}
             self.assertEqual((visible | discovered) & catalog, expected)
-            self.assertFalse({spec["name"] for spec in surface.conversation_specs()} & catalog)
+            planner = {"exec"} if enabled else set()
+            self.assertEqual({spec["name"] for spec in surface.conversation_specs()} & catalog, planner)
             for stage in ("owner", "heartbeat", "webhook", "goal"):
-                self.assertFalse(surface.permitted_names(stage) & catalog)
+                self.assertEqual(surface.permitted_names(stage) & catalog, planner)
         for name in replaced:
             result = await self.tools.execute(ToolCall("hidden", name, {}))
             self.assertEqual(result, {"ok": False, "error": "tool_not_allowed"})
