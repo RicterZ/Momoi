@@ -18,7 +18,7 @@ from .turn_support import (
 
 logger = logging.getLogger(__name__)
 # Workspace prompts written for the old template still carry the placeholder;
-# SOUL is now injected after the Planner prompt instead.
+# The persona is now injected after the Planner prompt instead.
 _SOUL_PLACEHOLDER = re.compile(r"<soul>\s*\{\{SOUL\}\}\s*</soul>|\{\{SOUL\}\}")
 
 
@@ -76,7 +76,7 @@ class PromptRenderer:
         return _strip_soul_placeholder(template).strip()
 
     def _system(self, *, planner: bool = False) -> list[dict[str, Any]]:
-        soul_prompt = f"# SOUL\n<soul>\n{self._workspace_soul() or '未配置额外的 SOUL。'}\n</soul>"
+        soul_prompt = f"# 人格设定\n<soul>\n{self._workspace_soul() or '未配置额外的人格设定。'}\n</soul>"
         if planner:
             from importlib.resources import files
             default = files("momoi").joinpath("prompts/planner.md").read_text(encoding="utf-8")
