@@ -20,6 +20,7 @@ from ...llm.request_metrics import RequestMetric, response_headers
 from ...llm.streaming import StreamingProvider, response_data, stream_payload
 from ...llm.telemetry import (
     compact_response_text,
+    injected_memory_context,
     log_tool_schema,
     persist_thinking,
     record_response,
@@ -108,6 +109,7 @@ class ProtocolProvider(StreamingProvider):
         stream_payload(payload, self.protocol)
         dump_path = dump_request(self.dump_dir, self.protocol, payload, require_tool)
         headers = self._headers()
+        memory_context = injected_memory_context(messages) if self.thinking_sink is not None else None
 
         async def request(attempt_started: float) -> ProviderResponse:
             billed_at = time()
@@ -144,6 +146,7 @@ class ProtocolProvider(StreamingProvider):
                     dump_file=dump_path.name if dump_path else "",
                     protocol=self.protocol,
                     model=config.model,
+                    memory_context=memory_context,
                 )
                 self._check_content(parsed)
                 if calls:

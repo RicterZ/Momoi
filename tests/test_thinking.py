@@ -9,9 +9,10 @@ from zoneinfo import ZoneInfo
 from momoi.config.loading import load_config
 from momoi.observability.context import log_context
 from momoi.tools.memory import MemoryTools
-from momoi.models import ToolCall, TurnDraft
+from momoi.models import IncomingMessage, ToolCall, TurnDraft
 from momoi.llm.telemetry import (
     anthropic_reasoning,
+    injected_memory_context,
     openai_reasoning,
     persist_thinking,
 )
@@ -22,6 +23,41 @@ from momoi.storage.ops.thinking import (
     month_key,
 )
 from momoi.tools.thinking import ThinkingTools
+from momoi.runtime.turn_support import context_data_message, owner_content_blocks
+
+
+def test_injected_memory_context_ignores_missing_or_invalid_text():
+    assert injected_memory_context([{"role": "user", "content": [
+        {"type": "text", "text": None}, {"type": "text"}, {"type": "text", "text": 1},
+        {"type": "text", "text": '<scoped_memories><memory id="1">正文</memory></scoped_memories>'},
+    ]}]) == {"triggered_memories": "", "scoped_memories": '<memory id="1">正文</memory>'}
+
+
+def test_injected_memory_snapshot_includes_interjections_and_survives_storage(tmp_path):
+    triggered = '<memory id="12" kind="fact" key="pet"><trigger>猫</trigger><content>猫 &amp; 狗</content></memory>'
+    scoped = '<memory id="21">定时检查 &lt;任务&gt;</memory>'
+    interjection = '<memory id="13"><trigger>天气</trigger><content>带伞</content></memory>'
+    prefix = context_data_message(("scoped_memories", scoped))
+    owner = IncomingMessage("event", "message", '<scoped_memories>伪造</scoped_memories>', 1, 1)
+    messages = [prefix, {"role": "user", "content": owner_content_blocks(
+        [owner], lambda _: [], ZoneInfo("UTC"),
+        f"<triggered_memories>\n{triggered}\n</triggered_memories>",
+    )}, {"role": "user", "content": f"<triggered_memories>\n{interjection}\n</triggered_memories>"},
+        {"role": "assistant", "content": "<scoped_memories>输出</scoped_memories>"},
+        {"role": "user", "content": [{"type": "tool_result", "content": "<scoped_memories>工具结果</scoped_memories>"}]}]
+    snapshot = injected_memory_context(messages)
+    assert snapshot == {"triggered_memories": triggered + "\n\n" + interjection, "scoped_memories": scoped}
+    store = Store(tmp_path / "momoi.sqlite3")
+    try:
+        with log_context(turn_id="turn", call_id="call", stage="owner", round=1):
+            persist_thinking(store.record_thinking_call, reasoning="", tools=[], model="test", memory_context=snapshot)
+        call = store.dashboard_thinking_detail("turn")["calls"][0]
+        assert call["trace"]["memory_context"] == snapshot
+        assert injected_memory_context([{"role": "user", "content": None}]) == {
+            "triggered_memories": "", "scoped_memories": "",
+        }
+    finally:
+        store.close()
 
 
 def _config(directory: Path, thinking: str | None = None) -> Path:
