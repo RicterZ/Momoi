@@ -31,6 +31,23 @@ class ReplyerBase:
 
 
 class Replyer(ReplyerBase):
+    def interaction_rows(self, turn_ids, rows, reset_at):
+        """Successful user-facing actions live in tool_audit, not messages."""
+        floor = max(reset_at, rows[0]["created_at"] if rows else 0)
+        actions = []
+        for row in self.store._db.execute(
+            f"""SELECT id, turn_id, tool_name, result_json, completed_at FROM tool_audit
+                WHERE state='completed' AND ok=1 AND tool_name IN ('qq_poke', 'qq_recall_message')
+                AND completed_at>? AND turn_id IN ({",".join("?" * len(turn_ids))})""",
+            (floor, *turn_ids),
+        ):
+            result = json.loads(row["result_json"])
+            arguments = {"message_id": result["message_id"]} if row["tool_name"] == "qq_recall_message" else {}
+            actions.append({"id": f"history_action_{row['id']}", "role": "action", "name": row["tool_name"],
+                            "input": arguments, "result": result, "created_at": row["completed_at"],
+                            "turn_id": row["turn_id"]})
+        return actions
+
     async def generate(self, call, request):
         soul = self.expression_prompt()
         guide = prompt_text(self.config, "REPLYER.md", files("momoi").joinpath("prompts/replyer.md").read_text(encoding="utf-8"))
@@ -79,6 +96,8 @@ class Replyer(ReplyerBase):
                                     "delivery_state": "delivered"})
         rows = sorted([*rows, *active_rows], key=lambda row: row["created_at"])
         turn_ids = list(dict.fromkeys(str(row["turn_id"]) for row in rows))
+        rows = sorted([*rows, *self.interaction_rows([*turn_ids, request.turn_id], rows, reset_at)],
+                      key=lambda row: row["created_at"])
         # Read the shared snapshot/deltas without moving Planner's compaction boundary.
         memory_state = self.store.transcript_memory_context(turn_ids, track_boundary=False)
         memory_prefix = context_data_message(
