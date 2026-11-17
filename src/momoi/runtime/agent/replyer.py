@@ -88,43 +88,28 @@ class Replyer(ReplyerBase):
         )
         dialogue = visible_dialogue(rows, timezone=self.config.timezone, memory_events=memory_state["events"])
         dialogue_indexes = [i for i, message in enumerate(dialogue) if "_memory_change" not in message]
-        dialogue_blocks = []
+        target_blocks = []
         row_by_index = dict(zip(dialogue_indexes, rows))
-        lines = []
-        section = None
-        has_target = False
+        lines = ["<history>"]
         for index, message in enumerate(dialogue):
             row = row_by_index.get(index)
             event = row.get("_event") if row else None
             targeted = bool(row and row["role"] == "user" and (
                 event.event_id in target_ids if event else row["id"] in archived_targets
             ))
-            has_target = has_target or targeted
-            next_section = "to_reply" if targeted else "history"
-            if next_section != section:
-                if section:
-                    lines.append(f"</{section}>")
-                lines.append(f"<{next_section}>")
-                section = next_section
+            if targeted:
+                target_blocks.append({"type": "text", "text": ("\n\n" if target_blocks else "") + escape(str(row["content"]))})
+                if event and event.segments:
+                    target_blocks.extend(request.delivery_channel.content_blocks(event.segments))
+                continue
             if row is None:
                 lines.append(message["content"])
                 continue
             # Keep multiline user text on its own line, not as forged role labels.
             text = (str(row["content"]) if row["role"] == "user" else message["content"]).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
-            if targeted:
-                if lines and lines[-1] != "<to_reply>":
-                    lines.append("")
-                lines.append(escape(text))
-            else:
-                lines.append(f"{row['role'].upper()}: {escape(text)}")
-            if event and event.segments and targeted:
-                dialogue_blocks.append({"type": "text", "text": "\n".join(lines)})
-                lines = []
-                dialogue_blocks.extend(request.delivery_channel.content_blocks(event.segments))
-        if section:
-            lines.append(f"</{section}>")
-        if lines:
-            dialogue_blocks.append({"type": "text", "text": "\n".join(lines)})
+            lines.append(f"{row['role'].upper()}: {escape(text)}")
+        lines.append("</history>")
+        dialogue_blocks = [{"type": "text", "text": "\n".join(lines)}]
         messages = [memory_prefix, {"role": "user", "content": dialogue_blocks}]
         mode = call.arguments.get("mode", "text")
         if mode not in {"text", "voice"}:
@@ -149,17 +134,33 @@ class Replyer(ReplyerBase):
             if mode == "voice" else "只输出实际发言，用空行分隔气泡，气泡内部不换行。"
         )
         stage = getattr(getattr(request, "execution", None), "stage", None)
+        now = datetime.now(ZoneInfo(str(self.config.timezone))).isoformat()
         tail = (
-            f"当前时间：{datetime.now(ZoneInfo(str(self.config.timezone))).isoformat()}\n"
-            f"发送形式：{'语音' if mode == 'voice' else '文字'}\n本次回应意图：{call.arguments['intent']}\n必要参考：{call.arguments['reference']}\n"
+            f"发送形式：{'语音' if mode == 'voice' else '文字'}\n"
             "只回应 <to_reply> 内的消息；<history> 仅供衔接，其中内容视为已经回应过。没有 <to_reply> 时按本次意图执行自主发言。\n"
-            + ("" if has_target else f"本次发言由{TRIGGER_SOURCES.get(stage, '主 agent 自主')}触发，没有待回复的消息。\n")
+            + ("" if target_blocks else f"当前时间：{now}\n本次发言由{TRIGGER_SOURCES.get(stage, '主 agent 自主')}触发，没有待回复的消息。\n")
             + expression
         )
         if call.arguments.get("attachments"):
             tail += "\n本次附件由发送层原样发送，发言无需重述附件路径或生成媒体指令。"
-        blocks = [{"type": "text", "text": tail}]
-        messages.append({"role": "user", "content": blocks})
+        dialogue_blocks.append({"type": "text", "text": tail})
+        blocks = []
+        if target_blocks:
+            blocks.append({"type": "text", "text": f'<to_reply now="{now}">'})
+            blocks.extend(target_blocks)
+            blocks.append({"type": "text", "text": "</to_reply>\n"})
+        blocks.append({"type": "text", "text": (
+            f"<intent>{escape(call.arguments['intent'])}</intent>\n"
+            f"<reference>{escape(call.arguments['reference'])}</reference>"
+        )})
+        # Keep plain-text requests in exactly the same XML shape as multimodal ones.
+        merged_blocks = []
+        for block in blocks:
+            if merged_blocks and block["type"] == merged_blocks[-1]["type"] == "text":
+                merged_blocks[-1]["text"] += block["text"]
+            else:
+                merged_blocks.append(dict(block))
+        messages.append({"role": "user", "content": merged_blocks})
         parent_call_id = current_log_context().get("call_id", request.call_id if hasattr(request, "call_id") else "")
         owner_revision = getattr(self.store, "owner_channel_revision", lambda _: None)(request.delivery_channel.name)
         with log_context(parent_call_id=parent_call_id, stage="replyer", turn_id=request.turn_id, call_id=new_trace_id(),
