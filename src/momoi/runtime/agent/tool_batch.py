@@ -20,6 +20,7 @@ from ..turn_support import (
     tool_result_block,
 )
 from ...tools.validation import validate_tool_arguments
+from .delivery import latest_delivery_context
 from .harness import TurnHarness
 from .protocol import assistant_history_message
 from .runtime_tools import (
@@ -337,9 +338,7 @@ class ToolBatchExecutor:
                     delivery_call = ToolCall(call.id, "send_voice" if mode == "voice" else "send_bubbles",
                                              {"text": "\n\n".join(bubbles)} if mode == "voice" else {"bubbles": bubbles})
                     dispatch = self.bubble_delivery.dispatch_voice if mode == "voice" else self.bubble_delivery.dispatch
-                    call_context = next((event.delivery_context for event in reversed(request.current_events)
-                        if event.channel == target.name and event.delivery_context
-                        and not event.delivery_context.get("channel_notice")), {})
+                    call_context = latest_delivery_context(request.current_events, target.name) or {}
                     if first_call_updated and target.session_valid(call_context):
                         call_context = {**call_context, **target.routing_context()}
                     delivery = dispatch(delivery_call, turn_id=request.turn_id, stage=execution.stage,
