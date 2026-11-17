@@ -102,7 +102,7 @@ class AgentLoop:
         harness.validate_surface({str(tool["name"]) for tool in tools})
         def open_circuit(reason: str) -> bool:
             nonlocal circuit_reason, harness, permitted_tools, tools
-            if circuit_reason or workflow is not None or stage not in {"owner", "webhook", "goal", "heartbeat"}:
+            if circuit_reason or workflow is not None or stage not in {"owner", "webhook", "subagent_report", "goal", "heartbeat"}:
                 return False
             circuit_reason = reason
             if stage == "owner" and (external_tool_used or self.store.turn_has_external_effect(turn_id)):
@@ -345,7 +345,7 @@ class AgentLoop:
                         log_event(logger, logging.DEBUG, "turn_auto_completed",
                                   stage=stage, turn_id=turn_id, reason="no_tool_calls")
                         return AgentReply([])
-                if stage in {"owner", "heartbeat", "webhook", "goal", "subagent"}:
+                if stage in {"owner", "heartbeat", "webhook", "subagent_report", "goal", "subagent"}:
                     self.store.append_turn_journal(
                         turn_id,
                         "assistant_exchange",

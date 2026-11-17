@@ -9,7 +9,7 @@ from ..observability.events import TRACE, log_event
 from ..observability.context import current_log_context
 
 logger = logging.getLogger(__name__)
-PLANNER_STAGES = frozenset({"owner", "heartbeat", "webhook", "goal", "reply_followup"})
+PLANNER_STAGES = frozenset({"owner", "heartbeat", "webhook", "subagent_report", "goal", "reply_followup"})
 REPLYER_STAGES = frozenset({"replyer", "phone_replyer"})
 
 

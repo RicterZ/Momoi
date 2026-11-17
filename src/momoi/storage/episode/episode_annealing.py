@@ -41,7 +41,7 @@ class EpisodeAnnealingStore:
             episodes = self._db.execute(
                 f"""SELECT * FROM conversation_episodes
                    WHERE summary_claimed_at IS NULL
-                     AND COALESCE({runtime_archive_kind_sql('conversation_episodes')}, '') NOT IN ('webhook', 'heartbeat')
+                     AND COALESCE({runtime_archive_kind_sql('conversation_episodes')}, '') NOT IN ('webhook', 'subagent_report', 'heartbeat')
                      AND summary_abandoned_at IS NULL
                      AND COALESCE(summary_retry_at, 0)<=?
                      AND NOT EXISTS (

@@ -35,7 +35,7 @@ class TurnExecutionSpec:
 
     @property
     def require_response(self) -> bool:
-        return self.stage in {"owner", "heartbeat", "webhook"}
+        return self.stage in {"owner", "heartbeat", "webhook", "subagent_report"}
 
     @property
     def accept_owner_updates(self) -> bool:
@@ -47,6 +47,7 @@ class TurnExecutionSpec:
             "owner",
             "heartbeat",
             "webhook",
+            "subagent_report",
             "goal",
             "current_state_maintenance",
         }

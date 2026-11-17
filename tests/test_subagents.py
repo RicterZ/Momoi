@@ -7,7 +7,7 @@ from momoi.models import AgentReply, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.workflows import subagent as subagent_workflow
 from momoi.storage import Store
-from momoi.storage.core.migrations import SCHEMA_VERSION
+from momoi.storage.core.migrations import MIGRATIONS, _add_subagent_notifications, _replace_plans_with_subagents
 from tests.support import config
 
 
@@ -57,7 +57,7 @@ def test_migration_cancels_active_plans_and_creates_subagent_table(tmp_path):
             "INSERT INTO task_plans (id, source_turn_id, channel, title, request, status, steps_json, created_at, updated_at) "
             "VALUES ('p', 'turn', 'onebot', 't', 'r', 'running', '[]', 0, 0)"
         )
-        store._db.execute(f"PRAGMA user_version={SCHEMA_VERSION - 2}")
+        store._db.execute(f"PRAGMA user_version={MIGRATIONS.index(_replace_plans_with_subagents)}")
     store.close()
     store = Store(tmp_path / "db")
     try:
@@ -225,7 +225,7 @@ def test_migration_marks_existing_results_notified(tmp_path):
     store.finish_subagent_task(task["id"], "succeeded", "好了", [])
     with store._db:
         store._db.execute("UPDATE subagent_tasks SET notified_at=NULL")
-        store._db.execute(f"PRAGMA user_version={SCHEMA_VERSION - 1}")
+        store._db.execute(f"PRAGMA user_version={MIGRATIONS.index(_add_subagent_notifications)}")
     store.close()
     store = Store(tmp_path / "db")
     try:

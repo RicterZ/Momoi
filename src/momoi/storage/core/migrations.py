@@ -698,6 +698,10 @@ def _add_memory_verification_workflow(database):
     _add_turn_workflow(database, "memory_verification")
 
 
+def _add_subagent_report_workflow(database):
+    _add_turn_workflow(database, "subagent_report")
+
+
 def _replace_plans_with_subagents(database):
     _add_turn_workflow(database, "subagent")
     for statement in SUBAGENT_SCHEMA.split(";"):
@@ -931,6 +935,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_memory_verification_workflow,
     _replace_plans_with_subagents,
     _add_subagent_notifications,
+    _add_subagent_report_workflow,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

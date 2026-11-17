@@ -6,7 +6,7 @@ def topic_turn_sql(turn: str) -> str:
 
     return (
         f"({turn}.kind='owner' OR {turn}.workflow_kind IN "
-        "('heartbeat', 'webhook', 'goal'))"
+        "('heartbeat', 'webhook', 'subagent_report', 'goal'))"
     )
 
 
@@ -18,8 +18,10 @@ def runtime_archive_kind_sql(episode: str) -> str:
     return f"""COALESCE(NULLIF({episode}.archive_kind, ''), (
             SELECT CASE MIN(CASE {legacy_workflow}
                 WHEN 'webhook' THEN 1 WHEN 'heartbeat' THEN 2 WHEN 'goal' THEN 3
+                WHEN 'subagent_report' THEN 4
             END)
                 WHEN 1 THEN 'webhook' WHEN 2 THEN 'heartbeat' WHEN 3 THEN 'goal'
+                WHEN 4 THEN 'subagent_report'
             END
             FROM episode_turns AS legacy_archive_turn
             JOIN turns AS legacy_archive_source

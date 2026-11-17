@@ -35,12 +35,14 @@ class AgentWorker:
                     route_channel, parent_turn_id, contract = self._webhook_routes.get(
                         turn_id, (None, None, "webhook"))
                     webhook_channel = self._channel_for(route_channel) if route_channel else self.channel
+                    stage = "subagent_report" if contract == "subagent" else "webhook"
+                    complete = (
+                        self._complete_subagent_report_turn if stage == "subagent_report"
+                        else self._complete_webhook_turn
+                    )
                     self.start_active_turn(
-                        self._complete_webhook_turn(
-                            prompt, turn_id, webhook_channel,
-                            parent_turn_id=parent_turn_id, contract=contract,
-                        ),
-                        stage="webhook", channel=webhook_channel.name,
+                        complete(prompt, turn_id, webhook_channel, parent_turn_id=parent_turn_id),
+                        stage=stage, channel=webhook_channel.name,
                     )
                     try:
                         reply = await self.await_background_turn(stop)
@@ -52,7 +54,7 @@ class AgentWorker:
                         self.store.cancel_turn(turn_id)
                         if not future.done():
                             future.set_exception(RuntimeError("owner_stop"))
-                        log_event(logger, logging.INFO, "turn_cancelled", stage="webhook",
+                        log_event(logger, logging.INFO, "turn_cancelled", stage=stage,
                                   turn_id=turn_id, reason=self._interrupt_reason)
                     except Exception as error:
                         if not future.done():

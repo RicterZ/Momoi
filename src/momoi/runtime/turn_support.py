@@ -79,6 +79,7 @@ USER_CONTEXT_SECTION_ORDER = (
     # read as background and get skipped.
     "due_goal",
     "current_webhook_task",
+    "worker_report",
     "autonomous_heartbeat",
     "long_term_memories",
     "memory_overrides",

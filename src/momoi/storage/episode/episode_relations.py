@@ -109,7 +109,7 @@ class EpisodeRelationStore:
                 f"""SELECT e.* FROM conversation_episodes e
                    LEFT JOIN episode_relation_jobs j ON j.episode_id=e.id
                    WHERE e.created_at >= (SELECT enabled_at FROM episode_relation_settings WHERE id=1)
-                     AND COALESCE({runtime_archive_kind_sql('e')}, '') NOT IN ('webhook', 'heartbeat')
+                     AND COALESCE({runtime_archive_kind_sql('e')}, '') NOT IN ('webhook', 'subagent_report', 'heartbeat')
                      AND e.narrative_summary<>''
                      AND e.summarized_through_ordinal>COALESCE(j.processed_ordinal, 0)
                      AND COALESCE(j.retry_at, 0)<=?
@@ -129,7 +129,7 @@ class EpisodeRelationStore:
     def episode_relation_target_eligible(self, source, target) -> bool:
         return (str(target["id"]) != str(source["id"])
                 and float(target["created_at"]) < float(source["created_at"])
-                and self._runtime_archive_kind(str(target["id"])) not in {"heartbeat", "webhook"})
+                and self._runtime_archive_kind(str(target["id"])) not in {"heartbeat", "webhook", "subagent_report"})
 
     def finish_episode_relations(self, episode_id: str, ordinal: int,
                                  decisions: list[dict[str, str]], candidate_ids: set[str],

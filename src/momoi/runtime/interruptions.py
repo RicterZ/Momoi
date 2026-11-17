@@ -25,6 +25,7 @@ class TurnIngressPolicy:
 TURN_INGRESS = {
     "owner": TurnIngressPolicy("merge"),
     "webhook": TurnIngressPolicy("yield"),
+    "subagent_report": TurnIngressPolicy("yield"),
     "goal": TurnIngressPolicy("yield"),
     "heartbeat": TurnIngressPolicy("yield"),
     "reflection": TurnIngressPolicy(),

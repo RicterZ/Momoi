@@ -467,6 +467,16 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertFalse({"tool_search", "tool_enable"} & execution.permitted_tools)
             self.assertNotIn("skill_load", execution.permitted_tools)
 
+            with patch.object(daemon, "_run_tool_loop", run_tool_loop):
+                await daemon._complete_subagent_report_turn("Worker 结果", "subagent-report:1")
+            execution = captured["execution"]
+            self.assertEqual(execution.stage, "subagent_report")
+            self.assertNotIn("heartbeat_activity", execution.permitted_tools)
+            self.assertIn("create_subagent", execution.permitted_tools)
+            row = daemon.store._db.execute(
+                "SELECT workflow_kind FROM turns WHERE id='subagent-report:1'").fetchone()
+            self.assertEqual(row["workflow_kind"], "subagent_report")
+
     async def test_message_webhook_is_idempotent_and_waits_for_outbox_delivery(
         self,
     ) -> None:

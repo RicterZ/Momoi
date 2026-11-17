@@ -23,6 +23,7 @@ TURN_HARNESS_SPECS = {
         TurnHarnessSpec("heartbeat", "heartbeat_begin", None, auto_complete=True,
                         required_before_end=frozenset({"heartbeat_activity"})),
         TurnHarnessSpec("webhook", None, None, auto_complete=True),
+        TurnHarnessSpec("subagent_report", None, None, auto_complete=True),
         TurnHarnessSpec("goal", None, None, auto_complete=True,
                         required_before_end=frozenset({"goal_review"})),
         TurnHarnessSpec("subagent", None, "subagent_finish", terminal_alone=False),
