@@ -150,7 +150,7 @@ class ToolBatchExecutor:
                 return {"ok": True, **subagent_view(task), "message": (
                     "已派发，Worker 正在执行。" if not task.get("queue_position")
                     else f"已排队，前面还有 {task['queue_position']} 个任务。"
-                ) + "结果会在 Worker 汇报时唤醒你，不必等待或轮询。"}
+                ) + "Worker 汇报时会唤醒你。"}
             if call.name == "subagent_cancel":
                 task = self.store.cancel_subagent_task(call.arguments["task_id"], channel)
                 self.subagent_cancelled(task["id"])
