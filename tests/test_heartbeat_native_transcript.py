@@ -260,7 +260,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("<autonomous_heartbeat>", rendered)
             self.assertNotIn("<heartbeat_plan>", rendered)
             self.assertIn("heartbeat_begin", provider.first_tools)
-            self.assertNotIn("apply_patch", provider.first_tools)
             self.assertNotIn("sleep", provider.first_tools)
             self.assertEqual(
                 provider.first_tools,

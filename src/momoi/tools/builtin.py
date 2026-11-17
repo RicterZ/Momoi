@@ -4,7 +4,6 @@ import hashlib
 import math
 import os
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -72,7 +71,6 @@ class BuiltinTools:
             return "read"
         if call.name in {
             "write_file",
-            "apply_patch",
             "makedirs",
             "move_file",
             "delete_file",
@@ -113,8 +111,6 @@ class BuiltinTools:
                 return await asyncio.to_thread(self._glob_files, call.arguments)
             if call.name == "write_file":
                 return await asyncio.to_thread(self._write_file, call.arguments)
-            if call.name == "apply_patch":
-                return await asyncio.to_thread(self._apply_patch, call.arguments)
             if call.name == "makedirs":
                 return await asyncio.to_thread(self._makedirs, call.arguments)
             if call.name == "move_file":
@@ -290,60 +286,6 @@ class BuiltinTools:
             "sha256": hashlib.sha256(content.encode()).hexdigest(),
         }
 
-    def _apply_patch(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        patch = str(arguments.get("patch") or "")
-        if not patch.strip():
-            raise ValueError("patch is required")
-        if len(patch.encode()) > 500_000:
-            raise ValueError("patch exceeds 500 KB limit")
-        cwd = self.resolve_path(arguments.get("cwd"))
-        if not cwd.is_dir():
-            raise FileNotFoundError(f"cwd does not exist: {cwd}")
-        stripped = patch.strip()
-        if stripped.startswith("*** Begin Patch"):
-            if not stripped.endswith("*** End Patch"):
-                raise ValueError("structured patch is missing *** End Patch")
-            patch = (
-                stripped.removeprefix("*** Begin Patch")
-                .removesuffix("*** End Patch")
-                .strip()
-            )
-            if not patch.startswith(("diff --git ", "--- ")):
-                return self._apply_structured_patch(cwd, patch)
-            patch += "\n"
-        command = [
-            "git",
-            "-C",
-            str(cwd),
-            "apply",
-            "--recount",
-            "--whitespace=nowarn",
-            "-",
-        ]
-        check = subprocess.run(
-            [*command[:4], "--check", *command[4:]],
-            input=patch,
-            text=True,
-            capture_output=True,
-            timeout=30,
-        )
-        if check.returncode:
-            raise ValueError(
-                (check.stderr or check.stdout or "patch check failed").strip()
-            )
-        applied = subprocess.run(
-            command,
-            input=patch,
-            text=True,
-            capture_output=True,
-            timeout=30,
-        )
-        if applied.returncode:
-            raise RuntimeError(
-                (applied.stderr or applied.stdout or "patch failed").strip()
-            )
-        return {"ok": True, "cwd": str(cwd)}
-
     def _makedirs(self, arguments: dict[str, Any]) -> dict[str, Any]:
         path = self.resolve_path(arguments.get("path"))
         existed = path.exists()
@@ -383,69 +325,3 @@ class BuiltinTools:
         size = path.stat().st_size
         path.unlink()
         return {"ok": True, "path": str(path), "bytes": size}
-
-    def _apply_structured_patch(self, cwd: Path, patch: str) -> dict[str, Any]:
-        lines = patch.splitlines()
-        index = 0
-        changed: list[str] = []
-        while index < len(lines):
-            header = lines[index]
-            if not header.startswith("*** Update File: "):
-                raise ValueError("structured patch currently requires *** Update File")
-            raw_path = header.removeprefix("*** Update File: ").strip()
-            path = Path(raw_path).expanduser()
-            if not path.is_absolute():
-                path = cwd / path
-            path = path.resolve()
-            self._ensure_public_path(path)
-            content = path.read_text(encoding="utf-8")
-            index += 1
-            hunks: list[list[str]] = []
-            current: list[str] = []
-            while index < len(lines) and not lines[index].startswith("*** "):
-                line = lines[index]
-                if line.startswith("@@"):
-                    if current:
-                        hunks.append(current)
-                        current = []
-                elif line[:1] in {" ", "+", "-"}:
-                    current.append(line)
-                else:
-                    raise ValueError("invalid structured patch line")
-                index += 1
-            if current:
-                hunks.append(current)
-            if not hunks:
-                raise ValueError("structured patch has no hunks")
-            for hunk in hunks:
-                old = "\n".join(
-                    line[1:] for line in hunk if line.startswith((" ", "-"))
-                )
-                new = "\n".join(
-                    line[1:] for line in hunk if line.startswith((" ", "+"))
-                )
-                matches = [
-                    (old + "\n", new + "\n"),
-                    (old, new),
-                ]
-                selected = next(
-                    (
-                        pair
-                        for pair in matches
-                        if pair[0] and content.count(pair[0]) == 1
-                    ),
-                    None,
-                )
-                if selected is None:
-                    raise ValueError(
-                        f"structured patch context is not unique in {path}"
-                    )
-                content = content.replace(selected[0], selected[1], 1)
-            result = self._write_file({"path": str(path), "content": content})
-            changed.append(str(result["path"]))
-        return {
-            "ok": True,
-            "cwd": str(cwd),
-            "files": changed,
-            "format": "structured",
-        }

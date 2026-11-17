@@ -1575,62 +1575,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     ["note.txt"],
                 )
                 self.assertEqual(listed["entries"][0]["type"], "file")
-                patched = await workspace_tools.execute(
-                    ToolCall(
-                        "patch-1",
-                        "apply_patch",
-                        {
-                            "patch": (
-                                "--- a/note.txt\n"
-                                "+++ b/note.txt\n"
-                                "@@ -1 +1 @@\n"
-                                "-old\n"
-                                "+new\n"
-                            ),
-                        },
-                    )
-                )
-                self.assertTrue(patched["ok"], patched)
-                self.assertEqual(path.read_text(), "new\n")
-                structured = await workspace_tools.execute(
-                    ToolCall(
-                        "patch-structured",
-                        "apply_patch",
-                        {
-                            "patch": (
-                                "*** Begin Patch\n"
-                                "*** Update File: note.txt\n"
-                                "@@\n"
-                                "-new\n"
-                                "+structured\n"
-                                "*** End Patch"
-                            )
-                        },
-                    )
-                )
-                self.assertTrue(structured["ok"], structured)
-                self.assertEqual(structured["format"], "structured")
-                self.assertEqual(path.read_text(), "structured\n")
-                wrapped = await workspace_tools.execute(
-                    ToolCall(
-                        "patch-wrapped",
-                        "apply_patch",
-                        {
-                            "patch": (
-                                "*** Begin Patch\n"
-                                "diff --git a/note.txt b/note.txt\n"
-                                "--- a/note.txt\n"
-                                "+++ b/note.txt\n"
-                                "@@ -1 +1 @@\n"
-                                "-structured\n"
-                                "+wrapped\n"
-                                "*** End Patch"
-                            )
-                        },
-                    )
-                )
-                self.assertTrue(wrapped["ok"], wrapped)
-                self.assertEqual(path.read_text(), "wrapped\n")
                 made = await workspace_tools.execute(
                     ToolCall("mkdir-1", "makedirs", {"path": "notes/archive"})
                 )
@@ -1655,7 +1599,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(moved["ok"], moved)
                 moved_path = Path(directory) / "notes/archive/note.txt"
                 self.assertFalse(path.exists())
-                self.assertEqual(moved_path.read_text(), "wrapped\n")
+                self.assertEqual(moved_path.read_text(), "old\n")
                 deleted = await workspace_tools.execute(
                     ToolCall(
                         "delete-1",

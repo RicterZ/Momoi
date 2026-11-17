@@ -345,7 +345,7 @@ Webhook 的预配置 `uses: exec` 仍以 argv 执行，不受此模型工具开�
 | `move_file` | `mv` 完成移动和重命名 |
 | `delete_file` | `rm` 完成文件删除 |
 
-`apply_patch` 保留结构化补丁编辑，减少 shell 转义；`web_fetch` 保留统一网页提取。记忆、计划、消息和 MCP 工具不受此开关影响。
+`web_fetch` 保留统一网页提取。记忆、计划、消息和 MCP 工具不受此开关影响。
 Bash 命令遵循系统命令本身的语义，不自动继承文件工具的哈希校验、原子写入或禁止覆盖限制。
 
 `web_fetch` 替代旧 `curl` 模型工具，只使用 GET，不再接受 `method`、请求体、自定义请求头或 TLS 跳过验证参数。
