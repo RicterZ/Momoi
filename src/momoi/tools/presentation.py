@@ -206,9 +206,9 @@ def project_tool_result(result, name):
             if goal.get(key) is not None:
                 result[key] = goal[key]
         result['omitted_fields'] = ['goal (full staged object)']
-    if name in {'plan_create', 'plan_submit', 'plan_start', 'plan_update', 'plan_cancel', 'plan_resume'}:
-        fields = {'ok', 'state', 'plan_id', 'title', 'status', 'version', 'step_index', 'resume_safety',
-                  'requires_owner_decision', 'result_ref', 'truncated', 'omitted_fields'}
+    if name in {'create_subagent', 'subagent_cancel'}:
+        fields = {'ok', 'task_id', 'title', 'status', 'queue_position', 'message',
+                  'result_ref', 'truncated', 'omitted_fields'}
         omitted = [key for key in result if key not in fields]
         result = {key: value for key, value in result.items() if key in fields}
         if omitted:

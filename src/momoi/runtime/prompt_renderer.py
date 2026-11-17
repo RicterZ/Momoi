@@ -2,9 +2,7 @@ import logging
 from typing import Any
 
 from ..tools.contracts.agenda import AGENDA_TOOL_POLICY
-from ..tools.contracts.skills import SKILL_TOOL_POLICY
 from ..observability.events import log_event
-from ..mcp.prompt import MCP_TOOL_POLICY
 from ..tools.contracts.memory import MEMORY_TOOL_POLICY
 from ..tools.contracts.thinking import THINKING_TOOL_POLICY
 from ..tools.contracts.images import IMAGE_TOOL_POLICY
@@ -117,10 +115,7 @@ class PromptRenderer:
         policies = [
             AGENDA_TOOL_POLICY.strip(), MEMORY_TOOL_POLICY.strip(),
             IMAGE_TOOL_POLICY.strip(), THINKING_TOOL_POLICY.strip(),
-            SKILL_TOOL_POLICY.strip(),
         ]
-        if self.mcp.tool_specs:
-            policies.append(MCP_TOOL_POLICY.strip())
         if not policies:
             return system
         return [

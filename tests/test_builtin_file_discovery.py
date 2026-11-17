@@ -54,22 +54,18 @@ if __name__ == "__main__":
     unittest.main()
 
 
-def test_plan_tools_are_discoverable_and_enabled_until_compaction():
+def test_planner_delegates_and_worker_owns_external_tools():
     from types import SimpleNamespace
     from momoi.runtime.agent.tool_surface import ToolSurface
-    from momoi.runtime.tool_contracts.plan import PLAN_TOOLS
-    enabled = []
+    from momoi.runtime.tool_contracts.subagent import PLANNER_SUBAGENT_TOOL_NAMES, WORKER_SUBAGENT_TOOL_NAMES
     surface = ToolSurface(SimpleNamespace(tool_specs=[]), {'onebot': object()},
-                          store=SimpleNamespace(transcript_enabled_tools=lambda: enabled))
-    plan_names = {spec['name'] for spec in PLAN_TOOLS}
-    defaults = {spec['name'] for spec in surface.conversation_specs()}
-    assert not defaults.intersection(plan_names | {'plan_step_finish'})
-    catalog = surface.discovery_groups()['builtin_plans']
-    assert {spec['name'] for spec in catalog} == plan_names
-    assert 'builtin_plans' in surface.tool_index()
-    assert plan_names <= surface.permitted_names('owner')
-    enabled.extend(['plan_create', 'plan_get'])
-    visible = {spec['name'] for spec in surface.conversation_specs()}
-    assert visible.intersection(plan_names) == {'plan_create', 'plan_get'}
-    enabled.clear()
-    assert not {spec['name'] for spec in surface.conversation_specs()}.intersection(plan_names)
+                          store=SimpleNamespace(transcript_enabled_tools=lambda: ['write_file']))
+    planner = {spec['name'] for spec in surface.conversation_specs()}
+    worker = {spec['name'] for spec in surface.worker_specs()}
+    assert PLANNER_SUBAGENT_TOOL_NAMES <= planner
+    assert PLANNER_SUBAGENT_TOOL_NAMES <= surface.permitted_names('owner')
+    assert not planner & ({'web_fetch', 'read_file', 'skill_load', 'write_file'} | WORKER_SUBAGENT_TOOL_NAMES)
+    assert {'web_fetch', 'read_file', 'skill_load'} | WORKER_SUBAGENT_TOOL_NAMES <= worker
+    assert 'builtin_files' in surface.discovery_groups('worker')
+    assert 'builtin_files' not in surface.discovery_groups()
+    assert 'Worker 能力索引' in surface.tool_index()

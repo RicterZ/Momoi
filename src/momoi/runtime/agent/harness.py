@@ -25,7 +25,7 @@ TURN_HARNESS_SPECS = {
         TurnHarnessSpec("webhook", None, None, auto_complete=True),
         TurnHarnessSpec("goal", None, None, auto_complete=True,
                         required_before_end=frozenset({"goal_review"})),
-        TurnHarnessSpec("plan_step", None, "plan_step_finish", terminal_alone=False),
+        TurnHarnessSpec("subagent", None, "subagent_finish", terminal_alone=False),
         TurnHarnessSpec("reflection", None, "reflection_finish"),
         TurnHarnessSpec("weekly_reflection", None, "weekly_reflection_finish",
                         permitted_tools=frozenset({"weekly_reflection_finish"})),

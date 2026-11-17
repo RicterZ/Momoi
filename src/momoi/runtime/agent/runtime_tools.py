@@ -125,7 +125,7 @@ def search_tools(
     }
 
 
-def enable_tools(call: ToolCall, *, enable_tool_groups, tools, tool_surface):
+def enable_tools(call: ToolCall, *, enable_tool_groups, tools, tool_surface, persist=True):
     names = call.arguments.get("tools")
     if not isinstance(names, list) or not 1 <= len(names) <= 20 or any(not isinstance(name, str) or not name.strip() for name in names):
         return {"ok": False, "error": "invalid_tool_enable"}
@@ -135,6 +135,6 @@ def enable_tools(call: ToolCall, *, enable_tool_groups, tools, tool_surface):
     if unknown:
         return {"ok": False, "error": "unknown_tools", "tools": unknown}
     newly_loaded = tool_surface.append_visible(tools, [catalog[name] for name in names])
-    if tool_surface.store is not None:
+    if persist and tool_surface.store is not None:
         tool_surface.store.enable_transcript_tools(names)
     return {"ok": True, "enabled_tools": names, "newly_loaded_tools": newly_loaded}

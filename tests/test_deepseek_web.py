@@ -14,9 +14,10 @@ from momoi.runtime.agent.tool_surface import ToolSurface
 def test_toggle_hides_and_blocks_tools(tmp_path):
     for enabled in (True, False):
         surface = ToolSurface(SimpleNamespace(tool_specs=[]), {}, deepseek_web_enabled=enabled)
-        names = {spec['name'] for spec in surface.conversation_specs()}
+        names = {spec['name'] for spec in surface.worker_specs()}
         assert ('search_web' in names) is enabled
         assert ('fetch_web' in names) is enabled
+        assert not {'search_web', 'fetch_web'} & {spec['name'] for spec in surface.conversation_specs()}
     tools = BuiltinTools(tmp_path, deepseek_web_enabled=False)
     assert asyncio.run(tools.execute(ToolCall('x', 'search_web', {'query': 'test'})))['error'] == 'tool_not_allowed'
 

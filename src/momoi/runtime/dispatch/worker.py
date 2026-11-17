@@ -32,9 +32,15 @@ class AgentWorker:
                     if future.cancelled():
                         continue
                     self._webhook_turn_active = True
+                    route_channel, parent_turn_id, contract = self._webhook_routes.get(
+                        turn_id, (None, None, "webhook"))
+                    webhook_channel = self._channel_for(route_channel) if route_channel else self.channel
                     self.start_active_turn(
-                        self._complete_webhook_turn(prompt, turn_id, self.channel),
-                        stage="webhook", channel=self.channel.name,
+                        self._complete_webhook_turn(
+                            prompt, turn_id, webhook_channel,
+                            parent_turn_id=parent_turn_id, contract=contract,
+                        ),
+                        stage="webhook", channel=webhook_channel.name,
                     )
                     try:
                         reply = await self.await_background_turn(stop)
@@ -64,9 +70,7 @@ class AgentWorker:
                     job = item
                     assert isinstance(job, AutonomousJob)
                     self._stop_requested = False
-                    if job.kind == "plan_step":
-                        work = self._complete_plan_step_turn(job.id, stop)
-                    elif job.kind == "current_state_maintenance":
+                    if job.kind == "current_state_maintenance":
                         if not self._current_state_batch_ready():
                             self._queued_current_state.discard(job.id)
                             self.agenda_changed.set()
@@ -86,11 +90,7 @@ class AgentWorker:
                         work = self._complete_memory_operation_turn(job.id, stop)
                     else:
                         work = self._complete_goal_turn(job.id, stop)
-                    plan = self.store.task_plan(job.id) if job.kind == "plan_step" else None
-                    self.start_active_turn(
-                        work, stage=job.kind,
-                        channel=plan["channel"] if plan else self.channel.name,
-                    )
+                    self.start_active_turn(work, stage=job.kind, channel=self.channel.name)
                     try:
                         if job.kind in {"goal", "heartbeat"}:
                             await self.await_background_turn(stop)
@@ -99,8 +99,6 @@ class AgentWorker:
                     except asyncio.CancelledError:
                         if not self._stop_requested:
                             raise
-                        if job.kind == "plan_step" and self._interrupt_reason != "owner_update":
-                            self.store.recover_task_plans(job.id)
                         log_event(
                             logger,
                             logging.INFO,
@@ -264,8 +262,6 @@ class AgentWorker:
         own CancelledError handling; only scheduler claims need it here.
         Returns the turn_cancelled log fields for the job kind.
         """
-        if job.kind == "plan_step":
-            return {"plan_id": job.id}
         if job.kind == "heartbeat":
             self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
             return {}
@@ -305,7 +301,12 @@ class AgentWorker:
             self.autonomous.put_nowait(item.waited())
         return selected
 
-    async def _request_webhook_turn(self, prompt: str, turn_id: str) -> AgentReply:
+    async def _request_webhook_turn(
+        self, prompt: str, turn_id: str, *, channel: str | None = None,
+        parent_turn_id: str | None = None, contract: str = "webhook",
+    ) -> AgentReply:
+        if channel is not None or parent_turn_id is not None or contract != "webhook":
+            self._webhook_routes[turn_id] = (channel, parent_turn_id, contract)
         self.external_arrived()
         future: asyncio.Future[AgentReply] = asyncio.get_running_loop().create_future()
         self._webhook_commits[turn_id] = asyncio.get_running_loop().create_future()
@@ -315,6 +316,8 @@ class AgentWorker:
         except BaseException:
             self._webhook_turn_settled(turn_id)
             raise
+        finally:
+            self._webhook_routes.pop(turn_id, None)
 
     def _webhook_turn_settled(self, turn_id: str) -> None:
         committed = self._webhook_commits.pop(turn_id, None)

@@ -47,10 +47,10 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
         mcp = SimpleNamespace(tool_specs=[], configs={})
         for enabled in (False, True):
             surface = ToolSurface(mcp, {}, exec_enabled=enabled)
-            self.assertEqual("exec" in {item["name"] for item in surface.conversation_specs()}, enabled)
-            for stage in ("owner", "heartbeat", "goal"):
-                self.assertEqual("exec" in surface.permitted_names(stage), enabled)
-            self.assertEqual("exec" in surface.permitted_names("webhook"), enabled)
+            self.assertEqual("exec" in {item["name"] for item in surface.worker_specs()}, enabled)
+            self.assertNotIn("exec", {item["name"] for item in surface.conversation_specs()})
+            for stage in ("owner", "heartbeat", "webhook", "goal"):
+                self.assertNotIn("exec", surface.permitted_names(stage))
         self.assertEqual(self.tools.capability(call), "external_effect")
 
     async def test_bash_toggle_replaces_file_tools_in_catalog_permissions_and_dispatch(self):
@@ -63,13 +63,14 @@ class ExecToolTest(unittest.IsolatedAsyncioTestCase):
         for enabled in (False, True, False):
             surface = ToolSurface(mcp, {}, exec_enabled=enabled)
             expected = catalog - (replaced if enabled else {"exec"}) - {"search_web", "fetch_web"}
-            visible = {spec["name"] for spec in surface.conversation_specs()}
+            visible = {spec["name"] for spec in surface.worker_specs()}
             from momoi.runtime.agent.tool_surface import DEFERRED_TOOLS
             self.assertEqual(visible & catalog, expected - DEFERRED_TOOLS)
-            discovered = {spec["name"] for specs in surface.discovery_groups().values() for spec in specs}
+            discovered = {spec["name"] for specs in surface.discovery_groups("worker").values() for spec in specs}
             self.assertEqual((visible | discovered) & catalog, expected)
+            self.assertFalse({spec["name"] for spec in surface.conversation_specs()} & catalog)
             for stage in ("owner", "heartbeat", "webhook", "goal"):
-                self.assertEqual(surface.permitted_names(stage) & catalog, expected)
+                self.assertFalse(surface.permitted_names(stage) & catalog)
         for name in replaced:
             result = await self.tools.execute(ToolCall("hidden", name, {}))
             self.assertEqual(result, {"ok": False, "error": "tool_not_allowed"})

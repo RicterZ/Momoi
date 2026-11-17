@@ -41,7 +41,7 @@ def test_execution_failures_have_separate_budget_and_bounded_recovery(daemon, fa
     rounds = 0
     executions = 0
 
-    async def execute(call):
+    async def execute(call, *args, **kwargs):
         nonlocal executions
         executions += 1
         return {"ok": False, "error": "file_not_found"}
@@ -54,13 +54,13 @@ def test_execution_failures_have_separate_budget_and_bounded_recovery(daemon, fa
             assert not daemon.store.due_outbox()
             if rounds > 1:
                 assert "file_not_found" in str(messages)
-            return response(ToolCall(str(rounds), "read_file", {"path": f"missing-{rounds}"}))
+            return response(ToolCall(str(rounds), "episode_search", {"query": f"missing-{rounds}"}))
         assert ("熔断" in str(messages)) == (failures == MAX_CONSECUTIVE_EXECUTION_FAILURES)
         if failures == MAX_CONSECUTIVE_EXECUTION_FAILURES:
             return response(reply_call("notice", bubbles=["查找没有成功，先停下。"]))
         return ProviderResponse([], [])
 
-    daemon.builtin_tools.execute = execute
+    daemon.tool_batch.memory_tools.execute_async = execute
     daemon.provider = SimpleNamespace(complete=complete)
     asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), turn_id))
     assert executions == failures
@@ -95,7 +95,7 @@ def test_heartbeat_completes_only_after_successful_activity(daemon):
     assert daemon.store._db.execute("SELECT state FROM turns WHERE id=?", (turn_id,)).fetchone()[0] == "completed"
 
 
-@pytest.mark.parametrize("stage", ["owner", "heartbeat", "webhook", "goal", "plan_step"])
+@pytest.mark.parametrize("stage", ["owner", "heartbeat", "webhook", "goal", "subagent"])
 def test_hidden_delivery_tools_cannot_bypass_replyer(stage):
     harness = TurnHarness.for_stage(stage)
     if harness.spec.first_tool:

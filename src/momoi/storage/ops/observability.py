@@ -229,15 +229,30 @@ class ObservabilityStore:
         return calls
 
     def _dashboard_followup_links(self) -> dict[str, str]:
-        return {
+        """Map each linked child Turn to the root Turn whose timeline it joins.
+
+        Reply follow-ups join their owner Turn. A Worker joins the Turn that
+        dispatched it, and the Planner Turns woken by its reports join too, so
+        chained delegation stays on one timeline.
+        """
+        parents = {
             str(row["id"]): str(row["parent_turn_id"])
             for row in self._db.execute(
                 """SELECT child.id, child.parent_turn_id FROM turns child
                    JOIN turns parent ON parent.id=child.parent_turn_id
-                   WHERE child.workflow_kind='reply_followup'
-                     AND parent.workflow_kind='owner'"""
+                   WHERE (child.workflow_kind='reply_followup' AND parent.workflow_kind='owner')
+                      OR child.workflow_kind='subagent'
+                      OR (child.workflow_kind='webhook' AND parent.workflow_kind='subagent')"""
             )
         }
+        links = {}
+        for child in parents:
+            root, seen = parents[child], {child}
+            while root in parents and root not in seen:
+                seen.add(root)
+                root = parents[root]
+            links[child] = root
+        return links
 
     def dashboard_thinking_detail(self, turn_id: str) -> dict[str, object]:
         links = self._dashboard_followup_links()
@@ -395,49 +410,6 @@ class ObservabilityStore:
             members = {root, *children}
             turns = [item for item in turns if item.get("turn_id") not in members]
             turns.append(grouped)
-        # Plan steps are separate Turns for execution/audit, but one item in
-        # the dashboard should represent the whole Plan timeline.
-        plan_sql = "SELECT id, title, request, steps_json, status, created_at, updated_at FROM task_plans"
-        plan_args: tuple[float, float] | tuple[()] = ()
-        if after is not None and before is not None:
-            plan_sql += " WHERE created_at < ? AND updated_at >= ?"
-            plan_args = (before, after)
-        plan_rows = self._db.execute(plan_sql, plan_args).fetchall()
-        by_turn = {str(item.get("turn_id") or ""): item for item in turns}
-        consumed: set[str] = set()
-        plan_items: list[dict[str, object]] = []
-        for row in plan_rows:
-            try:
-                steps = json.loads(row["steps_json"] or "[]")
-            except (TypeError, ValueError):
-                continue
-            if not isinstance(steps, list):
-                continue
-            turn_ids = [str(step.get("turn_id") or "") for step in steps if step.get("turn_id")]
-            members = [by_turn[tid] for tid in turn_ids if tid in by_turn]
-            # A large thinking store may omit older calls from the broad
-            # search window; read referenced step Turns directly as fallback.
-            for tid in turn_ids:
-                if tid not in by_turn:
-                    direct = self.read_thinking(tid)
-                    calls = direct.get("calls") or []
-                    if calls:
-                        members.append(_group_thinking_turns(calls)[0])
-            if not members:
-                continue
-            consumed.update(turn_ids)
-            members.sort(key=lambda item: float(item.get("created_at") or 0))
-            plan_items.append({
-                "id": f"plan:{row['id']}", "plan_id": str(row["id"]),
-                "turn_id": members[0].get("turn_id"), "turn_ids": turn_ids,
-                "title": str(row["title"]), "request": str(row["request"]),
-                "status": str(row["status"]), "created_at": members[0].get("created_at"),
-                "updated_at": members[-1].get("updated_at"),
-                "call_count": sum(int(m.get("call_count") or 0) for m in members),
-                "stages": ["plan_step"], "tools": sorted({tool for m in members for tool in m.get("tools") or []}),
-                "excerpt": str(row["title"]), "step_count": len(turn_ids),
-            })
-        turns = [item for item in turns if str(item.get("turn_id") or "") not in consumed] + plan_items
         turns.sort(
             key=lambda item: (
                 -float(item.get("updated_at") or 0),

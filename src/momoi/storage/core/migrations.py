@@ -12,9 +12,20 @@ from .memory_scope_migration import add_memory_scope
 from ..episode.episode_claims import render_verified_claims
 
 
-from ..agenda.plans import PLAN_SCHEMA
+from ..agenda.subagents import SUBAGENT_SCHEMA
 from ..conversation.replyer import REPLYER_HISTORY_SCHEMA
 from ..conversation.tool_discovery import TOOL_DISCOVERY_SCHEMA
+
+# Retired Plan storage; kept so older databases migrate in order.
+PLAN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS task_plans (
+ id TEXT PRIMARY KEY, source_turn_id TEXT NOT NULL, channel TEXT NOT NULL,
+ title TEXT NOT NULL, request TEXT NOT NULL, status TEXT NOT NULL,
+ steps_json TEXT NOT NULL, step_index INTEGER NOT NULL DEFAULT 0,
+ created_at REAL NOT NULL, updated_at REAL NOT NULL, version INTEGER NOT NULL DEFAULT 1,
+ UNIQUE(source_turn_id, title)
+);
+"""
 
 
 def _add_channel_event_workflow(database):
@@ -687,6 +698,18 @@ def _add_memory_verification_workflow(database):
     _add_turn_workflow(database, "memory_verification")
 
 
+def _replace_plans_with_subagents(database):
+    _add_turn_workflow(database, "subagent")
+    for statement in SUBAGENT_SCHEMA.split(";"):
+        if statement.strip():
+            database.execute(statement)
+    if _columns(database, "task_plans"):
+        database.execute(
+            "UPDATE task_plans SET status='cancelled', updated_at=strftime('%s','now') "
+            "WHERE status IN ('draft','awaiting_approval','paused','ready','running')"
+        )
+
+
 def _add_memory_metadata(database):
     if "meta_json" not in _columns(database, "memories"):
         database.execute("ALTER TABLE memories ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
@@ -899,6 +922,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_webhook_video,
     _add_reflection_candidate_operation,
     _add_memory_verification_workflow,
+    _replace_plans_with_subagents,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

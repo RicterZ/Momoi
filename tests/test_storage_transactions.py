@@ -8,10 +8,10 @@ def test_repository_writes_roll_back_with_outer_transaction(tmp_path):
     try:
         with pytest.raises(RuntimeError):
             with store.transaction():
-                plan = store.plans.create_task_plan({"title": "test", "request": "test", "steps": [{"task": "work", "on_failure": "stop"}]}, "source", "test")
-                assert store.task_plan(plan["id"]) is not None
+                task = store.subagents.create_subagent_task("source", "test", "test", "work")
+                assert store.subagent_task(task["id"]) is not None
                 raise RuntimeError("abort")
-        assert store._db.execute("SELECT COUNT(*) FROM task_plans").fetchone()[0] == 0
+        assert store._db.execute("SELECT COUNT(*) FROM subagent_tasks").fetchone()[0] == 0
     finally:
         store.close()
 
@@ -20,15 +20,15 @@ def test_nested_failure_preserves_outer_work_and_does_not_commit(tmp_path):
     store = Store(tmp_path / "db")
     try:
         with store.transaction():
-            plan = store.create_task_plan({"title": "outer", "request": "test", "steps": [{"task": "work", "on_failure": "stop"}]}, "source", "test")
+            task = store.create_subagent_task("source", "test", "outer", "work")
             with pytest.raises(ValueError):
                 with store.transaction():
-                    store.cancel_task_plan(plan["id"], "test")
+                    store.cancel_subagent_task(task["id"], "test")
                     raise ValueError("undo inner")
-            assert store.task_plan(plan["id"])["status"] == "draft"
+            assert store.subagent_task(task["id"])["status"] == "queued"
             assert store._db.in_transaction
         assert not store._db.in_transaction
-        assert store.task_plan(plan["id"])["status"] == "draft"
+        assert store.subagent_task(task["id"])["status"] == "queued"
     finally:
         store.close()
 

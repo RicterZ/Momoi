@@ -13,7 +13,7 @@ from ..observability.events import log_event
 logger = logging.getLogger("momoi.runtime.turns")
 
 
-OwnerArrival = Literal["merge", "pause", "yield", "queue"]
+OwnerArrival = Literal["merge", "yield", "queue"]
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,6 @@ class TurnIngressPolicy:
 
 TURN_INGRESS = {
     "owner": TurnIngressPolicy("merge"),
-    "plan_step": TurnIngressPolicy("pause"),
     "webhook": TurnIngressPolicy("yield"),
     "goal": TurnIngressPolicy("yield"),
     "heartbeat": TurnIngressPolicy("yield"),
@@ -96,16 +95,10 @@ class TurnInterruptionRouter:
         log_event(logger, logging.INFO, "turn_input_routed",
                   stage=stage, source="owner", action=action,
                   channel=channel, event_id=message.event_id)
-        if action in {"cancel", "pause"}:
+        if action == "cancel":
             self._interrupt_reason = "owner_stop" if stop else "owner_update"
             self._stop_requested = True
             active.cancel()
-            if action == "pause":
-                self._interruption_notices.setdefault(channel, []).append(
-                    "A Plan step was paused by the latest owner message. Its remaining "
-                    "steps will not run automatically; check any action already taken "
-                    "before deciding whether to create a new Plan."
-                )
         return action
 
     def background_pause_requested(self) -> bool:

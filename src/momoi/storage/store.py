@@ -63,7 +63,7 @@ from .conversation.turn_commits import TurnCommitStore
 from .ops.webhooks import WebhookStore
 from .core.lifecycle import LifecycleStore
 
-from .agenda.plans import PlanRepository
+from .agenda.subagents import SubagentRepository
 from .repositories import RepositoryFacade
 from ..memory.storage.transactions import transaction
 
@@ -148,10 +148,7 @@ class Store(
             self._search_backend,
         )
         self._usage_accounting: UsageAccounting | None = None
-        self.plans = PlanRepository(
-            self._db, archive_progress=self._archive_progress_messages,
-            has_external_effect=self.turn_has_external_effect,
-        )
+        self.subagents = SubagentRepository(self._db)
         self.memories = Memory(
             self._db, search_backend=self._search_backend, reflection_rows=self._reflection_recall_rows,
             tags=MOMOI_MEMORY_TAGS,

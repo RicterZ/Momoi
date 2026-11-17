@@ -404,36 +404,14 @@ class OwnerWorkflow:
         if background is not None and background.context:
             directives.append(background.context)
         directives.extend(self._interruption_notices.pop(channel.name, []))
-        for plan in self.store.paused_task_plans(channel.name):
-            if plan["status"] == "paused" and self.store.plan_resume_safety(plan) == "owner_decision_required":
-                directives.append(
-                    f"计划 {plan['id']} version={plan['version']} 因步骤50次上限暂停，等待用户介入。"
-                    "先 plan_get 查看卡点与交接。用户明确要求继续时 plan_resume，owner_feedback 引用本次用户原话；"
-                    "从交接继续，不重做已完成或可能已生效的操作。修改则 plan_update 后重新提交审核，终止则 plan_cancel。"
-                    "无关聊天不能恢复。"
-                )
-                continue
-            if plan["status"] != "paused":
-                directives.append(
-                    f"待处理计划：id={plan['id']} title={plan['title']!r} "
-                    f"version={plan['version']} status={plan['status']}。"
-                    "用 plan_get 查看方案与调研依据。草稿需要继续调查、完善并 plan_submit；"
-                    "待审核方案只有用户明确同意才能 plan_start，引用当前消息的同意原文。"
-                    "用户提出修改则 plan_update 后重新提交；拒绝或停止则 plan_cancel。"
-                    "无关聊天不代表批准，也不自动取消计划。"
-                )
-                continue
-            directives.append(
-                f"Paused Plan: id={plan['id']} title={plan['title']!r} "
-                f"version={plan['version']} current_step={plan['step_index'] + 1} "
-                f"resume_safety={self.store.plan_resume_safety(plan)}. "
-                "Use plan_get for the full request and step details if needed. "
-                "Resolve the owner's latest intent: if they stopped the work, use plan_cancel; "
-                "if they corrected it, use plan_update and plan_submit for a new review; "
-                "if this was an unrelated aside, answer it and use plan_resume. "
-                "If resume_safety requires review, do not replay the interrupted step; "
-                "explain the uncertainty and ask only for information needed to continue safely."
-            )
+        active_workers = [task for task in self.store.subagent_tasks(channel.name)
+                          if task["status"] in {"queued", "running"}]
+        if active_workers:
+            directives.append("进行中的 Worker 任务（完成或有进展时会唤醒你，不必轮询）：" + "；".join(
+                f"{task['id']} 「{task['title']}」 {task['status']}"
+                + (f"，最近汇报：{task['reports'][-1]['progress']}" if task["reports"] else "")
+                for task in active_workers
+            ))
         if any(message.text.strip() == "/stop" for message in batch):
             directives.append(
                 "The owner explicitly stopped the previous active task. The runtime has "

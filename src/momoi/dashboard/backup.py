@@ -53,8 +53,7 @@ def sanitize(db):
         db.execute("DELETE FROM transcript_enabled_tools")
         db.execute("DELETE FROM replyer_history_windows")
         db.execute("UPDATE outbox SET state='superseded' WHERE state IN ('pending','sending')")
-        db.execute("UPDATE task_plans SET status='paused' WHERE status IN ('running','ready')")
-        db.execute("UPDATE task_plans SET context_json=NULL")
+        db.execute("UPDATE subagent_tasks SET status='cancelled' WHERE status IN ('queued','running')")
         db.execute("UPDATE turns SET state='cancelled', failure_reason='backup_snapshot' WHERE state='running'")
     db.execute("VACUUM")
 

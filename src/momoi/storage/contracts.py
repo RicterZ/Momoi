@@ -6,46 +6,6 @@ validation remains responsible for rejecting malformed commands.
 from typing import Any, Literal, NotRequired, TypedDict
 
 
-class PlanStepInput(TypedDict):
-    task: str
-    on_failure: Literal["stop", "continue"]
-
-
-class PlanCreateInput(TypedDict):
-    title: str
-    request: str
-    steps: list[PlanStepInput]
-
-
-class PlanStep(PlanStepInput):
-    id: str
-    status: str
-    turn_id: NotRequired[str]
-    result: NotRequired[str]
-    output_refs: NotRequired[list[str]]
-    interrupted_turn_id: NotRequired[str]
-    checkpoint_turn_id: NotRequired[str]
-    pause_reason: NotRequired[str]
-    paused_at: NotRequired[float]
-    owner_feedback: NotRequired[dict[str, Any]]
-
-
-class PlanRecord(TypedDict):
-    id: str
-    source_turn_id: str
-    channel: str
-    title: str
-    request: str
-    status: str
-    steps: list[PlanStep]
-    step_index: int
-    created_at: float
-    updated_at: float
-    version: int
-    context: dict[str, Any] | None
-    review: dict[str, Any]
-
-
 class PromptFingerprint(TypedDict):
     hash: str
     tokens_est: int

@@ -31,8 +31,8 @@ def test_reply_and_read_overlap_and_cancel_together(tmp_path, cancel):
         finally:
             finished.add("reply")
 
-    async def read(call):
-        assert call.name == "web_fetch"
+    async def read(call, *args, **kwargs):
+        assert call.name == "episode_search"
         read_started.set()
         try:
             await reply_started.wait()
@@ -47,7 +47,7 @@ def test_reply_and_read_overlap_and_cancel_together(tmp_path, cancel):
         rounds += 1
         if rounds == 1:
             calls = [reply_call("reply", bubbles=["我看看"]),
-                     ToolCall("read", "web_fetch", {"url": "https://example.com"})]
+                     ToolCall("read", "episode_search", {"query": "搜索"})]
         else:
             results = [block for message in messages
                        if isinstance(message.get("content"), list)
@@ -67,7 +67,7 @@ def test_reply_and_read_overlap_and_cancel_together(tmp_path, cancel):
         event = IncomingMessage("first", "first", "帮我看看", 1, 1, channel=daemon.channel.name)
         daemon.store.add_event(event)
         with patch.object(daemon.tool_batch.replyer, "generate", side_effect=reply), patch.object(
-            daemon.tool_batch.tool_executor.builtin_tools, "execute", side_effect=read
+            daemon.tool_batch.memory_tools, "execute_async", side_effect=read
         ):
             task = asyncio.create_task(daemon._complete_batch_turn([event], asyncio.Event(), "parallel"))
             try:
@@ -99,7 +99,7 @@ def test_owner_update_preserves_goal_and_skips_stale_reply(tmp_path, arrival):
     update = IncomingMessage('update', 'update', '头发还湿着', 2, 2, channel=daemon.channel.name)
     rounds = 0
 
-    async def read(call):
+    async def read(call, *args, **kwargs):
         await daemon._receive(update)
         return {'ok': True, 'text': '已查询'}
 
@@ -109,7 +109,7 @@ def test_owner_update_preserves_goal_and_skips_stale_reply(tmp_path, arrival):
         if rounds == 1:
             if arrival == 'model':
                 await daemon._receive(update)
-            calls = ([ToolCall('read', 'web_fetch', {'url': 'https://example.com'})]
+            calls = ([ToolCall('read', 'episode_search', {'query': '续写'})]
                      if arrival == 'tool' else [])
             calls += [ToolCall('goal', 'goal_create', {
                 'title': '续写', 'success_criteria': '完成下一篇', 'next_action': '续写下一篇',
@@ -131,7 +131,7 @@ def test_owner_update_preserves_goal_and_skips_stale_reply(tmp_path, arrival):
     async def run():
         daemon.provider = with_owner_recall(SimpleNamespace(complete=complete))
         daemon.store.add_event(first)
-        with patch.object(daemon.tool_batch.tool_executor.builtin_tools, 'execute', side_effect=read):
+        with patch.object(daemon.tool_batch.memory_tools, 'execute_async', side_effect=read):
             await asyncio.wait_for(daemon._complete_batch_turn([first], asyncio.Event(), 'steer-goal'), 5)
         assert rounds == 2
         assert daemon.store._db.execute("SELECT count(*) FROM goals WHERE title='续写'").fetchone()[0] == 1

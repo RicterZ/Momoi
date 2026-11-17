@@ -55,10 +55,10 @@ def test_builtin_skill_index_and_uninstall(tmp_path):
     assert Path(loaded["directory"]) == tmp_path / "skills/mcp-install"
     surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {}, skills=service)
     assert "mcp-install" in surface.tool_index()
-    assert "mcp-install" not in json.dumps(surface.conversation_specs())
-    assert {"skill_load"} <= {
-        spec["name"] for spec in surface.conversation_specs()
-    }
+    assert "mcp-install" in surface.tool_index("worker")
+    assert "mcp-install" not in json.dumps(surface.worker_specs())
+    assert {"skill_load"} <= {spec["name"] for spec in surface.worker_specs()}
+    assert "skill_load" not in {spec["name"] for spec in surface.conversation_specs()}
     assert service.uninstall("mcp-install")["uninstalled"]
     assert service.catalog() == []
     assert Skills(tmp_path).catalog() == []
@@ -174,11 +174,11 @@ def test_skill_management_requires_tool_search_and_enable():
     from momoi.runtime.agent.runtime_tools import search_tools, enable_tools
     for exec_enabled in (False, True):
         surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {}, exec_enabled=exec_enabled)
-        tools = surface.conversation_specs()
+        tools = surface.worker_specs()
         assert {"skill_load"} <= {spec["name"] for spec in tools}
         assert "skill_search" not in {spec["name"] for spec in tools}
         assert not {"skill_install", "skill_uninstall"} & {spec["name"] for spec in tools}
-        groups = surface.discovery_groups()
+        groups = surface.discovery_groups("worker")
         assert {spec["name"] for spec in groups["builtin_skill_management"]} == {"skill_install", "skill_uninstall"}
         for name in ("skill_install", "skill_uninstall"):
             found = search_tools(ToolCall("find", "tool_search", {"query": name}),
@@ -189,4 +189,4 @@ def test_skill_management_requires_tool_search_and_enable():
             assert result["ok"]
             assert name in {spec["name"] for spec in tools}
             for stage in ("owner", "heartbeat", "webhook", "goal"):
-                assert name in surface.permitted_names(stage)
+                assert name not in surface.permitted_names(stage)

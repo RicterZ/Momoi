@@ -251,7 +251,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     await worker
                 store.close()
 
-    async def test_webhook_turn_uses_normal_web_fetch_and_end_turn_loop(self) -> None:
+    async def test_webhook_turn_delegates_external_work_and_ends_turn(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
@@ -339,15 +339,13 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.tools = tools
                     if self.calls == 1:
                         call = ToolCall(
-                            "fetch-packages",
-                            "web_fetch",
-                            {
-                                "url": "http://static.test/package_state.json",
-                            },
+                            "check-packages",
+                            "create_subagent",
+                            {"title": "检查快递", "task": "读取 http://static.test/package_state.json 并汇报取件码"},
                         )
                     elif self.calls == 2:
                         self.assert_tool_result(messages)
-                        call = reply_call("notify-owner", bubbles=["有一个快递到了，取件码是 1234。"])
+                        call = reply_call("notify-owner", bubbles=["到家啦，我去看看快递。"])
                     else:
                         return ProviderResponse([], [])
                     return ProviderResponse(
@@ -365,31 +363,11 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 @staticmethod
                 def assert_tool_result(messages: list[dict[str, object]]) -> None:
                     result = messages[-1]["content"]  # type: ignore[index]
-                    assert "1234" in str(result)
-
-            class Tools:
-                @staticmethod
-                def has_tool(name: str) -> bool:
-                    return name == "web_fetch"
-
-                @staticmethod
-                def capability(_: ToolCall) -> str:
-                    return "read"
-
-                async def execute(self, call: ToolCall) -> dict[str, object]:
-                    self.last_call = call
-                    return {
-                        "ok": True,
-                        "status": 200,
-                        "body": '{"arrived":[{"code":"1234"}]}',
-                    }
+                    assert '"queued"' in str(result)
 
             provider = Provider()
             provider.config = daemon.services.llm.config  # type: ignore[attr-defined]
-            tools = Tools()
             daemon.provider = provider  # type: ignore[assignment]
-            daemon.builtin_tools = tools  # type: ignore[assignment]
-            daemon.tool_executor.builtin_tools = tools  # type: ignore[assignment]
             with (
                 patch.object(daemon.store, "ranked_memory_context", side_effect=AssertionError("unexpected memory pre-retrieval")),
                 patch.object(daemon.store, "search_episodes", side_effect=AssertionError("unexpected episode pre-retrieval")),
@@ -410,18 +388,17 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(
                 all(names == expected_surface for names in provider.tool_names)
             )
-            self.assertEqual(tools.last_call.name, "web_fetch")
-            self.assertEqual(
-                tools.last_call.arguments,
-                {"url": "http://static.test/package_state.json"},
-            )
+            task = daemon.store.claim_subagent_task()
+            self.assertEqual((task["source_turn_id"], task["title"]), ("webhook:test:0", "检查快递"))
+            self.assertIn("package_state.json", task["task"])
+            self.assertNotIn("web_fetch", expected_surface)
             outbox = [
                 str(row["text"])
                 for row in daemon.store._db.execute(
                     "SELECT text FROM outbox ORDER BY id"
                 )
             ]
-            self.assertIn("有一个快递到了，取件码是 1234。", outbox)
+            self.assertIn("到家啦，我去看看快递。", outbox)
             system_text = json.dumps(provider.systems[0], ensure_ascii=False)
             context_text = json.dumps(provider.conversations[0], ensure_ascii=False)
             self.assertIn("natural soul", system_text)
@@ -486,8 +463,9 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             owner = daemon.tool_surface.permitted_names("owner")
             self.assertLessEqual(execution.permitted_tools, owner)
             self.assertNotIn("wait", execution.permitted_tools)
-            self.assertTrue({"recall", "tool_search", "tool_enable", "skill_load"}
+            self.assertTrue({"recall", "tool_search", "tool_enable", "create_subagent"}
                             <= execution.permitted_tools)
+            self.assertNotIn("skill_load", execution.permitted_tools)
 
     async def test_message_webhook_is_idempotent_and_waits_for_outbox_delivery(
         self,

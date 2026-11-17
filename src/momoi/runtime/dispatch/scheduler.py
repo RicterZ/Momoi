@@ -195,10 +195,6 @@ class Scheduler:
                     )
                     self.outbox_changed.set()
                 continue
-            plan = self.store.claim_task_plan()
-            if plan is not None:
-                await self.autonomous.put(AutonomousJob("plan_step", plan["id"]))
-                continue
             goal = self.store.claim_due_goal()
             if goal is not None:
                 log_event(
