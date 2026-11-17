@@ -859,3 +859,71 @@ def test_dashboard_replyer_actions_join_audit_without_losing_requests(tmp_path):
         assert store.reply_action_bubbles('t', 'other') == []
     finally:
         store.close()
+
+
+@pytest.mark.parametrize('archived', [False, True])
+@pytest.mark.parametrize('recalled', [False, True])
+def test_recalled_reply_is_marked_in_place_without_replaying_recall_tool(tmp_path, archived, recalled):
+    import json
+    from momoi.models import MessageRecalled
+    from momoi.runtime.transcript.native import render_exchanges
+
+    store = Store(tmp_path / 'db')
+    first = IncomingMessage('first', '100', 'old request', 1, 1, channel='onebot')
+    latest = IncomingMessage('latest', '101', 'new request', time.time() + 1, time.time() + 1, channel='onebot')
+    try:
+        store.add_event(first)
+        store.begin_turn('first-turn', 'owner', [first.event_id])
+        store.queue_progress('first-turn', 'reply', ['same text', 'same text'], 'onebot')
+        outboxes = store._db.execute('SELECT id FROM outbox ORDER BY id').fetchall()
+        for row, native_id in zip(outboxes, ['200', '201']):
+            store.record_delivery_receipt(row['id'], native_id)
+            store.mark_sent(row['id'])
+        original_exchange = {
+            'content': [{'type': 'tool_use', 'id': 'reply', 'name': 'reply', 'input': {}}],
+            'results': [{'type': 'tool_result', 'tool_use_id': 'reply',
+                         'content': json.dumps({'ok': True, 'bubbles': ['[动作：戳一戳]', 'same text', 'same text']})}],
+        }
+        store.append_turn_journal('first-turn', 'assistant_exchange', original_exchange)
+        # Seed the held history before a recall, so stale window text is tested too.
+        if archived:
+            store.commit_turn([first], first.text, AgentReply([]), turn_id='first-turn')
+            store.replyer_history_rows('onebot')
+        store.begin_tool_call('first-turn', 'recall', 'qq_recall_message', {}, 'external_effect')
+        store.complete_tool_call('first-turn', 'recall', {'ok': recalled, 'message_id': '200'})
+        if recalled:
+            store.record_message_recall(MessageRecalled('recall', '200', time.time(), 'onebot', 'assistant'))
+        # A native ID on another channel must never mark the second bubble.
+        store.record_message_recall(MessageRecalled('other-recall', '201', time.time(), 'other', 'assistant'))
+        store.add_event(latest)
+        if archived:
+            store.begin_turn('next-turn', 'owner', [latest.event_id])
+        else:
+            store.append_turn_journal('first-turn', 'owner_interjection', {'event_ids': [latest.event_id]})
+        expected = ['[此消息已被撤回] same text' if recalled else 'same text', 'same text']
+        if archived:
+            for rows in (store.conversation_messages_for_turns(['first-turn']), store.replyer_history_rows('onebot')):
+                assert [row['content'] for row in rows if row['role'] == 'assistant'] == expected
+            native = store.turn_exchanges(['first-turn'], include_reply_messages=True)['first-turn']
+            rendered = render_exchanges(native, has_speech=True)
+            result = json.loads(rendered[1]['content'][0]['content'])
+            assert result['bubbles'] == ['[动作：戳一戳]', *expected]
+            assert store.turn_exchanges(['first-turn'])['first-turn'] == [original_exchange]
+
+        async def complete(system, messages, tools):
+            assert [m['content'] for m in messages if m['role'] == 'assistant'] == expected
+            assert 'qq_recall_message' not in str(messages)
+            assert 'new request' in str(messages[-1])
+            return ProviderResponse([{'type': 'text', 'text': 'ok'}], [])
+
+        config = SimpleNamespace(soul_prompt_path=None, soul_prompt='', timezone='UTC', thinking_stages={})
+        request = SimpleNamespace(turn_id='next-turn' if archived else 'first-turn', round_number=1,
+                                  delivery_channel=SimpleNamespace(name='onebot', content_blocks=lambda _: []),
+                                  current_events=[latest] if archived else [first, latest])
+        asyncio.run(Replyer(config, store, SimpleNamespace(complete=complete)).generate(
+            ToolCall('r', 'reply', {'intent': 'reply', 'reference': ''}), request))
+        assert [row['content'] for row in store._db.execute(
+            "SELECT content FROM messages WHERE role='assistant'")] == (['same text', 'same text'] if archived else [])
+        assert [row['text'] for row in store._db.execute('SELECT text FROM turn_progress ORDER BY part_index')] == ['same text', 'same text']
+    finally:
+        store.close()

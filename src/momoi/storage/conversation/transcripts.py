@@ -57,6 +57,24 @@ _MESSAGE_TIME_SQL = """CASE WHEN m.role='event' THEN COALESCE(wr.created_at, m.c
                             ELSE m.created_at END"""
 
 
+def mark_recalled_messages(db, rows):
+    """Project recall state onto sent messages without changing their stored text."""
+    identifiers = {row["outbox_id"] for row in rows if row.get("outbox_id") is not None}
+    if not identifiers:
+        return rows
+    recalled = {row["id"] for row in db.execute(
+        f"""SELECT o.id FROM outbox o WHERE o.id IN ({','.join('?' for _ in identifiers)})
+            AND EXISTS (SELECT 1 FROM events e
+                WHERE e.kind=o.target_channel || '.recall'
+                AND e.message_id=CAST(json_extract(
+                    CASE WHEN json_valid(o.payload_json) THEN o.payload_json ELSE '{{}}' END,
+                    '$._delivery_receipt.message_id') AS TEXT))""",
+        tuple(identifiers),
+    )}
+    return [{**row, "content": "[此消息已被撤回] " + row["content"], "recalled": True}
+            if row.get("outbox_id") in recalled else row for row in rows]
+
+
 class TranscriptStore:
     def turn_exchanges(self, turn_ids: list[str], *, window=None, include_reply_messages=False) -> dict[str, list[dict[str, object]]]:
         """Return completed native assistant/tool exchanges for transcript replay."""
@@ -125,7 +143,7 @@ class TranscriptStore:
             speech = {}
             records = self._db.execute(
                 f"""SELECT p.turn_id, p.tool_call_id, m.content, m.created_at,
-                           m.delivery_state, o.kind
+                           m.delivery_state, o.kind, m.outbox_id
                     FROM turn_progress p
                     JOIN outbox o ON o.dedupe_key = 'turn:' || p.turn_id || ':progress:' ||
                          p.tool_call_id || ':' || p.part_index
@@ -134,9 +152,9 @@ class TranscriptStore:
                     ORDER BY p.turn_id, p.tool_call_id, p.part_index""",
                 tuple(ordered_ids),
             ).fetchall()
-            for row in records:
+            for row in mark_recalled_messages(self._db, [dict(row) for row in records]):
                 speech.setdefault((str(row["turn_id"]), str(row["tool_call_id"])), []).append({
-                    key: row[key] for key in ("content", "created_at", "delivery_state", "kind")
+                    key: row.get(key) for key in ("content", "created_at", "delivery_state", "kind", "recalled")
                 })
             for executor, item in executor_exchanges:
                 # Call IDs are local to an executor, including follow-ups
@@ -304,7 +322,7 @@ class TranscriptStore:
                 ORDER BY m2.id DESC LIMIT ?)"""
             turn_args = (*channels, *channels, turn_limit)
         rows = self._db.execute(f"""SELECT m.id, m.role, m.content, m.created_at,
-                    m.delivery_state, m.turn_id FROM messages m
+                    m.delivery_state, m.turn_id, m.outbox_id FROM messages m
                     LEFT JOIN outbox o ON o.id=m.outbox_id
                     WHERE ((m.role='user' AND EXISTS (
                         SELECT 1 FROM json_each(m.source_event_ids_json) src
@@ -317,7 +335,7 @@ class TranscriptStore:
         if turn_limit:
             identifiers = list(dict.fromkeys(row["turn_id"] for row in rows))[:turn_limit]
             rows = [row for row in rows if row["turn_id"] in identifiers]
-        return [dict(row) for row in reversed(rows)]
+        return mark_recalled_messages(self._db, [dict(row) for row in reversed(rows)])
 
     def recent_conversation_messages(
         self,
@@ -389,7 +407,7 @@ class TranscriptStore:
                 SELECT m.id, m.turn_id,
                        CASE WHEN {_GOAL_RECORD_SQL} THEN 'goal'
                             WHEN {_HEARTBEAT_RECORD_SQL} THEN 'heartbeat' WHEN {_PLAN_RECORD_SQL} THEN 'plan_step' ELSE m.role END AS role,
-                       m.content,
+                       m.content, m.outbox_id,
                        {_MESSAGE_TIME_SQL} AS created_at,
                        m.delivery_state,
                        t.failure_reason AS turn_failure_reason,
@@ -417,7 +435,7 @@ class TranscriptStore:
             item = dict(row)
             item["timestamp"] = self.context_timestamp(item["created_at"])
             result.append(item)
-        return result
+        return mark_recalled_messages(self._db, result)
 
     def turn_activity(self, turn_ids: list[str]) -> dict[str, list[dict[str, object]]]:
         """Return each Turn's work in the order it happened.

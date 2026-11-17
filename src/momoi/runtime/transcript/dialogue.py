@@ -40,6 +40,17 @@ def project_dialogue(exchanges, *, timezone: ZoneInfo, has_speech: bool, mark_si
         # Preserve that exchange, but expose the actual delivery observation.
         for call in calls:
             speech = evidence.get(call.get("id"), [])
+            if call.get("name") == "reply" and any(row.get("recalled") for row in speech):
+                block = outcomes.get(call.get("id"))
+                if block:
+                    payload = _payload(block)
+                    bubbles = payload.get("bubbles", [])
+                    offset = len(bubbles) - len(speech)
+                    for index, row in enumerate(speech):
+                        if (row.get("recalled") and offset >= 0
+                                and bubbles[offset + index] == row["content"].removeprefix("[此消息已被撤回] ")):
+                            bubbles[offset + index] = row["content"]
+                    block["content"] = json.dumps(payload, ensure_ascii=False)
             if call.get("name") == "reply" and any(row.get("delivery_state") == "failed" for row in speech):
                 block = outcomes.get(call.get("id"))
                 if block:
