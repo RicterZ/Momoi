@@ -127,7 +127,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         current = self.runtime.daemon
         self.assertIs(current, first)
         specs = {spec["name"]: spec for spec in current.surface.conversation_specs()}
-        index = current.surface.tool_index()
+        index = current.surface.tool_index("worker")
         for name in ("changed", "new group", "stable"):
             self.assertIn(f"- {name}:", index)
         self.assertIn("Updated description", index)

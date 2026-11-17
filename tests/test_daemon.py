@@ -2114,10 +2114,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         # closest to the conversation; capability guidance is appended last.
         self.assertNotIn("You are Momoi.", llm_requests[0]["system"][0]["text"])
         self.assertIn("You are Momoi.", llm_requests[0]["system"][1]["text"])
-        self.assertEqual(len(llm_requests[0]["system"]), 4)
+        self.assertEqual(len(llm_requests[0]["system"]), 3)
         self.assertNotIn("当前阶段：", str(llm_requests[0]))
         self.assertNotIn("heartbeat_activity", llm_requests[0]["system"][2]["text"])
-        self.assertEqual(len(llm_requests[6]["system"]), 4)
+        self.assertEqual(len(llm_requests[6]["system"]), 3)
         self.assertEqual(llm_requests[0]["system"], llm_requests[6]["system"])
         self.assertEqual(
             llm_requests[1]["messages"][-1]["content"][0]["type"], "tool_result"

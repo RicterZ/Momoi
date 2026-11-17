@@ -127,7 +127,7 @@ def test_system_index_is_independent_of_enabled_tool_schema(tmp_path):
             store=SimpleNamespace(emotion_context=lambda: ''), tool_surface=current,
         )
         before = PromptRenderer._system(renderer)
-        assert '日历查询与日程管理' in before[-1]['text']
+        assert '日历查询与日程管理' not in str(before)
         assert 'Create an event' not in str(before)
         store.enable_transcript_tools(['thinking_read', 'mcp__calendar__create'])
         assert PromptRenderer._system(renderer) == before

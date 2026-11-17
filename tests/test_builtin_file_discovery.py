@@ -69,4 +69,4 @@ def test_planner_delegates_and_worker_owns_external_tools():
     assert {'web_fetch', 'read_file', 'skill_load'} | WORKER_SUBAGENT_TOOL_NAMES <= worker
     assert 'builtin_files' in surface.discovery_groups('worker')
     assert 'builtin_files' not in surface.discovery_groups()
-    assert 'Worker 能力索引' in surface.tool_index()
+    assert surface.tool_index() == ''

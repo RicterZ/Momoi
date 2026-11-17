@@ -129,16 +129,7 @@ class ToolSurface:
                 f"- {group}: {self.mcp_group_description(group)}" for group in groups
             ) + "\n通过 tool_search 查找候选名称与描述，再用 tool_enable 批量加载选定工具。")
         skills = self.skills.catalog() if self.skills is not None else []
-        if role == "planner":
-            worker = [f"- {group}: {self.mcp_group_description(group)}"
-                      for group in self.mcp_server_groups()]
-            worker += [f"- {spec['name']}: {str(spec.get('description') or '').split('。')[0]}"
-                       for spec in self.builtin_specs if spec["name"] not in DEFERRED_TOOLS
-                       and spec["name"] not in PLANNER_BUILTINS and not spec["name"].startswith("skill_")]
-            if worker:
-                sections.append("Worker 能力索引（通过 create_subagent 派发）：\n"
-                                + "\n".join(worker))
-        elif skills:
+        if role != "planner" and skills:
             sections.append("Skill 索引：\n" + "\n".join(
                 f"- {item['name']}: {item['description']}" for item in skills
             ) + "\n通过 skill_load 按名称加载适用的完整指引。")
