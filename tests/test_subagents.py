@@ -101,6 +101,7 @@ def test_planner_wake_turn_is_committed(tmp_path):
 
         async def wake(_prompt, turn_id, **kwargs):
             daemon.store.begin_turn(turn_id, "webhook", [turn_id], parent_turn_id=kwargs["parent_turn_id"])
+            daemon.store.queue_progress(turn_id, "reply-1", ["关好啦"], channel)
             return AgentReply(["灯关好了"])
 
         daemon._request_webhook_turn = wake
@@ -117,5 +118,8 @@ def test_planner_wake_turn_is_committed(tmp_path):
         assert [row[0] for row in rows] == ["completed"]
         assert daemon.store._db.execute(
             "SELECT target_channel FROM outbox WHERE text='灯关好了'").fetchone()[0] == channel
+        assert [row[0] for row in daemon.store._db.execute(
+            "SELECT m.content FROM messages m JOIN turns t ON t.id=m.turn_id "
+            "WHERE t.workflow_kind='webhook' AND m.role='assistant' ORDER BY m.id")] == ["关好啦", "灯关好了"]
         daemon.store.close()
     asyncio.run(run())
