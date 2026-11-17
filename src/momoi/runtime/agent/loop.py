@@ -1,7 +1,7 @@
 import json
 import logging
 from time import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from collections.abc import Callable
 from typing import Any
 
@@ -35,6 +35,28 @@ from ..turn_support import (
 )
 
 logger = logging.getLogger("momoi.runtime.turns")
+
+
+@dataclass
+class _FailureCounters:
+    protocol_failures: int = 0
+    thought_rounds: int = 0
+    execution_failures: int = 0
+
+    def reset(self) -> None:
+        self.protocol_failures = 0
+        self.thought_rounds = 0
+        self.execution_failures = 0
+
+
+def _tool_failure_type(
+    workflow: AgentWorkflow | None, external_tool_used: bool,
+) -> type[WorkflowProtocolError] | type[ExternalToolTurnError]:
+    if workflow is not None:
+        return WorkflowProtocolError
+    return ExternalToolTurnError if external_tool_used else WorkflowProtocolError
+
+
 class AgentLoop:
     def _absorb_owner_updates(
         self,
@@ -53,6 +75,43 @@ class AgentLoop:
         )
         harness.accept_owner_update()
         return updates[-1].event_id
+
+    async def _resume_background_input(
+        self,
+        turn_id: str,
+        execution: TurnExecutionSpec,
+        harness: TurnHarness,
+        draft: TurnDraft,
+        resume_input: Callable[[], str],
+        counters: _FailureCounters,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+        stage = execution.stage
+        # Make accepted writes visible to owner work, then re-evaluate
+        # any unfinished task against the latest conversation.
+        if execution.goal_id:
+            harness.completed_tools.discard("goal_review")
+        self.store.commit_goal_draft(draft)
+        draft.goals.clear()
+        draft.heartbeat_activity = None
+        if stage == "heartbeat":
+            harness.completed_tools.discard("heartbeat_activity")
+        await self.background_checkpoint(turn_id)
+        shared = self.shared_turn_context(turn_id, fresh=True)
+        system = self._system(planner=True)
+        messages = [*shared["messages"], {"role": "user", "content": resume_input()}, {
+            "role": "user", "content": "[后台任务恢复评估]\n用户对话已处理，以上为最新 transcript 和任务状态。"
+            "请先判断原任务是否仍需继续、调整或直接收尾；不要延续暂停前的发言计划，也不要补发被用户打断的回复。"
+            "历史中的后台任务执行记录仅用于核实已发生的操作；已完成操作不得重复，未执行或不确定的操作按结果核实。"
+            "任务记录以最新状态为准；未结束的 Goal 重新提交 goal_review，Heartbeat 重新提交 heartbeat_activity。",
+        }]
+        history_messages = len(shared["messages"])
+        counters.reset()
+        harness.accept_owner_update()
+        if execution.goal_id:
+            goal = self.store.goal(execution.goal_id)
+            if goal is None or goal["status"] in {"done", "cancelled"}:
+                harness.completed_tools.add("goal_review")
+        return system, messages, history_messages
 
     async def _run_tool_loop(
         self,
@@ -77,9 +136,7 @@ class AgentLoop:
         accept_owner_updates = execution.accept_owner_updates
         dynamic_tool_policies = execution.dynamic_tool_policies
         external_tool_used = False
-        protocol_failures = 0
-        thought_rounds = 0
-        execution_failures = 0
+        counters = _FailureCounters()
         circuit_reason = ""
         circuit_rounds = 0
         last_tool_error = ""
@@ -135,33 +192,33 @@ class AgentLoop:
             )})
             return True
 
+        def absorb_owner_updates(
+            updates: list[IncomingMessage], *, updates_in_result: bool = False,
+        ) -> str:
+            if updates_in_result:
+                event_id = updates[-1].event_id
+                harness.accept_owner_update()
+            else:
+                event_id = self._absorb_owner_updates(
+                    updates, messages, delivery_channel, harness, draft
+                )
+            counters.reset()
+            return event_id
+
+        def recover_from_failure(reason: str, error: Exception) -> bool:
+            """Retry after opening the circuit, finish after a reply, or raise."""
+            if open_circuit(reason):
+                counters.protocol_failures = 0
+                return True
+            if circuit_reason and "reply" in harness.completed_tools:
+                return False
+            raise error
+
         while True:
             if resume_input is not None and self.background_pause_requested():
-                # Make accepted writes visible to owner work, then re-evaluate
-                # any unfinished task against the latest conversation.
-                if execution.goal_id:
-                    harness.completed_tools.discard("goal_review")
-                self.store.commit_goal_draft(draft)
-                draft.goals.clear()
-                draft.heartbeat_activity = None
-                if stage == "heartbeat":
-                    harness.completed_tools.discard("heartbeat_activity")
-                await self.background_checkpoint(turn_id)
-                shared = self.shared_turn_context(turn_id, fresh=True)
-                system = self._system(planner=True)
-                messages = [*shared["messages"], {"role": "user", "content": resume_input()}, {
-                    "role": "user", "content": "[后台任务恢复评估]\n用户对话已处理，以上为最新 transcript 和任务状态。"
-                    "请先判断原任务是否仍需继续、调整或直接收尾；不要延续暂停前的发言计划，也不要补发被用户打断的回复。"
-                    "历史中的后台任务执行记录仅用于核实已发生的操作；已完成操作不得重复，未执行或不确定的操作按结果核实。"
-                    "任务记录以最新状态为准；未结束的 Goal 重新提交 goal_review，Heartbeat 重新提交 heartbeat_activity。",
-                }]
-                history_messages = len(shared["messages"])
-                protocol_failures = thought_rounds = execution_failures = 0
-                harness.accept_owner_update()
-                if execution.goal_id:
-                    goal = self.store.goal(execution.goal_id)
-                    if goal is None or goal["status"] in {"done", "cancelled"}:
-                        harness.completed_tools.add("goal_review")
+                system, messages, history_messages = await self._resume_background_input(
+                    turn_id, execution, harness, draft, resume_input, counters,
+                )
                 if stage == "heartbeat":
                     heartbeat_owner_event_revision = int(self.store.heartbeat_conversation_snapshot()["owner_event_revision"])
                 self.store.append_turn_journal(turn_id, "background_context_refreshed", {"history_messages": history_messages})
@@ -197,11 +254,7 @@ class AgentLoop:
                 else []
             )
             if updates:
-                source_event_id = self._absorb_owner_updates(
-                    updates, messages, delivery_channel, harness, draft
-                )
-                protocol_failures = 0
-                thought_rounds = execution_failures = 0
+                source_event_id = absorb_owner_updates(updates)
             required_tool = harness.spec.first_tool if not harness.started else None
             if required_tool == "recall":
                 # The harness requires recall within the batch, not an exclusive tool choice.
@@ -280,11 +333,7 @@ class AgentLoop:
                         current_events, delivery_channel.name
                     )
                 )
-                source_event_id = self._absorb_owner_updates(
-                    updates, messages, delivery_channel, harness, draft
-                )
-                protocol_failures = 0
-                thought_rounds = execution_failures = 0
+                source_event_id = absorb_owner_updates(updates)
                 continue
             except Exception as error:
                 if circuit_reason:
@@ -307,11 +356,7 @@ class AgentLoop:
             )
             if updates:
                 messages.append(assistant_history_message(response.content, response.continuation))
-                source_event_id = self._absorb_owner_updates(
-                    updates, messages, delivery_channel, harness, draft
-                )
-                protocol_failures = 0
-                thought_rounds = execution_failures = 0
+                source_event_id = absorb_owner_updates(updates)
                 continue
             if not response.tool_calls and self.background_pause_requested():
                 continue
@@ -340,10 +385,7 @@ class AgentLoop:
                             updates = await self._wait_owner_continuation(current_events, delivery_channel)
                             if updates:
                                 messages.append(assistant_history_message(response.content, response.continuation))
-                                source_event_id = self._absorb_owner_updates(
-                                    updates, messages, delivery_channel, harness, draft
-                                )
-                                protocol_failures = thought_rounds = execution_failures = 0
+                                source_event_id = absorb_owner_updates(updates)
                                 continue
                         if stage in CURRENT_STATE_TRIGGER_STAGES and not circuit_reason:
                             self.store.stage_current_state_task(
@@ -377,7 +419,7 @@ class AgentLoop:
                         goal_turn=autonomous_goal_id is not None,
                         require_response=require_response,
                         owner_turn=authority == "owner",
-                        failed_rounds=thought_rounds,
+                        failed_rounds=counters.thought_rounds,
                         last_tool_error=last_tool_error,
                         external_effect=external_tool_used,
                         continuation=response.continuation,
@@ -386,16 +428,13 @@ class AgentLoop:
                 except (WorkflowProtocolError, ExternalToolTurnError) as error:
                     log_event(logger, logging.WARNING, "protocol_circuit_open",
                               stage=stage, turn_id=turn_id, round=llm_round,
-                              failures=thought_rounds + 1,
+                              failures=counters.thought_rounds + 1,
                               failure_limit=MAX_CONSECUTIVE_THOUGHT_ROUNDS,
                               reason=str(error))
-                    if open_circuit(str(error)):
-                        protocol_failures = 0
+                    if recover_from_failure(str(error), error):
                         continue
-                    if circuit_reason and "reply" in harness.completed_tools:
-                        return AgentReply([])
-                    raise
-                thought_rounds = resolution.failed_rounds
+                    return AgentReply([])
+                counters.thought_rounds = resolution.failed_rounds
                 if resolution.log_rejection:
                     log_event(
                         logger,
@@ -410,13 +449,13 @@ class AgentLoop:
                 if resolution.action == "return":
                     return None
                 continue
-            thought_rounds = 0
+            counters.thought_rounds = 0
             harness_error = harness.validate(
                 response.tool_calls,
                 required_tool=required_tool,
             )
             if harness_error is not None:
-                protocol_failures += 1
+                counters.protocol_failures += 1
                 log_event(
                     logger,
                     logging.DEBUG,
@@ -428,7 +467,7 @@ class AgentLoop:
                     channel=delivery_channel.name,
                     reason=harness_error,
                     tool_names=[call.name for call in response.tool_calls],
-                    consecutive_failures=protocol_failures,
+                    consecutive_failures=counters.protocol_failures,
                     failure_limit=self.config.turn_max_protocol_retries,
                 )
                 correction = []
@@ -448,27 +487,16 @@ class AgentLoop:
                         {"role": "user", "content": correction},
                     ]
                 )
-                if protocol_failures >= self.config.turn_max_protocol_retries:
+                if counters.protocol_failures >= self.config.turn_max_protocol_retries:
                     log_event(logger, logging.WARNING, "protocol_circuit_open",
                               stage=stage, turn_id=turn_id, round=llm_round,
-                              failures=protocol_failures,
+                              failures=counters.protocol_failures,
                               failure_limit=self.config.turn_max_protocol_retries,
                               reason=harness_error)
-                    error_type = (
-                        WorkflowProtocolError
-                        if workflow is not None
-                        else (
-                            ExternalToolTurnError
-                            if external_tool_used
-                            else WorkflowProtocolError
-                        )
-                    )
-                    if open_circuit(harness_error):
-                        protocol_failures = 0
+                    error_type = _tool_failure_type(workflow, external_tool_used)
+                    if recover_from_failure(harness_error, error_type(harness_error)):
                         continue
-                    if circuit_reason and "reply" in harness.completed_tools:
-                        return AgentReply([])
-                    raise error_type(harness_error)
+                    return AgentReply([])
                 continue
             assistant_text = response_text(response.content)
             log_event(
@@ -521,33 +549,27 @@ class AgentLoop:
             if circuit_reason and "reply" in harness.completed_tools and not updates:
                 return AgentReply([])
             if updates:
-                if batch.updates_in_result:
-                    source_event_id = updates[-1].event_id
-                    harness.accept_owner_update()
-                else:
-                    source_event_id = self._absorb_owner_updates(
-                        updates, messages, delivery_channel, harness, draft
-                    )
-                protocol_failures = 0
-                thought_rounds = execution_failures = 0
+                source_event_id = absorb_owner_updates(
+                    updates, updates_in_result=batch.updates_in_result,
+                )
                 continue
             if resume_input is not None and self.background_pause_requested():
                 continue
             if workflow is not None and workflow.is_complete():
                 return workflow.completion_result() or {"ok": True}
             if any(not block["is_error"] for block in results):
-                protocol_failures = 0
-                execution_failures = 0
+                counters.protocol_failures = 0
+                counters.execution_failures = 0
                 continue
             if batch.protocol_error:
-                protocol_failures += 1
-                execution_failures = 0
-                failures = protocol_failures
+                counters.protocol_failures += 1
+                counters.execution_failures = 0
+                failures = counters.protocol_failures
                 failure_limit = self.config.turn_max_protocol_retries
             else:
-                protocol_failures = 0
-                execution_failures += 1
-                failures = execution_failures
+                counters.protocol_failures = 0
+                counters.execution_failures += 1
+                failures = counters.execution_failures
                 failure_limit = MAX_CONSECUTIVE_EXECUTION_FAILURES
             if failures < failure_limit:
                 continue
@@ -556,17 +578,11 @@ class AgentLoop:
                       failures=failures, failure_limit=failure_limit,
                       failure_kind="protocol" if batch.protocol_error else "execution",
                       reason=last_tool_error or "repeated tool failures")
-            error_type = (
-                ExternalToolTurnError
-                if external_tool_used and workflow is None
-                else WorkflowProtocolError
-            )
-            if open_circuit(last_tool_error or "repeated tool validation failures"):
-                protocol_failures = 0
+            error_type = _tool_failure_type(workflow, external_tool_used)
+            reason = last_tool_error or "repeated tool validation failures"
+            if recover_from_failure(reason, error_type(reason)):
                 continue
-            if circuit_reason and "reply" in harness.completed_tools:
-                return AgentReply([])
-            raise error_type(last_tool_error or "repeated tool validation failures")
+            return AgentReply([])
 
     async def _run_agent_workflow(
         self,
