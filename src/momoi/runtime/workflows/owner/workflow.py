@@ -407,7 +407,7 @@ class OwnerWorkflow:
         active_workers = [task for task in self.store.subagent_tasks(channel.name)
                           if task["status"] in {"queued", "running"}]
         if active_workers:
-            directives.append("进行中的 Worker 任务（完成或有进展时会唤醒你，不必轮询）：" + "；".join(
+            directives.append("进行中的 Worker 任务（完成或有进展时会唤醒你）：" + "；".join(
                 f"{task['id']} 「{task['title']}」 {task['status']}"
                 + (f"，最近汇报：{task['reports'][-1]['progress']}" if task["reports"] else "")
                 for task in active_workers

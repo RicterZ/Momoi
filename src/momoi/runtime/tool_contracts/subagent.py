@@ -31,7 +31,7 @@ SUBAGENT_CANCEL = {
 }
 SUBAGENT_REPORT = {
     "name": "subagent_report",
-    "description": "向派发者汇报阶段性进展，例如已找到关键线索、某个耗时步骤开始或完成。只在有实质进展时调用，不要每步都汇报；最终结果用 subagent_finish。",
+    "description": "向派发者汇报阶段性进展，例如已找到关键线索、某个耗时步骤开始或完成。只在有实质进展时调用；最终结果用 subagent_finish。",
     "input_schema": {"type": "object", "properties": {
         "progress": {"type": "string", "minLength": 1, "maxLength": 1000},
     }, "required": ["progress"], "additionalProperties": False},
