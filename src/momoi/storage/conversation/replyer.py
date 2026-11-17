@@ -43,6 +43,36 @@ def select_history_rows(rows, previous):
 
 
 class ReplyerHistoryStore:
+    def replyer_interaction_rows(self, turn_ids, floor):
+        return self._db.execute(
+            f"""SELECT id, turn_id, tool_name, result_json, completed_at FROM tool_audit
+                WHERE state='completed' AND ok=1 AND tool_name='qq_poke'
+                AND completed_at>? AND turn_id IN ({",".join("?" * len(turn_ids))})""",
+            (floor, *turn_ids),
+        )
+
+    def replyer_owner_interjection(self, turn_id):
+        return self._db.execute(
+            "SELECT payload_json FROM turn_journal WHERE turn_id=? AND item_type='owner_interjection' ORDER BY sequence DESC LIMIT 1",
+            (turn_id,),
+        ).fetchone()
+
+    def replyer_archived_rows(self, turn_id):
+        return self._db.execute(
+            "SELECT id, role, source_event_ids_json, outbox_id FROM messages WHERE turn_id=?",
+            (turn_id,),
+        ).fetchall()
+
+    def replyer_sent_progress_rows(self, turn_id, channel):
+        return self._db.execute(
+            """SELECT o.id, p.text, COALESCE(json_extract(
+                   CASE WHEN json_valid(o.payload_json) THEN o.payload_json ELSE '{}' END,
+                   '$._sent_at'), p.created_at) AS created_at FROM turn_progress p JOIN outbox o
+               ON o.dedupe_key='turn:' || p.turn_id || ':progress:' || p.tool_call_id || ':' || p.part_index
+               WHERE p.turn_id=? AND o.state='sent' AND o.target_channel=?""",
+            (turn_id, channel),
+        )
+
     def replyer_reset_at(self, channel: str) -> float:
         stored = self._db.execute(
             "SELECT rows_json FROM replyer_history_windows WHERE channel=?", (f"reset_at:{channel}",)
