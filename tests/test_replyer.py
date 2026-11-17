@@ -1,4 +1,5 @@
 import asyncio
+import time
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -62,6 +63,43 @@ def test_replyer_poke_tool_is_fixed_and_executes_only_on_qq(tmp_path, channel_na
         assert store.reply_action_bubbles('poke-turn', 'reply') == ['[动作：戳一戳]'] * (2 * int(channel_name == 'onebot' and not paused and not failed))
         if channel_name == 'onebot' and not paused:
             assert store.begin_tool_call('poke-turn', 'reply:poke-action-1', 'qq_poke', {})['ok'] is (not failed)
+    finally:
+        store.close()
+
+
+def test_replyer_history_keeps_interaction_tool_calls(tmp_path):
+    store = Store(tmp_path / 'db')
+    first = IncomingMessage('ask-event', 'ask-event', '只戳我一下不要发文字', 1, 1, channel='dashboard')
+    store.add_event(first)
+    store.begin_turn('ask-turn', 'owner', [first.event_id])
+    assert store.begin_tool_call('ask-turn', 'reply:poke', 'qq_poke', {}) is None
+    store.complete_tool_call('ask-turn', 'reply:poke', {'ok': True})
+    assert store.begin_tool_call('ask-turn', 'failed-poke', 'qq_poke', {}) is None
+    store.complete_tool_call('ask-turn', 'failed-poke', {'ok': False, 'error': 'qq_poke_failed'})
+    store.commit_turn([first], first.text, AgentReply([]), turn_id='ask-turn')
+    second = IncomingMessage('pinch-event', 'pinch-event', '捏！', time.time() + 1, time.time() + 1, channel='dashboard')
+    store.add_event(second)
+    store.begin_turn('pinch-turn', 'owner', [second.event_id])
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt='test', timezone='UTC', thinking_stages={})
+    channel = SimpleNamespace(name='dashboard', content_blocks=lambda _: [])
+    request = SimpleNamespace(turn_id='pinch-turn', round_number=1, delivery_channel=channel,
+                              current_events=[second])
+    seen = []
+
+    async def complete(system, messages, tools):
+        seen.extend(messages)
+        return ProviderResponse([{'type': 'text', 'text': '嘿'}], [])
+
+    try:
+        asyncio.run(Replyer(config, store, SimpleNamespace(complete=complete)).generate(
+            ToolCall('reply', 'reply', {'intent': 'x', 'reference': ''}), request))
+        roles = [(m['role'], m['content'] if isinstance(m['content'], str) else m['content'][0]['type'])
+                 for m in seen[1:]]
+        assert roles[0][0] == 'user' and '只戳我一下' in roles[0][1]
+        assert roles[1:3] == [('assistant', 'tool_use'), ('user', 'tool_result')]
+        assert seen[2]['content'][0]['name'] == 'qq_poke'
+        assert seen[3]['content'][0]['tool_use_id'] == seen[2]['content'][0]['id']
+        assert '<to_reply' in str(seen[-1]['content']) and len(seen) == 5
     finally:
         store.close()
 

@@ -1,8 +1,9 @@
-"""Project only actual dialogue, keeping internal planner records out of replies."""
+"""Project actual dialogue and user-facing actions, keeping internal planner records out of replies."""
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from xml.sax.saxutils import escape
 from ...storage.delivery.actions import QQ_POKE_MARKER, QQ_POKE_DESCRIPTION
+from ..turn_support import tool_result_block
 
 
 def visible_dialogue(rows, *, timezone="UTC", memory_events=()):
@@ -10,6 +11,12 @@ def visible_dialogue(rows, *, timezone="UTC", memory_events=()):
     turn_ids = []
     for row in rows:
         role = row.get("role")
+        if role == "action":
+            selected.append({"role": "assistant", "content": [
+                {"type": "tool_use", "id": row["id"], "name": row["name"], "input": row["input"]}]})
+            selected.append({"role": "user", "content": [tool_result_block(row["id"], row["result"])]})
+            turn_ids.extend([str(row.get("turn_id") or "")] * 2)
+            continue
         if role not in {"user", "assistant"}:
             continue
         if role == "assistant" and row.get("delivery_state") != "delivered":
