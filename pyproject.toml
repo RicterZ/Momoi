@@ -51,7 +51,10 @@ windows-build = [
 test = [
     "pytest>=9,<10",
     "pytest-xdist>=3.8,<4",
+    "pytest-timeout>=2.3,<3",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["desktop/python"]
+# A hung test fails with a traceback instead of blocking the whole run.
+timeout = 60
