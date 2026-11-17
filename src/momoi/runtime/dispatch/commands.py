@@ -105,7 +105,9 @@ class CommandRouter:
             )
             return
         if message.text.strip() == "/reset-replyer":
-            floor = self.store.reset_replyer_history(self._channel_for(message.channel).name)
+            channel = self._channel_for(message.channel)
+            floor = self.store.reset_replyer_history(
+                getattr(channel, "dialogue_channel", channel.name), reset_at=message.received_at)
             log_event(
                 logger,
                 logging.INFO,

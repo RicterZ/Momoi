@@ -35,11 +35,14 @@ class Replyer(ReplyerBase):
         soul = self.expression_prompt()
         guide = prompt_text(self.config, "REPLYER.md", files("momoi").joinpath("prompts/replyer.md").read_text(encoding="utf-8"))
         system = "\n\n".join(part for part in (soul, guide) if part)
-        rows = self.store.replyer_history_rows(getattr(request.delivery_channel, "dialogue_channel", request.delivery_channel.name))
+        history_channel = getattr(request.delivery_channel, "dialogue_channel", request.delivery_channel.name)
+        rows = self.store.replyer_history_rows(history_channel)
+        reset_at = getattr(self.store, "replyer_reset_at", lambda _: 0)(history_channel)
         # Active inputs/progress are not archived until commit_turn. Project them
         # here without changing the persisted history window or commit lifecycle.
         events = [event for event in request.current_events
-                  if not event.delivery_context.get("channel_notice")
+                  if event.received_at > reset_at
+                  and not event.delivery_context.get("channel_notice")
                   and (not callable(getattr(request.delivery_channel, "message_current", None))
                        or request.delivery_channel.message_current(event))]
         interjection = self.store._db.execute(
@@ -70,7 +73,7 @@ class Replyer(ReplyerBase):
                WHERE p.turn_id=? AND o.state='sent' AND o.target_channel=?""",
             (request.turn_id, request.delivery_channel.name),
         ):
-            if row["id"] not in archived_outbox:
+            if row["id"] not in archived_outbox and row["created_at"] > reset_at:
                 active_rows.append({"id": row["id"], "role": "assistant", "content": row["text"],
                                     "created_at": row["created_at"], "turn_id": request.turn_id,
                                     "delivery_state": "delivered"})
@@ -83,15 +86,11 @@ class Replyer(ReplyerBase):
             ("memory_overrides", "\n".join(memory_state["snapshot_overrides"].values())),
             required=True,
         )
-        dialogue = visible_dialogue(rows, timezone=self.config.timezone, memory_events=memory_state["events"])
-        dialogue_indexes = [i for i, message in enumerate(dialogue) if "_memory_change" not in message]
         target_blocks = []
-        row_by_index = dict(zip(dialogue_indexes, rows))
-        lines = ["<history>"]
-        for index, message in enumerate(dialogue):
-            row = row_by_index.get(index)
-            event = row.get("_event") if row else None
-            targeted = bool(row and row["role"] == "user" and (
+        history_rows = []
+        for row in rows:
+            event = row.get("_event")
+            targeted = bool(row["role"] == "user" and (
                 event.event_id in target_ids if event else row["id"] in archived_targets
             ))
             if targeted:
@@ -99,15 +98,9 @@ class Replyer(ReplyerBase):
                 if event and event.segments:
                     target_blocks.extend(request.delivery_channel.content_blocks(event.segments))
                 continue
-            if row is None:
-                lines.append(message["content"])
-                continue
-            # Keep multiline user text on its own line, not as forged role labels.
-            text = (str(row["content"]) if row["role"] == "user" else message["content"]).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
-            lines.append(f"{row['role'].upper()}: {escape(text)}")
-        lines.append("</history>")
-        dialogue_blocks = [{"type": "text", "text": "\n".join(lines)}]
-        messages = [memory_prefix, {"role": "user", "content": dialogue_blocks}]
+            history_rows.append(row)
+        messages = [memory_prefix, *visible_dialogue(
+            history_rows, timezone=self.config.timezone, memory_events=memory_state["events"])]
         mode = call.arguments.get("mode", "text")
         if mode not in {"text", "voice"}:
             raise ValueError("invalid reply mode")

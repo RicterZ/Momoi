@@ -103,7 +103,7 @@ def test_replyer_global_memory_prefix_without_goals(tmp_path, with_memory):
         )
         assert messages[0]['role'] == 'user'
         assert messages[1]['role'] == 'user'
-        assert 'Hello' not in str(messages[1]['content'])
+        assert len(messages) == 2
         assert 'Hello' in str(messages[-1]['content'])
         assert '<intent>Respond</intent>' in str(messages[-1]['content'])
         text = str(messages)
@@ -238,16 +238,16 @@ def test_replyer_channel_history_uses_actual_delivery(tmp_path):
 def test_reset_replyer_history_drops_existing_dialogue(tmp_path):
     store = Store(tmp_path / 'db')
     try:
-        def turn(name):
-            event = IncomingMessage(name, name, name + ' input', 1, 1, channel='first')
+        def turn(name, at):
+            event = IncomingMessage(name, name, name + ' input', at, at, channel='first')
             store.add_event(event)
             store.begin_turn(name, "owner", [event.event_id])
             store.commit_turn([event], event.text, AgentReply([]), turn_id=name)
-        turn('old')
+        turn('old', 1)
         assert [r['content'] for r in store.replyer_history_rows('first')] == ['old input']
-        store.reset_replyer_history('first')
+        store.reset_replyer_history('first', reset_at=2)
         assert store.replyer_history_rows('first') == []
-        turn('new')
+        turn('new', 3)
         assert [r['content'] for r in store.replyer_history_rows('first')] == ['new input']
         assert [r['content'] for r in store.replyer_dialogue_rows('first')] == ['old input', 'new input']
     finally:
@@ -272,6 +272,58 @@ def test_replyer_generates_with_malformed_legacy_event_payload(tmp_path):
             return ProviderResponse([{'type': 'text', 'text': '回复正常'}], [])
         replyer = Replyer(config, store, SimpleNamespace(complete=complete))
         assert asyncio.run(replyer.generate(ToolCall('reply-test', 'reply', {'intent': '回应', 'reference': ''}), request)) == ['回复正常']
+    finally:
+        store.close()
+
+
+def test_reset_replyer_command_excludes_active_and_late_archived_messages(tmp_path):
+    from momoi.runtime.dispatch.commands import CommandRouter
+
+    path = tmp_path / 'db'
+    store = Store(path)
+    old = IncomingMessage('old', 'old', 'PRE_RESET_INPUT', 10, 10, channel='onebot')
+    latest = IncomingMessage('new', 'new', 'POST_RESET_INPUT', 30, 30, channel='onebot')
+    for event in (old, latest):
+        store.add_event(event)
+    store.begin_turn('old-turn', 'owner', [old.event_id])
+    store.queue_progress('old-turn', 'p', ['PRE_RESET_REPLY'], 'onebot')
+    outbox_id = store._db.execute('SELECT id FROM outbox').fetchone()[0]
+    store.mark_sent(outbox_id)
+    with store._db:
+        store._db.execute("UPDATE turn_progress SET created_at=15")
+        store._db.execute("UPDATE outbox SET payload_json=json_set(payload_json, '$._sent_at', 15)")
+    router = CommandRouter()
+    router.store = store
+    router._message_current = lambda _: True
+    router._channel_for = lambda _: SimpleNamespace(name='qq_call', dialogue_channel='onebot')
+    command = IncomingMessage('reset', 'reset', '/reset-replyer', 20, 20, channel='qq_call')
+    asyncio.run(router._receive(command))
+    assert all(store.replyer_reset_at(channel) == 20 for channel in ('onebot', 'qq_call', 'phone_turns'))
+    assert store.replyer_reset_at('dashboard') == 0
+    store.begin_turn('new-turn', 'owner', [latest.event_id])
+    cfg = SimpleNamespace(soul_prompt_path=None, soul_prompt='Soul', timezone='UTC', thinking_stages={})
+    channel = SimpleNamespace(name='onebot', content_blocks=lambda _: [])
+    request = SimpleNamespace(turn_id='old-turn', round_number=1, delivery_channel=channel, current_events=[old, latest])
+
+    async def complete(system, messages, tools):
+        assert len(messages) == 2
+        assert 'PRE_RESET_INPUT' not in str(messages) and 'PRE_RESET_REPLY' not in str(messages)
+        assert 'POST_RESET_INPUT' in str(messages[-1])
+        return ProviderResponse([{'type': 'text', 'text': 'ok'}], [])
+
+    try:
+        assert asyncio.run(Replyer(cfg, store, SimpleNamespace(complete=complete)).generate(
+            ToolCall('r', 'reply', {'intent': 'respond', 'reference': ''}), request)) == ['ok']
+        # The old turn can commit after the command; it must stay below the reset boundary.
+        store.commit_turn([old], old.text, AgentReply([]), turn_id='old-turn')
+        store.commit_turn([latest], latest.text, AgentReply([]), turn_id='new-turn')
+        assert [row['content'] for row in store.replyer_history_rows('onebot')] == ['POST_RESET_INPUT']
+        assert [row['content'] for row in store.phone_history_rows('future-call')] == ['POST_RESET_INPUT']
+        assert 'PRE_RESET_INPUT' in str(store.replyer_dialogue_rows('onebot'))
+        store.close()
+        store = Store(path)
+        assert store.replyer_reset_at('onebot') == 20
+        assert [row['content'] for row in store.replyer_history_rows('onebot')] == ['POST_RESET_INPUT']
     finally:
         store.close()
 
@@ -425,7 +477,7 @@ def test_replyer_does_not_append_runtime_prose_and_splits_bubbles(mode):
                               turn_id="turn", round_number=1)
 
     async def complete(system, messages, tools):
-        assert messages[1]['content'] == [{'type': 'text', 'text': '<history>\n</history>'}]
+        assert len(messages) == 2
         assert messages[-1]['content'] == [{'type': 'text', 'text': '<intent>回应</intent>\n<reference></reference>'}]
         assert [tool['name'] for tool in tools] == ['qq_poke']
         return ProviderResponse([{"type": "text", "text": "第一句\n\n第二句"}], [])
@@ -640,17 +692,10 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
 
     async def complete(system, messages, tools):
         text = str(messages)
-        assert len(messages) == 3  # Memory, one dialogue block, expression task.
-        dialogue = messages[1]['content'][0]['text']
-        assert dialogue.splitlines() == [
-            '<history>',
-            'USER: OLD_IMAGE_INPUT',
-            'ASSISTANT: DELIVERED_REPLY',
-            '</history>',
-        ]
-        parsed = ElementTree.fromstring('<dialogue>' + dialogue + '</dialogue>')
-        assert [node.tag for node in parsed] == ['history']
-        assert 'LATEST_INPUT' not in parsed.find('history').text
+        assert [message['role'] for message in messages] == ['user', 'user', 'assistant', 'user']
+        assert 'OLD_IMAGE_INPUT' in messages[1]['content']
+        assert messages[2]['content'] == 'DELIVERED_REPLY'
+        assert 'LATEST_INPUT' not in str(messages[1:-1])
         task = ElementTree.fromstring('<task>' + messages[-1]['content'][0]['text'] + '</task>')
         assert [node.tag for node in task] == ['to_reply', 'intent', 'reference']
         assert task.find('to_reply').text == latest.text
@@ -658,8 +703,7 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
         assert datetime.fromisoformat(task.find('to_reply').attrib['now']).utcoffset().total_seconds() == 0
         assert task.find('intent').text == 'Continue'
         assert task.find('reference').text is None
-        assert sum(block.get('text', '').count('<to_reply now=') for message in messages
-                   for block in message['content']) == 1
+        assert messages[-1]['content'][0]['text'].count('<to_reply now=') == 1
         assert text.count('OLD_IMAGE_INPUT') == 1
         assert text.count('LATEST_INPUT') == 1
         assert text.count('DELIVERED_REPLY') == 1
@@ -668,7 +712,7 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
         assert 'USER: LATEST_INPUT' not in text
         assert 'event_id=' not in text
         assert 'image-event' not in text and 'new-event' not in text
-        assert len(messages[1]['content']) == 1
+        assert '<history>' not in messages[1]['content']
         assert '没有待回复的消息' not in text
         assert '旧消息、旧图片和已经演过的情节视为已经回应过' in system
         channel.content_blocks.assert_not_called()
@@ -697,10 +741,10 @@ def test_replyer_without_target_contains_only_intent_and_reference(tmp_path):
     async def complete(system, messages, tools):
         from xml.etree import ElementTree
         text = str(messages)
-        assert '<to_reply>' not in messages[1]['content'][0]['text']
+        assert '我不是说了吗' in messages[1]['content']
         task = ElementTree.fromstring('<task>' + messages[-1]['content'][0]['text'] + '</task>')
         assert [node.tag for node in task] == ['intent', 'reference']
-        assert len(messages[1]['content']) == 1
+        assert len(messages) == 3
         assert '本次发言由' not in text
         return ProviderResponse([{'type': 'text', 'text': '路上慢点'}], [])
 
@@ -734,7 +778,7 @@ def test_replyer_latest_xml_keeps_targets_and_images_once(tmp_path, archived, wi
         request = SimpleNamespace(turn_id='t', round_number=1, delivery_channel=channel, current_events=events)
 
         async def complete(system, messages, tools):
-            history = str(messages[1])
+            history = str(messages[1:-1])
             assert '同事还没来' not in history and '还在等' not in history
             blocks = messages[-1]['content']
             # Images remain between the opening and closing target tag.

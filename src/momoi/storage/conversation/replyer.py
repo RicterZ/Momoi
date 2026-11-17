@@ -1,5 +1,6 @@
 """A channel's append-only reply history, rotated in batches."""
 import json
+import time
 
 from ...memory.text import estimate_tokens
 from ..core.integrity import decode_stored_json
@@ -16,24 +17,41 @@ REPLYER_HISTORY_SCHEMA = """CREATE TABLE IF NOT EXISTS replyer_history_windows (
 def select_history_rows(rows, previous):
     """Preserve the existing prefix until the high-water mark is reached."""
     rows = [dict(row) for row in rows if str(row.get("content") or "").strip()]
+    start = max(0, len(rows) - REPLYER_HISTORY_RETAIN)
+    # Rotate at a turn boundary so native assistant bubbles keep their user input.
+    while start > 0 and rows[start].get("turn_id") and rows[start - 1].get("turn_id") == rows[start]["turn_id"]:
+        start -= 1
+    recent = rows[start:]
     if not previous:
-        return rows[-REPLYER_HISTORY_RETAIN:]
+        return recent
     current = {row["id"]: row for row in rows}
     # Deleted/edited messages or late delivery must not leave stale evidence in
     # the reply context. They establish a fresh boundary, like an explicit reset.
     if any(current.get(row["id"]) != row for row in previous):
-        return rows[-REPLYER_HISTORY_RETAIN:]
+        return recent
     floor, latest = previous[0]["id"], previous[-1]["id"]
+    if previous[0].get("turn_id") and any(
+            row["id"] < floor and row.get("turn_id") == previous[0]["turn_id"] for row in rows):
+        return recent
     held = {row["id"] for row in previous}
     if any(floor <= row["id"] <= latest and row["id"] not in held for row in rows):
-        return rows[-REPLYER_HISTORY_RETAIN:]
+        return recent
     selected = [*previous, *(row for row in rows if row["id"] > latest)]
     if len(selected) >= REPLYER_HISTORY_MAX:
-        return selected[-REPLYER_HISTORY_RETAIN:]
+        return recent
     return selected
 
 
 class ReplyerHistoryStore:
+    def replyer_reset_at(self, channel: str) -> float:
+        stored = self._db.execute(
+            "SELECT rows_json FROM replyer_history_windows WHERE channel=?", (f"reset_at:{channel}",)
+        ).fetchone()
+        return decode_stored_json(
+            stored["rows_json"], entity="replyer_history_windows", field="rows_json",
+            record_id=f"reset_at:{channel}", expected_type=(int, float), fallback=0,
+        ) if stored else 0
+
     def _replyer_reset_floor(self, key):
         stored = self._db.execute(
             "SELECT rows_json FROM replyer_history_windows WHERE channel=?", (f"reset:{key}",)
@@ -44,9 +62,10 @@ class ReplyerHistoryStore:
         ) if stored else 0
         return floor
 
-    def reset_replyer_history(self, channel: str) -> int:
+    def reset_replyer_history(self, channel: str, *, reset_at: float | None = None) -> int:
         """Drop the reply window; messages up to now never re-enter it."""
         keys = ("onebot", "qq_call", "phone_turns") if channel in {"onebot", "qq_call"} else (channel,)
+        reset_at = time.time() if reset_at is None else reset_at
         with transaction(self._db):
             floor = int(self._db.execute("SELECT COALESCE(MAX(id), 0) FROM messages").fetchone()[0])
             for key in keys:
@@ -55,6 +74,11 @@ class ReplyerHistoryStore:
                     "INSERT INTO replyer_history_windows(channel, rows_json) VALUES (?, ?) "
                     "ON CONFLICT(channel) DO UPDATE SET rows_json=excluded.rows_json",
                     (f"reset:{key}", json.dumps(floor)),
+                )
+                self._db.execute(
+                    "INSERT INTO replyer_history_windows(channel, rows_json) VALUES (?, ?) "
+                    "ON CONFLICT(channel) DO UPDATE SET rows_json=excluded.rows_json",
+                    (f"reset_at:{key}", json.dumps(reset_at)),
                 )
         return floor
 
@@ -69,8 +93,9 @@ class ReplyerHistoryStore:
                 record_id=key, expected_type=list, fallback=[],
             ) if stored else []
             floor = self._replyer_reset_floor(key)
+            reset_at = self.replyer_reset_at(key)
             rows = [row for row in self.replyer_dialogue_rows("qq_call", turn_limit=32)
-                    if row["id"] > floor]
+                    if row["id"] > floor and row["created_at"] > reset_at]
             selected = select_phone_turns(rows, previous, exclude_turn=turn_id)
             self._db.execute(
                 "INSERT INTO replyer_history_windows(channel, rows_json) VALUES (?, ?) "
@@ -89,7 +114,9 @@ class ReplyerHistoryStore:
                 record_id=channel, expected_type=list, fallback=[],
             ) if stored else []
             floor = self._replyer_reset_floor(channel)
-            rows = [row for row in self.replyer_dialogue_rows(channel) if row["id"] > floor]
+            reset_at = self.replyer_reset_at(channel)
+            rows = [row for row in self.replyer_dialogue_rows(channel)
+                    if row["id"] > floor and row["created_at"] > reset_at]
             selected = select_history_rows(rows, previous)
             if selected != previous or stored is None:
                 self._db.execute(

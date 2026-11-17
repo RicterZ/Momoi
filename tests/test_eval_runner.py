@@ -121,7 +121,8 @@ def test_history_is_visible_in_real_replyer():
     messages = json.dumps(result['exchanges'][0]['messages'], ensure_ascii=False)
     assert '演示选绿色' in messages
     assert '改蓝色' in messages
-    assert '<history>' in messages
+    assert '<history>' not in messages
+    assert any(message['role'] == 'assistant' for message in result['exchanges'][0]['messages'])
 
 
 def test_distributions_hide_small_sample_tail_percentiles():
