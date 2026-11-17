@@ -138,7 +138,8 @@ class SubagentWorkflow:
         )
         now = datetime.now(self.store.timezone).isoformat(timespec="seconds")
         messages = [{"role": "user", "content": (
-            f"<task id=\"{task_id}\" title=\"{task['title']}\" current_time=\"{now}\">\n"
+            f"<task id=\"{task_id}\" title=\"{task['title']}\" current_time=\"{now}\" "
+            f"shared_dir=\"{self.tool_executor.artifact_root.resolve()}\">\n"
             f"{task['task']}\n</task>"
         )}]
         log_event(logger, logging.INFO, "subagent_started", task_id=task_id, turn_id=turn_id,

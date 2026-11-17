@@ -13,7 +13,7 @@ from .web_fetch import web_fetch
 from ..skills import Skills
 
 from ..models import ToolCall
-from .contracts.builtin import BUILTIN_TOOL_SPECS, builtin_tool_enabled
+from .contracts.builtin import BASH_REPLACED_TOOLS, BUILTIN_TOOL_SPECS, builtin_tool_enabled
 from .process import run_process
 from ..platform.shell import shell_argv
 
@@ -85,7 +85,9 @@ class BuiltinTools:
 
     async def execute(self, call: ToolCall) -> dict[str, Any]:
         try:
-            if not builtin_tool_enabled(call.name, exec_enabled=self.exec_enabled, deepseek_web_enabled=self.deepseek_web_enabled):
+            if call.name not in BASH_REPLACED_TOOLS and not builtin_tool_enabled(
+                call.name, exec_enabled=self.exec_enabled, deepseek_web_enabled=self.deepseek_web_enabled,
+            ):
                 return {"ok": False, "error": "tool_not_allowed"}
             if call.name in {"search_web", "fetch_web"}:
                 from .deepseek_web import deepseek_web

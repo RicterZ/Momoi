@@ -4,7 +4,7 @@ import logging
 from typing import Any, Callable
 
 from ...tools.contracts.agenda import AGENDA_TOOL_SPECS
-from ...tools.contracts.builtin import BUILTIN_TOOL_SPECS, builtin_tool_enabled
+from ...tools.contracts.builtin import BASH_REPLACED_TOOLS, BUILTIN_TOOL_SPECS, builtin_tool_enabled
 from ...observability.events import TRACE, log_event
 from ...tools.contracts.memory import MEMORY_TOOL_SPECS
 from ...tools.contracts.thinking import THINKING_TOOL_SPECS
@@ -43,8 +43,8 @@ DEFERRED_TOOLS = frozenset({
     "write_file", "apply_patch", "makedirs", "move_file", "delete_file",
     "skill_install", "skill_uninstall",
 })
-# Persona-bound work such as fiction writing needs SOUL, so the Planner keeps its own shell.
-PLANNER_BUILTINS = frozenset({"exec"})
+# The Planner reads and writes files but never executes commands; that belongs to the Worker.
+PLANNER_BUILTINS = BASH_REPLACED_TOOLS
 BUILTIN_GROUP_DESCRIPTIONS = {
     "builtin_skill_management": "安装或卸载工作区 skills 中的 Skill 工作流。",
     "builtin_mcp_management": "重载 MCP 工具服务连接，应用安装或配置变更并检查可用工具。",
@@ -199,7 +199,7 @@ class ToolSurface:
             *copy.deepcopy(IMAGE_TOOL_SPECS),
             *self.public_specs(AGENDA_TOOL_SPECS),
             *copy.deepcopy(PLANNER_SUBAGENT_TOOLS),
-            *self.public_specs([spec for spec in self.builtin_specs if spec["name"] in PLANNER_BUILTINS]),
+            *self.public_specs([spec for spec in BUILTIN_TOOL_SPECS if spec["name"] in PLANNER_BUILTINS]),
             *self.planner_resident_specs(),
             current_state_finish_spec(),
         ]
@@ -227,7 +227,7 @@ class ToolSurface:
         channel_tools = {spec["name"] for spec in self.planner_resident_specs()
                          if spec["name"] in {"qq_recall_message", "qq_call_status"}}
         delegation = {spec["name"] for spec in PLANNER_SUBAGENT_TOOLS}
-        delegation.update(spec["name"] for spec in self.builtin_specs if spec["name"] in PLANNER_BUILTINS)
+        delegation.update(PLANNER_BUILTINS)
         shared = {"phone_result", "reply", "read_tool_result", *(spec["name"] for spec in IMAGE_TOOL_SPECS)}
         if self.affinity_enabled():
             shared.update(spec["name"] for spec in AFFINITY_TOOLS)

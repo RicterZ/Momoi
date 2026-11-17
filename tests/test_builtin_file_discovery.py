@@ -64,7 +64,8 @@ def test_planner_delegates_and_worker_owns_external_tools():
     worker = {spec['name'] for spec in surface.worker_specs()}
     assert PLANNER_SUBAGENT_TOOL_NAMES <= planner
     assert PLANNER_SUBAGENT_TOOL_NAMES <= surface.permitted_names('owner')
-    assert not planner & ({'web_fetch', 'read_file', 'skill_load', 'write_file'} | WORKER_SUBAGENT_TOOL_NAMES)
+    assert not planner & ({'exec', 'web_fetch', 'skill_load'} | WORKER_SUBAGENT_TOOL_NAMES)
+    assert {'read_file', 'write_file'} <= planner
     assert {'web_fetch', 'read_file', 'skill_load'} | WORKER_SUBAGENT_TOOL_NAMES <= worker
     assert 'builtin_files' in surface.discovery_groups('worker')
     assert 'builtin_files' not in surface.discovery_groups()
