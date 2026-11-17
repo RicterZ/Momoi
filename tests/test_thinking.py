@@ -323,8 +323,12 @@ class ThinkingStoreTests(unittest.TestCase):
             listed = store.dashboard_thinking(month="all")
             self.assertEqual(listed["count"], 1)
             self.assertEqual(listed["items"][0]["turn_ids"], ["owner-turn", "worker-turn", "report-turn"])
+            store._db.execute(
+                "INSERT INTO messages (turn_id, role, content, created_at, source_event_ids_json) VALUES ('report-turn', 'event', 'Worker 完成', ?, '[]')",
+                (now,))
             detail = store.dashboard_thinking_detail("report-turn")
-            self.assertEqual([call["stage"] for call in detail["calls"]], ["owner", "subagent", "webhook"])
+            self.assertEqual([call["stage"] for call in detail["calls"]], ["owner", "subagent", "subagent_report"])
+            self.assertEqual([item["kind"] for item in detail["flow"]["inputs"]], ["subagent_report"])
             store.close()
 
 

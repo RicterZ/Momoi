@@ -197,10 +197,12 @@ class SubagentWorkflow:
 
         async def wake():
             try:
-                await self._request_webhook_turn(
+                reply = await self._request_webhook_turn(
                     prompt, turn_id, channel=current["channel"], parent_turn_id=worker_turn_id,
                     contract="subagent",
                 )
+                if self.store.commit_subagent_report_reply(turn_id, reply, current["channel"] or ""):
+                    self.outbox_changed.set()
             except Exception as error:
                 log_event(logger, logging.WARNING, "subagent_report_failed", task_id=current["id"],
                           kind=kind, error_type=type(error).__name__)

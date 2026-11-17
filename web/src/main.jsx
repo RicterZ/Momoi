@@ -55,6 +55,7 @@ const thinkingStageLabels = {
   goal: "GOAL // 执行",
   plan_step: "PLAN // 步骤执行",
   subagent: "WORKER // 后台执行",
+  subagent_report: "WORKER // 汇报处理",
   memory_maintenance: "MEMORY // 维护整理",
   memory_operation: "MEMORY // 操作",
   episode_anneal: "CHAT // 话题摘要",
@@ -2451,6 +2452,7 @@ function trajectoryInputLabel(input) {
   const kind = String(input.kind || "");
   if (input.interjection) return "INPUT // 中途插话";
   if (kind === "webhook") return "INPUT // Webhook";
+  if (kind === "subagent_report") return "INPUT // Worker 汇报";
   if (kind.endsWith(".recall")) return "INPUT // 消息撤回";
   if (kind.endsWith(".message")) return "INPUT // 主人消息";
   return `INPUT // ${kind || "输入"}`;

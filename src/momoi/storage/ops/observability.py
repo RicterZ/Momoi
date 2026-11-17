@@ -270,16 +270,26 @@ class ObservabilityStore:
         ))
         self.enrich_thinking_calls(calls)
         placeholders = ",".join("?" for _ in members)
+        reports = {str(row[0]) for row in self._db.execute(
+            f"""SELECT child.id FROM turns child JOIN turns parent ON parent.id=child.parent_turn_id
+                WHERE child.id IN ({placeholders}) AND child.workflow_kind='webhook'
+                  AND parent.workflow_kind='subagent'""", members)}
+        for call in calls:
+            if call.get("turn_id") in reports and call.get("stage") == "webhook":
+                call["stage"] = "subagent_report"
         inputs = [dict(row) for row in self._db.execute(
             f"""SELECT DISTINCT e.id, e.content, e.occurred_at, e.kind FROM turns t,
                 json_each(t.source_ids_json) src JOIN events e ON e.id=src.value
                 WHERE t.id IN ({placeholders}) ORDER BY e.occurred_at""", members)]
         inputs += [dict(row) for row in self._db.execute(
             f"""SELECT 'message:' || m.id AS id, m.content, m.created_at AS occurred_at,
-                       COALESCE(t.workflow_kind, 'event') AS kind
+                       COALESCE(t.workflow_kind, 'event') AS kind, m.turn_id
                 FROM messages m LEFT JOIN turns t ON t.id=m.turn_id
                 WHERE m.turn_id IN ({placeholders}) AND m.role='event'
                 ORDER BY m.id""", members)]
+        for item in inputs:
+            if item.pop("turn_id", None) in reports:
+                item["kind"] = "subagent_report"
         inputs.sort(key=lambda item: float(item["occurred_at"] or 0))
         interjections = []
         interjection_ids = set()

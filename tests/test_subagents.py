@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from momoi.models import ProviderResponse, ToolCall
+from momoi.models import AgentReply, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.storage import Store
 from momoi.storage.core.migrations import SCHEMA_VERSION
@@ -90,5 +90,32 @@ def test_worker_failure_reports_latest_progress_to_planner(tmp_path):
         assert len(kinds) == 2 and kinds[0] != kinds[1]
         assert all(call.kwargs["parent_turn_id"] == finished["turn_id"]
                    for call in daemon._request_webhook_turn.await_args_list)
+        daemon.store.close()
+    asyncio.run(run())
+
+
+def test_planner_wake_turn_is_committed(tmp_path):
+    async def run():
+        daemon = MomoiDaemon(config(str(tmp_path)))
+        channel = next(iter(daemon.channels))
+
+        async def wake(_prompt, turn_id, **kwargs):
+            daemon.store.begin_turn(turn_id, "webhook", [turn_id], parent_turn_id=kwargs["parent_turn_id"])
+            return AgentReply(["灯关好了"])
+
+        daemon._request_webhook_turn = wake
+
+        async def complete(*_args, **_kwargs):
+            return ProviderResponse([], [ToolCall("f", "subagent_finish", {"status": "succeeded", "summary": "已关灯"})])
+
+        daemon.provider = type("P", (), {"complete": staticmethod(complete)})()
+        daemon.store.create_subagent_task("turn", channel, "关灯", "关客厅灯")
+        await daemon._run_subagent_task(daemon.store.claim_subagent_task())
+        await asyncio.gather(*daemon._subagent_wakeups)
+        rows = daemon.store._db.execute(
+            "SELECT state FROM turns WHERE workflow_kind='webhook'").fetchall()
+        assert [row[0] for row in rows] == ["completed"]
+        assert daemon.store._db.execute(
+            "SELECT target_channel FROM outbox WHERE text='灯关好了'").fetchone()[0] == channel
         daemon.store.close()
     asyncio.run(run())

@@ -198,6 +198,53 @@ class WebhookStore:
             )
             return int(inserted.lastrowid)
 
+    def commit_subagent_report_reply(
+        self, turn_id: str, reply: AgentReply, target_channel: str = "",
+    ) -> list[int]:
+        now = time.time()
+        with self._db:
+            outbox_ids = self._queue_turn_reply(turn_id, reply, target_channel, now)
+            self._db.execute(
+                """UPDATE turns SET state='completed', stage='completed',
+                   failure_reason=NULL, updated_at=? WHERE id=?""",
+                (now, turn_id),
+            )
+        return outbox_ids
+
+    def _queue_turn_reply(
+        self, turn_id: str, reply: AgentReply, target_channel: str, now: float,
+    ) -> list[int]:
+        normalized = [self._outbox_content(message) for message in reply.messages]
+        source = json.dumps([turn_id], ensure_ascii=False)
+        self._commit_memory_access(turn_id, reply.memory_access)
+        self._archive_progress_messages(turn_id, source)
+        outbox_ids = []
+        for index, (text, kind, path, payload) in enumerate(normalized):
+            outbox = self._db.execute(
+                """INSERT INTO outbox
+                   (turn_id, dedupe_key, text, kind, media_path, payload_json,
+                    target_channel)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    turn_id,
+                    f"turn:{turn_id}:{index}",
+                    text,
+                    kind,
+                    path,
+                    json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                    target_channel,
+                ),
+            )
+            outbox_ids.append(int(outbox.lastrowid))
+            self._db.execute(
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json,
+                    outbox_id, delivery_state)
+                   VALUES (?, 'assistant', ?, ?, ?, ?, 'queued')""",
+                (turn_id, text, now, source, outbox.lastrowid),
+            )
+        return outbox_ids
+
     def commit_webhook_reply(
         self,
         run_id: str,
@@ -214,36 +261,9 @@ class WebhookStore:
             return [int(value) for value in result.get("outbox_ids", [])]  # type: ignore[union-attr]
         if step["state"] != "running":
             raise ValueError("webhook message step is not running")
-        normalized = [self._outbox_content(message) for message in reply.messages]
-        source_ids = [turn_id]
-        source = json.dumps(source_ids, ensure_ascii=False)
         now = time.time()
         with self._db:
-            self._commit_memory_access(turn_id, reply.memory_access)
-            self._archive_progress_messages(turn_id, source)
-            for index, (text, kind, path, payload) in enumerate(normalized):
-                outbox = self._db.execute(
-                    """INSERT INTO outbox
-                       (turn_id, dedupe_key, text, kind, media_path, payload_json,
-                        target_channel)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        turn_id,
-                        f"turn:{turn_id}:{index}",
-                        text,
-                        kind,
-                        path,
-                        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                        target_channel,
-                    ),
-                )
-                self._db.execute(
-                    """INSERT INTO messages
-                       (turn_id, role, content, created_at, source_event_ids_json,
-                        outbox_id, delivery_state)
-                       VALUES (?, 'assistant', ?, ?, ?, ?, 'queued')""",
-                    (turn_id, text, now, source, outbox.lastrowid),
-                )
+            self._queue_turn_reply(turn_id, reply, target_channel, now)
             outbox_ids = [
                 int(row["id"])
                 for row in self._db.execute(
