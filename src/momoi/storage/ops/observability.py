@@ -242,6 +242,7 @@ class ObservabilityStore:
                    JOIN turns parent ON parent.id=child.parent_turn_id
                    WHERE (child.workflow_kind='reply_followup' AND parent.workflow_kind='owner')
                       OR child.workflow_kind='subagent'
+                      OR child.workflow_kind='subagent_report'
                       OR (child.workflow_kind='webhook' AND parent.workflow_kind='subagent')"""
             )
         }

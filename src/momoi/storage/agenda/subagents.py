@@ -82,6 +82,12 @@ class SubagentRepository:
         ).fetchall()
         return [self.subagent_task(str(row["id"])) for row in rows]
 
+    def subagent_tasks_for_turn(self, source_turn_id: str) -> list[dict[str, Any]]:
+        rows = self._db.execute(
+            "SELECT id FROM subagent_tasks WHERE source_turn_id=? ORDER BY created_at", (source_turn_id,),
+        ).fetchall()
+        return [self.subagent_task(str(row["id"])) for row in rows]
+
     def claim_subagent_task(self) -> dict[str, Any] | None:
         with transaction(self._db):
             if self._db.execute("SELECT 1 FROM subagent_tasks WHERE status='running' LIMIT 1").fetchone():

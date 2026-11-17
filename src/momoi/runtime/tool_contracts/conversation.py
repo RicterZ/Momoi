@@ -79,7 +79,7 @@ CHANNEL_BUBBLE_SCHEMA: dict[str, Any] = {
 HEARTBEAT_ACTIVITY_TOOL_SPEC: dict[str, Any] = {
     "name": "heartbeat_activity",
     "description": (
-        '仅心跳阶段调用，暂存实际活动或休息、结果和下次检查计划。成功提交后，停止调用工具即可结束；结束时原子提交最新报告。'
+        '记录本次心跳的实际活动或休息、结果和下次检查计划；在心跳回合调用，心跳派发了 Worker 时改在 Worker 结果回来后调用。成功提交后，停止调用工具即可结束；结束时原子提交最新报告。'
     ),
     "input_schema": {
         "type": "object",

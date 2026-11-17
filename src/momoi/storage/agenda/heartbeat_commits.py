@@ -7,6 +7,51 @@ from ...models import IncomingMessage, TurnDraft
 
 
 class HeartbeatCommitStore:
+    def _insert_heartbeat_record(
+        self, turn_id: str, heartbeat_turn_id: str, activity: str, result: str, now: float,
+    ) -> None:
+        heartbeat_record = (
+            f"Activity: {activity}\n"
+            f"Result: {result.strip() or '(no concrete result recorded)'}"
+        )
+        heartbeat_source = json.dumps([f"heartbeat-record:{heartbeat_turn_id}"])
+        self._db.execute(
+            """INSERT INTO messages
+               (turn_id, role, content, created_at, source_event_ids_json,
+                delivery_state)
+               SELECT ?, 'assistant', ?, ?, ?, 'internal'
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM messages WHERE source_event_ids_json=?
+               )""",
+            (turn_id, heartbeat_record, now, heartbeat_source, heartbeat_source),
+        )
+
+    def heartbeat_awaiting_worker(self, heartbeat_turn_id: str) -> bool:
+        row = self._db.execute(
+            """SELECT 1 FROM turns WHERE id=? AND workflow_kind='heartbeat'
+               AND NOT EXISTS (SELECT 1 FROM messages WHERE source_event_ids_json=?)""",
+            (heartbeat_turn_id, json.dumps([f"heartbeat-record:{heartbeat_turn_id}"])),
+        ).fetchone()
+        return row is not None
+
+    def finish_deferred_heartbeat(
+        self, heartbeat_turn_id: str, report_turn_id: str, activity: dict, now: float,
+    ) -> None:
+        """Record a Heartbeat's activity once the Worker it dispatched has reported."""
+        current = self.self_state()
+        self._db.execute(
+            """UPDATE self_state SET activity=?, activity_result=?, activity_since=?,
+               next_heartbeat_at=?, updated_at=? WHERE id=1""",
+            (
+                activity["activity"], activity["result"][:2000],
+                current["activity_since"] if current["activity"] == activity["activity"] else now,
+                now + activity["next_check_minutes"] * 60, now,
+            ),
+        )
+        self._insert_heartbeat_record(
+            report_turn_id, heartbeat_turn_id, activity["activity"], activity["result"], now,
+        )
+
     def commit_heartbeat(
         self,
         turn_id: str,
@@ -21,6 +66,7 @@ class HeartbeatCommitStore:
         draft: TurnDraft | None = None,
         memory_events: list[IncomingMessage] | None = None,
         notification_channel: str = "",
+        record: bool = True,
     ) -> int:
         now = time.time()
         current = self.self_state()
@@ -101,29 +147,8 @@ class HeartbeatCommitStore:
                     now,
                 ),
             )
-            heartbeat_record = (
-                f"Activity: {activity}\n"
-                f"Result: {result.strip() or '(no concrete result recorded)'}"
-            )
-            heartbeat_source = json.dumps([f"heartbeat-record:{turn_id}"])
-            self._db.execute(
-                """INSERT INTO messages
-                   (turn_id, role, content, created_at, source_event_ids_json,
-                    delivery_state)
-                   SELECT ?, 'assistant', ?, ?, ?, 'internal'
-                   WHERE NOT EXISTS (
-                       SELECT 1 FROM messages
-                       WHERE turn_id=? AND source_event_ids_json=?
-                   )""",
-                (
-                    turn_id,
-                    heartbeat_record,
-                    now,
-                    heartbeat_source,
-                    turn_id,
-                    heartbeat_source,
-                ),
-            )
+            if record:
+                self._insert_heartbeat_record(turn_id, turn_id, activity, result, now)
             target_channel = notification_channel
             if progress_rows:
                 target_channel = str(

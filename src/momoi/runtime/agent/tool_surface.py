@@ -236,7 +236,7 @@ class ToolSurface:
             return frozenset(general_chat | {"wait"})
         if stage == "heartbeat":
             return frozenset(general_chat | {"heartbeat_begin", "heartbeat_activity"})
-        if stage == "webhook":
+        if stage in {"webhook", "subagent_report"}:
             return frozenset(general_chat)
         if stage == "goal":
             return frozenset(

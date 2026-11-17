@@ -11,6 +11,7 @@ THINKING_STAGES = {
     "topic_selection": "话题召回筛选",
     "heartbeat": "心跳",
     "webhook": "Webhook",
+    "subagent_report": "处理 Worker 汇报",
     "goal": "目标执行",
     "subagent": "后台 Worker",
     "reflection": "每日复盘",

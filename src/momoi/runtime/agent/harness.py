@@ -23,6 +23,7 @@ TURN_HARNESS_SPECS = {
         TurnHarnessSpec("heartbeat", "heartbeat_begin", None, auto_complete=True,
                         required_before_end=frozenset({"heartbeat_activity"})),
         TurnHarnessSpec("webhook", None, None, auto_complete=True),
+        TurnHarnessSpec("subagent_report", None, None, auto_complete=True),
         TurnHarnessSpec("goal", None, None, auto_complete=True,
                         required_before_end=frozenset({"goal_review"})),
         TurnHarnessSpec("subagent", None, "subagent_finish", terminal_alone=False),
@@ -87,7 +88,14 @@ class TurnHarness:
         if not self.started:
             return f"{self.spec.first_tool}_required"
         missing = self.spec.required_before_end - self.completed_tools
+        if self.heartbeat_deferred:
+            missing -= {"heartbeat_activity"}
         return f"{sorted(missing)[0]}_required" if missing else None
+
+    @property
+    def heartbeat_deferred(self) -> bool:
+        """A Heartbeat that dispatched a Worker reports once that Worker finishes."""
+        return self.spec.stage == "heartbeat" and "create_subagent" in self.completed_tools
 
     def affinity_limit_error(self, direction: str, increases: int) -> str | None:
         if direction == "increase" and self.spec.stage != "reflection" and increases >= 3:
@@ -118,8 +126,10 @@ class TurnHarness:
             return "tool_not_allowed"
         if "current_state_finish" in names and self.spec.stage != "current_state_maintenance":
             return "tool_not_allowed"
-        if "heartbeat_activity" in names and self.spec.stage != "heartbeat":
+        if "heartbeat_activity" in names and "heartbeat_activity" not in self.spec.required_before_end:
             return "tool_not_allowed"
+        if "heartbeat_activity" in names and self.heartbeat_deferred:
+            return "heartbeat_activity_after_worker_finishes"
         if any(name in {"send_bubbles", "send_voice"} for name in names):
             return "tool_not_allowed"
         if any(name in self.blocked_tool_names for name in names):

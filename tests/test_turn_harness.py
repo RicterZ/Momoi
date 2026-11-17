@@ -49,7 +49,7 @@ class TurnHarnessTest(unittest.TestCase):
                                 harness_started=started,
                                 goal_turn=stage == "goal",
                                 require_response=stage in {
-                                    "owner", "heartbeat", "webhook",
+                                    "owner", "heartbeat", "webhook", "subagent_report",
                                 },
                                 owner_turn=stage == "owner",
                                 failed_rounds=failed_rounds,

@@ -200,10 +200,13 @@ class WebhookStore:
 
     def commit_subagent_report_reply(
         self, turn_id: str, reply: AgentReply, target_channel: str = "",
+        heartbeat_turn_id: str = "",
     ) -> list[int]:
         now = time.time()
         with self._db:
             outbox_ids = self._queue_turn_reply(turn_id, reply, target_channel, now)
+            if heartbeat_turn_id and reply.heartbeat_activity:
+                self.finish_deferred_heartbeat(heartbeat_turn_id, turn_id, reply.heartbeat_activity, now)
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
                    failure_reason=NULL, updated_at=? WHERE id=?""",

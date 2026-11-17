@@ -22,6 +22,7 @@ class TurnExecutionSpec:
     artifact_root: Path | None = None
     permitted_tools: frozenset[str] | None = None
     absorb_owner_updates: bool = True
+    required_before_end: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if self.stage not in TURN_HARNESS_SPECS:
@@ -35,7 +36,7 @@ class TurnExecutionSpec:
 
     @property
     def require_response(self) -> bool:
-        return self.stage in {"owner", "heartbeat", "webhook"}
+        return self.stage in {"owner", "heartbeat", "webhook", "subagent_report"}
 
     @property
     def accept_owner_updates(self) -> bool:
@@ -47,6 +48,7 @@ class TurnExecutionSpec:
             "owner",
             "heartbeat",
             "webhook",
+            "subagent_report",
             "goal",
             "current_state_maintenance",
         }
