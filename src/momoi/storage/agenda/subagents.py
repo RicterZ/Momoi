@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS subagent_tasks (
  turn_id TEXT, reports_json TEXT NOT NULL DEFAULT '[]',
  summary TEXT, output_refs_json TEXT NOT NULL DEFAULT '[]',
  created_at REAL NOT NULL, started_at REAL, finished_at REAL, updated_at REAL NOT NULL,
+ notified_at REAL,
  UNIQUE(source_turn_id, title)
 );
 CREATE INDEX IF NOT EXISTS subagent_tasks_status ON subagent_tasks(status, created_at);
@@ -146,6 +147,23 @@ class SubagentRepository:
         for row in rows:
             self.finish_subagent_task(str(row["id"]), "cancelled", "用户停止了任务。", [])
         return [str(row["id"]) for row in rows]
+
+    def mark_subagent_notified(self, task_id: str) -> None:
+        with transaction(self._db):
+            self._db.execute(
+                "UPDATE subagent_tasks SET notified_at=? WHERE id=? AND notified_at IS NULL",
+                (time.time(), task_id),
+            )
+
+    def unnotified_subagent_tasks(self, *, max_age_seconds: float) -> list[dict[str, Any]]:
+        """Ended tasks whose result the Planner has not yet been woken for."""
+        rows = self._db.execute(
+            """SELECT id FROM subagent_tasks WHERE notified_at IS NULL
+               AND status IN ('succeeded','failed','blocked') AND finished_at >= ?
+               ORDER BY finished_at, id""",
+            (time.time() - max_age_seconds,),
+        ).fetchall()
+        return [self.subagent_task(str(row["id"])) for row in rows]
 
     def recover_subagent_tasks(self) -> None:
         # An interrupted Worker may already have acted; never replay it.

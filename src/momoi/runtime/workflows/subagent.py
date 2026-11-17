@@ -24,6 +24,8 @@ SUBAGENT_MAX_ROUNDS = 50
 SUBAGENT_SOFT_LIMIT_ROUNDS = 30
 SUBAGENT_REPORT_WAKE_SECONDS = 60
 SUBAGENT_IDLE_POLL_SECONDS = 5
+SUBAGENT_PROGRESS_WAKE_DELAY_SECONDS = 10
+SUBAGENT_RESEND_MAX_AGE_SECONDS = 24 * 3600
 
 
 class SubagentWorkflow:
@@ -47,7 +49,21 @@ class SubagentWorkflow:
         if running is not None and running[0] == task_id and not running[1].done():
             running[1].cancel()
 
+    def _subagent_reply_channel(self, name: str) -> str:
+        channel = self.channels.get(name)
+        fallback = getattr(channel, "dialogue_channel", None)
+        if fallback in self.channels and fallback != name and callable(getattr(channel, "session_valid", None)):
+            if not channel.session_valid(channel.routing_context()):
+                return fallback
+        return name
+
+    def _resend_subagent_wakeups(self) -> None:
+        for task in self.store.unnotified_subagent_tasks(max_age_seconds=SUBAGENT_RESEND_MAX_AGE_SECONDS):
+            log_event(logger, logging.INFO, "subagent_wake_resent", task_id=task["id"])
+            self._wake_planner_for_subagent(task, task.get("turn_id") or task["source_turn_id"], "finished", "")
+
     async def _subagent_worker(self, stop: asyncio.Event) -> None:
+        self._resend_subagent_wakeups()
         while not stop.is_set():
             if self.config.budget.enabled and self.budget_guard.status()["blocked"]:
                 try:
@@ -88,9 +104,16 @@ class SubagentWorkflow:
         channel = self._channel_for(task["channel"])
         finished: dict[str, Any] | None = None
         last_wake = 0.0
+        progress_wake: asyncio.Task[None] | None = None
+
+        async def delayed_progress_wake(progress: str) -> None:
+            # A task that ends within the delay is reported once, by its result wake.
+            await asyncio.sleep(SUBAGENT_PROGRESS_WAKE_DELAY_SECONDS)
+            if finished is None and (self.store.subagent_task(task_id) or {}).get("status") == "running":
+                self._wake_planner_for_subagent(task, turn_id, "progress", progress)
 
         async def handle(call):
-            nonlocal finished, last_wake
+            nonlocal finished, last_wake, progress_wake
             args = call.arguments
             if call.name == "subagent_report":
                 progress = args.get("progress")
@@ -102,7 +125,7 @@ class SubagentWorkflow:
                     return {"ok": False, "error": "task_not_running"}
                 if time() - last_wake >= SUBAGENT_REPORT_WAKE_SECONDS:
                     last_wake = time()
-                    self._wake_planner_for_subagent(task, turn_id, "progress", progress.strip())
+                    progress_wake = asyncio.create_task(delayed_progress_wake(progress.strip()))
                 return {"ok": True, "message": "已记录并转达派发者，继续执行任务。"}
             outcome, summary, refs = args.get("outcome"), args.get("summary"), args.get("output_refs")
             if (outcome not in {"succeeded", "failed", "blocked"}
@@ -172,10 +195,13 @@ class SubagentWorkflow:
                 finished = self.store.finish_subagent_task(
                     task_id, "failed", "Worker 未提交结果就结束了。", [],
                 )
+        finally:
+            if progress_wake is not None and not progress_wake.done():
+                progress_wake.cancel()
         current = self.store.subagent_task(task_id)
         log_event(logger, logging.INFO, "subagent_finished", task_id=task_id, turn_id=turn_id,
                   status=current["status"] if current else None)
-        if finished is not None and finished["status"] != "cancelled":
+        if current is not None and current["status"] != "cancelled":
             self._wake_planner_for_subagent(task, turn_id, "finished", "")
 
     def _wake_planner_for_subagent(self, task: dict[str, Any], worker_turn_id: str, kind: str, progress: str) -> None:
@@ -195,16 +221,24 @@ class SubagentWorkflow:
             ]
         prompt = "\n".join(lines)
         turn_id = self._turn_id("subagent-report", current["id"], kind, len(current.get("reports") or []))
+        if kind == "finished":
+            row = self.store._db.execute("SELECT state FROM turns WHERE id=?", (turn_id,)).fetchone()
+            if row is not None and row["state"] in {"completed", "cancelled", "needs_reconciliation"}:
+                self.store.mark_subagent_notified(current["id"])
+                return
 
         async def wake():
             try:
                 reply = await self._request_webhook_turn(
-                    prompt, turn_id, channel=current["channel"], parent_turn_id=worker_turn_id,
-                    contract="subagent",
+                    prompt, turn_id, channel=self._subagent_reply_channel(current["channel"]),
+                    parent_turn_id=worker_turn_id, contract="subagent",
                 )
                 try:
-                    if self.store.commit_subagent_report_reply(turn_id, reply, current["channel"] or ""):
+                    target = self._subagent_reply_channel(current["channel"]) if current["channel"] else ""
+                    if self.store.commit_subagent_report_reply(turn_id, reply, target):
                         self.outbox_changed.set()
+                    if kind == "finished":
+                        self.store.mark_subagent_notified(current["id"])
                 finally:
                     self._webhook_turn_settled(turn_id)
             except Exception as error:

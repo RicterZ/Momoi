@@ -31,6 +31,12 @@ class RepositoryFacade:
     def cancel_subagent_tasks(self, channel: str | None=None) -> list[str]:
         return self.subagents.cancel_subagent_tasks(channel)
 
+    def mark_subagent_notified(self, task_id: str) -> None:
+        return self.subagents.mark_subagent_notified(task_id)
+
+    def unnotified_subagent_tasks(self, *, max_age_seconds: float) -> list[dict[str, Any]]:
+        return self.subagents.unnotified_subagent_tasks(max_age_seconds=max_age_seconds)
+
     def recover_subagent_tasks(self) -> None:
         return self.subagents.recover_subagent_tasks()
 

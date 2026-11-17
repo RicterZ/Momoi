@@ -710,6 +710,13 @@ def _replace_plans_with_subagents(database):
         )
 
 
+def _add_subagent_notifications(database):
+    if "notified_at" not in _columns(database, "subagent_tasks"):
+        database.execute("ALTER TABLE subagent_tasks ADD COLUMN notified_at REAL")
+    database.execute("UPDATE subagent_tasks SET notified_at=COALESCE(finished_at, updated_at) "
+                     "WHERE status NOT IN ('queued','running')")
+
+
 def _add_memory_metadata(database):
     if "meta_json" not in _columns(database, "memories"):
         database.execute("ALTER TABLE memories ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
@@ -923,6 +930,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_reflection_candidate_operation,
     _add_memory_verification_workflow,
     _replace_plans_with_subagents,
+    _add_subagent_notifications,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 
