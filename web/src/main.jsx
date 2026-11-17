@@ -55,7 +55,7 @@ const thinkingStageLabels = {
   goal: "GOAL // 执行",
   plan_step: "PLAN // 步骤执行",
   subagent: "WORKER // 后台执行",
-  subagent_report: "WORKER // 汇报处理",
+  subagent_report: "CHAT // 处理 Worker 汇报",
   memory_maintenance: "MEMORY // 维护整理",
   memory_operation: "MEMORY // 操作",
   episode_anneal: "CHAT // 话题摘要",
@@ -2704,7 +2704,7 @@ function ThinkingLayout({ items: olderItems, token, hasMore, loadingMore, onLoad
 }
 
 // Keep retired follow-up records readable in historical thinking logs.
-const plannerStages = new Set(["owner", "heartbeat", "webhook", "goal", "plan_step", "reply_followup"]);
+const plannerStages = new Set(["owner", "heartbeat", "webhook", "subagent_report", "goal", "reply_followup"]);
 
 function trajectoryActionSummary(action) {
   if (action.name === "reply") return action.arguments?.intent || "派发发言生成";

@@ -123,3 +123,28 @@ def test_planner_wake_turn_is_committed(tmp_path):
             "WHERE t.workflow_kind='webhook' AND m.role='assistant' ORDER BY m.id")] == ["关好啦", "灯关好了"]
         daemon.store.close()
     asyncio.run(run())
+
+
+def test_planner_wake_turn_releases_dispatcher(tmp_path):
+    async def run():
+        daemon = MomoiDaemon(config(str(tmp_path)))
+
+        async def dispatcher():
+            _prompt, turn_id, future = await daemon.webhook_requests.get()
+            committed = daemon._webhook_commits[turn_id]
+            daemon.store.begin_turn(turn_id, "webhook", [turn_id])
+            future.set_result(AgentReply([]))
+            await asyncio.wait_for(committed, 2)
+
+        async def complete(*_args, **_kwargs):
+            return ProviderResponse([], [ToolCall("f", "subagent_finish", {"outcome": "succeeded", "summary": "好了", "output_refs": []})])
+
+        daemon.provider = type("P", (), {"complete": staticmethod(complete)})()
+        consumer = asyncio.create_task(dispatcher())
+        daemon.store.create_subagent_task("turn", next(iter(daemon.channels)), "关灯", "关客厅灯")
+        await daemon._run_subagent_task(daemon.store.claim_subagent_task())
+        await asyncio.gather(*daemon._subagent_wakeups)
+        await consumer
+        assert not daemon._webhook_commits
+        daemon.store.close()
+    asyncio.run(run())
