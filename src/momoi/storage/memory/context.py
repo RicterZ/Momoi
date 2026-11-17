@@ -4,8 +4,6 @@ import time
 from .presentation import REFLECTION_MEMORY_CAUTION, format_reflection_memory, format_memory
 from ...memory.retrieval.models import MemoryRecallQuery
 
-MEMORY_CATALOG_INLINE_LIMIT = 8
-
 
 class MemoryContextStore:
     def _memory_context(self, rows):
@@ -69,7 +67,7 @@ class MemoryContextStore:
 
 
 def memory_catalog_text(repository, *, scope: str = "", now: float | None = None) -> str:
-    """Topic counts over recallable memory; small topics list their keys inline."""
+    """Topic counts over recallable memory."""
     tags = repository.tags.tags
     topics: dict[str, list[dict]] = {}
     rows = repository.recall_rows(now=time.time() if now is None else now, filters={"scope": scope})
@@ -82,8 +80,5 @@ def memory_catalog_text(repository, *, scope: str = "", now: float | None = None
     lines = ["仅表示有记录，不是事实依据；以 recall 的结果为准。"]
     for name in sorted(topics, key=lambda name: (name == "untagged", -len(topics[name]), name)):
         label = "untagged（未标主题）" if name == "untagged" else f"{name}（{tags[name]}）"
-        if len(topics[name]) <= MEMORY_CATALOG_INLINE_LIMIT:
-            lines.append(f"{label}：" + "；".join(f"#{row['id']} {row['key']}" for row in topics[name]))
-        else:
-            lines.append(f"{label} {len(topics[name])} 条")
+        lines.append(f"{label} {len(topics[name])} 条")
     return "\n".join(lines)
