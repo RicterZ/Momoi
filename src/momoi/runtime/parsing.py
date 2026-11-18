@@ -167,9 +167,17 @@ def parse_reflection_finish(
     memories: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     interaction_practices = 0
-    normalized_source = " ".join(source.split())
-    normalized_owner = " ".join(owner_source.split())
-    normalized_knowledge = " ".join(knowledge_source.split())
+    def passages(value):
+        # A quote must sit inside one passage, never span adjacent messages.
+        items = [value] if isinstance(value, str) else value
+        return [" ".join(str(item).split()) for item in items]
+
+    normalized_source = passages(source)
+    normalized_owner = passages(owner_source)
+    normalized_knowledge = passages(knowledge_source)
+
+    def quoted(quote, sources):
+        return any(quote in item for item in sources)
     for index, item in enumerate(raw_memories):
         def invalid(field, message, code="invalid_reflection_memory"):
             if errors is not None:
@@ -204,20 +212,20 @@ def parse_reflection_finish(
             return invalid("content", "Provide non-empty text of at most 1000 characters.")
         if not isinstance(evidence, str) or not evidence.strip() or len(evidence) > 500:
             return invalid("evidence", "Provide a non-empty continuous quote of at most 500 characters.")
-        quote = " ".join(evidence.split())
-        if quote not in normalized_source:
-            return invalid("evidence", "Quote not found in source after whitespace normalization. Copy one continuous passage; do not paraphrase or join passages with '/'.")
+        quote = " ".join(unescape(evidence).split())
+        if not quoted(quote, normalized_source):
+            return invalid("evidence", "Quote not found in source after whitespace normalization. Copy one continuous passage from a single message; do not paraphrase or join passages with '/'.")
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= float(confidence) <= 1:
             return invalid("confidence", "Provide a number from 0 to 1.")
         if (
             kind in {"profile", "preference"}
-            and quote not in normalized_owner
+            and not quoted(quote, normalized_owner)
         ):
             return invalid("evidence", "Quote must come from the owner, not the assistant or tools.", "owner_reflection_requires_owner_evidence")
-        if kind == "world_knowledge" and quote not in normalized_knowledge:
+        if kind == "world_knowledge" and not quoted(quote, normalized_knowledge):
             return invalid("evidence", "Quote must come from observed evidence.", "world_reflection_requires_observed_evidence")
         if kind == "practice" and key.startswith("interaction."):
-            if quote not in normalized_owner:
+            if not quoted(quote, normalized_owner):
                 return invalid("evidence", "Quote must come from the owner.", "interaction_practice_requires_owner_evidence")
             interaction_practices += 1
             if interaction_practices > 1:

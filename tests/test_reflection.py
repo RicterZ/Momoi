@@ -181,12 +181,13 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                             f"history-{step}", name, {"query": "香菜"},
                         )])
                     request = json.dumps(_messages, ensure_ascii=False)
-                    assert "<workflow_contract>" not in json.dumps(
-                        _system, ensure_ascii=False
-                    )
-                    assert "<workflow_contract>" in request
-                    assert "mcp__gog__gmail_search" in request
-                    assert "worker-only-output" not in request
+                    system_text = json.dumps(_system, ensure_ascii=False)
+                    assert "# 每日复盘" in system_text and "# 每日复盘" not in request
+                    assert "create_subagent" not in system_text
+                    assert "<reflection_period>" in request
+                    for hidden in ("mcp__gog__gmail_search", "worker-only-output",
+                                   "<recall_memories>", "<reflection_memories>", "<episode_timeline>"):
+                        assert hidden not in json.dumps(_messages[:2], ensure_ascii=False)
                     final_input = json.dumps(_messages[-1], ensure_ascii=False)
                     for section in ("daily_reflection_record", "tool_timeline", "self_state", "reflection_scope"):
                         assert f"<{section}>" not in final_input
@@ -226,7 +227,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                                         "Search project-summary mail with "
                                         "mcp__gog__gmail_search and verify returned subjects."
                                     ),
-                                    "evidence": "project summary",
+                                    "evidence": "查到了项目邮件",
                                     "confidence": 0.8,
                                 },
                             ],
@@ -271,7 +272,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn('<reflection date="2026-07-21"', rendered_reflection)
             self.assertIn('date="2026-07-21" confidence="0.8"', rendered_reflection)
-            self.assertIn("<evidence>project summary</evidence>", rendered_reflection)
+            self.assertIn("<evidence>查到了项目邮件</evidence>", rendered_reflection)
             _, ranked_reflection = daemon.store.ranked_memory_context("gmail", 4, include_reflections=True)
             self.assertIn("mcp__gog__gmail_search", ranked_reflection)
             self.assertIn('date="2026-07-21" confidence="0.8"', ranked_reflection)

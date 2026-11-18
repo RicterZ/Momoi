@@ -1,6 +1,6 @@
 import asyncio
 import logging
-import json
+import time
 from typing import Any
 from types import SimpleNamespace
 
@@ -11,7 +11,7 @@ from ..agent import AgentWorkflow
 from ..context.presentation import heartbeat_self_state_lines
 from ..parsing import parse_reflection_finish
 from ..tool_contracts.reflection import REFLECTION_FINISH_SPEC
-from ..transcript.reflection import BACKGROUND_TOOLS, chat_tool_results, reflection_transcript
+from ..transcript.reflection import reflection_evidence, reflection_messages, reflection_transcript
 from ..turn_support import (
     REFLECTION_PROMPT_PATH,
     REFLECTION_SYSTEM_PROMPT,
@@ -126,47 +126,25 @@ class ReflectionWorkflow:
         )
         window = (source["start_at"], source["end_at"])
         rows = self.store.conversation_messages_for_turns(None, window=window)
-        transcript_messages = reflection_transcript(self.store, rows, window)
-        raw_record = "\n".join(str(row["content"]) for row in rows)
-        query = raw_record[-20000:]
-        # Rendered calls, recall and runtime annotations are context, never an
-        # independent source proving that the recalled event happened today.
-        reflection_evidence = raw_record
-        # First-hand execution results can support work-method insights. Memory
-        # retrieval is background even when the retrieval itself happened today.
-        for record in chat_tool_results(self.store, window):
-            try:
-                payload = json.loads(record["payload_json"])
-            except (ValueError, TypeError):
-                continue
-            if isinstance(payload, dict) and payload.get("name") not in BACKGROUND_TOOLS:
-                reflection_evidence += "\n" + json.dumps(payload.get("result", {}), ensure_ascii=False)
-        owner_source = "\n".join(str(row["content"]) for row in rows if row["role"] == "user")
-        knowledge_source = owner_source
-        confirmed_memory, learned = self.store.ranked_memory_context(
-            query,
-            self.config.memory_results,
-            include_reflections=True,
-        )
+        chat = reflection_messages(self.store, rows)
+        transcript_messages = reflection_transcript(self.store, chat)
+        evidence_passages, owner_passages = reflection_evidence(chat)
         open_conversations = self.store.open_conversation_inventory()
         open_episode_ids = {str(item["id"]) for item in open_conversations}
+        cutoff = min(window[1], time.time())
         current_input = _pack_user_context(
-            (
-                "workflow_contract",
-                f"Review period: {self.store.context_timestamp(window[0])} "
-                f"to {self.store.context_timestamp(window[1])} (end exclusive)\n\n"
-                + _live_prompt(REFLECTION_PROMPT_PATH, REFLECTION_SYSTEM_PROMPT),
-            ),
-            ("open_conversations", self.store.open_conversation_inventory_context()),
-            ("recall_memories", confirmed_memory),
-            ("reflection_memories", learned),
+            ("open_conversations", self.store.open_conversation_inventory_context(compact=True)),
             ("self_state", heartbeat_self_state_lines(
                 self.store.self_state_context(affinity_enabled=True),
             ) if self.config.affinity_enabled else ""),
-            ("episode_timeline", str(source.get("episode_timeline") or "(none)")),
-
+            (
+                "reflection_period",
+                f"复盘时段：{self.store.context_timestamp(window[0])} 至 "
+                f"{self.store.context_timestamp(window[1])}（不含结束时刻）\n"
+                f"材料截取至：{self.store.context_timestamp(cutoff)}",
+            ),
         )
-        system = self._system()
+        system = self._workflow_system(_live_prompt(REFLECTION_PROMPT_PATH, REFLECTION_SYSTEM_PROMPT))
         messages: list[dict[str, Any]] = [
             *transcript_messages,
             {
@@ -180,13 +158,12 @@ class ReflectionWorkflow:
                 ],
             }
         ]
-        from ..tool_contracts.runtime import READ_TOOL_RESULT_SPEC
         settlement_done = not self.config.affinity_enabled or bool(self.store._db.execute(
             "SELECT 1 FROM turn_journal WHERE (item_type='affinity_settlement' AND json_extract(payload_json, '$.local_date')=?) "
             "OR (item_type='affinity_review' AND json_extract(payload_json, '$.settlement_date')=?) LIMIT 1",
             (local_date, local_date)).fetchone())
         from ..tool_contracts.affinity import AFFINITY_TOOLS
-        tools = [*(AFFINITY_TOOLS if self.config.affinity_enabled else []), REFLECTION_FINISH_SPEC, *REFLECTION_RETRIEVAL_SPECS, READ_TOOL_RESULT_SPEC]
+        tools = [*(AFFINITY_TOOLS if self.config.affinity_enabled else []), REFLECTION_FINISH_SPEC, *REFLECTION_RETRIEVAL_SPECS]
         retrieval = ReflectionRetrieval(self.store, self.memory_tools, window[1])
         workflow_complete = False
         workflow_result: dict[str, object] | None = None
@@ -212,9 +189,9 @@ class ReflectionWorkflow:
             validation_errors = []
             decision, error = parse_reflection_finish(
                 call.arguments,
-                reflection_evidence,
-                owner_source,
-                knowledge_source,
+                evidence_passages,
+                owner_passages,
+                owner_passages,
                 open_episode_ids,
                 errors=validation_errors,
             )
@@ -246,7 +223,7 @@ class ReflectionWorkflow:
         workflow = AgentWorkflow(
             stage="reflection",
             preserve_transcript=True,
-            tool_names=frozenset(str(tool["name"]) for tool in tools if tool["name"] != "read_tool_result"),
+            tool_names=frozenset(str(tool["name"]) for tool in tools),
             execute_tool=execute_tool,
             is_complete=lambda: workflow_complete,
             completion_result=lambda: workflow_result,

@@ -11,7 +11,11 @@ import pytest
 from momoi.config.models import EpisodeAnnealingConfig, ReflectionConfig
 from momoi.models import ToolCall
 from momoi.runtime import MomoiDaemon
-from momoi.runtime.transcript.reflection import reflection_transcript
+from momoi.runtime.transcript.reflection import reflection_messages, reflection_transcript
+
+
+def render(store, rows):
+    return reflection_transcript(store, reflection_messages(store, rows))
 from momoi.storage.reflection.reflection_values import reflection_window
 from tests.support import config
 from tests.test_episode_annealing import annealing_items
@@ -72,7 +76,7 @@ def test_reflection_reads_material_after_small_batch_and_summary(daemon):
             }))
         else:
             assert workflow.stage == "reflection"
-            assert "我和老师完成了当天项目。" in json.dumps(messages, ensure_ascii=False)
+            assert "我和老师完成项目 | episode_id=" in json.dumps(messages, ensure_ascii=False)
             result = await workflow.execute_tool(ToolCall("reflect", "reflection_finish", {
                 "summary": "当天项目已完成。", "memories": [], "conversation_actions": [],
             }))
@@ -221,7 +225,7 @@ def test_reflection_uses_configured_window_and_complete_transcript(daemon, at):
     assert (source["start_at"], source["end_at"]) == (start, end)
     rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
     assert len(rows) == count + 1
-    expected_messages = reflection_transcript(daemon.store, rows, (start, end))
+    expected_messages = render(daemon.store, rows)
 
     async def reflect(_system, messages, _tools, turn_id, workflow):
         assert workflow.preserve_transcript
@@ -326,13 +330,10 @@ def test_manual_reflection_transcript_and_timelines_stop_at_command(daemon, at, 
     async def reflect(_system, messages, _tools, turn_id, workflow):
         transcript = json.dumps(messages[:-1], ensure_ascii=False)
         final_input = messages[-1]["content"][0]["text"]
-        episode_timeline = re.search(r"<episode_timeline>\n(.*?)\n</episode_timeline>", final_input, re.S)[1]
         assert "<mood_timeline>" not in final_input
         assert ("inside完成项目" in transcript) == (offset > 0)
-        assert ("id=inside " in episode_timeline) == (offset > 0)
         for name in ["before", "after"]:
             assert name + "完成项目" not in transcript
-            assert f"id={name} " not in episode_timeline
         result = await workflow.execute_tool(ToolCall("finish", "reflection_finish", {
             "summary": "手动复盘", "memories": [], "conversation_actions": [],
         }))
@@ -387,7 +388,7 @@ def test_text_reflection_excludes_recalled_background_from_daily_evidence(daemon
     async def reflect(system, messages, tools, turn_id, workflow):
         assert 'recall-history' not in str(messages)
         assert '过去的旧结论不能为今天作证' not in str(messages)
-        assert any(t['name'] == 'read_tool_result' for t in tools)
+        assert not any(t['name'] == 'read_tool_result' for t in tools)
         rejected = await workflow.execute_tool(ToolCall('bad', 'reflection_finish', {
             'summary': '日记', 'memories': [{'kind': 'practice', 'key': 'work.check',
                 'content': '认识', 'evidence': '过去的旧结论不能为今天作证', 'confidence': 0.8}],
@@ -403,44 +404,61 @@ def test_text_reflection_excludes_recalled_background_from_daily_evidence(daemon
     asyncio.run(daemon._complete_reflection('2026-09-08', 'reflection-test'))
 
 
-def test_text_reflection_keeps_speech_and_bounded_execution_evidence(daemon):
+def test_text_reflection_keeps_only_chat_messages(daemon):
     start, end = day_window()
     add_turn(daemon, 'today', start + 100)
     with daemon.store._db:
         daemon.store._db.execute(
-            "INSERT INTO messages(turn_id,role,content,created_at,delivery_state,source_event_ids_json) "
-            "VALUES ('today','assistant',?,?,'uncertain','[]')",
-            ('保留完整正文<&>' + '原话' * 1000, start + 102),
+            "INSERT INTO turns(id,kind,state,source_ids_json,started_at,updated_at,workflow_kind) "
+            "VALUES ('worker','autonomous','completed','[]',?,?,'subagent')", (start, start),
         )
-    for name, stamp, result in [
-        ('web_fetch', start + 101, {'ok': False, 'error': 'timeout', 'result_ref': 'tr_test',
-                                  'content': '很长的工具正文' * 1000}),
-        ('recall', start + 101, {'memory': '不重放旧召回'}),
-        ('reflection_finish', start + 101, {'summary': '不能用旧复盘自证'}),
-        ('web_fetch', end, {'content': '窗口外结果'}),
-    ]:
-        daemon.store.append_turn_journal('today', 'tool_result', {
-            'name': name, 'tool_call_id': name, 'ok': False, 'error': 'timeout', 'result': result,
-        }, trust='runtime')
-        with daemon.store._db:
+        for turn, content, state, at in [
+            ('today', '保留完整正文<&>' + '原话' * 1000, 'delivered', start + 102),
+            ('today', '未确认送达', 'uncertain', start + 103),
+            ('worker', 'Worker 内部回复', 'delivered', start + 104),
+        ]:
             daemon.store._db.execute(
-                "UPDATE turn_journal SET created_at=? WHERE turn_id='today' AND sequence="
-                "(SELECT MAX(sequence) FROM turn_journal WHERE turn_id='today')", (stamp,),
+                "INSERT INTO messages(turn_id,role,content,created_at,delivery_state,source_event_ids_json) "
+                "VALUES (?,'assistant',?,?,?,'[]')", (turn, content, at, state),
             )
+    daemon.store.append_turn_journal('today', 'tool_result', {
+        'name': 'web_fetch', 'tool_call_id': 'web', 'ok': False, 'error': 'timeout',
+        'result': {'content': '工具正文'},
+    }, trust='runtime', created_at=start + 101)
     rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
-    messages = reflection_transcript(daemon.store, rows, (start, end))
+    messages = render(daemon.store, rows)
     assert len(messages) == 1 and messages[0]['role'] == 'user'
     text = messages[0]['content']
     assert '## 尚未归类 | ' in text
-    assert text.index('USER: today完成项目') < text.index('TOOL CALL: web_fetch') < text.index('ASSISTANT (uncertain):')
-    assert 'ASSISTANT (uncertain): 保留完整正文<&>' + '原话' * 1000 in text
-    tool = text.split('TOOL CALL: web_fetch', 1)[1].split('\n\nASSISTANT', 1)[0]
-    assert len(tool) < 1200
-    assert 'timeout' in tool and 'tr_test' in tool
-    assert text.count('+08:00') == 1
-    assert '不重放旧召回' not in messages[0]['content']
-    assert '不能用旧复盘自证' not in messages[0]['content']
-    assert '窗口外结果' not in messages[0]['content']
+    assert 'USER: today完成项目\n\nASSISTANT: 保留完整正文&lt;&amp;&gt;' + '原话' * 1000 in text
+    for hidden in ('TOOL', '工具正文', '未确认送达', 'Worker 内部回复'):
+        assert hidden not in text
+
+
+def test_reflection_keeps_recall_mark_and_quotes_single_messages(daemon):
+    from momoi.runtime.parsing import parse_reflection_finish
+    from momoi.runtime.transcript.reflection import reflection_evidence
+
+    start, _ = day_window()
+    add_turn(daemon, 'today', start + 1)
+    rows = [
+        {'id': 1, 'turn_id': 'today', 'role': 'user', 'content': '我喜欢<猫>',
+         'created_at': start + 1, 'delivery_state': 'delivered'},
+        {'id': 2, 'turn_id': 'today', 'role': 'assistant', 'content': '[此消息已被撤回] 撤回的原文',
+         'created_at': start + 2, 'delivery_state': 'delivered', 'recalled': True},
+        {'id': 3, 'turn_id': 'today', 'role': 'user', 'content': '也喜欢狗',
+         'created_at': start + 3, 'delivery_state': 'delivered'},
+    ]
+    chat = reflection_messages(daemon.store, rows)
+    text = reflection_transcript(daemon.store, chat)[0]['content']
+    assert 'ASSISTANT: [此消息已被撤回]\n' in text and '撤回的原文' not in text
+    passages, owner = reflection_evidence(chat)
+    item = {'kind': 'preference', 'key': 'pets', 'content': '老师喜欢猫。', 'confidence': 0.9}
+    for evidence, ok in [('我喜欢&lt;猫&gt;', True), ('我喜欢<猫>', True),
+                         ('我喜欢<猫> 也喜欢狗', False), ('[此消息已被撤回]', False)]:
+        _, error = parse_reflection_finish(
+            {'summary': '日记', 'memories': [{**item, 'evidence': evidence}]}, passages, owner, owner)
+        assert (error is None) == ok, evidence
 
 
 def test_reflection_groups_topics_without_duplicate_or_outside_evidence(daemon):
@@ -455,66 +473,19 @@ def test_reflection_groups_topics_without_duplicate_or_outside_evidence(daemon):
         daemon.store.link_turn_to_episode(topic, turn)
     daemon.store.link_turn_to_episode('b', 'a1', relation='related')
     rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
-    rendered = reflection_transcript(daemon.store, rows, (start, end))[0]['content']
+    rendered = render(daemon.store, rows)[0]['content']
     groups = rendered.split('## ')[1:]
     assert len(groups) == 4
-    assert groups[0].startswith('项目<&> | ')
+    assert groups[0].startswith('项目&lt;&amp;&gt; | episode_id=a | ')
     assert 'USER: a1完成项目\na2完成项目' in groups[0]
-    assert groups[1].startswith('日常 | ')
-    assert groups[2].startswith('共同材料：项目<&> / 日常 | ')
+    assert groups[1].startswith('日常 | episode_id=b | ')
+    assert groups[2].startswith('共同材料：项目&lt;&amp;&gt; / 日常 | episode_id=a,b | ')
     assert groups[3].startswith('尚未归类 | ')
-    assert rendered.count('+08:00') == 4
+    assert rendered.count('+08:00') == 8
     assert '<message' not in rendered and '<topic' not in rendered
     assert sum(rendered.count(row['content']) for row in rows) == len(rows) == 5
     assert rendered.count('shared完成项目') == 1
     assert 'old完成项目' not in rendered
-
-
-def test_reflection_tool_validation_drops_retry_protocol_and_keeps_failure():
-    from momoi.runtime.transcript.reflection import reflection_tool_result
-
-    message = "goal_update: status: 'done' is not one of ['active', 'waiting', 'blocked']."
-    text = reflection_tool_result({
-        'ok': False, 'error': 'invalid_tool_arguments', 'tool_call_id': 'call_private',
-        'result': {'ok': False, 'error': 'invalid_tool_arguments',
-                   'message': message + ' Correct arguments only; do not repeat completed actions.',
-                   'details': [{'field': 'status'}], 'allowed_fields': ['goal_id', 'status'],
-                   'required_fields': ['goal_id'], 'examples': [], 'result_ref': 'tr_validation'},
-    }, 'goal_update')
-    assert json.loads(text.removeprefix('TOOL RESULT: ')) == {'error': 'invalid_tool_arguments', 'message': message}
-
-
-def test_reflection_tool_nested_failure_is_not_reported_as_success():
-    from momoi.runtime.transcript.reflection import reflection_tool_result
-
-    text = reflection_tool_result({'ok': True, 'result': {
-        'ok': False, 'error': 'timeout', 'result': {'message': '远程设备无响应'},
-    }}, 'remote_start')
-    assert json.loads(text.removeprefix('TOOL RESULT: ')) == {'error': 'timeout', 'message': '远程设备无响应'}
-    assert '成功' not in text and '"result"' not in text
-    success = reflection_tool_result({'ok': True, 'result': {
-        'ok': True, 'result': {'remaining': 6},
-    }}, 'inventory')
-    assert success == 'TOOL RESULT: {"remaining":6}'
-
-
-def test_reflection_pairs_call_arguments_by_id_and_preserves_raw_outcome(daemon):
-    start, end = day_window()
-    add_turn(daemon, 'commands', start + 1)
-    for call_id, command in [('first', 'docker ps'), ('second', 'pwd')]:
-        daemon.store.append_turn_journal('commands', 'tool_call', {
-            'name': 'bash', 'tool_call_id': call_id, 'arguments': {'command': command},
-        }, trust='runtime')
-    daemon.store.append_turn_journal('commands', 'tool_result', {
-        'name': 'bash', 'tool_call_id': 'first', 'ok': True,
-        'result': {'exit_code': 0, 'stdout_tail': 'bash: line 1: docker: command not found\n'},
-    }, trust='runtime')
-    with daemon.store._db:
-        daemon.store._db.execute('UPDATE turn_journal SET created_at=? WHERE turn_id=?',
-                                 (start + 2, 'commands'))
-    text = reflection_transcript(daemon.store, [], (start, end))[0]['content']
-    assert 'TOOL CALL: bash("docker ps")\nTOOL RESULT: {"exit_code":0,"stdout_tail":"bash: line 1: docker: command not found\\n"}' in text
-    assert 'pwd' not in text and '成功' not in text and '失败' not in text
 
 
 def test_reflection_excludes_goal_records_and_tools_but_keeps_dialogue(daemon):
@@ -529,7 +500,7 @@ def test_reflection_excludes_goal_records_and_tools_but_keeps_dialogue(daemon):
                                  (start + 2, 'goal-turn'))
     rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
     rows.append({**rows[0], 'role': 'goal', 'content': '内部目标快照'})
-    text = reflection_transcript(daemon.store, rows, (start, end))[0]['content']
+    text = render(daemon.store, rows)[0]['content']
     assert 'USER: goal-turn完成项目' in text
     assert '内部目标' not in text and 'GOAL:' not in text and 'TOOL CALL:' not in text
 
@@ -542,7 +513,7 @@ def test_reflection_excludes_internal_heartbeat_but_keeps_delivered_speech(daemo
         {**rows[0], 'role': 'heartbeat', 'content': '内部心跳状态'},
         {**rows[0], 'role': 'assistant', 'content': '记得喝水', 'delivery_state': 'delivered'},
     ]
-    text = reflection_transcript(daemon.store, rows, (start, end))[0]['content']
+    text = render(daemon.store, rows)[0]['content']
     assert '内部心跳状态' not in text and 'HEARTBEAT:' not in text
     assert 'ASSISTANT: 记得喝水' in text
 
@@ -564,7 +535,7 @@ def test_reflection_excludes_whole_runtime_topic_and_summary(daemon, archive_kin
         daemon.store._db.execute('UPDATE turn_journal SET created_at=? WHERE turn_id=?',
                                  (start + 3, 'archive-turn'))
     rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
-    text = reflection_transcript(daemon.store, rows, (start, end))[0]['content']
+    text = render(daemon.store, rows)[0]['content']
     assert '排除的归档话题' not in text and '归档工具结果' not in text
     assert 'archive-turn完成项目' not in text
     assert 'owner-turn完成项目' in text

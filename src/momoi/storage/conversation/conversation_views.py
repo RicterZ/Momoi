@@ -373,7 +373,7 @@ class ConversationViewStore:
             inventory.append(item)
         return inventory
 
-    def open_conversation_inventory_context(self) -> str:
+    def open_conversation_inventory_context(self, *, compact: bool = False) -> str:
         rows = self.open_conversation_inventory()
         if not rows:
             return "No open or closing conversations are stored."
@@ -383,8 +383,14 @@ class ConversationViewStore:
             "Leave it unchanged when it may still continue."
         ]
         for row in rows:
-            summary = " ".join(str(row["narrative_summary"] or "").split())[:240]
             loops = json.dumps(row["open_loops"], ensure_ascii=False)
+            if compact:
+                lines.append(
+                    f"episode_id={row['id']} status={row['status']} "
+                    f"last_activity={row['last_activity_timestamp']} open_loops={loops}"
+                )
+                continue
+            summary = " ".join(str(row["narrative_summary"] or "").split())[:240]
             lines.append(
                 f"episode_id={row['id']} status={row['status']} title={row['title']} "
                 f"last_activity={row['last_activity_timestamp']} open_loops={loops}"

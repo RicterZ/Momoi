@@ -102,6 +102,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "runtime_directives",
     "self_state",
     "affinity",
+    "reflection_period",
     "workflow_contract",
     "state_update_contract",
     "followup",

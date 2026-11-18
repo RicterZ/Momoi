@@ -101,6 +101,7 @@ def test_system_index_is_independent_of_enabled_tool_schema(tmp_path):
             _workspace_soul=lambda: '测试身份', _contract=lambda: '测试规则',
             store=SimpleNamespace(emotion_context=lambda: ''), tool_surface=current,
         )
+        renderer._persona = lambda: PromptRenderer._persona(renderer)
         before = PromptRenderer._system(renderer)
         assert '日历查询与日程管理' not in str(before)
         assert 'Create an event' not in str(before)

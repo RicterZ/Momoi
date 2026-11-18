@@ -75,8 +75,23 @@ class PromptRenderer:
             template = _live_prompt(path, "", optional=True) or _live_prompt(SYSTEM_PROMPT_PATH, template)
         return _strip_soul_placeholder(template).strip()
 
-    def _system(self, *, planner: bool = False) -> list[dict[str, Any]]:
+    def _persona(self) -> str:
         soul_prompt = f"# 人格设定\n<soul>\n{self._workspace_soul() or '未配置额外的人格设定。'}\n</soul>"
+        if getattr(getattr(self, "config", None), "affinity_enabled", False):
+            from importlib.resources import files
+            default_affinity = files("momoi").joinpath("prompts/affinity.md").read_text(encoding="utf-8")
+            affinity_path = self.config.soul_prompt_path.parent / "AFFINITY.md" if self.config.soul_prompt_path else None
+            affinity = _live_prompt(affinity_path, default_affinity, optional=True) if affinity_path else default_affinity
+            soul_prompt += "\n\n" + affinity.strip()
+        return soul_prompt
+
+    def _workflow_system(self, rules: str) -> list[dict[str, Any]]:
+        """Persona plus one private workflow's rules, without the Planner contract."""
+        return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
+                for text in (self._persona(), rules.strip()) if text]
+
+    def _system(self, *, planner: bool = False) -> list[dict[str, Any]]:
+        soul_prompt = self._persona()
         if planner:
             from importlib.resources import files
             default = files("momoi").joinpath("prompts/planner.md").read_text(encoding="utf-8")
@@ -84,12 +99,6 @@ class PromptRenderer:
             prompt = _live_prompt(path, default, optional=True) if path else default
             prompt = _strip_soul_placeholder(prompt.replace("{{AFFINITY}}", "")).strip()
             soul_prompt = "\n\n".join(part for part in (prompt, soul_prompt) if part)
-        if getattr(getattr(self, "config", None), "affinity_enabled", False):
-            from importlib.resources import files
-            default_affinity = files("momoi").joinpath("prompts/affinity.md").read_text(encoding="utf-8")
-            affinity_path = self.config.soul_prompt_path.parent / "AFFINITY.md" if self.config.soul_prompt_path else None
-            affinity = _live_prompt(affinity_path, default_affinity, optional=True) if affinity_path else default_affinity
-            soul_prompt += "\n\n" + affinity.strip()
         blocks: list[dict[str, Any]] = []
         # Identity first, operating contract second: the rules then sit closest to
         # the conversation, where their influence on the next step is strongest.
