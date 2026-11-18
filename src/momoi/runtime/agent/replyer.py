@@ -22,6 +22,46 @@ def prompt_text(config, name, fallback):
     return (path.read_text(encoding="utf-8").strip() or fallback) if path and path.is_file() else fallback
 
 
+def response_text(content):
+    return "\n".join(str(block.get("text", "")) for block in content if block.get("type") == "text").strip()
+
+
+def _finalize_bubbles(text, *, attachments, mode, channel, quote_id):
+    bubbles = [part.strip() for part in text.split("\n\n") if part.strip()]
+    sources = {
+        str(segment.get("data", {}).get("file"))
+        for attachment in attachments or []
+        if isinstance(attachment, dict)
+        for segment in attachment.get("segments") or []
+        if isinstance(segment, dict) and isinstance(segment.get("data"), dict)
+        and segment["data"].get("file")
+    }
+    # The sending layer delivers attachments; a bubble quoting one is a
+    # textual stand-in for the media and must not be sent as words.
+    bubbles = [bubble for bubble in bubbles if not any(source in bubble for source in sources)]
+    for bubble in bubbles:
+        if QQ_POKE_DESCRIPTION in bubble or "[戳一戳用户]" in bubble:
+            raise ValueError("戳一戳的历史动作说明不能作为文字发送，请用 qq://poke 单独作为一个气泡")
+        if QQ_POKE_MARKER not in bubble:
+            continue
+        if bubble != QQ_POKE_MARKER:
+            raise ValueError("poke directive must be a standalone bubble")
+        if mode != "text" or not callable(getattr(channel, "poke_owner", None)):
+            raise ValueError("poke is unavailable in this reply mode or channel")
+    if quote_id is not None:
+        for index, bubble in enumerate(bubbles):
+            if bubble.startswith("emotion://") or bubble == QQ_POKE_MARKER:
+                continue
+            bubbles[index] = {"segments": [
+                {"type": "reply", "data": {"id": quote_id}},
+                {"type": "text", "data": {"text": bubble}},
+            ]}
+            break
+        else:
+            raise ValueError("quote reply requires a text bubble")
+    return bubbles
+
+
 class ReplyerBase:
     def __init__(self, config, store, provider):
         self.config, self.store, self.provider = config, store, provider
@@ -36,12 +76,7 @@ class Replyer(ReplyerBase):
         """Successful user-facing actions live in tool_audit, not messages."""
         floor = max(reset_at, rows[0]["created_at"] if rows else 0)
         actions = []
-        for row in self.store._db.execute(
-            f"""SELECT id, turn_id, tool_name, result_json, completed_at FROM tool_audit
-                WHERE state='completed' AND ok=1 AND tool_name='qq_poke'
-                AND completed_at>? AND turn_id IN ({",".join("?" * len(turn_ids))})""",
-            (floor, *turn_ids),
-        ):
+        for row in self.store.replyer_interaction_rows(turn_ids, floor):
             result = json.loads(row["result_json"])
             actions.append({"id": f"history_action_{row['id']}", "role": "action", "name": row["tool_name"],
                             "input": {}, "result": result, "created_at": row["completed_at"],
@@ -62,16 +97,10 @@ class Replyer(ReplyerBase):
                   and not event.delivery_context.get("channel_notice")
                   and (not callable(getattr(request.delivery_channel, "message_current", None))
                        or request.delivery_channel.message_current(event))]
-        interjection = self.store._db.execute(
-            "SELECT payload_json FROM turn_journal WHERE turn_id=? AND item_type='owner_interjection' ORDER BY sequence DESC LIMIT 1",
-            (request.turn_id,),
-        ).fetchone()
+        interjection = self.store.replyer_owner_interjection(request.turn_id)
         target_ids = set(json.loads(interjection["payload_json"]).get("event_ids", [])) if interjection else {event.event_id for event in events}
         active_rows = []
-        archived = self.store._db.execute(
-            "SELECT id, role, source_event_ids_json, outbox_id FROM messages WHERE turn_id=?",
-            (request.turn_id,),
-        ).fetchall()
+        archived = self.store.replyer_archived_rows(request.turn_id)
         archived_events = {identifier for row in archived if row["role"] == "user"
                            for identifier in json.loads(row["source_event_ids_json"])}
         archived_outbox = {row["outbox_id"] for row in archived if row["outbox_id"] is not None}
@@ -82,14 +111,7 @@ class Replyer(ReplyerBase):
                 active_rows.append({"id": event.event_id, "role": "user", "content": event.text,
                                     "created_at": event.received_at, "turn_id": request.turn_id,
                                     "delivery_state": "delivered", "_event": event})
-        for row in self.store._db.execute(
-            """SELECT o.id, p.text, COALESCE(json_extract(
-                   CASE WHEN json_valid(o.payload_json) THEN o.payload_json ELSE '{}' END,
-                   '$._sent_at'), p.created_at) AS created_at FROM turn_progress p JOIN outbox o
-               ON o.dedupe_key='turn:' || p.turn_id || ':progress:' || p.tool_call_id || ':' || p.part_index
-               WHERE p.turn_id=? AND o.state='sent' AND o.target_channel=?""",
-            (request.turn_id, request.delivery_channel.name),
-        ):
+        for row in self.store.replyer_sent_progress_rows(request.turn_id, request.delivery_channel.name):
             if row["id"] not in archived_outbox and row["created_at"] > reset_at:
                 active_rows.append({"id": row["id"], "outbox_id": row["id"], "role": "assistant", "content": row["text"],
                                     "created_at": row["created_at"], "turn_id": request.turn_id,
@@ -194,37 +216,6 @@ class Replyer(ReplyerBase):
                 messages.append({"role": "user", "content": results})
             else:
                 raise ValueError("Replyer exceeded tool call limit")
-        text = "\n".join(str(block.get("text", "")) for block in response.content if block.get("type") == "text").strip()
-        bubbles = [part.strip() for part in text.split("\n\n") if part.strip()]
-        sources = {
-            str(segment.get("data", {}).get("file"))
-            for attachment in call.arguments.get("attachments") or []
-            if isinstance(attachment, dict)
-            for segment in attachment.get("segments") or []
-            if isinstance(segment, dict) and isinstance(segment.get("data"), dict)
-            and segment["data"].get("file")
-        }
-        # The sending layer delivers attachments; a bubble quoting one is a
-        # textual stand-in for the media and must not be sent as words.
-        bubbles = [bubble for bubble in bubbles if not any(source in bubble for source in sources)]
-        for bubble in bubbles:
-            if QQ_POKE_DESCRIPTION in bubble or "[戳一戳用户]" in bubble:
-                raise ValueError("戳一戳的历史动作说明不能作为文字发送，请用 qq://poke 单独作为一个气泡")
-            if QQ_POKE_MARKER not in bubble:
-                continue
-            if bubble != QQ_POKE_MARKER:
-                raise ValueError("poke directive must be a standalone bubble")
-            if mode != "text" or not callable(getattr(request.delivery_channel, "poke_owner", None)):
-                raise ValueError("poke is unavailable in this reply mode or channel")
-        if quote_id is not None:
-            for index, bubble in enumerate(bubbles):
-                if bubble.startswith("emotion://") or bubble == QQ_POKE_MARKER:
-                    continue
-                bubbles[index] = {"segments": [
-                    {"type": "reply", "data": {"id": quote_id}},
-                    {"type": "text", "data": {"text": bubble}},
-                ]}
-                break
-            else:
-                raise ValueError("quote reply requires a text bubble")
-        return bubbles
+        text = response_text(response.content)
+        return _finalize_bubbles(text, attachments=call.arguments.get("attachments"),
+                                mode=mode, channel=request.delivery_channel, quote_id=quote_id)

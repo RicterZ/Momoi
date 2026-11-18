@@ -20,6 +20,12 @@ SIMILAR_BUBBLES_THRESHOLD = 0.75
 logger = logging.getLogger("momoi.runtime.turns")
 
 
+def latest_delivery_context(events: list[Any] | None, channel_name: str) -> dict | None:
+    return next((event.delivery_context for event in reversed(events or [])
+                 if event.channel == channel_name and event.delivery_context
+                 and not event.delivery_context.get("channel_notice")), None)
+
+
 def _bubble_text(bubbles: list[ChannelMessage]) -> str:
     rendered = [
         bubble
@@ -110,6 +116,29 @@ class BubbleDelivery:
         self.phone_prefetch = {}
         self.voice_audio: OrderedDict[tuple[str, str], AudioOutput] = OrderedDict()
 
+    def _similar_to_previous(
+        self,
+        previous_tool_name: str | None,
+        previous_bubbles: list[ChannelMessage] | None,
+        previous_channel: str,
+        channel_name: str,
+        bubbles: list[ChannelMessage],
+    ) -> float:
+        return (
+            self.policy.similarity(previous_bubbles, bubbles)
+            if previous_tool_name in {"reply", "send_bubbles", "send_voice"}
+            and previous_bubbles is not None
+            and previous_channel == channel_name
+            else 0.0
+        )
+
+    def _heartbeat_contact_error(
+        self, heartbeat_turn: bool, heartbeat_owner_event_revision: int | None,
+    ) -> str | None:
+        if heartbeat_turn and heartbeat_owner_event_revision is not None:
+            return self.policy.heartbeat_contact_error(heartbeat_owner_event_revision)
+        return None
+
     async def prepare_voice(self, turn_id: str, text: str, channel: str) -> dict[str, object] | None:
         revision = self.store.owner_channel_revision(channel)
         started = time.monotonic()
@@ -167,17 +196,10 @@ class BubbleDelivery:
         if self.tts_provider is None:
             return failure("tts_not_configured")
 
-        def contact_error() -> str | None:
-            if heartbeat_turn and heartbeat_owner_event_revision is not None:
-                return self.policy.heartbeat_contact_error(
-                    heartbeat_owner_event_revision,
-                )
-            return None
-
         call_check = getattr(delivery_channel, "context_valid", None)
         if callable(call_check) and not call_check(delivery_context):
             return failure("call_ended_or_superseded")
-        error = contact_error()
+        error = self._heartbeat_contact_error(heartbeat_turn, heartbeat_owner_event_revision)
         if error:
             return failure(error)
         existing = self.store.progress_delivery(turn_id, tool_call_id)
@@ -197,7 +219,7 @@ class BubbleDelivery:
                 synthesis_error = await self.prepare_voice(turn_id, text, delivery_channel.name)
                 if synthesis_error is not None:
                     return BubbleDeliveryResult(synthesis_error)
-            error = contact_error()
+            error = self._heartbeat_contact_error(heartbeat_turn, heartbeat_owner_event_revision)
             if callable(call_check) and not call_check(delivery_context):
                 error = "call_ended_or_superseded"
             if error:
@@ -231,10 +253,10 @@ class BubbleDelivery:
         if set(call.arguments) != {"text"}:
             return BubbleDeliveryResult({"ok": False, "error": "invalid_voice_arguments"})
         text = call.arguments["text"]
-        if (isinstance(text, str) and context.get("previous_tool_name") in {"reply", "send_bubbles", "send_voice"}
-                and context.get("previous_bubbles") is not None
-                and context.get("previous_channel") == context["delivery_channel"].name
-                and self.policy.similarity(context["previous_bubbles"], [text]) >= SIMILAR_BUBBLES_THRESHOLD):
+        if (isinstance(text, str) and self._similar_to_previous(
+                context.get("previous_tool_name"), context.get("previous_bubbles"),
+                context.get("previous_channel"), context["delivery_channel"].name, [text],
+        ) >= SIMILAR_BUBBLES_THRESHOLD):
             return BubbleDeliveryResult({"ok": False, "error": "similar_bubbles_already_sent"})
         return await self.send_voice(
             call.arguments["text"], tool_call_id=call.id,
@@ -272,17 +294,7 @@ class BubbleDelivery:
                 bubbles = None
         if bubbles is None:
             return BubbleDeliveryResult({"ok": False, "error": error})
-        check_contact = (
-            heartbeat_turn
-            and heartbeat_owner_event_revision is not None
-        )
-        contact_error = (
-            self.policy.heartbeat_contact_error(
-                heartbeat_owner_event_revision,
-            )
-            if check_contact
-            else None
-        )
+        contact_error = self._heartbeat_contact_error(heartbeat_turn, heartbeat_owner_event_revision)
         if contact_error is not None:
             return BubbleDeliveryResult({"ok": False, "error": contact_error})
         target = self.channels.get(
@@ -292,12 +304,8 @@ class BubbleDelivery:
             return BubbleDeliveryResult({"ok": False, "error": "invalid_channel"})
         if QQ_POKE_MARKER in bubbles and not callable(getattr(target, "poke_owner", None)):
             return BubbleDeliveryResult({"ok": False, "error": "poke_not_supported"})
-        similarity = (
-            self.policy.similarity(previous_bubbles, bubbles)
-            if previous_tool_name in {"reply", "send_bubbles", "send_voice"}
-            and previous_bubbles is not None
-            and previous_channel == target.name
-            else 0.0
+        similarity = self._similar_to_previous(
+            previous_tool_name, previous_bubbles, previous_channel, target.name, bubbles,
         )
         if similarity >= SIMILAR_BUBBLES_THRESHOLD:
             log_event(
@@ -322,9 +330,7 @@ class BubbleDelivery:
                     ),
                 }
             )
-        delivery_context = next((event.delivery_context for event in reversed(current_events or [])
-                                 if event.channel == target.name and event.delivery_context
-                                 and not event.delivery_context.get("channel_notice")), None)
+        delivery_context = latest_delivery_context(current_events, target.name)
         self.store.queue_progress(turn_id, call.id, bubbles, target.name,
                                   **({"delivery_context": delivery_context} if delivery_context else {}))
         self.outbox_changed.set()

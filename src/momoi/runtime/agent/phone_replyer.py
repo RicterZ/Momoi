@@ -7,7 +7,7 @@ from importlib.resources import files
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from .replyer import ReplyerBase, prompt_text
+from .replyer import ReplyerBase, prompt_text, response_text
 from ...integrations.request_context import model_request
 from ...observability.context import log_context, new_trace_id
 from ...memory.text import estimate_tokens
@@ -107,8 +107,7 @@ class PhoneReplyer(ReplyerBase):
         self.store.record_turn_usage(turn_id, int(usage.get("input", estimate_tokens(system + str(messages)))), int(usage.get("output", estimate_tokens(str(response.content)))))
         if response.tool_calls:
             raise ValueError("phone replyer returned unsupported tools")
-        text = "\n".join(str(block.get("text", "")) for block in response.content
-                         if block.get("type") == "text").strip()
+        text = response_text(response.content)
         if not text:
             raise ValueError("phone replyer returned empty text")
         text = clean_phone_text(text)

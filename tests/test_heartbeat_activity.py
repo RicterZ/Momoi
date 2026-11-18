@@ -59,7 +59,6 @@ def test_heartbeat_requires_successful_activity_and_reset_clears_gate():
         harness.validate_surface({"heartbeat_begin"})
     assert harness.validate([activity()]) == "heartbeat_begin_must_be_first_and_alone"
     harness.accept("heartbeat_begin")
-    harness.observe_calls([activity()])
     assert harness.completion_error() == "heartbeat_activity_required"
     assert harness.validate([activity()]) is None
     harness.accept("heartbeat_activity")

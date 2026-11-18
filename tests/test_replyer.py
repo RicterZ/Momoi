@@ -10,9 +10,14 @@ from momoi.runtime.agent.replyer import Replyer
 from momoi.runtime.agent import TurnExecutionSpec
 from momoi.runtime.workflows.memory_operation.conversation import conversation_message
 from momoi.storage import Store
+from momoi.storage.conversation.replyer import ReplyerHistoryStore
 from momoi.integrations.request_context import requested_thinking_effort
 from momoi.observability.context import current_log_context
 from momoi.runtime.tool_contracts.qq_message import QQ_POKE_SPEC
+
+class ReplyerStoreStub(ReplyerHistoryStore, SimpleNamespace):
+    pass
+
 
 def empty_replyer_db():
     cursor = Mock()
@@ -24,6 +29,35 @@ def empty_replyer_db():
 
 def empty_memory_state():
     return {'snapshot': {}, 'snapshot_overrides': {}, 'events': []}
+
+
+@pytest.mark.parametrize('content, expected', [
+    ([], ''),
+    ([{'type': 'tool_use', 'text': 'ignored'}, {'type': 'text'}], ''),
+    ([{'type': 'text', 'text': ' first '}, {'type': 'text', 'text': '\nsecond '}], 'first \n\nsecond'),
+    ([{'type': 'text', 'text': None}, {'type': 'text', 'text': 0},
+      {'type': 'text', 'text': False}], 'None\n0\nFalse'),
+])
+def test_replyer_response_text_preserves_block_values_and_newlines(content, expected):
+    from momoi.runtime.agent.replyer import response_text
+
+    assert response_text(content) == expected
+
+
+def test_finalize_bubbles_filters_attachments_before_poke_validation_and_quote():
+    from momoi.runtime.agent.replyer import _finalize_bubbles
+
+    result = _finalize_bubbles(
+        'qq://poke https://media.test/video\n\nemotion://happy\n\nqq://poke\n\n hello \n\n later ',
+        attachments=[{'segments': [{'type': 'video', 'data': {'file': 'https://media.test/video'}}]}],
+        mode='text', channel=SimpleNamespace(poke_owner=Mock()), quote_id='123',
+    )
+    assert result == ['emotion://happy', 'qq://poke', {'segments': [
+        {'type': 'reply', 'data': {'id': '123'}}, {'type': 'text', 'data': {'text': 'hello'}},
+    ]}, 'later']
+    with pytest.raises(ValueError, match='^quote reply requires a text bubble$'):
+        _finalize_bubbles('emotion://happy', attachments=None, mode='text',
+                         channel=SimpleNamespace(), quote_id='123')
 
 
 @pytest.mark.parametrize('channel_name, failed, paused', [
@@ -370,7 +404,7 @@ def test_replyer_isolated_request_and_actual_speech(tmp_path):
     (tmp_path / 'REPLYER.md').write_text('测试表达')
     config = SimpleNamespace(soul_prompt_path=tmp_path / 'SOUL.md', soul_prompt='fallback',
                              timezone='UTC', thinking_stages={'replyer': 'low'})
-    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
+    store = ReplyerStoreStub(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
     channel = SimpleNamespace(name='test', content_blocks=lambda segments: [{'type': 'image', 'source': {'type': 'url', 'url': 'https://example.invalid/image'}}])
     request = SimpleNamespace(turn_id='turn', round_number=2, delivery_channel=channel,
                              current_events=[IncomingMessage('e', 'e', '测试图片', 1, 1, ({'type': 'image'},))])
@@ -510,7 +544,7 @@ def test_replyer_window_migrates_existing_database(tmp_path):
 @pytest.mark.parametrize("mode", ["text", "voice"])
 def test_replyer_does_not_append_runtime_prose_and_splits_bubbles(mode):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
-    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
+    store = ReplyerStoreStub(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[],
                               turn_id="turn", round_number=1)
 
@@ -528,7 +562,7 @@ def test_replyer_does_not_append_runtime_prose_and_splits_bubbles(mode):
 
 def test_replyer_drops_bubbles_restating_attachment_paths():
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
-    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
+    store = ReplyerStoreStub(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[],
                               turn_id="turn", round_number=1)
     path = "/data/media/webhook/run.mp4"
@@ -616,7 +650,7 @@ def test_replyer_voice_output_reaches_tts_and_native_transcript(tmp_path):
 @pytest.mark.parametrize("mode", ["text", "voice"])
 def test_emotion_catalog_stays_in_shared_replyer_prefix(mode):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
-    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
+    store = ReplyerStoreStub(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
                             transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "emotion://happy 开心时使用")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[], turn_id="t", round_number=1)
     async def complete(system, messages, tools):
@@ -629,7 +663,7 @@ def test_emotion_catalog_stays_in_shared_replyer_prefix(mode):
 
 def test_replyer_text_and_voice_have_identical_system_and_history():
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt="测试人格", timezone="Asia/Shanghai", thinking_stages={})
-    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
+    store = ReplyerStoreStub(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
                             transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: "emotion://happy 开心时使用")
     request = SimpleNamespace(delivery_channel=SimpleNamespace(name="test"), current_events=[], turn_id="t", round_number=1)
     requests = []
@@ -658,7 +692,7 @@ def test_replyer_text_and_voice_have_identical_system_and_history():
 ])
 def test_replyer_poke_is_an_action_not_spoken_or_literal_text(channel_name, mode, output, accepted):
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt='test', timezone='UTC', thinking_stages={})
-    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
+    store = ReplyerStoreStub(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(),
                             transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: '')
     channel = SimpleNamespace(name=channel_name, content_blocks=lambda _: [])
     if channel_name == 'onebot':
@@ -681,7 +715,7 @@ def test_optional_qq_quote_targets_selected_message_and_keeps_other_bubbles_plai
     from momoi.runtime.tool_contracts.reply import REPLY_TOOL_SPEC
     from momoi.tools.validation import validate_tool_arguments
     config = SimpleNamespace(soul_prompt_path=None, soul_prompt='测试', timezone='UTC', thinking_stages={})
-    store = SimpleNamespace(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: '')
+    store = ReplyerStoreStub(_db=empty_replyer_db(), replyer_history_rows=lambda channel: [], record_turn_usage=Mock(), transcript_memory_context=lambda *args, **kwargs: empty_memory_state(), _memory_context=lambda rows: "", emotion_context=lambda: '')
     channel = OneBotChannel(OneBotConfig('ws://localhost', '20000', 1, 60, 30, 30, 20))
     events = [IncomingMessage('one', '101', '第一条', 1, 1, channel='onebot'),
               IncomingMessage('two', '102', '第二条', 2, 2, channel='onebot')]

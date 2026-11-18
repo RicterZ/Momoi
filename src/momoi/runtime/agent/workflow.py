@@ -7,6 +7,17 @@ from ...models import ToolCall
 from .harness import TURN_HARNESS_SPECS
 
 
+AUTHORITY_STAGES = frozenset({"owner", "webhook"})
+RESPONSE_REQUIRED_STAGES = frozenset({"owner", "heartbeat", "webhook", "subagent_report"})
+DYNAMIC_TOOL_POLICY_STAGES = frozenset({
+    "owner", "heartbeat", "webhook", "subagent_report", "goal", "current_state_maintenance",
+})
+ASSISTANT_EXCHANGE_STAGES = frozenset({
+    "owner", "heartbeat", "webhook", "subagent_report", "goal", "subagent",
+})
+CIRCUIT_BREAKER_STAGES = frozenset({"owner", "webhook", "subagent_report", "goal", "heartbeat"})
+
+
 class WorkflowProtocolError(RuntimeError):
     pass
 
@@ -32,11 +43,11 @@ class TurnExecutionSpec:
 
     @property
     def authority(self) -> str:
-        return self.stage if self.stage in {"owner", "webhook"} else "agent"
+        return self.stage if self.stage in AUTHORITY_STAGES else "agent"
 
     @property
     def require_response(self) -> bool:
-        return self.stage in {"owner", "heartbeat", "webhook", "subagent_report"}
+        return self.stage in RESPONSE_REQUIRED_STAGES
 
     @property
     def accept_owner_updates(self) -> bool:
@@ -44,14 +55,7 @@ class TurnExecutionSpec:
 
     @property
     def dynamic_tool_policies(self) -> bool:
-        return self.stage in {
-            "owner",
-            "heartbeat",
-            "webhook",
-            "subagent_report",
-            "goal",
-            "current_state_maintenance",
-        }
+        return self.stage in DYNAMIC_TOOL_POLICY_STAGES
 
     @property
     def heartbeat(self) -> bool:

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections.abc import Coroutine
 from typing import Any
 
 from ...observability.events import log_event
@@ -75,32 +76,12 @@ class AgentWorker:
                     job = item
                     assert isinstance(job, AutonomousJob)
                     self._stop_requested = False
-                    if job.kind == "current_state_maintenance":
-                        if not self._current_state_batch_ready():
-                            self._queued_current_state.discard(job.id)
-                            self.agenda_changed.set()
-                            continue
-                        work = self._complete_current_state_task(job.id)
-                    elif job.kind == "heartbeat":
-                        target_channel = self._manual_heartbeat_channel
-                        self._manual_heartbeat_channel = None
-                        work = self._complete_heartbeat_turn(stop, target_channel)
-                    elif job.kind == "reflection":
-                        work = self._complete_reflection_turn(job.id, stop)
-                    elif job.kind == "weekly_reflection":
-                        work = self._complete_weekly_reflection_turn(job.id, stop)
-                    elif job.kind == "memory_verification":
-                        work = self._complete_memory_verification_turn(job.id, stop)
-                    elif job.kind == "memory_operation":
-                        work = self._complete_memory_operation_turn(job.id, stop)
-                    else:
-                        work = self._complete_goal_turn(job.id, stop)
+                    work = self._autonomous_work(job, stop)
+                    if work is None:
+                        continue
                     self.start_active_turn(work, stage=job.kind, channel=self.channel.name)
                     try:
-                        if job.kind in {"goal", "heartbeat"}:
-                            await self.await_background_turn(stop)
-                        else:
-                            await self._active_turn
+                        await self._await_autonomous_turn(job, stop)
                     except asyncio.CancelledError:
                         if not self._stop_requested:
                             raise
@@ -113,10 +94,7 @@ class AgentWorker:
                             **self._release_autonomous_claim(job),
                         )
                     finally:
-                        if job.kind == "current_state_maintenance":
-                            self._queued_current_state.discard(job.id)
-                        if job.kind == "memory_operation":
-                            self._queued_memory_operations.discard(job.id)
+                        self._discard_autonomous_queue_marker(job)
                         self.finish_active_turn()
                         self.agenda_changed.set()
                     continue
@@ -199,6 +177,42 @@ class AgentWorker:
                 finally:
                     self.finish_active_turn()
 
+    def _autonomous_work(
+        self, job: AutonomousJob, stop: asyncio.Event
+    ) -> Coroutine[Any, Any, Any] | None:
+        if job.kind == "current_state_maintenance":
+            if not self._current_state_batch_ready():
+                self._queued_current_state.discard(job.id)
+                self.agenda_changed.set()
+                return None
+            return self._complete_current_state_task(job.id)
+        if job.kind == "heartbeat":
+            target_channel = self._manual_heartbeat_channel
+            self._manual_heartbeat_channel = None
+            return self._complete_heartbeat_turn(stop, target_channel)
+        handlers = {
+            "reflection": "_complete_reflection_turn",
+            "weekly_reflection": "_complete_weekly_reflection_turn",
+            "memory_verification": "_complete_memory_verification_turn",
+            "memory_operation": "_complete_memory_operation_turn",
+        }
+        return getattr(self, handlers.get(job.kind, "_complete_goal_turn"))(job.id, stop)
+
+    async def _await_autonomous_turn(self, job: AutonomousJob, stop: asyncio.Event) -> None:
+        if job.kind in {"goal", "heartbeat"}:
+            await self.await_background_turn(stop)
+        else:
+            await self._active_turn
+
+    def _discard_autonomous_queue_marker(self, job: AutonomousJob) -> None:
+        queues = {
+            "current_state_maintenance": "_queued_current_state",
+            "memory_operation": "_queued_memory_operations",
+        }
+        queue = queues.get(job.kind)
+        if queue is not None:
+            getattr(self, queue).discard(job.id)
+
     async def _next_work(self) -> tuple[str, Any]:
         queued: list[IncomingMessage] = []
         while not self.incoming.empty():
@@ -270,15 +284,16 @@ class AgentWorker:
         if job.kind == "heartbeat":
             self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
             return {}
-        if job.kind == "weekly_reflection":
-            self.store.release_weekly_reflection(job.id, "owner_stop", delay_seconds=3600)
-            return {"period_end": job.id}
-        if job.kind == "memory_verification":
-            self.store.release_memory_verification(job.id, "owner_stop", delay_seconds=3600)
-            return {"period_end": job.id}
-        if job.kind == "reflection":
-            self.store.release_reflection(job.id, "owner_stop", delay_seconds=3600)
-            return {"local_date": job.id}
+        releases = {
+            "weekly_reflection": ("release_weekly_reflection", "period_end"),
+            "memory_verification": ("release_memory_verification", "period_end"),
+            "reflection": ("release_reflection", "local_date"),
+        }
+        release = releases.get(job.kind)
+        if release is not None:
+            method, field = release
+            getattr(self.store, method)(job.id, "owner_stop", delay_seconds=3600)
+            return {field: job.id}
         if job.kind in {
             "memory_operation",
             "current_state_maintenance",
