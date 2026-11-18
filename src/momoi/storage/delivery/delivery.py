@@ -153,8 +153,10 @@ class DeliveryStore:
         ).fetchone()
         return row is not None
 
-    def mark_ambiguous(self, outbox_id: int, attempts: int, error: str) -> None:
-        state = "ambiguous" if attempts < 2 else "failed"
+    def mark_ambiguous(
+        self, outbox_id: int, attempts: int, error: str, *, retry: bool = True
+    ) -> None:
+        state = "ambiguous" if retry and attempts < 2 else "failed"
         row = self._db.execute("SELECT dedupe_key FROM outbox WHERE id=?", (outbox_id,)).fetchone()
         if row is not None and str(row["dedupe_key"]).startswith("webhook-video:"):
             state = "ambiguous"

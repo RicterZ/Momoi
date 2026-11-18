@@ -73,6 +73,25 @@ def test_video_timeout_is_ambiguous_without_fallback():
     asyncio.run(scenario())
 
 
+def test_onebot_write_timeout_is_ambiguous():
+    async def scenario():
+        item = channel()
+        item._ready.set()
+        writing = asyncio.Event()
+
+        async def blocked_write(_payload):
+            writing.set()
+            await asyncio.Future()
+
+        item._ws = AsyncMock(closed=False, send_json=AsyncMock(side_effect=blocked_write))
+        with pytest.raises(AmbiguousSend):
+            await asyncio.wait_for(item._request_action("send_private_msg", {}, timeout=0.05), 1)
+        assert writing.is_set()
+        assert not item._pending
+
+    asyncio.run(scenario())
+
+
 def test_native_video_mode_survives_reply_storage(tmp_path):
     async def scenario():
         store = Store(tmp_path / "store.sqlite3", workspace=tmp_path)

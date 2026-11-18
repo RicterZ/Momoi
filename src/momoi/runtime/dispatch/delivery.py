@@ -244,6 +244,16 @@ class OutboxWorker:
                         reason=safe_preview(str(error), 300),
                         duration_ms=int((monotonic() - send_started) * 1000),
                     )
+                except Exception as error:
+                    if row.kind == "voice":
+                        self.bubble_delivery.voice_audio.pop((row.turn_id, row.text), None)
+                    self.store.mark_ambiguous(row.id, attempt, type(error).__name__, retry=False)
+                    log_event(
+                        logger, logging.ERROR, "outbox_unexpected_send_error",
+                        stage="delivery", turn_id=row.turn_id, channel=channel.name,
+                        outbox_id=row.id, attempt=attempt, error_type=type(error).__name__,
+                        exc_info=True,
+                    )
                 else:
                     if row.kind == "voice":
                         self.bubble_delivery.voice_audio.pop((row.turn_id, row.text), None)

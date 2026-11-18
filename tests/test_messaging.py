@@ -782,6 +782,44 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
+    async def test_unexpected_send_error_keeps_outbox_worker_running(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = AppConfig(
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
+                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                system_prompt="test",
+                transcript_turns_min=4,
+                transcript_turns_max=4,
+                episode_unsummarized_tail_turns=2,
+                memory_results=2,
+                log_level="INFO",
+                database=Path(directory) / "momoi.sqlite3",
+            )
+            daemon = MomoiDaemon(config)
+            stop = asyncio.Event()
+
+            async def send_message(payload):
+                if payload["segments"][0]["type"] == "file":
+                    raise RuntimeError("unexpected transport failure")
+                stop.set()
+
+            daemon.channel.send_message = send_message
+            try:
+                daemon.store.commit_turn([], "", AgentReply([
+                    {"segments": [{"type": "file", "data": {"file": "test.bin"}}]},
+                    "still running",
+                ]), turn_id="send-error")
+                await asyncio.wait_for(daemon._outbox_worker(stop), 2)
+                rows = daemon.store._db.execute(
+                    "SELECT state, possible_duplicate, last_error FROM outbox ORDER BY id"
+                ).fetchall()
+                self.assertEqual(
+                    [tuple(row) for row in rows],
+                    [("failed", 1, "RuntimeError"), ("sent", 0, None)],
+                )
+            finally:
+                daemon.store.close()
+
     async def test_outbox_waits_only_between_messages_in_the_same_turn(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(

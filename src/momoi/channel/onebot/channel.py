@@ -696,10 +696,10 @@ class OneBotChannel:
                 "echo": echo,
             }
             try:
-                await ws.send_json(payload)
-                response = await asyncio.wait_for(future, timeout=limit)
-            except (aiohttp.ClientError, asyncio.TimeoutError, AmbiguousSend) as error:
-                self._pending.pop(echo, None)
+                async with asyncio.timeout(limit):
+                    await ws.send_json(payload)
+                    response = await future
+            except (aiohttp.ClientError, OSError, AmbiguousSend) as error:
                 raise AmbiguousSend("OneBot send result is unknown") from error
             finally:
                 self._pending.pop(echo, None)
