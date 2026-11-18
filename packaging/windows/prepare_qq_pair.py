@@ -9,14 +9,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def prepare(stage, output, archive=None):
     spec = json.loads((ROOT / 'packaging/windows/components.json').read_text())
-    # v1.1.2 is the frozen pair release, independent of later Momoi code versions.
-    pair = {'version': '1.1.2', 'layout': 'trimmed-avsdk-v1', 'napcat': spec['napcat'],
+    # v1.1.3 is the frozen pair release, independent of later Momoi code versions.
+    pair = {'version': '1.1.3', 'layout': 'trimmed-avsdk-v1', 'napcat': spec['napcat'],
             'qq_call': spec['qq_call']['runtime']}
     lock = json.loads((ROOT / 'packaging/windows/qq-pair.lock.json').read_text())
     if pair != lock:
-        raise ValueError('Native components differ from the frozen QQ 1.1.2 pair; publish a new pair lock explicitly')
+        raise ValueError('Native components differ from the frozen QQ 1.1.3 pair; publish a new pair lock explicitly')
     pair_id = hashlib.sha256(json.dumps(pair, sort_keys=True).encode()).hexdigest()[:16]
-    name = f'Momoi-QQ-Components-1.1.2-{pair_id}-x64'
+    name = f"Momoi-QQ-Components-{pair['version']}-{pair_id}-x64"
     marker = stage / 'runtime/qq-pair'
     marker.mkdir(parents=True, exist_ok=True)
     (marker / 'pair-id.txt').write_text(pair_id, encoding='ascii')

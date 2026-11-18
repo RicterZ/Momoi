@@ -93,6 +93,6 @@ def prepare(stage: Path, archive: Path) -> None:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--stage', required=True, type=Path)
-    parser.add_argument('--archive', type=Path, default=ROOT / 'build/windows-downloads/NapCat-v4.18.30.zip')
+    parser.add_argument('--archive', type=Path, default=ROOT / 'build/windows-downloads/NapCat-v4.18.42.zip')
     args = parser.parse_args()
     prepare(args.stage, args.archive)
