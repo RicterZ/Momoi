@@ -26,6 +26,7 @@ SUMMARY_CHARS = 2000
 ARGUMENT_CHARS = 300
 FAILURE_CHARS = 500
 SUCCESS_CHARS = 160
+MATERIAL_CHARS = 120_000
 GENERIC_FAILURE_TOOLS = frozenset({"exec"})
 
 _SECRETS = (
@@ -36,20 +37,33 @@ _SECRETS = (
 
 WORKER_REVIEW_FINISH_SPEC = {
     "name": "worker_review_finish",
-    "description": "提交本次 Worker 执行复盘的结果并结束本轮；经验只作为候选保存。",
+    "description": "提交每个任务的判断和提炼出的经验并结束本轮；经验只作为候选保存。",
     "input_schema": {
         "type": "object", "additionalProperties": False,
         "properties": {
             "summary": {"type": "string", "minLength": 1, "maxLength": 1000,
-                        "description": "一两句话说明看了哪些任务、为什么提炼或不提炼。"},
+                        "description": "一两句话说明本次的整体结论。"},
+            "tasks": {
+                "type": "array", "minItems": 1, "maxItems": 50,
+                "description": "对材料里每个任务的判断，每个任务一条。",
+                "items": {
+                    "type": "object", "additionalProperties": False,
+                    "properties": {
+                        "task_id": {"type": "string", "minLength": 1},
+                        "verdict": {"type": "string", "enum": ["skip", "learn"]},
+                        "reason": {"type": "string", "minLength": 1, "maxLength": 200},
+                    },
+                    "required": ["task_id", "verdict", "reason"],
+                },
+            },
             "experiences": {
-                "type": "array", "maxItems": 5,
+                "type": "array", "maxItems": 3,
                 "items": {
                     "type": "object", "additionalProperties": False,
                     "properties": {
                         "kind": {"type": "string", "enum": ["execution", "dispatch"]},
                         "applies_to": {"type": "string", "minLength": 1, "maxLength": 200,
-                                       "description": "在什么任务情境下适用，用将来 task 里可能出现的说法。"},
+                                       "description": "在什么任务情境下适用，用将来任务里可能出现的说法。"},
                         "content": {"type": "string", "minLength": 1, "maxLength": 600,
                                     "description": "直接写做法，最多三句。"},
                         "pitfalls": {"type": "array", "maxItems": 5,
@@ -71,7 +85,7 @@ WORKER_REVIEW_FINISH_SPEC = {
                 },
             },
         },
-        "required": ["summary", "experiences"],
+        "required": ["summary", "tasks", "experiences"],
     },
 }
 
@@ -162,26 +176,26 @@ def render_steps(steps: list[dict[str, Any]], load_snapshot=None) -> str:
     return "\n".join(lines) or "(没有工具调用)"
 
 
-def worker_review_input(store, period: tuple[float, float], admitted, recurring, load_snapshot=None) -> str:
-    parts = [
-        f"<review_period>{escape(store.context_timestamp(period[0]))} 至 "
-        f"{escape(store.context_timestamp(period[1]))}（不含结束时刻）</review_period>",
-    ]
+def render_task(task, steps, reasons, load_snapshot=None) -> str:
+    attributes = " ".join(f"{key}={quoteattr(str(value))}" for key, value in (
+        ("id", task["id"]), ("title", task["title"]), ("outcome", task["status"]),
+        ("calls", len(steps)), ("failures", sum(step["ok"] is False for step in steps)),
+        ("duration_seconds", round(_duration(task))), ("admitted_by", ",".join(reasons)),
+    ))
+    return (
+        f"<worker_task {attributes}>\n"
+        f"<task>\n{escape(_clip(redact(str(task['task'])), TASK_CHARS))}\n</task>\n"
+        f"<steps>\n{escape(render_steps(steps, load_snapshot))}\n</steps>\n"
+        f"<summary>\n{escape(_clip(redact(str(task.get('summary') or '')), SUMMARY_CHARS))}\n</summary>\n"
+        "</worker_task>"
+    )
+
+
+def worker_review_input(rendered_tasks: list[str], recurring) -> str:
+    parts = []
     rows = [f"{name} {error}: {', '.join(ids)}" for (name, error), ids in sorted(recurring.items())]
     parts.append("<recurring_failures>\n" + ("\n".join(rows) or "(无)") + "\n</recurring_failures>")
-    for task, steps, reasons in admitted:
-        attributes = " ".join(f"{key}={quoteattr(str(value))}" for key, value in (
-            ("id", task["id"]), ("title", task["title"]), ("outcome", task["status"]),
-            ("calls", len(steps)), ("failures", sum(step["ok"] is False for step in steps)),
-            ("duration_seconds", round(_duration(task))), ("admitted_by", ",".join(reasons)),
-        ))
-        parts.append(
-            f"<worker_task {attributes}>\n"
-            f"<task>\n{escape(_clip(redact(str(task['task'])), TASK_CHARS))}\n</task>\n"
-            f"<steps>\n{escape(render_steps(steps, load_snapshot))}\n</steps>\n"
-            f"<summary>\n{escape(_clip(redact(str(task.get('summary') or '')), SUMMARY_CHARS))}\n</summary>\n"
-            "</worker_task>"
-        )
+    parts.extend(rendered_tasks)
     return "\n\n".join(parts)
 
 
@@ -193,6 +207,17 @@ def parse_worker_review(arguments, admitted) -> tuple[dict[str, Any] | None, dic
     if error:
         return None, error
     step_counts = {str(task["id"]): len(steps) for task, steps, _ in admitted}
+    judged = [item["task_id"] for item in value["tasks"]]
+    if sorted(judged) != sorted(step_counts):
+        return None, {"ok": False, "error": "tasks_mismatch",
+                      "missing": sorted(set(step_counts) - set(judged)),
+                      "unknown_or_duplicate": sorted({i for i in judged if i not in step_counts or judged.count(i) > 1}),
+                      "message": "tasks 必须对材料里的每个 worker_task 各给出一条判断。"}
+    learned = {item["task_id"] for item in value["tasks"] if item["verdict"] == "learn"}
+    cited = {evidence["task_id"] for item in value["experiences"] for evidence in item["evidence"]}
+    if learned - cited:
+        return None, {"ok": False, "error": "learn_without_experience", "task_ids": sorted(learned - cited),
+                      "message": "判为 learn 的任务必须被至少一条经验引用；没有经验就判为 skip。"}
     for item in value["experiences"]:
         for evidence in item["evidence"]:
             count = step_counts.get(evidence["task_id"])
@@ -215,14 +240,25 @@ class WorkerReviewWorkflow:
         return [(task, task_steps, admission_reasons(task, task_steps, recurring))
                 for task, task_steps in steps], recurring
 
-    async def _complete_worker_review(self, local_date: str, period: tuple[float, float]) -> None:
-        batch, recurring = self._worker_review_batch(period[1])
+    async def _complete_worker_review(self, local_date: str, end_at: float) -> None:
+        batch, recurring = self._worker_review_batch(end_at)
         if not batch:
             return
-        # Tasks left over from a failed earlier review widen the stated period.
-        period = (min(period[0], *(float(task["finished_at"]) for task, _, _ in batch)), period[1])
-        decisions = [{"task_id": str(task["id"]), "reasons": reasons} for task, _, reasons in batch]
-        admitted = [item for item in batch if item[2]]
+        tool_results = getattr(self, "tool_results", None)
+        load_snapshot = tool_results.load if tool_results is not None else None
+        admitted, rendered, size = [], [], 0
+        for task, steps, reasons in batch:
+            if not reasons:
+                continue
+            text = render_task(task, steps, reasons, load_snapshot)
+            # Tasks beyond the budget stay unreviewed and lead the next day's batch.
+            if rendered and size + len(text) > MATERIAL_CHARS:
+                break
+            admitted.append((task, steps, reasons))
+            rendered.append(text)
+            size += len(text)
+        last = batch.index(admitted[-1]) if admitted else len(batch) - 1
+        decisions = [{"task_id": str(task["id"]), "reasons": reasons} for task, _, reasons in batch[:last + 1]]
         if not admitted:
             self.store.commit_worker_review(local_date, None, decisions, [])
             return
@@ -230,11 +266,7 @@ class WorkerReviewWorkflow:
         state = self.store.begin_turn(turn_id, "worker_review", [f"worker-review:{local_date}"])
         if state != "running":
             return
-        tool_results = getattr(self, "tool_results", None)
-        material = worker_review_input(
-            self.store, period, admitted, recurring,
-            load_snapshot=tool_results.load if tool_results is not None else None,
-        )
+        material = worker_review_input(rendered, recurring)
         completed = False
         experiences = 0
 

@@ -4,7 +4,7 @@ import time
 
 from momoi.models import ToolCall
 from momoi.runtime.workflows.worker_review import (
-    admission_reasons, parse_worker_review, recurring_failures, redact, worker_review_input,
+    admission_reasons, parse_worker_review, recurring_failures, redact, render_task, worker_review_input,
 )
 from momoi.storage import Store
 
@@ -72,31 +72,37 @@ def test_material_redacts_and_reads_old_mcp_failures(tmp_path):
     task = store.subagent_task(task_id)
     steps = store.worker_task_steps(task["turn_id"])
     snapshots = {"tr_1": json.dumps({"message": "429 Too Many Requests"})}
-    content = worker_review_input(store, (0, time.time()), [(task, steps, ["not_succeeded"])], {},
-                                  load_snapshot=snapshots.get)
+    content = worker_review_input([render_task(task, steps, ["not_succeeded"], snapshots.get)], {})
     assert JWT not in content and "&lt;redacted&gt;" in content
     assert "&lt;查询&gt;" in content and "429 Too Many Requests" in content
     assert f'id="{task_id}"' in content and 'admitted_by="not_succeeded"' in content
-    assert "[2] mcp__brave__search ok" in content
+    assert "[2] mcp__brave__search ok" in content and "review_period" not in content
     assert redact("token=abcdefghijklmnop123") == "token=<redacted>"
     store.close()
 
 
-def test_finish_validates_evidence():
-    admitted = [({"id": "t1"}, [{}, {}], ["many_calls"])]
+def test_finish_requires_a_verdict_per_task_and_valid_evidence():
+    admitted = [({"id": "t1"}, [{}, {}], ["many_calls"]), ({"id": "t2"}, [{}], ["long_running"])]
     item = {"kind": "execution", "applies_to": "在 B 站找当天新投稿", "content": "按发布时间排序。",
             "pitfalls": [], "evidence": [{"task_id": "t1", "steps": [2]}]}
-    assert parse_worker_review({"summary": "看了一个任务", "experiences": [item]}, admitted)[1] is None
-    assert parse_worker_review({"summary": "空", "experiences": []}, admitted)[1] is None
+    tasks = [{"task_id": "t1", "verdict": "learn", "reason": "找到排序方法"},
+             {"task_id": "t2", "verdict": "skip", "reason": "每一步都必要"}]
+    assert parse_worker_review({"summary": "s", "tasks": tasks, "experiences": [item]}, admitted)[1] is None
+    skipped = [{**task, "verdict": "skip"} for task in tasks]
+    assert parse_worker_review({"summary": "s", "tasks": skipped, "experiences": []}, admitted)[1] is None
+    assert parse_worker_review({"summary": "s", "tasks": tasks, "experiences": []}, admitted)[1]["error"] == "learn_without_experience"
+    assert parse_worker_review({"summary": "s", "tasks": tasks[:1], "experiences": [item]}, admitted)[1]["error"] == "tasks_mismatch"
+    assert parse_worker_review({"summary": "s", "tasks": [*tasks, tasks[1]], "experiences": [item]}, admitted)[1]["error"] == "tasks_mismatch"
+    assert parse_worker_review({"summary": "s", "tasks": skipped, "experiences": [item] * 4}, admitted)[1]
     for bad in ({"evidence": [{"task_id": "t9", "steps": []}]}, {"evidence": [{"task_id": "t1", "steps": [3]}]},
                 {"kind": "memory"}, {"content": " "}):
-        assert parse_worker_review({"summary": "看了", "experiences": [{**item, **bad}]}, admitted)[1]
+        assert parse_worker_review({"summary": "s", "tasks": tasks, "experiences": [{**item, **bad}]}, admitted)[1]
 
 
 def test_review_runs_after_reflection_once_and_skips_model_without_admission(daemon):
     store = daemon.store
     simple = add_task(store, "simple", [ok()])
-    window = (time.time() - 86400, time.time() + 1)
+    window = time.time() + 1
     calls = []
 
     async def no_model(*args, **kwargs):
@@ -114,11 +120,11 @@ def test_review_runs_after_reflection_once_and_skips_model_without_admission(dae
         assert "Worker 执行复盘" in system and "companion soul sentinel" not in str(system)
         assert f'id="{failed}"' in messages[0]["content"] and simple not in messages[0]["content"]
         bad = await workflow.execute_tool(ToolCall("f", "worker_review_finish", {
-            "summary": "s", "experiences": [{"kind": "dispatch", "applies_to": "a", "content": "c",
+            "summary": "s", "tasks": [{"task_id": failed, "verdict": "skip", "reason": "r"}], "experiences": [{"kind": "dispatch", "applies_to": "a", "content": "c",
                                               "pitfalls": [], "evidence": [{"task_id": simple, "steps": []}]}]}))
         assert bad["error"] == "unknown_task"
         result = await workflow.execute_tool(ToolCall("f", "worker_review_finish", {
-            "summary": "一个失败任务", "experiences": [{"kind": "execution", "applies_to": "执行命令", "content": "先检查命令是否存在。",
+            "summary": "一个失败任务", "tasks": [{"task_id": failed, "verdict": "learn", "reason": "命令不存在"}], "experiences": [{"kind": "execution", "applies_to": "执行命令", "content": "先检查命令是否存在。",
                                                    "pitfalls": ["别重试"], "evidence": [{"task_id": failed, "steps": [1, 2]}]}]}))
         assert result["ok"]
         return workflow.completion_result()
@@ -129,6 +135,26 @@ def test_review_runs_after_reflection_once_and_skips_model_without_admission(dae
     assert candidate["kind"] == "execution" and candidate["evidence"] == [{"task_id": failed, "steps": [1, 2]}]
     assert store.unreviewed_worker_tasks(start_at=0, end_at=time.time() + 10) == []
     assert store._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 0
+
+
+def test_material_budget_defers_later_tasks(daemon, monkeypatch):
+    from momoi.runtime.workflows import worker_review
+    store = daemon.store
+    first = add_task(store, "first", [ok()], status="failed", finished_at=time.time() - 30)
+    second = add_task(store, "second", [ok()], status="failed", finished_at=time.time() - 20)
+    monkeypatch.setattr(worker_review, "MATERIAL_CHARS", 10)
+    seen = []
+
+    async def finish(system, messages, tools, *, turn_id, workflow):
+        seen.append(messages[0]["content"])
+        await workflow.execute_tool(ToolCall("f", "worker_review_finish", {
+            "summary": "s", "tasks": [{"task_id": first, "verdict": "skip", "reason": "r"}], "experiences": []}))
+        return workflow.completion_result()
+
+    daemon._run_agent_workflow = finish
+    asyncio.run(daemon._complete_worker_review("2026-11-18", time.time() + 1))
+    assert first in seen[0] and second not in seen[0]
+    assert [task["id"] for task in store.unreviewed_worker_tasks(start_at=0, end_at=time.time() + 10)] == [second]
 
 
 def test_journal_keeps_mcp_failure_message_only(daemon):
@@ -156,5 +182,5 @@ def test_failed_review_leaves_tasks_for_next_run(daemon):
         raise RuntimeError("provider failed")
 
     daemon._run_agent_workflow = boom
-    asyncio.run(daemon._complete_worker_review("2026-11-18", (time.time() - 86400, time.time() + 1)))
+    asyncio.run(daemon._complete_worker_review("2026-11-18", time.time() + 1))
     assert [task["id"] for task in store.unreviewed_worker_tasks(start_at=0, end_at=time.time() + 10)] == [failed]

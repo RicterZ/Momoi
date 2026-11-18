@@ -245,4 +245,4 @@ class ReflectionWorkflow:
             memories=result.get("memories", 0),
         )
         # Worker review has its own Turn and failure path; it never fails the diary.
-        await self._complete_worker_review(local_date, window)
+        await self._complete_worker_review(local_date, window[1])
