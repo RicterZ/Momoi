@@ -202,7 +202,8 @@ class ToolExecutor:
             else None
         )
         compact_result = compact_log_value(
-            ({key: result[key] for key in ("ok", "error", "result_ref") if key in result}
+            ({key: result[key] for key in ("ok", "error", "message", "result_ref")
+              if key in result and (key != "message" or not result.get("ok"))}
              if trace.source == "mcp" else result),
             string_limit=800,
             item_limit=30,

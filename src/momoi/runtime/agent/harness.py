@@ -38,6 +38,8 @@ TURN_HARNESS_SPECS = {
         TurnHarnessSpec("reflection", None, "reflection_finish"),
         TurnHarnessSpec("weekly_reflection", None, "weekly_reflection_finish",
                         permitted_tools=frozenset({"weekly_reflection_finish"})),
+        TurnHarnessSpec("worker_review", None, "worker_review_finish",
+                        permitted_tools=frozenset({"worker_review_finish"})),
         TurnHarnessSpec("memory_verification", None, "memory_verification_finish",
                         permitted_tools=frozenset({"memory_verification_finish"})),
         TurnHarnessSpec("memory_operation", None, "memory_operation_finish", permitted_tools=frozenset({"memory_operation_finish", "memory_operation_search"})),

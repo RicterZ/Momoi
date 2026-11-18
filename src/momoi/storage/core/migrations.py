@@ -13,6 +13,7 @@ from ..episode.episode_claims import render_verified_claims
 
 
 from ..agenda.subagents import SUBAGENT_SCHEMA
+from ..agenda.worker_reviews import WORKER_REVIEW_SCHEMA
 from ..conversation.replyer import REPLYER_HISTORY_SCHEMA
 
 # Retired Plan storage; kept so older databases migrate in order.
@@ -889,6 +890,13 @@ def _drop_tool_discovery(database: sqlite3.Connection) -> None:
     database.execute("DROP TABLE IF EXISTS transcript_enabled_tools")
 
 
+def _add_worker_review(database: sqlite3.Connection) -> None:
+    _add_turn_workflow(database, "worker_review")
+    for statement in WORKER_REVIEW_SCHEMA.split(";"):
+        if statement.strip():
+            database.execute(statement)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -943,6 +951,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_subagent_notifications,
     _add_subagent_report_workflow,
     _drop_tool_discovery,
+    _add_worker_review,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

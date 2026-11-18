@@ -16,6 +16,7 @@ THINKING_STAGES = {
     "subagent": "后台 Worker",
     "reflection": "每日复盘",
     "weekly_reflection": "每周观察盘点",
+    "worker_review": "Worker 执行复盘",
     "memory_verification": "每周记忆核对",
     "memory_operation": "记忆操作",
     "episode_consolidate": "话题整理",
