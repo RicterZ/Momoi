@@ -19,8 +19,12 @@ export function memoryEntries(snapshot) {
   });
 }
 
-export default function TrajectoryMemories({ snapshot }) {
-  const entries = useMemo(() => memoryEntries(snapshot), [snapshot]);
+export const memoryEntryKey = (entry) => `${entry.source}:${entry.id}`;
+
+export default function TrajectoryMemories({ snapshot, seen }) {
+  const all = useMemo(() => memoryEntries(snapshot), [snapshot]);
+  const entries = all.filter(entry => !entry.id || !seen?.has(memoryEntryKey(entry)));
+  if (all.length && !entries.length) return null;
   return (
     <section className="trajectory-memories" aria-label="注入记忆">
       <h4>记忆 <span className="trajectory-memory-count">{snapshot ? entries.length : "—"}</span></h4>

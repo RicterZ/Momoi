@@ -1,5 +1,5 @@
 import { hasModelApiKey } from "./setupGuide.js";
-import { Fragment, StrictMode, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, StrictMode, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import "./trajectory.css";
@@ -10,7 +10,7 @@ import MemoryMetadata, { MemoryTriggerTags } from "./MemoryMetadata.jsx";
 import { filterMemories, memoryTagLabels } from "./memoryInventory.js";
 import Tools from "./Tools.jsx";
 import EmotionContent from "./EmotionContent.jsx";
-import TrajectoryMemories from "./TrajectoryMemories.jsx";
+import TrajectoryMemories, { memoryEntries, memoryEntryKey } from "./TrajectoryMemories.jsx";
 import ConfigurationSettings, { ApplyDialog, SaveBar, Icon } from "./ConfigurationSettings.jsx";
 
 const TOKEN_KEY = "momoi-dashboard-token";
@@ -2508,6 +2508,9 @@ function TrajectoryInputPanel({ group, entry, onClose }) {
 
 function TrajectoryStepPanel({ group, step, onClose }) {
   const call = step.call;
+  const seenMemories = useMemo(() => new Set(group.steps
+    .filter((earlier) => earlier.index < step.index && earlier.call.turn_id === call.turn_id)
+    .flatMap((earlier) => memoryEntries(earlier.call.trace?.memory_context).filter((entry) => entry.id).map(memoryEntryKey))), [group, step, call]);
   const metrics = call.request_metrics;
   return (
     <aside className="trajectory-panel" aria-label="Step 详情">
@@ -2527,7 +2530,7 @@ function TrajectoryStepPanel({ group, step, onClose }) {
             <EmotionContent className="message-content trajectory-text" text={call.reasoning || call.excerpt} />
           </section>
         ) : null}
-        <TrajectoryMemories snapshot={call.trace?.memory_context} />
+        <TrajectoryMemories snapshot={call.trace?.memory_context} seen={seenMemories} />
         {call.assistant_text ? (
           <section>
             <h4>{call.stage === "replyer" ? "发言" : "正文"}</h4>
