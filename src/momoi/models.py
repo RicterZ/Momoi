@@ -67,6 +67,7 @@ class AgentReply:
     messages: list[str | dict[str, Any]]
     memory_access: list[dict[str, Any]] = field(default_factory=list, repr=False)
     heartbeat_activity: dict[str, Any] | None = None
+    goals: dict[str, GoalMutation] = field(default_factory=dict, repr=False)
 
 
 @dataclass(frozen=True)

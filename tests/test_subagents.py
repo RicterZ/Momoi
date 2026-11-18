@@ -1,4 +1,5 @@
 import asyncio
+import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -216,6 +217,26 @@ def test_resend_skips_wake_turn_that_already_completed(tmp_path):
         assert daemon.store.subagent_task(task["id"])["notified_at"] is not None
         daemon.store.close()
     asyncio.run(run())
+
+
+def test_event_turn_reply_commits_staged_goals(tmp_path):
+    store = Store(tmp_path / "db")
+    try:
+        goal = {
+            "id": "g1", "title": "核实门口监控", "success_criteria": "核实清楚",
+            "source_event_id": "webhook-turn", "status": "active",
+            "next_action": "等 Worker 结果", "waiting_for": "", "blocked_reason": "",
+            "latest_result": "", "schedule": None, "next_review_at": time.time() + 3600,
+        }
+        store.begin_turn("webhook-turn", "webhook", ["webhook-turn"])
+        store.commit_subagent_report_reply("webhook-turn", AgentReply([], goals={"g1": goal}), "onebot")
+        assert store.goal("g1")["status"] == "active"
+        store.begin_turn("report-turn", "subagent_report", ["report-turn"])
+        closed = {**goal, "status": "done", "latest_result": "保洁拖地", "next_review_at": None}
+        store.commit_subagent_report_reply("report-turn", AgentReply([], goals={"g1": closed}), "onebot")
+        assert store.goal("g1")["status"] == "done"
+    finally:
+        store.close()
 
 
 def test_migration_marks_existing_results_notified(tmp_path):

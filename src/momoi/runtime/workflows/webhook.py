@@ -81,4 +81,7 @@ class WebhookWorkflow:
         )
         if not isinstance(reply, AgentReply):
             raise RuntimeError(f"{stage} Turn ended without completing")
-        return replace(reply, memory_access=draft.memory_access, heartbeat_activity=draft.heartbeat_activity)
+        return replace(
+            reply, memory_access=draft.memory_access,
+            heartbeat_activity=draft.heartbeat_activity, goals=dict(draft.goals),
+        )
