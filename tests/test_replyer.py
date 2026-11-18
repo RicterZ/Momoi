@@ -973,11 +973,10 @@ def test_bubble_streak_hints_on_third_repeat_and_resets_on_change():
             rows.extend({"role": "assistant", "turn_id": f"t{index}"} for _ in range(count))
         return rows
 
-    assert bubble_streak(turns(3), "now") is None
-    assert bubble_streak(turns(3, 3), "now") == (2, 3)
-    assert bubble_streak(turns(3, 3, 3), "now") == (3, 3)
-    assert bubble_streak(turns(3, 3, 2), "now") is None
-    assert bubble_streak(turns(3, 3) + [{"role": "assistant", "turn_id": "now"}], "now") == (2, 3)
+    assert bubble_streak(turns(3)) is None
+    assert bubble_streak(turns(3, 3)) == (2, 3)
+    assert bubble_streak(turns(3, 3, 3)) == (3, 3)
+    assert bubble_streak(turns(3, 3, 2)) is None
 
 
 def test_bubble_streak_counts_each_reply_call_in_a_turn():
@@ -990,5 +989,16 @@ def test_bubble_streak_counts_each_reply_call_in_a_turn():
             keys[outbox_id] = f"turn:{turn}:progress:{call}:{index}" if call else f"turn:{turn}:{index}"
             rows.append({"role": "assistant", "turn_id": turn, "outbox_id": outbox_id})
 
-    assert bubble_streak(rows, "now", keys) == (3, 3)
-    assert bubble_streak(rows, "now") is None
+    assert bubble_streak(rows, keys) == (3, 3)
+    assert bubble_streak(rows) is None
+
+
+def test_bubble_streak_counts_earlier_reply_calls_of_the_current_turn():
+    from momoi.runtime.agent.replyer import bubble_streak
+
+    rows, keys = [], {}
+    for outbox_id, (turn, call) in enumerate((("t0", None),) * 3 + (("t1", "c1"),) * 3, start=1):
+        keys[outbox_id] = f"turn:{turn}:progress:{call}:0" if call else f"turn:{turn}:0"
+        rows.append({"role": "assistant", "turn_id": turn, "outbox_id": outbox_id})
+
+    assert bubble_streak(rows, keys) == (2, 3)
