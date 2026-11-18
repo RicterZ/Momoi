@@ -52,6 +52,10 @@ class AgendaTools:
             if call.name == "goal_update":
                 return self._update(call.arguments, draft)
             if call.name in {"goal_finish", "goal_cancel"}:
+                goal_id = str(call.arguments.get("goal_id") or "")
+                if goal_id in draft.goals and self.store.goal(goal_id) is None:
+                    del draft.goals[goal_id]
+                    return {"ok": True, "state": "withdrawn", "goal_id": goal_id}
                 return self._close(call.name, call.arguments, draft)
             return {"ok": False, "error": "tool_not_allowed"}
         except (TypeError, ValueError) as error:
@@ -115,10 +119,22 @@ class AgendaTools:
         return {"ok": True, "state": "staged", "goal": goal}
 
     def _current(self, goal_id: str, draft: TurnDraft) -> dict[str, Any]:
-        goal = draft.goals.get(goal_id) or self.store.goal(goal_id)
+        goal = draft.goals.get(goal_id)
         if goal is None:
-            raise ValueError("goal not found")
+            goal = self.store.goal(goal_id)
+            if goal is None:
+                raise ValueError("goal not found")
+            draft.goal_bases[goal_id] = goal["updated_at"]
         return dict(goal)
+
+    def rebase(self, draft: TurnDraft) -> None:
+        """Drop staged mutations whose goal was written by another Turn meanwhile."""
+        for goal_id in list(draft.goals):
+            stored = self.store.goal(goal_id)
+            current = stored["updated_at"] if stored is not None else None
+            if current != draft.goal_bases.get(goal_id):
+                del draft.goals[goal_id]
+                draft.goal_bases.pop(goal_id, None)
 
     def _update(self, arguments: dict[str, Any], draft: TurnDraft) -> dict[str, Any]:
         goal_id = str(arguments.get("goal_id") or "")

@@ -86,16 +86,15 @@ class AgentLoop:
         counters: _FailureCounters,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
         stage = execution.stage
-        # Make accepted writes visible to owner work, then re-evaluate
-        # any unfinished task against the latest conversation.
+        # Staged goals stay private to this Turn until it commits; owner work
+        # that wrote the same goal meanwhile wins, then the task is re-evaluated.
         if execution.goal_id:
             harness.completed_tools.discard("goal_review")
-        self.store.commit_goal_draft(draft)
-        draft.goals.clear()
         draft.heartbeat_activity = None
         if stage == "heartbeat":
             harness.completed_tools.discard("heartbeat_activity")
         await self.background_checkpoint(turn_id)
+        self.agenda_tools.rebase(draft)
         shared = self.shared_turn_context(turn_id, fresh=True)
         system = self._system(planner=True)
         messages = [*shared["messages"], {"role": "user", "content": resume_input()}, {

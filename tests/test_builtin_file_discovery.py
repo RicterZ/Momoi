@@ -59,7 +59,7 @@ def test_planner_delegates_and_worker_owns_external_tools():
     from momoi.runtime.agent.tool_surface import ToolSurface
     from momoi.runtime.tool_contracts.subagent import PLANNER_SUBAGENT_TOOL_NAMES, WORKER_SUBAGENT_TOOL_NAMES
     surface = ToolSurface(SimpleNamespace(tool_specs=[]), {'onebot': object()},
-                          store=SimpleNamespace(transcript_enabled_tools=lambda: ['write_file']))
+                          store=SimpleNamespace())
     planner = {spec['name'] for spec in surface.conversation_specs()}
     worker = {spec['name'] for spec in surface.worker_specs()}
     assert PLANNER_SUBAGENT_TOOL_NAMES <= planner

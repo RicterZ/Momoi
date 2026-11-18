@@ -4,7 +4,7 @@ import time
 import uuid
 from pathlib import Path
 
-from ...models import AgentReply
+from ...models import AgentReply, TurnDraft
 from ..core.integrity import decode_stored_json
 
 
@@ -220,6 +220,7 @@ class WebhookStore:
         normalized = [self._outbox_content(message) for message in reply.messages]
         source = json.dumps([turn_id], ensure_ascii=False)
         self._commit_memory_access(turn_id, reply.memory_access)
+        self._apply_goal_mutations(TurnDraft(goals=dict(reply.goals)), now)
         self._archive_progress_messages(turn_id, source)
         outbox_ids = []
         for index, (text, kind, path, payload) in enumerate(normalized):

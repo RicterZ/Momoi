@@ -57,7 +57,7 @@ def test_search_ranking_limits_and_short_system_index():
     assert '网页搜索与浏览' not in spec['description']
 
 
-def test_planner_surface_is_resident_and_ignores_enabled_tool_records(tmp_path):
+def test_planner_surface_is_resident_without_tool_enable(tmp_path):
     store = Store(tmp_path / 'db')
     try:
         current = surface({}, store=store)
@@ -66,7 +66,6 @@ def test_planner_surface_is_resident_and_ignores_enabled_tool_records(tmp_path):
         assert {'memory_search', 'thinking_search', 'thinking_read', 'episode_relations'} <= names
         assert not {'tool_search', 'tool_enable'} & names
         assert current.discovery_groups() == {}
-        store.enable_transcript_tools(['write_file', 'thinking_read'])
         assert current.conversation_specs() == tools
         for stage in ('owner', 'heartbeat', 'webhook', 'goal'):
             assert 'thinking_read' in current.permitted_names(stage)
@@ -75,43 +74,19 @@ def test_planner_surface_is_resident_and_ignores_enabled_tool_records(tmp_path):
         store.close()
 
 
-def test_compaction_clears_enabled_tools_only_at_boundary(tmp_path):
-    from momoi.models import IncomingMessage, AgentReply
-    store = Store(tmp_path / 'db')
-    try:
-        def commit(n):
-            event = IncomingMessage(str(n), '1', '测试消息', n, n)
-            store.add_event(event)
-            store.commit_turn([event], event.text, AgentReply([]), turn_id=str(n))
-        commit(1)
-        store.transcript_window_turn_limit(1, 3)
-        store.enable_transcript_tools(['mcp__web__find'])
-        commit(2)
-        store.transcript_window_turn_limit(1, 3)
-        assert store.transcript_enabled_tools() == ['mcp__web__find']
-        commit(3)
-        store.transcript_window_turn_limit(1, 3)
-        assert store.transcript_enabled_tools() == []
-        store.enable_transcript_tools(['mcp__web__find'])
-        store.transcript_window_turn_limit(1, 3, force_compact=True)
-        assert store.transcript_enabled_tools() == []
-    finally:
-        store.close()
-
-
-def test_tool_discovery_migration_and_empty_manual_compact(tmp_path):
-    from momoi.storage.core.migrations import SCHEMA_VERSION
+def test_tool_discovery_table_is_dropped(tmp_path):
+    from momoi.storage.core.migrations import MIGRATIONS, _drop_tool_discovery
     path = tmp_path / 'db'
     store = Store(path)
     with store._db:
-        store._db.execute('DROP TABLE transcript_enabled_tools')
-        store._db.execute(f'PRAGMA user_version={SCHEMA_VERSION - 1}')
+        store._db.execute('CREATE TABLE transcript_enabled_tools (name TEXT PRIMARY KEY, position INTEGER NOT NULL)')
+        store._db.execute(f'PRAGMA user_version={MIGRATIONS.index(_drop_tool_discovery)}')
     store.close()
     store = Store(path)
     try:
-        store.enable_transcript_tools(['tool'])
-        store.transcript_window_turn_limit(1, 3, force_compact=True)
-        assert store.transcript_enabled_tools() == []
+        assert store._db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='transcript_enabled_tools'"
+        ).fetchone() is None
     finally:
         store.close()
 
@@ -129,7 +104,6 @@ def test_system_index_is_independent_of_enabled_tool_schema(tmp_path):
         before = PromptRenderer._system(renderer)
         assert '日历查询与日程管理' not in str(before)
         assert 'Create an event' not in str(before)
-        store.enable_transcript_tools(['thinking_read', 'mcp__calendar__create'])
         assert PromptRenderer._system(renderer) == before
         names = {spec['name'] for spec in current.conversation_specs()}
         assert 'thinking_read' in names and 'mcp__calendar__create' not in names

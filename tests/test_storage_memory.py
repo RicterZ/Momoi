@@ -2314,6 +2314,75 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertLessEqual(row["next_review_at"], now + 86400)
             store.close()
 
+    def test_closing_goal_staged_in_same_turn_withdraws_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            try:
+                tools = AgendaTools(store)
+                draft = TurnDraft()
+                review_at = (datetime.now(ZoneInfo("UTC")) + timedelta(hours=1)).isoformat()
+                for name in ("goal_finish", "goal_cancel"):
+                    created = tools.execute(
+                        ToolCall("c", "goal_create", {
+                            "title": "核实", "success_criteria": "核实清楚",
+                            "next_action": "等结果", "next_review_at": review_at,
+                        }),
+                        draft,
+                        source_event_id="event",
+                    )
+                    goal_id = created["goal"]["id"]
+                    field = "result" if name == "goal_finish" else "reason"
+                    closed = tools.execute(
+                        ToolCall("x", name, {"goal_id": goal_id, field: "无需跟进"}),
+                        draft,
+                        source_event_id="event",
+                    )
+                    self.assertEqual(closed["state"], "withdrawn")
+                    self.assertNotIn(goal_id, draft.goals)
+                    self.assertFalse(tools.execute(
+                        ToolCall("y", name, {"goal_id": goal_id, field: "再关"}),
+                        draft,
+                        source_event_id="event",
+                    )["ok"])
+            finally:
+                store.close()
+
+    def test_rebase_drops_goals_written_by_another_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            try:
+                tools = AgendaTools(store)
+                review_at = (datetime.now(ZoneInfo("UTC")) + timedelta(hours=1)).isoformat()
+
+                def create(draft, title):
+                    return tools.execute(ToolCall(title, "goal_create", {
+                        "title": title, "success_criteria": "完成",
+                        "next_action": "检查", "next_review_at": review_at,
+                    }), draft, source_event_id="event")["goal"]["id"]
+
+                setup = TurnDraft()
+                contested, untouched = create(setup, "被并发修改"), create(setup, "未被修改")
+                store.commit_goal_draft(setup)
+                paused = TurnDraft()
+                fresh = create(paused, "本回合新建")
+                for goal_id in (contested, untouched):
+                    self.assertTrue(tools.execute(ToolCall(goal_id, "goal_update", {
+                        "goal_id": goal_id, "status": "active", "next_action": "暂停前",
+                        "next_review_at": review_at,
+                    }), paused, source_event_id="event")["ok"])
+                owner = TurnDraft()
+                tools.execute(ToolCall("owner", "goal_cancel", {
+                    "goal_id": contested, "reason": "用户取消",
+                }), owner, source_event_id="owner")
+                store.commit_goal_draft(owner)
+                tools.rebase(paused)
+                self.assertEqual(set(paused.goals), {fresh, untouched})
+                store.commit_goal_draft(paused)
+                self.assertEqual(store.goal(contested)["status"], "cancelled")
+                self.assertEqual(store.goal(untouched)["next_action"], "暂停前")
+            finally:
+                store.close()
+
     def test_goal_is_persisted_claimed_and_rescheduled_with_direct_messages(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

@@ -553,7 +553,6 @@ class ToolBatchExecutor:
                 result = enable_tools(
                     call, enable_tool_groups=request.enable_tool_groups,
                     tools=request.tools, tool_surface=self.tool_surface,
-                    persist=execution.stage != "subagent",
                 )
             elif call.name == "mcp_reload":
                 if execution.allowed_capabilities is not None and "external_effect" not in execution.allowed_capabilities:
