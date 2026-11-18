@@ -62,6 +62,26 @@ def _finalize_bubbles(text, *, attachments, mode, channel, quote_id):
     return bubbles
 
 
+BUBBLE_STREAK_LIMIT = 2
+
+
+def bubble_streak(rows, current_turn_id):
+    """Return (replies, bubbles) when the latest replies repeat one bubble count."""
+    counts = {}
+    for row in rows:
+        if row["role"] == "assistant" and str(row["turn_id"]) != str(current_turn_id):
+            counts[str(row["turn_id"])] = counts.get(str(row["turn_id"]), 0) + 1
+    replies = list(counts.values())
+    if not replies:
+        return None
+    streak = 0
+    for count in reversed(replies):
+        if count != replies[-1]:
+            break
+        streak += 1
+    return (streak, replies[-1]) if streak >= BUBBLE_STREAK_LIMIT else None
+
+
 class ReplyerBase:
     def __init__(self, config, store, provider):
         self.config, self.store, self.provider = config, store, provider
@@ -166,6 +186,12 @@ class Replyer(ReplyerBase):
             blocks.append({"type": "text", "text": f'<to_reply now="{now}">'})
             blocks.extend(target_blocks)
             blocks.append({"type": "text", "text": "</to_reply>\n"})
+        streak = bubble_streak(history_rows, request.turn_id) if mode == "text" else None
+        if streak:
+            blocks.append({"type": "text", "text": (
+                f"<bubble_hint>最近连续 {streak[0]} 次回复都是 {streak[1]} 个气泡，"
+                "这次按内容自然决定气泡数量，不要沿用固定条数。</bubble_hint>\n"
+            )})
         blocks.append({"type": "text", "text": (
             f"<intent>{escape(call.arguments['intent'])}</intent>\n"
             f"<reference>{escape(call.arguments['reference'])}</reference>"

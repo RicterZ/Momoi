@@ -961,3 +961,20 @@ def test_recalled_reply_is_marked_in_place_without_replaying_recall_tool(tmp_pat
         assert [row['text'] for row in store._db.execute('SELECT text FROM turn_progress ORDER BY part_index')] == ['same text', 'same text']
     finally:
         store.close()
+
+
+def test_bubble_streak_hints_on_third_repeat_and_resets_on_change():
+    from momoi.runtime.agent.replyer import bubble_streak
+
+    def turns(*counts):
+        rows = []
+        for index, count in enumerate(counts):
+            rows.append({"role": "user", "turn_id": f"t{index}"})
+            rows.extend({"role": "assistant", "turn_id": f"t{index}"} for _ in range(count))
+        return rows
+
+    assert bubble_streak(turns(3), "now") is None
+    assert bubble_streak(turns(3, 3), "now") == (2, 3)
+    assert bubble_streak(turns(3, 3, 3), "now") == (3, 3)
+    assert bubble_streak(turns(3, 3, 2), "now") is None
+    assert bubble_streak(turns(3, 3) + [{"role": "assistant", "turn_id": "now"}], "now") == (2, 3)
