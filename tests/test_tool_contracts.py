@@ -20,7 +20,6 @@ from momoi.runtime.workflows.memory_operation.contracts import (
 from momoi.tools.contracts.agenda import AGENDA_TOOL_SPECS
 from momoi.tools.contracts.builtin import BUILTIN_TOOL_SPECS
 from momoi.tools.contracts.memory import MEMORY_TOOL_SPECS
-from momoi.tools.contracts.thinking import THINKING_TOOL_SPECS
 
 
 def test_model_tool_schemas_compile_and_examples_validate():
@@ -40,7 +39,6 @@ def test_model_tool_schemas_compile_and_examples_validate():
         *AGENDA_TOOL_SPECS,
         *BUILTIN_TOOL_SPECS,
         *MEMORY_TOOL_SPECS,
-        *THINKING_TOOL_SPECS,
     ]
     for spec in specs:
         schema = spec["input_schema"]

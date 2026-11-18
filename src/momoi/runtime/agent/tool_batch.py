@@ -32,7 +32,7 @@ from ..tool_contracts.subagent import PLANNER_SUBAGENT_TOOL_NAMES
 
 logger = logging.getLogger("momoi.runtime.turns")
 PARALLEL_HISTORY_READS = frozenset({
-    "episode_search", "episode_read", "memory_search", "thinking_search", "thinking_read",
+    "episode_search", "episode_read",
 })
 
 
@@ -145,7 +145,6 @@ class ToolBatchExecutor:
         bubble_delivery: Any,
         agenda_tools: Any,
         memory_tools: Any,
-        thinking_tools: Any,
         tool_results: Any,
         outbox_changed: Any,
         replyer: Any = None,
@@ -160,7 +159,6 @@ class ToolBatchExecutor:
         self.agenda_tools = agenda_tools
         self.memory_tools = memory_tools
         self.memory = memory
-        self.thinking_tools = thinking_tools
         self.tool_results = tool_results
         self.outbox_changed = outbox_changed
         self.replyer = replyer
@@ -636,8 +634,6 @@ class ToolBatchExecutor:
                         {"type": "text", "text": f"[read_image {'path' if path else 'attachment id'}={identifier}]"},
                         image,
                     ])
-            elif source == "thinking":
-                result = self.thinking_tools.execute(call)
             else:
                 result = {"ok": False, "error": "tool_not_allowed"}
 

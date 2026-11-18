@@ -2009,7 +2009,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "type": "tool_use",
                                 "id": f"search-{main_call}",
-                                "name": "memory_search",
+                                "name": "episode_search",
                                 "input": {"query": "问候"},
                             }
                         ],
@@ -2119,7 +2119,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         final_tools = [tool["name"] for tool in llm_requests[6]["tools"]]
         self.assertIn("reply", final_tools)
         self.assertNotIn("end_turn", final_tools)
-        self.assertIn("memory_search", initial_tools)
+        self.assertIn("episode_search", initial_tools)
+        self.assertNotIn("memory_search", initial_tools)
         self.assertEqual(final_tools, initial_tools)
         # The application requires a tool response independently of wire protocol.
         self.assertNotIn("tool_choice", llm_requests[6])

@@ -8,7 +8,6 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 from momoi.config.loading import load_config
 from momoi.observability.context import log_context
-from momoi.tools.memory import MemoryTools
 from momoi.models import IncomingMessage, ToolCall, TurnDraft
 from momoi.llm.telemetry import (
     anthropic_reasoning,
@@ -22,7 +21,6 @@ from momoi.storage.ops.thinking import (
     encode_reasoning,
     month_key,
 )
-from momoi.tools.thinking import ThinkingTools
 from momoi.runtime.turn_support import context_data_message, owner_content_blocks
 
 
@@ -154,45 +152,6 @@ class ThinkingStoreTests(unittest.TestCase):
             )
             found = store.search_thinking(turn_id="turn-old")
             self.assertEqual(found["count"], 1)
-            store.close()
-
-    def test_tools_search_and_read(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            store.record_thinking_call(
-                created_at=time.time(),
-                turn_id="webhook:abc:0",
-                call_id="call-3",
-                stage="webhook",
-                round=1,
-                tools=["end_turn"],
-                reasoning="烘干结束提醒并非老师要求，所以这次也静默。",
-            )
-            tools = ThinkingTools(store)
-            searched = tools.execute(
-                ToolCall(
-                    "t1",
-                    "thinking_search",
-                    {"query": "静默", "time_range": {"kind": "recent", "days": 7}},
-                )
-            )
-            self.assertTrue(searched["ok"])
-            self.assertEqual(searched["count"], 1)
-            read = tools.execute(
-                ToolCall("t2", "thinking_read", {"turn_id": "webhook:abc:0"})
-            )
-            self.assertTrue(read["ok"])
-            self.assertIn("静默", read["calls"][0]["reasoning"])
-            turn_scoped = tools.execute(
-                ToolCall("t3", "thinking_search", {"turn_id": "webhook:abc:0"}),
-            )
-            self.assertEqual(turn_scoped["time_range"], {"kind": "turn"})
-            memory_result = MemoryTools(store).execute(
-                ToolCall("t4", "thinking_search", {"turn_id": "webhook:abc:0"}),
-                [],
-                TurnDraft(),
-            )
-            self.assertEqual(memory_result["error"], "tool_not_allowed")
             store.close()
 
     def test_extracts_and_persists_provider_reasoning(self) -> None:

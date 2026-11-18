@@ -11,7 +11,6 @@ from ...mcp.content import store_content_images
 from ...observability.events import log_event
 from ...observability.values import compact_log_value, safe_preview
 from ...tools.contracts.memory import MEMORY_TOOL_SPECS
-from ...tools.contracts.thinking import THINKING_TOOL_SPECS
 from ...tools.contracts.images import IMAGE_TOOL_SPECS
 from ...models import ToolCall, TurnDraft
 from ..turn_support import truncate_tool_result_json
@@ -59,9 +58,6 @@ class ToolExecutor:
         self.agenda_tools = agenda_tools
         self.tool_results = tool_results
         self.memory_tool_names = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}
-        self.thinking_tool_names = {
-            str(spec["name"]) for spec in THINKING_TOOL_SPECS
-        }
         self.artifact_root = artifact_root(config)
         self.result_root = tool_result_root(config)
 
@@ -98,8 +94,6 @@ class ToolExecutor:
             return "memory"
         if name in {spec["name"] for spec in IMAGE_TOOL_SPECS}:
             return "image"
-        if name in self.thinking_tool_names:
-            return "thinking"
         return "unknown"
 
     def is_external(self, name: str) -> bool:
@@ -148,7 +142,6 @@ class ToolExecutor:
             "agenda",
             "memory",
             "episode",
-            "thinking",
             "workflow",
         }
         if journaled:
