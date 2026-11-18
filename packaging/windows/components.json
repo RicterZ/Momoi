@@ -2,9 +2,9 @@
   "node": "24.21.0",
   "uv": "0.12.23",
   "napcat": {
-    "version": "v4.18.30",
-    "url": "https://github.com/NapNeko/NapCatQQ/releases/download/v4.18.30/NapCat.Shell.Windows.Node.zip",
-    "sha256": "f41fc5880a4abbf83c380e2b85fd15289319dc6ee17cc06da56c0edc8396158b",
+    "version": "v4.18.42",
+    "url": "https://momoi-1253047877.cos.ap-guangzhou.myqcloud.com/windows/vendor/napcat/v4.18.42/NapCat.Shell.Windows.Node.zip",
+    "sha256": "77397ac38d66f46383e48f08f35d5f9d37ec575c22069f62d6c600e73b4521ed",
     "qq_native": {
       "version": "9.9.31-49738",
       "url": "https://github.com/Rodert/qq-versions/releases/download/qq-packages-20260528-3e8913a2/QQ_9.9.31_260528_x64_01.exe",
@@ -13,9 +13,9 @@
   },
   "qq_call": {
     "source": {
-      "revision": "2c032a6d0619719d06921870e48acd92cf8a9eb0",
-      "url": "https://codeload.github.com/RicterZ/maibot-qq-voice-call/tar.gz/2c032a6d0619719d06921870e48acd92cf8a9eb0",
-      "sha256": "08edb4294894bfaed266ee891f99db4b53288d38d886d43209752ad2de7defca"
+      "revision": "4f0089098e8408d169ccad3ff0500af0c8a9b81a",
+      "url": "https://codeload.github.com/RicterZ/maibot-qq-voice-call/tar.gz/4f0089098e8408d169ccad3ff0500af0c8a9b81a",
+      "sha256": "e2859d4c49557f8739ec898d71bec2f6dc0699c07327156fcacc74bcd189a56a"
     },
     "runtime": {
       "qq": {
@@ -25,7 +25,7 @@
       },
       "loader": {
         "version": "v4.18.30",
-        "base_url": "https://raw.githubusercontent.com/NapNeko/NapCatQQ/v4.18.30/packages/napcat-shell-loader/",
+        "base_url": "https://momoi-1253047877.cos.ap-guangzhou.myqcloud.com/windows/vendor/napcat/v4.18.30/napcat-shell-loader/",
         "files": {
           "NapCatWinBootMain.exe": "bd8ec316582bfb25e3b9b7f27a22c91437584f29879950462f789fd7bb111949",
           "NapCatWinBootHook.dll": "962bd5caf59e9792c37eed99c9130bf1464d619d0209820be570874017d66925"

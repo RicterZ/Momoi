@@ -57,7 +57,7 @@ def test_pair_lock_rejects_silent_native_version_change(tmp_path, monkeypatch):
         (packaging / name).write_bytes((root / 'packaging/windows' / name).read_bytes())
     monkeypatch.setattr(module, 'ROOT', tmp_path)
     first = module.prepare(tmp_path / 'app', tmp_path / 'pin.iss')
-    assert first['QQPairVersion'] == '1.1.2'
+    assert first['QQPairVersion'] == '1.1.3'
     components = json.loads((packaging / 'components.json').read_text())
     components['napcat']['version'] = 'different'
     (packaging / 'components.json').write_text(json.dumps(components))
