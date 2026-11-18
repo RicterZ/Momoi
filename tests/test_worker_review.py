@@ -93,7 +93,7 @@ def test_finish_requires_a_verdict_per_task_and_valid_evidence():
     assert parse_worker_review({"summary": "s", "tasks": tasks, "experiences": []}, admitted)[1]["error"] == "learn_without_experience"
     assert parse_worker_review({"summary": "s", "tasks": tasks[:1], "experiences": [item]}, admitted)[1]["error"] == "tasks_mismatch"
     assert parse_worker_review({"summary": "s", "tasks": [*tasks, tasks[1]], "experiences": [item]}, admitted)[1]["error"] == "tasks_mismatch"
-    assert parse_worker_review({"summary": "s", "tasks": skipped, "experiences": [item] * 4}, admitted)[1]
+    assert parse_worker_review({"summary": "s", "tasks": skipped, "experiences": [item] * 6}, admitted)[1]
     for bad in ({"evidence": [{"task_id": "t9", "steps": []}]}, {"evidence": [{"task_id": "t1", "steps": [3]}]},
                 {"kind": "memory"}, {"content": " "}):
         assert parse_worker_review({"summary": "s", "tasks": tasks, "experiences": [{**item, **bad}]}, admitted)[1]

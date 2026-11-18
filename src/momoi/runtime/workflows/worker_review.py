@@ -57,7 +57,7 @@ WORKER_REVIEW_FINISH_SPEC = {
                 },
             },
             "experiences": {
-                "type": "array", "maxItems": 3,
+                "type": "array", "maxItems": 5,
                 "items": {
                     "type": "object", "additionalProperties": False,
                     "properties": {
