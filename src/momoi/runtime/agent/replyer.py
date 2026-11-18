@@ -65,12 +65,20 @@ def _finalize_bubbles(text, *, attachments, mode, channel, quote_id):
 BUBBLE_STREAK_LIMIT = 2
 
 
-def bubble_streak(rows, current_turn_id):
+def reply_key(row, dedupe_keys):
+    """Progress bubbles of one reply call share `turn:<id>:progress:<call>:<n>`."""
+    parts = str(dedupe_keys.get(row.get("outbox_id")) or "").split(":")
+    call = parts[3] if len(parts) == 5 and parts[2] == "progress" else "final"
+    return str(row["turn_id"]), call
+
+
+def bubble_streak(rows, current_turn_id, dedupe_keys=None):
     """Return (replies, bubbles) when the latest replies repeat one bubble count."""
     counts = {}
     for row in rows:
         if row["role"] == "assistant" and str(row["turn_id"]) != str(current_turn_id):
-            counts[str(row["turn_id"])] = counts.get(str(row["turn_id"]), 0) + 1
+            key = reply_key(row, dedupe_keys or {})
+            counts[key] = counts.get(key, 0) + 1
     replies = list(counts.values())
     if not replies:
         return None
@@ -186,7 +194,9 @@ class Replyer(ReplyerBase):
             blocks.append({"type": "text", "text": f'<to_reply now="{now}">'})
             blocks.extend(target_blocks)
             blocks.append({"type": "text", "text": "</to_reply>\n"})
-        streak = bubble_streak(history_rows, request.turn_id) if mode == "text" else None
+        streak = bubble_streak(history_rows, request.turn_id, self.store.outbox_dedupe_keys(
+            [row["outbox_id"] for row in history_rows if row["role"] == "assistant" and row.get("outbox_id")]
+        )) if mode == "text" else None
         if streak:
             blocks.append({"type": "text", "text": (
                 f"<bubble_hint>最近连续 {streak[0]} 次回复都是 {streak[1]} 个气泡，"
