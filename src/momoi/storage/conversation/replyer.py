@@ -134,6 +134,15 @@ class ReplyerHistoryStore:
             )
             return selected
 
+    def outbox_dedupe_keys(self, outbox_ids):
+        if not outbox_ids:
+            return {}
+        rows = self._db.execute(
+            f"SELECT id, dedupe_key FROM outbox WHERE id IN ({','.join('?' * len(outbox_ids))})",
+            list(outbox_ids),
+        ).fetchall()
+        return {row["id"]: row["dedupe_key"] for row in rows}
+
     def replyer_history_rows(self, channel: str):
         with transaction(self._db):
             stored = self._db.execute(
