@@ -14,7 +14,6 @@ from ..episode.episode_claims import render_verified_claims
 
 from ..agenda.subagents import SUBAGENT_SCHEMA
 from ..conversation.replyer import REPLYER_HISTORY_SCHEMA
-from ..conversation.tool_discovery import TOOL_DISCOVERY_SCHEMA
 
 # Retired Plan storage; kept so older databases migrate in order.
 PLAN_SCHEMA = """
@@ -683,7 +682,10 @@ def _add_scoped_memory_activation(database: sqlite3.Connection) -> None:
 
 
 def _add_tool_discovery(database):
-    database.execute(TOOL_DISCOVERY_SCHEMA)
+    database.execute("""CREATE TABLE IF NOT EXISTS transcript_enabled_tools (
+        name TEXT PRIMARY KEY,
+        position INTEGER NOT NULL
+    )""")
 
 
 def _add_replyer_history_windows(database: sqlite3.Connection) -> None:
@@ -883,6 +885,10 @@ def _add_reflection_candidate_operation(database: sqlite3.Connection) -> None:
         database.execute('ALTER TABLE reflection_candidates ADD COLUMN memory_operation_id TEXT')
 
 
+def _drop_tool_discovery(database: sqlite3.Connection) -> None:
+    database.execute("DROP TABLE IF EXISTS transcript_enabled_tools")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -936,6 +942,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _replace_plans_with_subagents,
     _add_subagent_notifications,
     _add_subagent_report_workflow,
+    _drop_tool_discovery,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

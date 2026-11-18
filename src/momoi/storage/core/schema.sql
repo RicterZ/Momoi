@@ -833,11 +833,6 @@ CREATE TABLE IF NOT EXISTS replyer_history_windows (
     rows_json TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS transcript_enabled_tools (
-    name TEXT PRIMARY KEY,
-    position INTEGER NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS reflection_candidates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key TEXT NOT NULL UNIQUE,

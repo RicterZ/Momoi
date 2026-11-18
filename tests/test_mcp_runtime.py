@@ -285,7 +285,6 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provider.calls, 7)
         finished = daemon.store.subagent_task(task["id"])
         self.assertEqual((finished["status"], finished["summary"]), ("succeeded", "已安装并调用"))
-        self.assertFalse(daemon.store.transcript_enabled_tools())
         prompt = daemon._request_webhook_turn.await_args
         self.assertIn("已安装并调用", prompt.args[0])
         self.assertEqual(prompt.kwargs["parent_turn_id"], finished["turn_id"])
