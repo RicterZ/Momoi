@@ -157,7 +157,7 @@ def test_progress_wake_fires_while_worker_keeps_running(tmp_path, monkeypatch):
 
     async def run():
         daemon = MomoiDaemon(config(str(tmp_path)))
-        daemon._request_webhook_turn = AsyncMock()
+        daemon._request_webhook_turn = AsyncMock(return_value=AgentReply([]))
         calls = 0
 
         async def complete(*_args, **_kwargs):
@@ -170,11 +170,12 @@ def test_progress_wake_fires_while_worker_keeps_running(tmp_path, monkeypatch):
                 "outcome": "succeeded", "summary": "好了", "output_refs": []})])
 
         daemon.provider = type("P", (), {"complete": staticmethod(complete)})()
-        daemon.store.create_subagent_task("turn", next(iter(daemon.channels)), "查资料", "查一下")
+        task_id = daemon.store.create_subagent_task("turn", next(iter(daemon.channels)), "查资料", "查一下")["id"]
         await daemon._run_subagent_task(daemon.store.claim_subagent_task())
         await asyncio.gather(*daemon._subagent_wakeups)
         prompts = [call.args[0] for call in daemon._request_webhook_turn.await_args_list]
         assert len(prompts) == 2 and "过半" in prompts[0] and "已结束" in prompts[1]
+        assert daemon.store.subagent_task(task_id)["notified_at"] is not None
         daemon.store.close()
     asyncio.run(run())
 

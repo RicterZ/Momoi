@@ -9,7 +9,7 @@ from unittest.mock import patch
 from momoi.config.manager import ConfigurationManager
 from momoi.config.workspace import atomic_write, bootstrap
 from momoi.mcp.manager import MCPManager
-from momoi.models import ToolCall
+from momoi.models import AgentReply, ToolCall
 from momoi.runtime.agent.runtime_tools import enable_tools
 from momoi.runtime.agent.tool_surface import ToolSurface
 from momoi.runtime.supervisor import RuntimeSupervisor
@@ -240,7 +240,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(daemon.store.close)
         daemon.store.create_subagent_task("source-turn", next(iter(daemon.channels)), "安装工具", "安装并调用新的 MCP 工具")
         task = daemon.store.claim_subagent_task()
-        daemon._request_webhook_turn = AsyncMock()
+        daemon._request_webhook_turn = AsyncMock(return_value=AgentReply([]))
         test = self
 
         class Provider:
@@ -285,6 +285,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provider.calls, 7)
         finished = daemon.store.subagent_task(task["id"])
         self.assertEqual((finished["status"], finished["summary"]), ("succeeded", "已安装并调用"))
+        self.assertIsNotNone(finished["notified_at"])
         prompt = daemon._request_webhook_turn.await_args
         self.assertIn("已安装并调用", prompt.args[0])
         self.assertEqual(prompt.kwargs["parent_turn_id"], finished["turn_id"])

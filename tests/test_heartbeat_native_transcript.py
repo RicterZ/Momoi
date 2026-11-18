@@ -434,13 +434,14 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
 
             worker = Worker()
             daemon.provider = worker  # type: ignore[assignment]
-            daemon._request_webhook_turn = AsyncMock()  # type: ignore[method-assign]
+            daemon._request_webhook_turn = AsyncMock(return_value=AgentReply([]))  # type: ignore[method-assign]
             await daemon._run_subagent_task(task)
             await asyncio.gather(*daemon._subagent_wakeups)
             self.assertEqual(worker.calls, 4)
             self.assertEqual(worker.surfaces[0], worker.surfaces[1])
             self.assertNotEqual(worker.surfaces[1], worker.surfaces[2])
             self.assertEqual(daemon.store.subagent_task(task["id"])["status"], "succeeded")
+            self.assertIsNotNone(daemon.store.subagent_task(task["id"])["notified_at"])
             self.assertEqual(daemon._request_webhook_turn.await_args.kwargs["contract"], "subagent")
             daemon.store.close()
 

@@ -119,10 +119,22 @@ class AgendaTools:
         return {"ok": True, "state": "staged", "goal": goal}
 
     def _current(self, goal_id: str, draft: TurnDraft) -> dict[str, Any]:
-        goal = draft.goals.get(goal_id) or self.store.goal(goal_id)
+        goal = draft.goals.get(goal_id)
         if goal is None:
-            raise ValueError("goal not found")
+            goal = self.store.goal(goal_id)
+            if goal is None:
+                raise ValueError("goal not found")
+            draft.goal_bases[goal_id] = goal["updated_at"]
         return dict(goal)
+
+    def rebase(self, draft: TurnDraft) -> None:
+        """Drop staged mutations whose goal was written by another Turn meanwhile."""
+        for goal_id in list(draft.goals):
+            stored = self.store.goal(goal_id)
+            current = stored["updated_at"] if stored is not None else None
+            if current != draft.goal_bases.get(goal_id):
+                del draft.goals[goal_id]
+                draft.goal_bases.pop(goal_id, None)
 
     def _update(self, arguments: dict[str, Any], draft: TurnDraft) -> dict[str, Any]:
         goal_id = str(arguments.get("goal_id") or "")

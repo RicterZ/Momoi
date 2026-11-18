@@ -31,6 +31,7 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
     started = False
     resumed = False
     begin_done = False
+    setup_goal = None
     draft = TurnDraft()
 
     async def read(call, *args, **kwargs):
@@ -44,6 +45,8 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
         nonlocal started, owner_done, resumed, begin_done
         current = current_log_context()['stage']
         if current == 'owner':
+            staged = [goal_id for goal_id in draft.goals if goal_id != setup_goal]
+            assert len(staged) == 1 and daemon.store.goal(staged[0]) is None
             assert "[后台任务已暂停]" in json.dumps(messages, ensure_ascii=False)
             assert "已核实的事实" in json.dumps(messages, ensure_ascii=False)
             if stop_owner:
@@ -57,10 +60,16 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
             return response([ToolCall('begin', 'heartbeat_begin', {'activity': 'reading', 'mode': 'rest', 'strategy': []})])
         if not started:
             started = True
-            return response([ToolCall('done-read', 'episode_search', {'query': '提醒'}),
+            return response([ToolCall('staged-goal', 'goal_create', {
+                                 'title': '稍后核实', 'success_criteria': '已核实', 'next_action': '核实',
+                                 'next_review_at': '2099-01-01T00:00:00+00:00'}),
+                             ToolCall('done-read', 'episode_search', {'query': '提醒'}),
                              *([reply_call('stale-reply', bubbles=['不要补发'])] if stage != 'heartbeat' else []),
                              ToolCall('not-run', 'episode_search', {'query': '下一步'})])
         assert owner_done
+        staged = [goal_id for goal_id in draft.goals if goal_id != setup_goal]
+        if staged:
+            return response([ToolCall('withdraw', 'goal_cancel', {'goal_id': staged[0], 'reason': '不用了'})])
         text = json.dumps(messages, ensure_ascii=False)
         assert '现在不用提醒了' in text
         assert '已核实的事实' in text
@@ -101,6 +110,8 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
             draft.goals.clear()
         else:
             goal_id = None
+        nonlocal setup_goal
+        setup_goal = goal_id
         work = daemon._run_tool_loop(daemon._system(planner=True),
                 [{'role': 'user', 'content': 'OLD_TRANSCRIPT_SENTINEL'}],
                 daemon.tool_surface.conversation_specs(), [], draft,
@@ -117,6 +128,10 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
                 assert resumed
             assert calls == ['done-read']
             assert daemon._background_pause is None
+            if not stop_owner:
+                assert [goal_id for goal_id in draft.goals if goal_id != setup_goal] == []
+            assert daemon.store._db.execute(
+                "SELECT COUNT(*) FROM goals WHERE title='稍后核实'").fetchone()[0] == 0
         daemon.finish_active_turn()
     try:
         asyncio.run(run())

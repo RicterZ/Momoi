@@ -97,6 +97,8 @@ class TurnDraft:
     memory_conversation: list[dict[str, Any]] = field(default_factory=list)
     triggered_episode_ids: set[str] = field(default_factory=set)
     goals: dict[str, GoalMutation] = field(default_factory=dict)
+    # updated_at of the stored goal each staged mutation was based on; absent for goals created in this Turn.
+    goal_bases: dict[str, float] = field(default_factory=dict)
     notification_messages: list[str | dict[str, Any]] | None = None
     notification_key: str = ""
     notification_priority: str = "normal"
