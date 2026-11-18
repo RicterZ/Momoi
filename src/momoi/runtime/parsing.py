@@ -83,70 +83,16 @@ def parse_bubbles(
     return bubbles, None
 
 
-CONVERSATION_ACTIONS = {"close"}
-
-
-def parse_conversation_actions(
-    raw: object,
-    open_episode_ids: set[str] | None = None,
-) -> tuple[list[dict[str, Any]] | None, str | None]:
-    if raw is None:
-        return [], None
-    if not isinstance(raw, list) or len(raw) > 32:
-        return None, "invalid_conversation_action"
-    actions: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for item in raw:
-        if not isinstance(item, dict) or set(item) != {
-            "episode_id",
-            "action",
-            "reason",
-        }:
-            return None, "invalid_conversation_action"
-        action = item.get("action")
-        episode_id = item.get("episode_id")
-        reason = item.get("reason")
-        if (
-            action not in CONVERSATION_ACTIONS
-            or not isinstance(episode_id, str)
-            or not episode_id.strip()
-            or len(episode_id) > 128
-            or not isinstance(reason, str)
-            or not reason.strip()
-            or len(reason) > 400
-        ):
-            return None, "invalid_conversation_action"
-        episode_id = episode_id.strip()
-        if episode_id in seen:
-            return None, "duplicate_conversation_action"
-        seen.add(episode_id)
-        if open_episode_ids is not None and episode_id not in open_episode_ids:
-            return None, "unknown_open_conversation"
-        actions.append(
-            {
-                "episode_id": episode_id,
-                "action": action,
-                "reason": reason.strip(),
-            }
-        )
-    return actions, None
-
-
 def parse_reflection_finish(
     arguments: dict[str, Any],
     source: str,
     owner_source: str,
     knowledge_source: str,
-    open_episode_ids: set[str] | None = None,
     *, errors: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     if not isinstance(arguments, dict):
         return None, "invalid_reflection_finish"
-    extra = set(arguments) - {
-        "summary",
-        "memories",
-        "conversation_actions",
-    }
+    extra = set(arguments) - {"summary", "memories"}
     if extra or {"summary", "memories"} - set(arguments):
         return None, "invalid_reflection_finish"
     summary = arguments.get("summary")
@@ -159,11 +105,6 @@ def parse_reflection_finish(
         or len(raw_memories) > 12
     ):
         return None, "invalid_reflection_finish"
-    conversation_actions, conversation_error = parse_conversation_actions(
-        arguments.get("conversation_actions"), open_episode_ids
-    )
-    if conversation_error is not None:
-        return None, conversation_error
     memories: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     interaction_practices = 0
@@ -247,5 +188,4 @@ def parse_reflection_finish(
     return {
         "summary": summary.strip(),
         "memories": memories,
-        "conversation_actions": conversation_actions,
     }, None

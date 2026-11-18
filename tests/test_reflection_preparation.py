@@ -78,7 +78,7 @@ def test_reflection_reads_material_after_small_batch_and_summary(daemon):
             assert workflow.stage == "reflection"
             assert "我和老师完成项目 | episode_id=" in json.dumps(messages, ensure_ascii=False)
             result = await workflow.execute_tool(ToolCall("reflect", "reflection_finish", {
-                "summary": "当天项目已完成。", "memories": [], "conversation_actions": [],
+                "summary": "当天项目已完成。", "memories": [],
             }))
         assert result["ok"]
         return workflow.completion_result()
@@ -137,7 +137,7 @@ def test_preparation_failure_keeps_original_reflection_material(daemon, failure,
         assert workflow.stage == "reflection"
         assert "pending完成项目" in json.dumps(messages, ensure_ascii=False)
         result = await workflow.execute_tool(ToolCall("finish", "reflection_finish", {
-            "summary": "仍能根据原始材料复盘", "memories": [], "conversation_actions": [],
+            "summary": "仍能根据原始材料复盘", "memories": [],
         }))
         assert result["ok"]
         return workflow.completion_result()
@@ -239,7 +239,7 @@ def test_reflection_uses_configured_window_and_complete_transcript(daemon, at):
         ):
             assert f"<{section}>" not in final_input
         result = await workflow.execute_tool(ToolCall("finish", "reflection_finish", {
-            "summary": "完成复盘", "memories": [], "conversation_actions": [],
+            "summary": "完成复盘", "memories": [],
         }))
         assert result["ok"]
         return workflow.completion_result()
@@ -273,7 +273,6 @@ def test_episode_timeline_selects_same_period_without_extracts(daemon):
         assert f"id={name} " not in timeline
     assert "verbatim-chat-extract" not in timeline
     assert "linked-turn完成项目" not in timeline
-    assert "verbatim-chat-extract" not in daemon.store.open_conversation_inventory_context()
 
 
 @pytest.mark.parametrize("offset,local_date", [(-1, "2026-09-08"), (0, "2026-09-09"), (3600, "2026-09-09")])
@@ -335,7 +334,7 @@ def test_manual_reflection_transcript_and_timelines_stop_at_command(daemon, at, 
         for name in ["before", "after"]:
             assert name + "完成项目" not in transcript
         result = await workflow.execute_tool(ToolCall("finish", "reflection_finish", {
-            "summary": "手动复盘", "memories": [], "conversation_actions": [],
+            "summary": "手动复盘", "memories": [],
         }))
         assert result["ok"]
         return workflow.completion_result()
@@ -392,11 +391,10 @@ def test_text_reflection_excludes_recalled_background_from_daily_evidence(daemon
         rejected = await workflow.execute_tool(ToolCall('bad', 'reflection_finish', {
             'summary': '日记', 'memories': [{'kind': 'practice', 'key': 'work.check',
                 'content': '认识', 'evidence': '过去的旧结论不能为今天作证', 'confidence': 0.8}],
-            'conversation_actions': [],
         }))
         assert rejected['ok'] is False
         accepted = await workflow.execute_tool(ToolCall('done', 'reflection_finish', {
-            'summary': '日记', 'memories': [], 'conversation_actions': [],
+            'summary': '日记', 'memories': [],
         }))
         assert accepted['ok'] is True
         return workflow.completion_result()

@@ -8,7 +8,7 @@ from ...memory.storage.records import MEMORY_KINDS
 REFLECTION_FINISH_SPEC: dict[str, Any] = {
     "name": "reflection_finish",
     "description": (
-        '存储当日日记、待跨天验证的观察和对话收尾决定，然后结束此私有 Turn。'
+        '存储当日日记和待跨天验证的观察，然后结束此私有 Turn。'
     ),
     "input_schema": {
         "type": "object",
@@ -20,35 +20,6 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                 "description": (
                     '有意义经历、感受、观点、理解变化及未决问题的中文日记。'
                 ),
-            },
-            "conversation_actions": {
-                "type": "array",
-                "maxItems": 32,
-                "description": (
-                    '<open_conversations>的维护工作；无需时为空。'
-                ),
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "episode_id": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 128,
-                            "description": '来自<open_conversations>的话题 ID。',
-                        },
-                        "action": {
-                            "type": "string",
-                            "enum": ["close"],
-                        },
-                        "reason": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 400,
-                        },
-                    },
-                    "required": ["episode_id", "action", "reason"],
-                    "additionalProperties": False,
-                },
             },
             "memories": {
                 "type": "array",

@@ -187,28 +187,3 @@ class EpisodeRecordStore:
             "SELECT * FROM conversation_episodes WHERE id=?", (episode_id,)
         ).fetchone()
         return self._episode_dict(row) if row else None
-
-    def apply_conversation_actions(
-        self, actions: list[dict[str, object]], *, now: float
-    ) -> None:
-        if not actions:
-            return
-        for item in actions:
-            if item.get("action") != "close":
-                continue
-            episode_id = str(item["episode_id"])
-            row = self._db.execute(
-                """SELECT id FROM conversation_episodes
-                   WHERE id=? AND status IN ('open', 'closing')""",
-                (episode_id,),
-            ).fetchone()
-            if row is None or self._runtime_archive_kind(episode_id):
-                continue
-            self._db.execute(
-                """UPDATE conversation_episodes
-                   SET status='closed', closed_at=?, open_loops_json='[]',
-                       updated_at=?
-                   WHERE id=? AND status IN ('open', 'closing')""",
-                (now, now, episode_id),
-            )
-            self._reindex_episode_terms(episode_id)

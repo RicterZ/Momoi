@@ -373,31 +373,6 @@ class ConversationViewStore:
             inventory.append(item)
         return inventory
 
-    def open_conversation_inventory_context(self, *, compact: bool = False) -> str:
-        rows = self.open_conversation_inventory()
-        if not rows:
-            return "No open or closing conversations are stored."
-        lines = [
-            "Inventory of conversations still marked open or closing. Use episode_id "
-            "in conversation_actions to close a thread that is finished or expired. "
-            "Leave it unchanged when it may still continue."
-        ]
-        for row in rows:
-            loops = json.dumps(row["open_loops"], ensure_ascii=False)
-            if compact:
-                lines.append(
-                    f"episode_id={row['id']} status={row['status']} "
-                    f"last_activity={row['last_activity_timestamp']} open_loops={loops}"
-                )
-                continue
-            summary = " ".join(str(row["narrative_summary"] or "").split())[:240]
-            lines.append(
-                f"episode_id={row['id']} status={row['status']} title={row['title']} "
-                f"last_activity={row['last_activity_timestamp']} open_loops={loops}"
-                + (f" summary={summary}" if summary else "")
-            )
-        return "\n".join(lines)
-
     def episode_turns(self, episode_id: str) -> list[dict[str, object]]:
         rows = self._db.execute(
             "SELECT * FROM episode_turns WHERE episode_id=? ORDER BY ordinal",

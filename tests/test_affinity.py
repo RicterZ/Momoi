@@ -319,7 +319,7 @@ def test_reflection_affinity_uses_settlement_executor(daemon, monkeypatch, direc
         call = (ToolCall('settle', 'affinity_change', {'direction': direction, 'reason': '本日判断',
                                                     **({'evidence': '已有计分记录'} if direction == 'increase' else {})})
                 if rounds == 1 else ToolCall('finish', 'reflection_finish',
-                    {'summary': '本日关系保持不变。', 'memories': [], 'conversation_actions': []}))
+                    {'summary': '本日关系保持不变。', 'memories': []}))
         return ProviderResponse(content=[{'type': 'tool_use', 'id': call.id,
                                          'name': call.name, 'input': call.arguments}], tool_calls=[call])
 

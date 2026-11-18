@@ -13,7 +13,6 @@ class ReflectionRecordStore:
         turn_id: str,
         summary: str,
         memories: list[dict[str, object]],
-        conversation_actions: list[dict[str, object]] | None = None,
     ) -> None:
         reflection_id = f"reflection:{local_date}"
         now = time.time()
@@ -65,7 +64,6 @@ class ReflectionRecordStore:
                         now,
                     ),
                 )
-            self.apply_conversation_actions(conversation_actions or [], now=now)
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
                    failure_reason=NULL, updated_at=? WHERE id=?""",

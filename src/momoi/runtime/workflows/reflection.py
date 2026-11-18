@@ -129,11 +129,8 @@ class ReflectionWorkflow:
         chat = reflection_messages(self.store, rows)
         transcript_messages = reflection_transcript(self.store, chat)
         evidence_passages, owner_passages = reflection_evidence(chat)
-        open_conversations = self.store.open_conversation_inventory()
-        open_episode_ids = {str(item["id"]) for item in open_conversations}
         cutoff = min(window[1], time.time())
         current_input = _pack_user_context(
-            ("open_conversations", self.store.open_conversation_inventory_context(compact=True)),
             ("self_state", heartbeat_self_state_lines(
                 self.store.self_state_context(affinity_enabled=True),
             ) if self.config.affinity_enabled else ""),
@@ -192,7 +189,6 @@ class ReflectionWorkflow:
                 evidence_passages,
                 owner_passages,
                 owner_passages,
-                open_episode_ids,
                 errors=validation_errors,
             )
             if decision is None:
@@ -207,7 +203,6 @@ class ReflectionWorkflow:
                 turn_id,
                 decision["summary"],
                 decision["memories"],
-                decision["conversation_actions"],
             )
             self.agenda_changed.set()
             if self.config.episode_annealing.enabled:
@@ -216,7 +211,6 @@ class ReflectionWorkflow:
             workflow_result = {
                 "ok": True,
                 "memories": len(decision["memories"]),
-                "conversation_actions": len(decision["conversation_actions"]),
             }
             return {"ok": True, "state": "completed", **workflow_result}
 
@@ -249,5 +243,4 @@ class ReflectionWorkflow:
             turn_id=turn_id,
             local_date=local_date,
             memories=result.get("memories", 0),
-            conversation_actions=result.get("conversation_actions", 0),
         )

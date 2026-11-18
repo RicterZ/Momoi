@@ -193,7 +193,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                         assert f"<{section}>" not in final_input
                     assert "我不吃香菜" in json.dumps(_messages[:-1], ensure_ascii=False)
                     assert "我不吃香菜" not in final_input
-                    assert "<open_conversations>" in request
+                    assert "<open_conversations>" not in request
                     assert "<always_memory_inventory>" not in request
                     assert "<recent_memory_inventory>" not in request
                     assert tools[0]["input_schema"]["properties"]["summary"]["type"] == "string"
@@ -384,63 +384,6 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(result)
             self.assertEqual(error, "invalid_reflection_finish")
 
-    def test_conversation_actions_are_validated(self) -> None:
-        base = {"summary": "测试", "memories": []}
-        result, error = parse_reflection_finish(
-            {
-                **base,
-                "conversation_actions": [
-                    {
-                        "episode_id": "trip-kyoto",
-                        "action": "close",
-                        "reason": "老师说这趟旅行已经结束。",
-                    }
-                ],
-            },
-            "",
-            "",
-            "",
-            {"trip-kyoto", "chat-today"},
-        )
-        self.assertIsNone(error)
-        self.assertEqual(result["conversation_actions"][0]["action"], "close")
-
-        _, error = parse_reflection_finish(
-            {
-                **base,
-                "conversation_actions": [
-                    {
-                        "episode_id": "missing",
-                        "action": "close",
-                        "reason": "不在清单里。",
-                    }
-                ],
-            },
-            "",
-            "",
-            "",
-            {"trip-kyoto"},
-        )
-        self.assertEqual(error, "unknown_open_conversation")
-
-        _, error = parse_reflection_finish(
-            {
-                **base,
-                "conversation_actions": [
-                    {
-                        "episode_id": "trip-kyoto",
-                        "action": "keep",
-                        "reason": "还没结束。",
-                    }
-                ],
-            },
-            "",
-            "",
-            "",
-            {"trip-kyoto"},
-        )
-        self.assertEqual(error, "invalid_conversation_action")
-
     async def test_daily_reflection_leaves_confirmed_memories_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
@@ -536,7 +479,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     assert REFLECTION_FINISH_SPEC in tools
                     assert {"recall", "conversation_search", "memory_search"} <= {t["name"] for t in tools}
                     request = json.dumps(_messages, ensure_ascii=False)
-                    assert "<open_conversations>" in request
+                    assert "<open_conversations>" not in request
                     assert "<always_memory_inventory>" not in request
                     assert "<recent_memory_inventory>" not in request
                     call = ToolCall(
@@ -770,104 +713,3 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
-    async def test_daily_reflection_closes_finished_open_conversations(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            config = AppConfig(
-                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)),
-                channel=OneBotConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                system_prompt="test {{SOUL}}",
-                soul_prompt="Test soul",
-                transcript_turns_min=4,
-                transcript_turns_max=4,
-                episode_unsummarized_tail_turns=2,
-                memory_results=4,
-                database=Path(directory) / "momoi.sqlite3",
-                log_level="DEBUG",
-                timezone="Asia/Shanghai",
-                reflection=ReflectionConfig(enabled=True),
-            )
-            daemon = MomoiDaemon(config)
-            now = datetime(2026, 7, 22, 3, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
-            claimed = daemon.store.claim_due_reflection(
-                config.reflection, now.timestamp()
-            )
-            self.assertEqual(claimed["local_date"], "2026-07-21")
-            occurred = datetime(
-                2026, 7, 21, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")
-            ).timestamp()
-            daemon.store._db.execute(
-                """INSERT INTO messages
-                   (role, content, created_at, source_event_ids_json)
-                   VALUES ('user', ?, ?, '[]')""",
-                ("# Current owner messages\n上次那趟京都旅行早就结束了。", occurred),
-            )
-            daemon.store.create_episode(
-                "京都旅行",
-                episode_id="trip-kyoto",
-                open_loops=["等老师分享旅行照片"],
-            )
-            daemon.store.create_episode("今日闲聊", episode_id="chat-today")
-            daemon.store._db.execute(
-                """UPDATE conversation_episodes
-                   SET working_summary=?, status='closing'
-                   WHERE id='trip-kyoto'""",
-                ("去年夏天京都旅行，还在等照片。",),
-            )
-            daemon.store._db.commit()
-
-            class Provider:
-                async def complete(
-                    self,
-                    _system: object,
-                    _messages: object,
-                    tools: list[dict[str, object]],
-                    **_kwargs: object,
-                ) -> ProviderResponse:
-                    assert REFLECTION_FINISH_SPEC in tools
-                    assert {"recall", "conversation_search", "memory_search"} <= {t["name"] for t in tools}
-                    request = json.dumps(_messages, ensure_ascii=False)
-                    assert "<open_conversations>" in request
-                    assert "episode_id=trip-kyoto" in request
-                    assert "episode_id=chat-today" in request
-                    assert "等老师分享旅行照片" in request
-                    call = ToolCall(
-                        "finish-reflection",
-                        "reflection_finish",
-                        {
-                            "summary": "京都旅行已经结束，关掉那条还开着的对话；今天的闲聊还在继续。",
-                            "memories": [],
-                            "conversation_actions": [
-                                {
-                                    "episode_id": "trip-kyoto",
-                                    "action": "close",
-                                    "reason": "老师说这趟旅行已经结束。",
-                                }
-                            ],
-                        },
-                    )
-                    return ProviderResponse(
-                        [
-                            {
-                                "type": "tool_use",
-                                "id": call.id,
-                                "name": call.name,
-                                "input": call.arguments,
-                            }
-                        ],
-                        [call],
-                    )
-
-            daemon.provider = Provider()
-            daemon._episode_annealing_dirty = False
-            await asyncio.wait_for(
-                daemon._complete_reflection_turn("2026-07-21", asyncio.Event()),
-                timeout=5,
-            )
-            closed = daemon.store.episode("trip-kyoto")
-            kept = daemon.store.episode("chat-today")
-            self.assertEqual(closed["status"], "closed")
-            self.assertIsNotNone(closed["closed_at"])
-            self.assertEqual(closed["open_loops"], [])
-            self.assertEqual(kept["status"], "open")
-            self.assertTrue(daemon._episode_annealing_dirty)
-            daemon.store.close()

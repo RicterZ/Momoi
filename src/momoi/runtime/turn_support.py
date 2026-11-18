@@ -96,7 +96,6 @@ USER_CONTEXT_SECTION_ORDER = (
     "episode_directory",
     "recent_events",
     "recent_goals",
-    "open_conversations",
     "recent_topic_reference",
     "recent_heartbeats",
     "runtime_directives",

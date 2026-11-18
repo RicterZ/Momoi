@@ -904,9 +904,6 @@ class StorageMemoryTest(unittest.TestCase):
             )
 
             for archive_id in archive_ids:
-                store.apply_conversation_actions(
-                    [{"action": "close", "episode_id": archive_id}], now=now + 2
-                )
                 owner_turn = "owner-for-" + archive_id
                 store.begin_turn(owner_turn, "owner", [owner_turn + "-event"])
                 with self.assertRaisesRegex(ValueError, "archive does not accept"):
