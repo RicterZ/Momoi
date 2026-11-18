@@ -52,6 +52,10 @@ class AgendaTools:
             if call.name == "goal_update":
                 return self._update(call.arguments, draft)
             if call.name in {"goal_finish", "goal_cancel"}:
+                goal_id = str(call.arguments.get("goal_id") or "")
+                if goal_id in draft.goals and self.store.goal(goal_id) is None:
+                    del draft.goals[goal_id]
+                    return {"ok": True, "state": "withdrawn", "goal_id": goal_id}
                 return self._close(call.name, call.arguments, draft)
             return {"ok": False, "error": "tool_not_allowed"}
         except (TypeError, ValueError) as error:
