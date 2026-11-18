@@ -63,12 +63,13 @@ def test_planner_surface_is_resident_without_tool_enable(tmp_path):
         current = surface({}, store=store)
         tools = current.conversation_specs()
         names = {spec['name'] for spec in tools}
-        assert {'memory_search', 'thinking_search', 'thinking_read', 'episode_relations'} <= names
+        assert 'episode_relations' in names
+        assert not {'memory_search', 'thinking_search', 'thinking_read'} & names
         assert not {'tool_search', 'tool_enable'} & names
         assert current.discovery_groups() == {}
         assert current.conversation_specs() == tools
         for stage in ('owner', 'heartbeat', 'webhook', 'goal'):
-            assert 'thinking_read' in current.permitted_names(stage)
+            assert not {'memory_search', 'thinking_read'} & current.permitted_names(stage)
             assert 'tool_enable' not in current.permitted_names(stage)
     finally:
         store.close()
@@ -107,7 +108,7 @@ def test_system_index_is_independent_of_enabled_tool_schema(tmp_path):
         assert 'Create an event' not in str(before)
         assert PromptRenderer._system(renderer) == before
         names = {spec['name'] for spec in current.conversation_specs()}
-        assert 'thinking_read' in names and 'mcp__calendar__create' not in names
+        assert 'episode_relations' in names and 'mcp__calendar__create' not in names
     finally:
         store.close()
 

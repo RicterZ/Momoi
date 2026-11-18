@@ -7,7 +7,6 @@ from ...tools.contracts.agenda import AGENDA_TOOL_SPECS
 from ...tools.contracts.builtin import BASH_REPLACED_TOOLS, BUILTIN_TOOL_SPECS, builtin_tool_enabled
 from ...observability.events import TRACE, log_event
 from ...tools.contracts.memory import MEMORY_TOOL_SPECS
-from ...tools.contracts.thinking import THINKING_TOOL_SPECS
 from ...tools.contracts.images import IMAGE_TOOL_SPECS
 from ...memory.text import estimate_tokens
 from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
@@ -39,7 +38,7 @@ PHONE_RESULT_SPEC = {
 logger = logging.getLogger("momoi.runtime.turns")
 
 DEFERRED_TOOLS = frozenset({
-    "thinking_search", "thinking_read", "episode_relations", "memory_search",
+    "episode_relations", "memory_search",
     "write_file", "makedirs", "move_file", "delete_file",
     "skill_install", "skill_uninstall",
 })
@@ -85,8 +84,7 @@ class ToolSurface:
         return dict(sorted(groups.items()))
 
     def planner_resident_specs(self) -> list[dict[str, Any]]:
-        history = [spec for spec in [*MEMORY_TOOL_SPECS, *THINKING_TOOL_SPECS, EPISODE_RELATIONS_TOOL_SPEC]
-                   if spec["name"] in DEFERRED_TOOLS]
+        history = [EPISODE_RELATIONS_TOOL_SPEC]
         if "onebot" in self.channel_names:
             history.append(QQ_RECALL_MESSAGE_SPEC)
         if "qq_call" in self.channel_names:
@@ -213,8 +211,7 @@ class ToolSurface:
 
     def permitted_names(self, stage: str) -> frozenset[str]:
         agenda = {str(spec["name"]) for spec in AGENDA_TOOL_SPECS}
-        memory = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}
-        thinking = {str(spec["name"]) for spec in THINKING_TOOL_SPECS}
+        memory = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS} - {"memory_search"}
         channel_tools = {spec["name"] for spec in self.planner_resident_specs()
                          if spec["name"] in {"qq_recall_message", "qq_call_status"}}
         delegation = {spec["name"] for spec in PLANNER_SUBAGENT_TOOLS}
@@ -228,7 +225,6 @@ class ToolSurface:
             *shared,
             *agenda,
             *memory,
-            *thinking,
             *channel_tools,
             *delegation,
         }
@@ -246,9 +242,7 @@ class ToolSurface:
                     *channel_tools,
                     *delegation,
                     "goal_create",
-                    "memory_search",
                     "read_tool_result",
-                    *thinking,
                 }
             )
         raise ValueError(f"stage does not use the conversation tool surface: {stage}")

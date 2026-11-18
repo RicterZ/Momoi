@@ -789,7 +789,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(daemon.services.embedding)
         names = {item["name"] for item in daemon.tool_surface.conversation_specs()}
         self.assertNotIn("send_voice", names)
-        self.assertIn("memory_search", names)
+        self.assertIn("recall", names)
         self.assertIn("recall", names)
         with daemon.store._db:
             daemon.store._db.execute("""INSERT INTO memories

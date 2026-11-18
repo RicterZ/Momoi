@@ -15,7 +15,6 @@ from ..channel import (
 from ..config.models import AppConfig
 from ..observability.events import log_event
 from ..tools.memory import MemoryTools
-from ..tools.thinking import ThinkingTools
 from ..mcp.manager import MCPManager
 from ..models import AgentReply, IncomingMessage
 from .retrieval.service import SemanticRecallService
@@ -116,7 +115,6 @@ class MomoiDaemon(
         self.memory_tools = MemoryTools(
             self.store, self.semantic_recall, memory=self.memory,
         )
-        self.thinking_tools = ThinkingTools(self.store)
         from ..tools.deepseek_web import deepseek_web_key
         self.builtin_tools = BuiltinTools(
             config.workspace or config.database.parent,
@@ -230,7 +228,6 @@ class MomoiDaemon(
             self.bubble_delivery,
             self.agenda_tools,
             self.memory_tools,
-            self.thinking_tools,
             self.tool_results,
             self.outbox_changed,
             replyer=Replyer(config, self.store, self.reply_provider),

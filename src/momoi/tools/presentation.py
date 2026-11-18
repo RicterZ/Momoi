@@ -216,24 +216,6 @@ def project_tool_result(result, name):
     if name == 'episode_read':
         from .episode_timeline import project_episode
         result = project_episode(result)
-    if name == 'thinking_read' and isinstance(result.get('calls'), list):
-        from ..memory.text import truncate_tokens
-        fields = {'turn_id', 'call_id', 'created_at', 'stage', 'round', 'tools', 'reasoning_chars', 'reasoning'}
-        calls = []
-        omitted = set(result.get('omitted_fields', []))
-        for item in result['calls']:
-            if not isinstance(item, dict):
-                continue
-            omitted.update(f'calls.*.{key}' for key in item if key not in fields)
-            call = {key: value for key, value in item.items() if key in fields}
-            reasoning = str(call.get('reasoning') or '')
-            call['reasoning'] = truncate_tokens(reasoning, 1800)
-            if call['reasoning'] != reasoning:
-                omitted.add('calls.*.reasoning (excerpt)')
-            calls.append(call)
-        result['calls'] = calls
-        if omitted:
-            result['omitted_fields'] = sorted(omitted)
     if name == 'memory_search' and isinstance(result.get('results'), list):
         fields = {'id', 'kind', 'key', 'content', 'source', 'local_date', 'confidence',
                   'evidence', 'evidence_quote', 'updated_at', 'activation', 'authority', 'meta'}
