@@ -26,12 +26,13 @@ def add(manager, *, ttl=60, operation="a", **kwargs):
     )
 
 
-def test_expiry_boundary_read_filter_and_physical_cleanup(state):
+@pytest.mark.parametrize("ttl", [60, 48 * 3600])
+def test_expiry_boundary_read_filter_and_physical_cleanup(state, ttl):
     manager, now, store = state
-    created = add(manager)
-    now[0] = 1059.999
+    created = add(manager, ttl=ttl)
+    now[0] = 1000 + ttl - 0.001
     assert len(manager.snapshot().slots) == 1
-    now[0] = 1060
+    now[0] = 1000 + ttl
     assert manager.snapshot().slots == ()
     assert (
         store._db.execute("SELECT COUNT(*) FROM current_state_slots").fetchone()[0] == 1
@@ -105,7 +106,7 @@ def test_separate_connections_reject_stale_snapshots(state):
 
 def test_invalid_ttl_is_rejected_without_a_change(state):
     manager, _, _ = state
-    for ttl in (0, -1, True, 1.5, float("nan"), float("inf"), 86401, "60"):
+    for ttl in (0, -1, True, 1.5, float("nan"), float("inf"), 172801, "60"):
         with pytest.raises(ValueError, match="invalid_ttl"):
             add(manager, ttl=ttl)
         assert manager.snapshot().revision == 0

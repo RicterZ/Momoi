@@ -6,7 +6,7 @@ CurrentStateManager.apply_arguments. Foreground Turn completion does not carry s
 
 MAX_SLOTS = 12
 SLOT_SOFT_WARNING_THRESHOLD = 8
-MAX_TTL_SECONDS = 24 * 3600
+MAX_TTL_SECONDS = 48 * 3600
 SUBJECT_MAX_LENGTH = 128
 KEY_MAX_LENGTH = 64
 KEY_PATTERN = r"^[a-z][a-z0-9_.-]*(?![\s\S])"
@@ -93,7 +93,7 @@ CURRENT_STATE_CHANGE_SCHEMA = {
                         "minimum": 1,
                         "maximum": MAX_TTL_SECONDS,
                         "description": (
-                            '新证据支持保留该事实的时长，从提交时间开始计算。仅保留最多 24 小时的由证据支持的窗口；未来行动不排除其当前有效的约束。仅凭更长持续时间并不使事实持久。对于真正持久的事实，请使用 memory_operation 而非当前状态槽位。看到或复用槽位并非续期的证据。过期意味着未知，而非相反状态成立。续期需要新证据并执行删除 + 添加。'
+                            '新证据支持保留该事实的时长，从提交时间开始计算。仅保留最多 48 小时的由证据支持的窗口；未来行动不排除其当前有效的约束。仅凭更长持续时间并不使事实持久。对于真正持久的事实，请使用 memory_operation 而非当前状态槽位。看到或复用槽位并非续期的证据。过期意味着未知，而非相反状态成立。续期需要新证据并执行删除 + 添加。'
                         ),
                     },
                 },

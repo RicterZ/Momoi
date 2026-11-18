@@ -418,7 +418,7 @@ def test_invalid_ttl_is_repaired_without_partial_changes(daemon):
                         "status": "observed", "source_turn": "T-1",
                         "source_id": "message:" + str(daemon.store._db.execute("SELECT id FROM messages WHERE turn_id='source'").fetchone()[0]),
                         "source": "I am busy", "uncertainty": "",
-                        "ttl_seconds": 86401 if count == 1 else 60,
+                        "ttl_seconds": 172801 if count == 1 else 60,
                     }
                 ],
             }

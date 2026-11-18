@@ -1,6 +1,7 @@
 from typing import Any
 
 from ...storage.memory.catalog import MOMOI_MEMORY_TAGS
+from ...storage.memory.current_state_contract import MAX_TTL_SECONDS
 from ...memory.storage.records import MEMORY_KINDS
 
 
@@ -202,7 +203,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "description": '来自当前认证用户消息的精确连续引用。',
                 },
                 "scope": {"type": "string", "enum": ["memory", "current_state"],
-                          "description": '存储类别：memory（默认）用于持久化事实、偏好、规则或关系；current_state 仅用于更新或删除现有临时事实或限时行为（最长 24 小时）。持久化记忆种类和激活由后台审查分类，而非 type 参数。'},
+                          "description": '存储类别：memory（默认）用于持久化事实、偏好、规则或关系；current_state 仅用于更新或删除现有临时事实或限时行为（最长 48 小时）。持久化记忆种类和激活由后台审查分类，而非 type 参数。'},
                 "memory_scope": {"type": "string", "maxLength": 200,
                                  "pattern": "^(?:|heartbeat|webhook|goal:[^\\s]+)$",
                                  "description": '持久化记忆的适用工作流（领域），不是 kind/tags。空字符串或省略表示全局通用；webhook/heartbeat 或 goal:<已知 Goal ID> 表示只在对应工作流使用。主模型应根据用户明确要求和记忆实际用途选择，并把该值交给后台审核。'},
@@ -211,7 +212,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "key": {"type": "string", "minLength": 1, "maxLength": 64,
                         "pattern": "^[a-z][a-z0-9_.-]*$",
                         "description": 'current_state 仅限：不带主题前缀的维度；复用现有键。对于 owner.diet.intake 使用 subject=owner，key=diet.intake。replace/forget 需要现有维度；不允许添加。'},
-                "ttl_seconds": {"type": "integer", "minimum": 1, "maximum": 86400,
+                "ttl_seconds": {"type": "integer", "minimum": 1, "maximum": MAX_TTL_SECONDS,
                                 "description": 'current_state replace 仅限：本次写入中由证据支持的剩余持续时间。'},
                 "target_id": {
                     "type": "integer",

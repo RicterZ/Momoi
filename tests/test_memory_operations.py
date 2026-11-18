@@ -1038,7 +1038,7 @@ def test_temporary_state_replace_forget_and_retry_do_not_restore_old_state(store
 
 
 @pytest.mark.parametrize("overrides", [
-    {"evidence": "不存在的证据"}, {"ttl_seconds": 86401}, {"ttl_seconds": 0},
+    {"evidence": "不存在的证据"}, {"ttl_seconds": 172801}, {"ttl_seconds": 0},
     {"ttl_seconds": True}, {"target_id": 1}, {"content": "x" * 513},
     {"subject": " "}, {"key": "invalid key"},
 ])
