@@ -4,6 +4,7 @@ import json
 from ...storage.episode.episode_sql import runtime_archive_kind_sql
 from ...storage.episode.execution_evidence import bounded_result, historical_result
 from ...storage.conversation.transcripts import TRANSCRIPT_PROTOCOL_TOOLS
+from ...storage.core.turn_workflow import turn_workflow_kind_sql
 
 BACKGROUND_TOOLS = {
     "goal_create", "goal_update", "goal_finish", "goal_cancel", "goal_review",
@@ -14,6 +15,19 @@ BACKGROUND_TOOLS = {
     "episode_consolidation_finish",  # Keep retired tools recognizable in historical transcripts.
     "memory_maintenance_finish", "memory_operation_finish",
 }
+# Worker and background workflows keep their own transcripts; daily reflection
+# only learns from chat turns.
+CHAT_WORKFLOWS = ("owner", "reply_followup", "channel_event")
+
+
+def chat_tool_results(store, window):
+    return store._db.execute(
+        "SELECT j.turn_id, j.sequence, j.created_at, j.payload_json FROM turn_journal j "
+        "JOIN turns ON turns.id=j.turn_id "
+        "WHERE j.item_type='tool_result' AND j.created_at>=? AND j.created_at<? "
+        f"AND {turn_workflow_kind_sql('turns')} IN ({','.join('?' for _ in CHAT_WORKFLOWS)}) "
+        "ORDER BY j.created_at, j.sequence", (*window, *CHAT_WORKFLOWS),
+    ).fetchall()
 
 
 def reflection_tool_result(payload, name):
@@ -61,11 +75,7 @@ def reflection_transcript(store, rows, window):
             label += f" ({delivery})"
         text = f"{label}: {row['content']}"
         records.append((float(row["created_at"]), 1, int(row["id"]), text, str(row["turn_id"])))
-    for row in store._db.execute(
-        "SELECT turn_id, sequence, created_at, payload_json FROM turn_journal "
-        "WHERE item_type='tool_result' AND created_at>=? AND created_at<? "
-        "ORDER BY created_at, sequence", window,
-    ).fetchall():
+    for row in chat_tool_results(store, window):
         try:
             payload = json.loads(row["payload_json"])
         except (ValueError, TypeError):

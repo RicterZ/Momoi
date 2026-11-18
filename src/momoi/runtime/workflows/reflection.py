@@ -11,7 +11,7 @@ from ..agent import AgentWorkflow
 from ..context.presentation import heartbeat_self_state_lines
 from ..parsing import parse_reflection_finish
 from ..tool_contracts.reflection import REFLECTION_FINISH_SPEC
-from ..transcript.reflection import BACKGROUND_TOOLS, reflection_transcript
+from ..transcript.reflection import BACKGROUND_TOOLS, chat_tool_results, reflection_transcript
 from ..turn_support import (
     REFLECTION_PROMPT_PATH,
     REFLECTION_SYSTEM_PROMPT,
@@ -134,10 +134,7 @@ class ReflectionWorkflow:
         reflection_evidence = raw_record
         # First-hand execution results can support work-method insights. Memory
         # retrieval is background even when the retrieval itself happened today.
-        for record in self.store._db.execute(
-            "SELECT payload_json FROM turn_journal WHERE item_type='tool_result' "
-            "AND created_at>=? AND created_at<?", window,
-        ).fetchall():
+        for record in chat_tool_results(self.store, window):
             try:
                 payload = json.loads(record["payload_json"])
             except (ValueError, TypeError):

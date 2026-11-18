@@ -147,6 +147,21 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 trust="untrusted_tool_data",
                 created_at=occurred + 2,
             )
+            daemon.store._db.execute(
+                """INSERT INTO turns
+                   (id, kind, source_ids_json, state, started_at, updated_at, workflow_kind)
+                   VALUES ('worker-turn', 'autonomous', '[]', 'completed', ?, ?, 'subagent')""",
+                (occurred, occurred),
+            )
+            daemon.store._db.commit()
+            daemon.store.append_turn_journal(
+                "worker-turn",
+                "tool_result",
+                {"tool_call_id": "worker-exec", "name": "exec", "ok": True,
+                 "error": None, "result": {"stdout": "worker-only-output"}},
+                trust="untrusted_tool_data",
+                created_at=occurred + 2,
+            )
 
             class Provider:
                 async def complete(
@@ -170,6 +185,8 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                         _system, ensure_ascii=False
                     )
                     assert "<workflow_contract>" in request
+                    assert "mcp__gog__gmail_search" in request
+                    assert "worker-only-output" not in request
                     final_input = json.dumps(_messages[-1], ensure_ascii=False)
                     for section in ("daily_reflection_record", "tool_timeline", "self_state", "reflection_scope"):
                         assert f"<{section}>" not in final_input
