@@ -71,7 +71,7 @@ def test_migration_cancels_active_plans_and_creates_subagent_table(tmp_path):
 def test_worker_failure_reports_latest_progress_to_planner(tmp_path):
     async def run():
         daemon = MomoiDaemon(config(str(tmp_path)))
-        daemon._request_webhook_turn = AsyncMock()
+        daemon._request_webhook_turn = AsyncMock(return_value=AgentReply([]))
         calls = 0
 
         async def complete(*_args, **_kwargs):
