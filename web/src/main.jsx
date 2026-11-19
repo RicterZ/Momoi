@@ -1511,7 +1511,11 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
           </section>
         ))
       ) : (
-        <Empty text={candidateMode ? "暂无累计达到 2 次的观察；达到 5 次且无冲突后，可在此提交审核，通过后进入召回记忆。" : undefined} />
+        <Empty text={query.trim()
+          ? "没有找到匹配的记忆，试试其他关键词。"
+          : candidateMode
+            ? "暂无复盘候选。"
+            : "当前分类还没有记忆。"} />
       )}
     </>
   );
