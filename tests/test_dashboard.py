@@ -865,6 +865,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             ("GET", "/api/usage", None),
             ("GET", "/api/health", None),
             ("GET", "/api/memories", None),
+            ("PATCH", "/api/reflections/2026-08-13", {"summary": "改掉"}),
             ("GET", "/api/reflection-memories", None),
             ("PATCH", "/api/reflection-memories/1", {"content": "改掉"}),
             ("DELETE", "/api/reflection-memories/1", None),
@@ -1126,6 +1127,27 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await response.json())["items"], [])
         response = await self.client.get("/api/reflections?date=invalid", headers=auth)
         self.assertEqual(response.status, 400)
+
+    async def test_edit_completed_reflection_summary(self) -> None:
+        auth = self._auth()
+        path = "/api/reflections/2026-08-13"
+        for invalid in (" ", 42, "日" * 6001):
+            response = await self.client.patch(path, headers=auth, json={"summary": invalid})
+            self.assertEqual(response.status, 400)
+        response = await self.client.patch(path, headers=auth, json={"summary": " 修订正文。\n第二段。 "})
+        self.assertEqual(response.status, 200)
+        self.assertEqual(await response.json(), {"summary": "修订正文。\n第二段。"})
+        response = await self.client.get("/api/reflections?date=2026-08-13", headers=auth)
+        item = (await response.json())["items"][0]
+        self.assertEqual(item["summary"], "修订正文。\n第二段。")
+        self.assertEqual(item["memories"][0]["content"], "保持验证。")
+
+        with self.store._db:
+            self.store._db.execute("UPDATE reflections SET state='running' WHERE local_date='2026-08-13'")
+        for date in ("2026-08-13", "2026-08-14"):
+            response = await self.client.patch(f"/api/reflections/{date}", headers=auth, json={"summary": "不可覆盖"})
+            self.assertEqual(response.status, 404)
+        self.assertEqual(self.store.reflection("2026-08-13")["summary"], "修订正文。\n第二段。")
 
     async def test_goal_update_and_cancel(self) -> None:
         updated = await (
