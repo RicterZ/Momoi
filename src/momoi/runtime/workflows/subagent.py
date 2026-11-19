@@ -35,6 +35,8 @@ SUBAGENT_MESSAGE_LIMIT = 5
 SUBAGENT_MESSAGE_WINDOW_SECONDS = 60
 WORKER_PRACTICE_LIMIT = 3
 WORKER_PRACTICE_TOKENS = 1200
+# Shadow mode: matches are only logged until their effect on real tasks has been judged.
+WORKER_PRACTICE_INJECT = False
 
 
 def worker_practices_text(rows) -> str:
@@ -228,10 +230,14 @@ class SubagentWorkflow:
         messages = [{"role": "user", "content": (
             f"<task id=\"{task_id}\" title=\"{task['title']}\" current_time=\"{now}\" "
             f"workdir=\"{self.tool_executor.artifact_root.resolve()}\">\n"
-            f"{task['task']}\n</task>" + worker_practices_text(practices)
+            f"{task['task']}\n</task>" + (worker_practices_text(practices) if WORKER_PRACTICE_INJECT else "")
         )}]
         log_event(logger, logging.INFO, "subagent_started", task_id=task_id, turn_id=turn_id,
-                  title=task["title"], practices=[row["id"] for row in practices])
+                  title=task["title"])
+        if practices:
+            log_event(logger, logging.INFO, "worker_practices_matched", task_id=task_id, turn_id=turn_id,
+                      injected=WORKER_PRACTICE_INJECT, practices=[row["id"] for row in practices],
+                      keys=[row["key"] for row in practices])
         try:
             await self._run_tool_loop(
                 self._subagent_system(), messages, self.tool_surface.worker_specs(), [], TurnDraft(),

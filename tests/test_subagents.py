@@ -333,7 +333,7 @@ def test_voice_call_result_falls_back_to_text_channel(tmp_path):
         daemon.store.close()
 
 
-def test_worker_task_carries_triggered_worker_practices_only(tmp_path):
+def test_worker_task_carries_triggered_worker_practices_only(tmp_path, monkeypatch):
     import json
     from momoi.models import IncomingMessage
     from momoi.runtime.tool_contracts.context import recall_search_arguments
@@ -359,6 +359,10 @@ def test_worker_task_carries_triggered_worker_practices_only(tmp_path):
 
         daemon.provider = type("P", (), {"complete": staticmethod(complete)})()
         channel = next(iter(daemon.channels))
+        daemon.store.create_subagent_task("turn", channel, "影子", "搜索一下店铺")
+        await daemon._run_subagent_task(daemon.store.claim_subagent_task())
+        assert "<practices>" not in seen.pop()
+        monkeypatch.setattr(subagent_workflow, "WORKER_PRACTICE_INJECT", True)
         for title, text in (("查资料", "搜索一下店铺"), ("关灯", "关客厅灯")):
             daemon.store.create_subagent_task("turn", channel, title, text)
             await daemon._run_subagent_task(daemon.store.claim_subagent_task())
