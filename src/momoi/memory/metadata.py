@@ -71,6 +71,10 @@ class MemoryFilters(TypedDict, total=False):
     scope: str
 
 
+# Worker practices reach Workers through their task; the Planner never searches them.
+WORKER_SCOPE = "worker"
+
+
 def validate_scope(scope):
     if not isinstance(scope, str) or len(scope) > 200 or scope != scope.strip() or any(ord(c) < 32 for c in scope):
         raise ValueError("invalid memory scope")

@@ -331,3 +331,41 @@ def test_voice_call_result_falls_back_to_text_channel(tmp_path):
         assert daemon._subagent_reply_channel("onebot") == "onebot"
     finally:
         daemon.store.close()
+
+
+def test_worker_task_carries_triggered_worker_practices_only(tmp_path):
+    import json
+    from momoi.models import IncomingMessage
+    from momoi.runtime.tool_contracts.context import recall_search_arguments
+    from tests.support import seed_memory
+
+    async def run():
+        daemon = MomoiDaemon(config(str(tmp_path)))
+        daemon._request_webhook_turn = AsyncMock(return_value=AgentReply([]))
+        event = IncomingMessage("e", "owner", "x", time.time(), time.time())
+        for key, scope, content in (("practice.search.rate-limit", "worker", "两次搜索之间间隔几秒"),
+                                    ("practice.search.global", "", "全局记忆不该注入")):
+            memory_id = seed_memory(daemon.store, event, key=key, content=content, kind="practice",
+                                    activation="scoped" if scope else "recall")
+            with daemon.store._db:
+                daemon.store._db.execute("UPDATE memories SET scope_key=?, meta_json=? WHERE id=?", (scope, json.dumps(
+                    {"scope": scope, "triggers": ["搜索"], "verification": "verified", "pitfalls": ["429 后先等"]},
+                    ensure_ascii=False), memory_id))
+        seen = []
+
+        async def complete(_system, messages, *_args, **_kwargs):
+            seen.append(messages[0]["content"])
+            return ProviderResponse([], [ToolCall("f", "subagent_finish", {"outcome": "succeeded", "summary": "完成", "output_refs": []})])
+
+        daemon.provider = type("P", (), {"complete": staticmethod(complete)})()
+        channel = next(iter(daemon.channels))
+        for title, text in (("查资料", "搜索一下店铺"), ("关灯", "关客厅灯")):
+            daemon.store.create_subagent_task("turn", channel, title, text)
+            await daemon._run_subagent_task(daemon.store.claim_subagent_task())
+        assert "<practices>" in seen[0] and "两次搜索之间间隔几秒" in seen[0] and "<pitfall>429 后先等</pitfall>" in seen[0]
+        assert "全局记忆不该注入" not in seen[0] and "<practices>" not in seen[1]
+        with pytest.raises(ValueError):
+            recall_search_arguments({"scope": "worker"})
+        assert daemon.store.memories.triggered("搜索", scope="")[0]["key"] == "practice.search.global"
+        daemon.store.close()
+    asyncio.run(run())

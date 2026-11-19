@@ -228,7 +228,7 @@ class MemoryOperationStore:
             )
 
     def validate_memory_scopes(self, requests, decisions):
-        allowed = {"", "heartbeat", "webhook"}
+        allowed = {"", "heartbeat", "webhook", "worker"}
         allowed.update("goal:" + row[0] for row in self._db.execute("SELECT id FROM goals"))
         scopes = [request["scope"] for request in requests if "scope" in request]
         scopes.extend(item.get("memory", {}).get("meta", {}).get("scope", "")

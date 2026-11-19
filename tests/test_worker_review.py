@@ -218,6 +218,9 @@ def test_practice_candidates_count_each_worker_task_once_and_feed_admission_rece
     }, trust="runtime")
     result = store.change_reflection_candidate(candidate["id"], candidate["revision"], admit=True)
     assert f"execution:{worker_turn}:call-x" in store.memory_operation_execution_evidence(result["operation_id"])
+    [operation] = json.loads(store._db.execute(
+        "SELECT operations_json FROM memory_operation_batches WHERE id=?", (result["operation_id"],)).fetchone()[0])
+    assert operation["scope"] == "worker"
 
     store._db.execute("UPDATE reflection_candidates SET memory_operation_id=NULL, state='deleted'")
     store.commit_worker_review(today, "review-3", [], [practice_candidate(item, tasks, store.timezone)])

@@ -13,6 +13,7 @@ from ..models import (
     TurnDraft,
     speaker_label,
 )
+from ..memory.metadata import WORKER_SCOPE
 from ..memory.retrieval.sparse import SearchBackend, search_expression
 from ..storage import Store
 from ..memory.text import truncate_tokens
@@ -150,6 +151,8 @@ class MemoryTools:
             call = ToolCall(call.id, call.name, normalized or {}, call.argument_error)
         try:
             if call.name == "memory_search":
+                if (call.arguments.get("filters") or {}).get("scope") == WORKER_SCOPE:
+                    return _memory_error("worker_scope_not_searchable")
                 query = str(call.arguments.get("query") or "").strip()
                 if not query:
                     return self._search(call.arguments, draft, event_key=call.id)
@@ -242,6 +245,8 @@ class MemoryTools:
         draft: TurnDraft,
         *, event_key: str = "",
     ) -> dict[str, Any]:
+        if (arguments.get("filters") or {}).get("scope") == WORKER_SCOPE:
+            return _memory_error("worker_scope_not_searchable")
         query = str(arguments.get("query") or "").strip()
         if not query:
             return _memory_error("query_required")

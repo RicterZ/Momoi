@@ -44,7 +44,7 @@ _MEMORY = {
             "properties": {
                 "scope": {
                     "type": "string", "maxLength": 200,
-                    "description": "全局填空字符串；工作流范围为 heartbeat、webhook 或 goal:<提供的 Goal ID>。key 不包含范围前缀。",
+                    "description": "全局填空字符串；工作流范围为 heartbeat、webhook、worker 或 goal:<提供的 Goal ID>。key 不包含范围前缀。",
                 },
                 "triggers": TRIGGER_INPUT_SCHEMA,
                 **PRACTICE_META_SCHEMA,

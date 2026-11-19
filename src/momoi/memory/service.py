@@ -37,9 +37,9 @@ class Memory:
     def apply(self, plan: MemoryPlan, *, operation_id: str) -> dict[str, object]:
         return self.writing.apply(plan, operation_id=operation_id)
 
-    def triggered(self, text: str | Sequence[str], *, limit: int = 6, token_budget: int = 1600):
-        """Bounded literal triggers over active global recall memories; no model call."""
-        return triggered_memories(self.repository, text, limit=limit, token_budget=token_budget)
+    def triggered(self, text: str | Sequence[str], *, limit: int = 6, token_budget: int = 1600, scope: str = ""):
+        """Bounded literal triggers over active global recall or one scope's memories; no model call."""
+        return triggered_memories(self.repository, text, limit=limit, token_budget=token_budget, scope=scope)
 
     async def search(
         self, query: str | list[MemoryRecallQuery], limit: int = 6, *,

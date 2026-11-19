@@ -127,7 +127,7 @@ class DashboardStore:
                 scope = item["scope"]
                 item["scope_label"] = (
                     f"Goal · {goal_titles.get(scope[5:], scope[5:])}" if scope.startswith("goal:")
-                    else {"heartbeat": "心跳", "webhook": "Webhook"}.get(scope, scope)
+                    else {"heartbeat": "心跳", "webhook": "Webhook", "worker": "Worker"}.get(scope, scope)
                 )
             results.append(item)
         return results
