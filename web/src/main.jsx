@@ -1154,15 +1154,19 @@ function ReflectionSummary({ item, token, onSaved }) {
   return (
     <>
       <div className="card-head">
-        <h2>{item.local_date}</h2>
-        <div className="memory-badges">
-          <span className="status">{item.state}</span>
+        <div className="reflection-title">
+          <h2>{item.local_date}</h2>
           {item.state === "completed" && draft === null && (
-            <button type="button" className="quiet-button" onClick={() => setDraft(item.summary || "")}>
-              编辑
+            <button type="button" className="reflection-edit" aria-label="编辑复盘" title="编辑复盘"
+              onClick={() => setDraft(item.summary || "")}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 20h4L19 9l-4-4L4 16v4Z" />
+                <path d="m13.5 6.5 4 4" />
+              </svg>
             </button>
           )}
         </div>
+        <span className="status">{item.state}</span>
       </div>
       {draft === null ? (
         <p className="summary">

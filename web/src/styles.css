@@ -1271,6 +1271,32 @@ a.tag:hover {
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
+.reflection-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.reflection-edit {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.reflection-card:hover .reflection-edit, .reflection-edit:focus-visible { opacity: 1; }
+.reflection-edit:hover { color: var(--pink); background: rgba(255, 102, 145, 0.1); }
+.reflection-edit svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .reflection-card .summary {
   margin: 18px 0 0;
   white-space: pre-wrap;
