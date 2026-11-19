@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS worker_reviews (
 CREATE TABLE IF NOT EXISTS worker_experience_candidates (
  id INTEGER PRIMARY KEY AUTOINCREMENT, local_date TEXT NOT NULL, turn_id TEXT NOT NULL,
  kind TEXT NOT NULL CHECK (kind IN ('execution', 'dispatch')),
- applies_to TEXT NOT NULL, content TEXT NOT NULL,
+ problem TEXT NOT NULL, applies_to TEXT NOT NULL, content TEXT NOT NULL,
  pitfalls_json TEXT NOT NULL DEFAULT '[]', evidence_json TEXT NOT NULL,
  state TEXT NOT NULL DEFAULT 'candidate' CHECK (state IN ('candidate', 'deleted')),
  created_at REAL NOT NULL
@@ -81,9 +81,9 @@ class WorkerReviewStore:
             for item in experiences:
                 self._db.execute(
                     "INSERT INTO worker_experience_candidates "
-                    "(local_date, turn_id, kind, applies_to, content, pitfalls_json, evidence_json, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (local_date, turn_id, item["kind"], item["applies_to"], item["content"],
+                    "(local_date, turn_id, kind, problem, applies_to, content, pitfalls_json, evidence_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (local_date, turn_id, item["kind"], item["problem"], item["applies_to"], item["content"],
                      json.dumps(item.get("pitfalls", []), ensure_ascii=False),
                      json.dumps(item["evidence"], ensure_ascii=False), now),
                 )

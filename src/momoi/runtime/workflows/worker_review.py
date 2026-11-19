@@ -61,6 +61,8 @@ WORKER_REVIEW_FINISH_SPEC = {
                 "items": {
                     "type": "object", "additionalProperties": False,
                     "properties": {
+                        "problem": {"type": "string", "minLength": 1, "maxLength": 300,
+                                    "description": "下次照默认做法会在哪里失败或白费功夫：哪一步、用的哪个工具、因为什么。"},
                         "kind": {"type": "string", "enum": ["execution", "dispatch"]},
                         "applies_to": {"type": "string", "minLength": 1, "maxLength": 200,
                                        "description": "在什么任务情境下适用，用将来任务里可能出现的说法。"},
@@ -81,7 +83,7 @@ WORKER_REVIEW_FINISH_SPEC = {
                             },
                         },
                     },
-                    "required": ["kind", "applies_to", "content", "pitfalls", "evidence"],
+                    "required": ["problem", "kind", "applies_to", "content", "pitfalls", "evidence"],
                 },
             },
         },

@@ -83,7 +83,7 @@ def test_material_redacts_and_reads_old_mcp_failures(tmp_path):
 
 def test_finish_requires_a_verdict_per_task_and_valid_evidence():
     admitted = [({"id": "t1"}, [{}, {}], ["many_calls"]), ({"id": "t2"}, [{}], ["long_running"])]
-    item = {"kind": "execution", "applies_to": "在 B 站找当天新投稿", "content": "按发布时间排序。",
+    item = {"problem": "第 1 步没有排序。", "kind": "execution", "applies_to": "在 B 站找当天新投稿", "content": "按发布时间排序。",
             "pitfalls": [], "evidence": [{"task_id": "t1", "steps": [2]}]}
     tasks = [{"task_id": "t1", "verdict": "learn", "reason": "找到排序方法"},
              {"task_id": "t2", "verdict": "skip", "reason": "每一步都必要"}]
@@ -120,11 +120,11 @@ def test_review_runs_after_reflection_once_and_skips_model_without_admission(dae
         assert "Worker 执行复盘" in system and "companion soul sentinel" not in str(system)
         assert f'id="{failed}"' in messages[0]["content"] and simple not in messages[0]["content"]
         bad = await workflow.execute_tool(ToolCall("f", "worker_review_finish", {
-            "summary": "s", "tasks": [{"task_id": failed, "verdict": "skip", "reason": "r"}], "experiences": [{"kind": "dispatch", "applies_to": "a", "content": "c",
+            "summary": "s", "tasks": [{"task_id": failed, "verdict": "skip", "reason": "r"}], "experiences": [{"problem": "p", "kind": "dispatch", "applies_to": "a", "content": "c",
                                               "pitfalls": [], "evidence": [{"task_id": simple, "steps": []}]}]}))
         assert bad["error"] == "unknown_task"
         result = await workflow.execute_tool(ToolCall("f", "worker_review_finish", {
-            "summary": "一个失败任务", "tasks": [{"task_id": failed, "verdict": "learn", "reason": "命令不存在"}], "experiences": [{"kind": "execution", "applies_to": "执行命令", "content": "先检查命令是否存在。",
+            "summary": "一个失败任务", "tasks": [{"task_id": failed, "verdict": "learn", "reason": "命令不存在"}], "experiences": [{"problem": "第 1 步命令不存在。", "kind": "execution", "applies_to": "执行命令", "content": "先检查命令是否存在。",
                                                    "pitfalls": ["别重试"], "evidence": [{"task_id": failed, "steps": [1, 2]}]}]}))
         assert result["ok"]
         return workflow.completion_result()
