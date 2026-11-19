@@ -40,7 +40,7 @@ _SECRETS = (
 
 WORKER_REVIEW_FINISH_SPEC = {
     "name": "worker_review_finish",
-    "description": "提交每个任务的判断和提炼出的经验并结束本轮；经验作为方法记忆的观察候选保存。",
+    "description": "提交每个任务的判断和提炼出的经验并结束本轮；经验作为方法记忆的候选交给主人审核。",
     "input_schema": {
         "type": "object", "additionalProperties": False,
         "properties": {

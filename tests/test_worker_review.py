@@ -137,7 +137,8 @@ def test_review_runs_after_reflection_once_and_skips_model_without_admission(dae
     assert (candidate["kind"], candidate["key"], candidate["triggers"]) == ("practice", "practice.shell.check-command", ["命令"])
     assert candidate["content"] == "执行命令：先检查命令是否存在。 注意：别重试"
     assert [(event["sources"], event["summary"]) for event in candidate["events"]] == [([f"worker:{turn}"], "第 1 步命令不存在。")]
-    assert candidate["status"] == "observation"
+    assert candidate["status"] == "pending"
+    assert store.change_reflection_candidate(candidate["id"], candidate["revision"], admit=True)["state"] == "pending"
     assert store.unreviewed_worker_tasks(start_at=0, end_at=time.time() + 10) == []
     assert store._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 0
 
