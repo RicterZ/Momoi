@@ -464,9 +464,9 @@ function OverviewBody({ data, token, routeParam }) {
     },
   ];
   return (
-    <>
+    <div className="overview-layout">
       <OverviewSection
-        label="Usage"
+        region="usage" label="Usage"
         note="账户余额与调用统计"
       >
         <UsageChart
@@ -481,7 +481,7 @@ function OverviewBody({ data, token, routeParam }) {
           days={narrow ? 7 : 30}
         />
       </OverviewSection>
-      <OverviewSection label="Now" note="当前状态与活动">
+      <OverviewSection region="now" label="Now" note="当前状态与活动">
         <CurrentStatePanel state={data.current_state} token={token} />
         <div className="overview-grid">
           <article className="panel">
@@ -501,7 +501,7 @@ function OverviewBody({ data, token, routeParam }) {
           </article>}
         </div>
       </OverviewSection>
-      <OverviewSection label="Records" note="生活记录与待办概览">
+      <OverviewSection region="records" label="Records" note="生活记录与待办概览">
         <div className="overview-groups">
           {groups.map((group) => (
             <article
@@ -525,13 +525,13 @@ function OverviewBody({ data, token, routeParam }) {
           ))}
         </div>
       </OverviewSection>
-    </>
+    </div>
   );
 }
 
-function OverviewSection({ label, note, children }) {
+function OverviewSection({ region, label, note, children }) {
   return (
-    <section className="overview-section">
+    <section className="overview-section" data-region={region}>
       <div className="overview-section-head">
         <span className="panel-label">{label}</span>
         <p>{note}</p>

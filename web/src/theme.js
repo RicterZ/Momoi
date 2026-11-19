@@ -7,6 +7,7 @@ export const styles = [
   { id: "pixel", label: "像素" },
   { id: "flat", label: "紧凑扁平" },
   { id: "brutal", label: "粗野" },
+  { id: "workbench", label: "工作台" },
 ];
 
 const preferences = {

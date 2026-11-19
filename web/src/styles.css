@@ -611,6 +611,7 @@ main.is-record .error {
   background: var(--surface);
   box-shadow: var(--shadow-panel);
 }
+.overview-layout { display: contents; }
 .overview-grid {
   display: grid;
   grid-template-columns: 1.2fr .8fr;
