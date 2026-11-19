@@ -5,6 +5,7 @@ export const schemes = [
 
 export const styles = [
   { id: "pixel", label: "像素" },
+  { id: "flat", label: "紧凑扁平" },
 ];
 
 const preferences = {

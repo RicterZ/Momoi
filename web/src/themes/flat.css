@@ -1,0 +1,23 @@
+:root[data-style="flat"] {
+  --stroke: 1px solid;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius: 10px;
+  --press-shift: translate(0, 0);
+  --shadow-subtle: none;
+  --shadow-subtle-alt: none;
+  --shadow-pressed: none;
+  --shadow-pressed-alt: none;
+  --shadow-control: none;
+  --shadow-control-alt: none;
+  --shadow-panel: none;
+  --shadow-panel-alt: none;
+  --sidebar-width: 224px;
+  --sidebar-padding: 22px 16px 18px;
+  --panel-padding: 20px;
+  --panel-gap: 12px;
+  --button-padding: 7px 12px;
+  --button-weight: 650;
+  font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
