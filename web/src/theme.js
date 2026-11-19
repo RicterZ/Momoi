@@ -1,8 +1,8 @@
 const STORAGE_KEY = "momoi-dashboard-appearance";
 
 export const themes = [
-  { id: "light", label: "浅色", icon: "☀" },
-  { id: "dark", label: "深色", icon: "☾" },
+  { id: "light", label: "浅色" },
+  { id: "dark", label: "深色" },
 ];
 
 export function readTheme() {

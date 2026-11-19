@@ -230,6 +230,26 @@ const LED_PIXELS = [
   ".###.",
 ];
 
+const SUN_PIXELS = [
+  "#..#..#",
+  ".#####.",
+  ".#+++#.",
+  "##+++##",
+  ".#+++#.",
+  ".#####.",
+  "#..#..#",
+];
+
+const MOON_PIXELS = [
+  "..###..",
+  ".#++#..",
+  "#++#...",
+  "#++#...",
+  "#+++#.#",
+  ".#+++#.",
+  "..###..",
+];
+
 function PixelMeter({ value, cells = 8 }) {
   const filled = Math.round(Math.max(0, Math.min(1, Number(value) || 0)) * cells);
   return (
@@ -2937,24 +2957,17 @@ const viewComponents = {
   settings: Settings,
 };
 
-function ThemePicker({ theme, onChange }) {
+function ThemeToggle({ theme, onChange, tabIndex }) {
+  const next = theme === "dark" ? "light" : "dark";
+  const label = `切换到${themes.find(({ id }) => id === next).label}主题`;
   return (
-    <div className="theme-picker" role="group" aria-label="主题">
-      {themes.map(({ id, label, icon }) => (
-        <button
-          key={id}
-          type="button"
-          aria-pressed={theme === id}
-          onClick={() => onChange(id)}
-        >
-          <span aria-hidden="true">{icon}</span>{label}
-        </button>
-      ))}
-    </div>
+    <button className="theme-toggle" type="button" aria-label={label} title={label} tabIndex={tabIndex} onClick={() => onChange(next)}>
+      <PixelSprite className="pixel-theme" grid={theme === "dark" ? MOON_PIXELS : SUN_PIXELS} />
+    </button>
   );
 }
 
-function TokenGate({ value, onChange, onUnlock, themePicker }) {
+function TokenGate({ value, onChange, onUnlock }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   return (
@@ -2986,7 +2999,6 @@ function TokenGate({ value, onChange, onUnlock, themePicker }) {
             <h2 id="token-gate-title">老师，出示通行证！</h2>
           </div>
         </div>
-        {themePicker}
         <p className="token-card-copy">
           嘿嘿，先把通行证交一下嘛。对上了才能进开发部的后台哦。
         </p>
@@ -3021,10 +3033,6 @@ applyTheme(initialTheme);
 
 function App() {
   const [theme, setTheme] = useState(initialTheme);
-  const themePicker = <ThemePicker theme={theme} onChange={(value) => {
-    saveTheme(value);
-    setTheme(value);
-  }} />;
   const confirm = useConfirm();
   const { view, param } = useHashRoute();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -3147,6 +3155,11 @@ function App() {
             </span>
             <span>SYSTEM ONLINE</span>
             {version ? <span className="sidebar-version">{version}</span> : null}
+            <ThemeToggle
+              theme={theme}
+              tabIndex={locked ? -1 : undefined}
+              onChange={(value) => { saveTheme(value); setTheme(value); }}
+            />
           </div>
         </aside>}
         <main className={isRecord ? `is-record${view === "chat" ? " is-chat" : ""}` : undefined}>
@@ -3155,17 +3168,14 @@ function App() {
               <p className="eyebrow">{eyebrow}</p>
               <h1>{pageTitle}</h1>
             </div>
-            <div className="topbar-actions">
-              {!locked && themePicker}
-              <button
-                className="quiet-button"
-                type="button"
-                tabIndex={locked ? -1 : undefined}
-                onClick={async () => { if (await allowSettingsLeave()) setRefreshKey((value) => value + 1); }}
-              >
-                ↻ 刷新
-              </button>
-            </div>
+            <button
+              className="quiet-button"
+              type="button"
+              tabIndex={locked ? -1 : undefined}
+              onClick={async () => { if (await allowSettingsLeave()) setRefreshKey((value) => value + 1); }}
+            >
+              ↻ 刷新
+            </button>
           </header>
           <div id="content">
             {setupError && <div role="status">{setupError}</div>}
@@ -3186,7 +3196,6 @@ function App() {
           value={tokenDraft}
           onChange={setTokenDraft}
           onUnlock={setToken}
-          themePicker={themePicker}
         />
       )}
     </>
