@@ -1,4 +1,4 @@
-"""Offline review of finished Worker tasks; candidates are not memories yet."""
+"""Offline review of finished Worker tasks; findings join the reflection candidates."""
 import json
 import time
 from typing import Any
@@ -10,16 +10,6 @@ CREATE TABLE IF NOT EXISTS worker_reviews (
  task_id TEXT PRIMARY KEY, local_date TEXT NOT NULL, admitted INTEGER NOT NULL,
  reasons_json TEXT NOT NULL DEFAULT '[]', turn_id TEXT, reviewed_at REAL NOT NULL
 );
-CREATE TABLE IF NOT EXISTS worker_experience_candidates (
- id INTEGER PRIMARY KEY AUTOINCREMENT, local_date TEXT NOT NULL, turn_id TEXT NOT NULL,
- kind TEXT NOT NULL CHECK (kind IN ('execution', 'dispatch')),
- problem TEXT NOT NULL, applies_to TEXT NOT NULL, content TEXT NOT NULL,
- pitfalls_json TEXT NOT NULL DEFAULT '[]', evidence_json TEXT NOT NULL,
- state TEXT NOT NULL DEFAULT 'candidate' CHECK (state IN ('candidate', 'deleted')),
- created_at REAL NOT NULL
-);
-CREATE INDEX IF NOT EXISTS worker_experience_candidates_date
- ON worker_experience_candidates(local_date, id);
 """
 
 FINAL_TASK_STATUSES = ("succeeded", "failed", "blocked", "cancelled")
@@ -67,7 +57,7 @@ class WorkerReviewStore:
         local_date: str,
         turn_id: str | None,
         decisions: list[dict[str, Any]],
-        experiences: list[dict[str, Any]],
+        practices: list[dict[str, Any]],
     ) -> None:
         now = time.time()
         with transaction(self._db):
@@ -78,20 +68,36 @@ class WorkerReviewStore:
                     (decision["task_id"], local_date, int(bool(decision["reasons"])),
                      json.dumps(decision["reasons"], ensure_ascii=False), turn_id, now),
                 )
-            for item in experiences:
-                self._db.execute(
-                    "INSERT INTO worker_experience_candidates "
-                    "(local_date, turn_id, kind, problem, applies_to, content, pitfalls_json, evidence_json, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (local_date, turn_id, item["kind"], item["problem"], item["applies_to"], item["content"],
-                     json.dumps(item.get("pitfalls", []), ensure_ascii=False),
-                     json.dumps(item["evidence"], ensure_ascii=False), now),
-                )
+            for practice in practices:
+                self.add_worker_practice_candidate(local_date, practice, now)
 
-    def worker_experience_candidates(self, *, limit: int = 100) -> list[dict[str, Any]]:
+    def add_worker_practice_candidate(self, local_date: str, practice: dict[str, Any], now: float) -> None:
+        """Merge one practice into reflection candidates; each Worker task counts once."""
+        from ..reflection.candidates import current_events
+
+        old = self._db.execute("SELECT * FROM reflection_candidates WHERE key=?", (practice["key"],)).fetchone()
+        if old and (old["state"] != "active" or old["kind"] != "practice"
+                    or self._reflection_candidate_review(old) in ("pending", "running")):
+            return
+        events = current_events(json.loads(old["events_json"]), local_date) if old else []
+        known = {source for event in events for source in event["sources"]}
+        events += [event for event in practice["events"] if not known.intersection(event["sources"])]
+        edited = bool(old and old["edited"])
+        content = old["content"] if edited else practice["content"]
+        triggers = old["triggers_json"] if edited else json.dumps(practice["triggers"], ensure_ascii=False)
+        self._db.execute(
+            """INSERT INTO reflection_candidates(key,kind,content,events_json,conflicts_json,updated_at,triggers_json)
+               VALUES (?,'practice',?,?,'[]',?,?) ON CONFLICT(key) DO UPDATE SET
+               kind=excluded.kind,content=excluded.content,triggers_json=excluded.triggers_json,
+               events_json=excluded.events_json,updated_at=excluded.updated_at,revision=revision+1""",
+            (practice["key"], content, json.dumps(events, ensure_ascii=False), now, triggers),
+        )
+
+    def worker_practice_candidates(self) -> list[dict[str, Any]]:
+        """Active practice candidates, so a review can extend one instead of duplicating it."""
         rows = self._db.execute(
-            "SELECT * FROM worker_experience_candidates WHERE state='candidate' ORDER BY id DESC LIMIT ?",
-            (limit,),
+            "SELECT key, content, events_json FROM reflection_candidates WHERE state='active' AND kind='practice' "
+            "ORDER BY updated_at DESC LIMIT 50"
         ).fetchall()
-        return [{**dict(row), "pitfalls": json.loads(row["pitfalls_json"]),
-                 "evidence": json.loads(row["evidence_json"])} for row in rows]
+        return [{"key": row["key"], "content": row["content"], "count": len(json.loads(row["events_json"]))}
+                for row in rows]

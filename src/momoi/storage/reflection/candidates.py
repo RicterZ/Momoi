@@ -21,9 +21,12 @@ def current_events(events, end):
     return [event for event in events if month_start(end) <= event['date'] <= end]
 
 
-def candidate_status(events, conflicts):
+def candidate_status(events, conflicts, kind=None):
     if conflicts:
         return 'blocked'
+    # Worker practices arrive with execution evidence; only owner observations need repetition.
+    if kind == 'practice':
+        return 'pending' if events else 'observation'
     return 'pending' if len(events) >= 5 else 'observation'
 
 
@@ -41,10 +44,10 @@ class ReflectionCandidateStore:
             item['events'] = current_events(json.loads(item.pop('events_json')), end)
             item['conflicts'] = current_events(json.loads(item.pop('conflicts_json')), end)
             item['count'] = len(item['events'])
-            item['status'] = candidate_status(item['events'], item['conflicts'])
+            item['status'] = candidate_status(item['events'], item['conflicts'], item['kind'])
             decisions = json.loads(item.pop('review_result') or '[]')
             item['review_reason'] = decisions[0]['reason'] if decisions else item['review_error']
-            if item['count'] >= (1 if include_seeds else 2):
+            if item['count'] >= (1 if include_seeds or item['kind'] == 'practice' else 2):
                 result.append(item)
         return result
 
@@ -138,7 +141,7 @@ class ReflectionCandidateStore:
                 end = datetime.now(self._timezone).date().isoformat()
                 events = current_events(json.loads(row['events_json']), end)
                 conflicts = current_events(json.loads(row['conflicts_json']), end)
-                if len(events) < 5 or conflicts:
+                if candidate_status(events, conflicts, row['kind']) != 'pending':
                     raise ValueError('candidate_not_ready')
                 evidence = IncomingMessage(operation_id, operation_id, row['content'], now, now)
                 draft = TurnDraft(memory_operations=[{

@@ -897,6 +897,10 @@ def _add_worker_review(database: sqlite3.Connection) -> None:
             database.execute(statement)
 
 
+def _drop_worker_experience_candidates(database: sqlite3.Connection) -> None:
+    database.execute("DROP TABLE IF EXISTS worker_experience_candidates")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -952,6 +956,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_subagent_report_workflow,
     _drop_tool_discovery,
     _add_worker_review,
+    _drop_worker_experience_candidates,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

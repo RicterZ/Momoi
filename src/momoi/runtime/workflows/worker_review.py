@@ -1,12 +1,15 @@
 """Review finished Worker tasks after the daily reflection, in a turn of its own."""
 import asyncio
+import hashlib
 import json
 import logging
 import re
 from collections import Counter
+from datetime import datetime
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
+from ...memory.metadata import TRIGGER_INPUT_SCHEMA, validate_triggers
 from ...observability.events import log_event
 from ..agent import AgentWorkflow
 from ..turn_support import PROMPT_ROOT, live_prompt
@@ -37,7 +40,7 @@ _SECRETS = (
 
 WORKER_REVIEW_FINISH_SPEC = {
     "name": "worker_review_finish",
-    "description": "提交每个任务的判断和提炼出的经验并结束本轮；经验只作为候选保存。",
+    "description": "提交每个任务的判断和提炼出的经验并结束本轮；经验作为方法记忆的候选交给主人审核。",
     "input_schema": {
         "type": "object", "additionalProperties": False,
         "properties": {
@@ -63,13 +66,15 @@ WORKER_REVIEW_FINISH_SPEC = {
                     "properties": {
                         "problem": {"type": "string", "minLength": 1, "maxLength": 300,
                                     "description": "下次照默认做法会在哪里失败或白费功夫：哪一步、用的哪个工具、因为什么。"},
-                        "kind": {"type": "string", "enum": ["execution", "dispatch"]},
+                        "key": {"type": "string", "minLength": 1, "maxLength": 200,
+                                "description": "稳定的方法键；延续已有候选时沿用它的 key。"},
                         "applies_to": {"type": "string", "minLength": 1, "maxLength": 200,
                                        "description": "在什么任务情境下适用，用将来任务里可能出现的说法。"},
                         "content": {"type": "string", "minLength": 1, "maxLength": 600,
                                     "description": "直接写做法，最多三句。"},
                         "pitfalls": {"type": "array", "maxItems": 5,
                                      "items": {"type": "string", "minLength": 1, "maxLength": 200}},
+                        "triggers": TRIGGER_INPUT_SCHEMA,
                         "evidence": {
                             "type": "array", "minItems": 1, "maxItems": 10,
                             "items": {
@@ -83,7 +88,7 @@ WORKER_REVIEW_FINISH_SPEC = {
                             },
                         },
                     },
-                    "required": ["problem", "kind", "applies_to", "content", "pitfalls", "evidence"],
+                    "required": ["problem", "key", "applies_to", "content", "pitfalls", "triggers", "evidence"],
                 },
             },
         },
@@ -193,8 +198,11 @@ def render_task(task, steps, reasons, load_snapshot=None) -> str:
     )
 
 
-def worker_review_input(rendered_tasks: list[str], recurring) -> str:
+def worker_review_input(rendered_tasks: list[str], recurring, practices=()) -> str:
     parts = []
+    rows = [f"<practice key={quoteattr(item['key'])} observations=\"{item['count']}\">{escape(item['content'])}</practice>"
+            for item in practices]
+    parts.append("<practice_candidates>\n" + ("\n".join(rows) or "(无)") + "\n</practice_candidates>")
     rows = [f"{name} {error}: {', '.join(ids)}" for (name, error), ids in sorted(recurring.items())]
     parts.append("<recurring_failures>\n" + ("\n".join(rows) or "(无)") + "\n</recurring_failures>")
     parts.extend(rendered_tasks)
@@ -229,9 +237,35 @@ def parse_worker_review(arguments, admitted) -> tuple[dict[str, Any] | None, dic
             if any(step > count for step in evidence["steps"]):
                 return None, {"ok": False, "error": "unknown_step", "task_id": evidence["task_id"],
                               "message": f"该任务只有 {count} 个步骤。"}
-        if not item["content"].strip() or not item["applies_to"].strip():
+        if not item["content"].strip() or not item["applies_to"].strip() or not item["key"].strip():
             return None, {"ok": False, "error": "empty_experience"}
+        try:
+            validate_triggers(item["triggers"])
+        except ValueError as error:
+            return None, {"ok": False, "error": "invalid_triggers", "message": str(error)}
+    keys = [item["key"].strip() for item in value["experiences"]]
+    if len(set(keys)) != len(keys):
+        return None, {"ok": False, "error": "duplicate_key", "message": "同一个方法合并成一条经验。"}
     return value, None
+
+
+def practice_candidate(item, tasks, timezone) -> dict[str, Any]:
+    """One observation per Worker task, so repeats across reviews count only once."""
+    content = f"{item['applies_to'].strip().rstrip('。.；;：:')}：{item['content'].strip()}"
+    if item["pitfalls"]:
+        content += " 注意：" + "；".join(pitfall.strip() for pitfall in item["pitfalls"])
+    events = []
+    for evidence in item["evidence"]:
+        task = tasks[evidence["task_id"]]
+        source = f"worker:{task['turn_id']}"
+        if any(event["sources"] == [source] for event in events):
+            continue
+        events.append({
+            "id": "event:" + hashlib.sha256(source.encode()).hexdigest()[:24],
+            "date": datetime.fromtimestamp(float(task["finished_at"]), timezone).date().isoformat(),
+            "sources": [source], "summary": item["problem"].strip(),
+        })
+    return {"key": item["key"].strip(), "content": content, "triggers": item["triggers"], "events": events}
 
 
 class WorkerReviewWorkflow:
@@ -268,7 +302,8 @@ class WorkerReviewWorkflow:
         state = self.store.begin_turn(turn_id, "worker_review", [f"worker-review:{local_date}"])
         if state != "running":
             return
-        material = worker_review_input(rendered, recurring)
+        material = worker_review_input(rendered, recurring, self.store.worker_practice_candidates())
+        tasks = {str(task["id"]): task for task, _, _ in admitted}
         completed = False
         experiences = 0
 
@@ -277,7 +312,8 @@ class WorkerReviewWorkflow:
             result, error = parse_worker_review(call.arguments, admitted)
             if error:
                 return error
-            self.store.commit_worker_review(local_date, turn_id, decisions, result["experiences"])
+            practices = [practice_candidate(item, tasks, self.store.timezone) for item in result["experiences"]]
+            self.store.commit_worker_review(local_date, turn_id, decisions, practices)
             completed = True
             experiences = len(result["experiences"])
             return {"ok": True, "state": "completed", "experiences": experiences}
