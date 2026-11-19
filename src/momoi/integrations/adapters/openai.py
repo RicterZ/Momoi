@@ -255,7 +255,7 @@ class OpenAIProvider(ProtocolProvider):
             )
         message = choices[0].get("message")
         finish = choices[0].get("finish_reason")
-        if not isinstance(message, dict) and isinstance(finish, str) and finish.startswith("content_filter"):
+        if isinstance(finish, str) and finish.startswith("content_filter"):
             _log_unusable_response(response, data, "content_filter")
             raise ProviderContentFiltered(f"Provider content filter blocked the request: {finish}")
         if not isinstance(message, dict):

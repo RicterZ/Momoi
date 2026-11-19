@@ -11,3 +11,7 @@ class ProviderResponseError(ProviderError):
 
 class ProviderContentFiltered(ProviderError):
     """The provider's moderation blocked the request; retrying the same input cannot succeed."""
+
+
+class ProviderUnsupportedLocation(ProviderError):
+    """The provider refused the request based on the user's location."""

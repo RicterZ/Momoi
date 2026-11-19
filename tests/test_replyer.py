@@ -6,6 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
+from momoi.llm.errors import ProviderContentFiltered, ProviderError, ProviderUnsupportedLocation
 from momoi.runtime.agent.replyer import Replyer
 from momoi.runtime.agent import TurnExecutionSpec
 from momoi.runtime.workflows.memory_operation.conversation import conversation_message
@@ -443,7 +444,11 @@ def test_memory_evidence_reads_reply_result_not_intent():
 
 @pytest.mark.parametrize("delivery_context, expression", [({}, "实际回复"),
     ({"channel_notice": "message_recall"}, "实际回复"), ({"channel_notice": "poke"}, "qq://poke"),
-    ({"channel_notice": "poke"}, "[QQ 动作：戳一戳用户]")])
+    ({"channel_notice": "poke"}, "[QQ 动作：戳一戳用户]"),
+    ({}, ProviderError("upstream unavailable")),
+    ({}, ProviderUnsupportedLocation("User location is not supported")),
+    ({}, ProviderContentFiltered("PROHIBITED_CONTENT")),
+    ({}, ["恢复后的回复"])])
 @pytest.mark.parametrize("quote", [False, True])
 def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_context, expression, quote):
     from momoi.config.models import AppConfig
@@ -463,18 +468,45 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_contex
     daemon.store.begin_turn('owner-test', 'owner', ['event'])
     messages = [{'role': 'user', 'content': '测试输入'}]
     rounds = 0
+    replyer_calls = 0
+
+    if isinstance(expression, (ProviderContentFiltered, list)):
+        old = IncomingMessage('old-filter', 'old-filter', 'FILTER_HISTORY', 0.5, 0.5,
+                              channel=daemon.channel.name)
+        daemon.store.add_event(old)
+        daemon.store.begin_turn('filter-history', 'owner', [old.event_id])
+        daemon.store.commit_turn([old], old.text, AgentReply([]), turn_id='filter-history')
 
     async def complete(system, history, tools, **kwargs):
-        nonlocal rounds
+        nonlocal rounds, replyer_calls
         if [tool['name'] for tool in tools] == ['qq_poke']:
             assert current_log_context()['stage'] == 'replyer'
-            return ProviderResponse([{'type': 'text', 'text': expression}], [], usage={'input': 8, 'output': 2})
+            replyer_calls += 1
+            if isinstance(expression, (ProviderContentFiltered, list)):
+                assert ('FILTER_HISTORY' in str(history)) == (replyer_calls == 1)
+                assert '测试输入' in str(history)
+            if isinstance(expression, ProviderError):
+                raise expression
+            if isinstance(expression, list) and replyer_calls == 1:
+                raise ProviderContentFiltered("PROHIBITED_CONTENT")
+            reply = expression[0] if isinstance(expression, list) else expression
+            return ProviderResponse([{'type': 'text', 'text': reply}], [], usage={'input': 8, 'output': 2})
         rounds += 1
         if rounds == 1:
             call = ToolCall('reply-one', 'reply', {'intent': '直接接住输入', 'reference': '',
                 **({'reply_to_message_id': 'event'} if quote and not delivery_context else {})})
         else:
-            assert ('请用 qq://poke' if expression == '[QQ 动作：戳一戳用户]' else expression) in str(history)
+            if isinstance(expression, ProviderError):
+                assert str(expression) in str(history)
+                if isinstance(expression, ProviderUnsupportedLocation):
+                    assert '请暂时不要发送消息' in str(history)
+                if isinstance(expression, ProviderContentFiltered):
+                    assert 'replyer_content_filter_exhausted' in str(history)
+            elif isinstance(expression, list):
+                assert expression[0] in str(history)
+                assert 'PROHIBITED_CONTENT' not in str(history)
+            else:
+                assert ('请用 qq://poke' if expression == '[QQ 动作：戳一戳用户]' else expression) in str(history)
             return ProviderResponse([], [])
         return ProviderResponse([{'type': 'tool_use', 'id': call.id, 'name': call.name, 'input': call.arguments}], [call])
 
@@ -488,6 +520,13 @@ def test_planner_replyer_dispatch_and_native_writeback(tmp_path, delivery_contex
             [event], TurnDraft(), execution=TurnExecutionSpec('owner', permitted_tools=daemon.tool_surface.permitted_names('owner')),
             source_event_id='event', turn_id='owner-test', delivery_channel=daemon.channel))
         assert rounds == 2
+        if isinstance(expression, ProviderError):
+            assert replyer_calls == (4 if isinstance(expression, ProviderContentFiltered) else 1)
+            assert not daemon.store.due_outbox()
+            return
+        if isinstance(expression, list):
+            assert replyer_calls == 2
+            expression = expression[0]
         if expression == '[QQ 动作：戳一戳用户]':
             assert 'invalid_reply' in str(messages) and '请用 qq://poke' in str(messages)
             assert not daemon.store.due_outbox()
