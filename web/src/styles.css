@@ -1216,15 +1216,6 @@ a.tag:hover {
 .card-list { display: grid; gap: 12px; }
 .memory-section { margin-top: 8px; }
 .review-list { display: grid; gap: 12px; }
-.activation-demotions { min-width: 0; margin: 0 0 12px; }
-.activation-demotions label {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 8px;
-  margin: 6px 0;
-  overflow-wrap: anywhere;
-}
 .memory-section + .memory-section { margin-top: 28px; }
 .memory-section .card-list {
   grid-template-columns: repeat(2, minmax(0, 1fr));
