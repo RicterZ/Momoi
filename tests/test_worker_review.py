@@ -83,8 +83,8 @@ def test_material_redacts_and_reads_old_mcp_failures(tmp_path):
 
 def test_finish_requires_a_verdict_per_task_and_valid_evidence():
     admitted = [({"id": "t1"}, [{}, {}], ["many_calls"]), ({"id": "t2"}, [{}], ["long_running"])]
-    item = {"problem": "第 1 步没有排序。", "kind": "execution", "applies_to": "在 B 站找当天新投稿", "content": "按发布时间排序。",
-            "pitfalls": [], "evidence": [{"task_id": "t1", "steps": [2]}]}
+    item = {"problem": "第 1 步没有排序。", "key": "practice.search.sort", "applies_to": "找当天新投稿", "content": "按发布时间排序。",
+            "pitfalls": [], "triggers": [], "evidence": [{"task_id": "t1", "steps": [2]}]}
     tasks = [{"task_id": "t1", "verdict": "learn", "reason": "找到排序方法"},
              {"task_id": "t2", "verdict": "skip", "reason": "每一步都必要"}]
     assert parse_worker_review({"summary": "s", "tasks": tasks, "experiences": [item]}, admitted)[1] is None
@@ -94,8 +94,9 @@ def test_finish_requires_a_verdict_per_task_and_valid_evidence():
     assert parse_worker_review({"summary": "s", "tasks": tasks[:1], "experiences": [item]}, admitted)[1]["error"] == "tasks_mismatch"
     assert parse_worker_review({"summary": "s", "tasks": [*tasks, tasks[1]], "experiences": [item]}, admitted)[1]["error"] == "tasks_mismatch"
     assert parse_worker_review({"summary": "s", "tasks": skipped, "experiences": [item] * 4}, admitted)[1]
+    assert parse_worker_review({"summary": "s", "tasks": tasks, "experiences": [item] * 2}, admitted)[1]["error"] == "duplicate_key"
     for bad in ({"evidence": [{"task_id": "t9", "steps": []}]}, {"evidence": [{"task_id": "t1", "steps": [3]}]},
-                {"kind": "memory"}, {"content": " "}):
+                {"kind": "execution"}, {"content": " "}, {"key": " "}, {"triggers": ["a", "a"]}):
         assert parse_worker_review({"summary": "s", "tasks": tasks, "experiences": [{**item, **bad}]}, admitted)[1]
 
 
@@ -120,19 +121,23 @@ def test_review_runs_after_reflection_once_and_skips_model_without_admission(dae
         assert "Worker 执行复盘" in system and "companion soul sentinel" not in str(system)
         assert f'id="{failed}"' in messages[0]["content"] and simple not in messages[0]["content"]
         bad = await workflow.execute_tool(ToolCall("f", "worker_review_finish", {
-            "summary": "s", "tasks": [{"task_id": failed, "verdict": "skip", "reason": "r"}], "experiences": [{"problem": "p", "kind": "dispatch", "applies_to": "a", "content": "c",
-                                              "pitfalls": [], "evidence": [{"task_id": simple, "steps": []}]}]}))
+            "summary": "s", "tasks": [{"task_id": failed, "verdict": "skip", "reason": "r"}], "experiences": [{"problem": "p", "key": "k", "applies_to": "a", "content": "c",
+                                              "pitfalls": [], "triggers": [], "evidence": [{"task_id": simple, "steps": []}]}]}))
         assert bad["error"] == "unknown_task"
         result = await workflow.execute_tool(ToolCall("f", "worker_review_finish", {
-            "summary": "一个失败任务", "tasks": [{"task_id": failed, "verdict": "learn", "reason": "命令不存在"}], "experiences": [{"problem": "第 1 步命令不存在。", "kind": "execution", "applies_to": "执行命令", "content": "先检查命令是否存在。",
-                                                   "pitfalls": ["别重试"], "evidence": [{"task_id": failed, "steps": [1, 2]}]}]}))
+            "summary": "一个失败任务", "tasks": [{"task_id": failed, "verdict": "learn", "reason": "命令不存在"}], "experiences": [{"problem": "第 1 步命令不存在。", "key": "practice.shell.check-command", "applies_to": "执行命令", "content": "先检查命令是否存在。",
+                                                   "pitfalls": ["别重试"], "triggers": ["命令"], "evidence": [{"task_id": failed, "steps": [1, 2]}]}]}))
         assert result["ok"]
         return workflow.completion_result()
 
     daemon._run_agent_workflow = finish
     asyncio.run(daemon._complete_worker_review("2026-11-19", window))
-    [candidate] = store.worker_experience_candidates()
-    assert candidate["kind"] == "execution" and candidate["evidence"] == [{"task_id": failed, "steps": [1, 2]}]
+    [candidate] = store.reflection_candidates(include_seeds=True)
+    turn = store._db.execute("SELECT turn_id FROM subagent_tasks WHERE id=?", (failed,)).fetchone()[0]
+    assert (candidate["kind"], candidate["key"], candidate["triggers"]) == ("practice", "practice.shell.check-command", ["命令"])
+    assert candidate["content"] == "执行命令：先检查命令是否存在。 注意：别重试"
+    assert [(event["sources"], event["summary"]) for event in candidate["events"]] == [([f"worker:{turn}"], "第 1 步命令不存在。")]
+    assert candidate["status"] == "observation"
     assert store.unreviewed_worker_tasks(start_at=0, end_at=time.time() + 10) == []
     assert store._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 0
 
@@ -184,3 +189,35 @@ def test_failed_review_leaves_tasks_for_next_run(daemon):
     daemon._run_agent_workflow = boom
     asyncio.run(daemon._complete_worker_review("2026-11-18", time.time() + 1))
     assert [task["id"] for task in store.unreviewed_worker_tasks(start_at=0, end_at=time.time() + 10)] == [failed]
+
+
+def test_practice_candidates_count_each_worker_task_once_and_feed_admission_receipts(tmp_path):
+    from momoi.runtime.workflows.worker_review import practice_candidate
+    store = Store(tmp_path / "momoi.sqlite3")
+    tasks = {}
+    for name in ("a", "b", "c", "d", "e"):
+        task_id = add_task(store, name, [ok()])
+        tasks[task_id] = store._db.execute("SELECT * FROM subagent_tasks WHERE id=?", (task_id,)).fetchone()
+    ids = list(tasks)
+    item = {"problem": "第 1 步 429。", "key": "practice.search.rate-limit", "applies_to": "连续搜索",
+            "content": "两次搜索间隔几秒。", "pitfalls": [], "triggers": ["搜索"],
+            "evidence": [{"task_id": ids[0], "steps": [1]}, {"task_id": ids[0], "steps": [1]}, {"task_id": ids[1], "steps": [1]}]}
+    today = time.strftime("%Y-%m-%d")
+    store.commit_worker_review(today, "review-1", [], [practice_candidate(item, tasks, store.timezone)])
+    again = {**item, "content": "间隔三秒。", "evidence": [{"task_id": task, "steps": [1]} for task in ids[1:]]}
+    store.commit_worker_review(today, "review-2", [], [practice_candidate(again, tasks, store.timezone)])
+    [candidate] = store.reflection_candidates()
+    assert candidate["count"] == 5 and candidate["status"] == "pending" and "间隔三秒" in candidate["content"]
+    assert store.worker_practice_candidates() == [{"key": item["key"], "content": candidate["content"], "count": 5}]
+
+    worker_turn = tasks[ids[0]]["turn_id"]
+    store.append_turn_journal(worker_turn, "assistant_exchange", {
+        "content": [{"type": "tool_use", "id": "call-x", "name": "brave_web_search", "input": {"q": "x"}}],
+        "results": [{"type": "tool_result", "tool_use_id": "call-x", "content": json.dumps({"ok": True, "result": "r"})}],
+    }, trust="runtime")
+    result = store.change_reflection_candidate(candidate["id"], candidate["revision"], admit=True)
+    assert f"execution:{worker_turn}:call-x" in store.memory_operation_execution_evidence(result["operation_id"])
+
+    store._db.execute("UPDATE reflection_candidates SET memory_operation_id=NULL, state='deleted'")
+    store.commit_worker_review(today, "review-3", [], [practice_candidate(item, tasks, store.timezone)])
+    assert store.reflection_candidates() == []

@@ -44,27 +44,38 @@ class MemoryOperationStore:
         """Only actual native journal receipts may establish practice verification."""
         from ..episode.execution_evidence import eligible, bounded_result
 
-        rows = self._db.execute(
-            """SELECT payload_json FROM turn_journal WHERE turn_id=?
-               AND item_type='assistant_exchange' AND trust='runtime' ORDER BY sequence DESC LIMIT 40""",
-            (source_turn_id,),
-        ).fetchall()
         evidence = {}
-        for row in reversed(rows):
-            exchange = eligible(json.loads(row["payload_json"]))
-            for tool in (exchange or {}).get("tools", []):
-                result = tool["result"]
-                if (tool["name"] == "memory_operation" or not tool["arguments_complete"]
-                        or not isinstance(result, dict) or result.get("ok") is not True
-                        or result.get("error") or result.get("ambiguous")
-                        or result.get("exit_code", 0) != 0
-                        or result.get("state") in {"accepted", "pending", "queued", "running"}):
-                    continue
-                identifier = f"execution:{source_turn_id}:{tool['call_id']}"
-                evidence[identifier] = json.dumps(
-                    {"tool": tool["name"], "arguments": bounded_result(tool["arguments"]),
-                     "result": bounded_result(result)}, ensure_ascii=False)
+        for turn_id in (source_turn_id, *self._candidate_worker_turns(source_turn_id)):
+            rows = self._db.execute(
+                """SELECT payload_json FROM turn_journal WHERE turn_id=?
+                   AND item_type='assistant_exchange' AND trust='runtime' ORDER BY sequence DESC LIMIT 40""",
+                (turn_id,),
+            ).fetchall()
+            for row in reversed(rows):
+                exchange = eligible(json.loads(row["payload_json"]))
+                for tool in (exchange or {}).get("tools", []):
+                    result = tool["result"]
+                    if (tool["name"] == "memory_operation" or not tool["arguments_complete"]
+                            or not isinstance(result, dict) or result.get("ok") is not True
+                            or result.get("error") or result.get("ambiguous")
+                            or result.get("exit_code", 0) != 0
+                            or result.get("state") in {"accepted", "pending", "queued", "running"}):
+                        continue
+                    identifier = f"execution:{turn_id}:{tool['call_id']}"
+                    evidence[identifier] = json.dumps(
+                        {"tool": tool["name"], "arguments": bounded_result(tool["arguments"]),
+                         "result": bounded_result(result)}, ensure_ascii=False)
         return evidence
+
+    def _candidate_worker_turns(self, operation_id):
+        """Worker turns observed by the reflection candidate this operation admits."""
+        row = self._db.execute(
+            "SELECT events_json FROM reflection_candidates WHERE memory_operation_id=?", (operation_id,)
+        ).fetchone()
+        if row is None:
+            return []
+        sources = (source for event in json.loads(row["events_json"]) for source in event["sources"])
+        return list(dict.fromkeys(source.removeprefix("worker:") for source in sources if source.startswith("worker:")))
 
     def memory_operation_evidence_records(
         self, evidence: dict[str, str]
