@@ -6,7 +6,7 @@ from functools import lru_cache
 from ..text import estimate_tokens
 
 
-def triggered_memories(repository, text, *, limit, token_budget):
+def triggered_memories(repository, text, *, limit, token_budget, scope=""):
     texts = [text] if isinstance(text, str) else list(text)
     if any(not isinstance(value, str) for value in texts):
         raise ValueError("trigger input must contain only strings")
@@ -16,7 +16,9 @@ def triggered_memories(repository, text, *, limit, token_budget):
     if not texts:
         return []
     matches = []
-    for row in repository.search_rows(activation="recall"):
+    rows = (repository.search_rows(activation="scoped", filters={"scope": scope}) if scope
+            else repository.search_rows(activation="recall"))
+    for row in rows:
         words = [word for word in row["meta"].get("triggers", [])
                  if word and any(matches_trigger(word, value) for value in texts)]
         if words:

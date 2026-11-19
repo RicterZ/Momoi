@@ -12,8 +12,10 @@ from importlib.resources import files
 from time import time
 from typing import Any
 from uuid import uuid4
+from xml.sax.saxutils import escape, quoteattr
 
 from ...mcp.prompt import MCP_TOOL_POLICY
+from ...memory.metadata import WORKER_SCOPE
 from ...models import TurnDraft
 from ...observability.events import log_event
 from ...tools.contracts.skills import SKILL_TOOL_POLICY
@@ -31,7 +33,21 @@ SUBAGENT_PROGRESS_WAKE_DELAY_SECONDS = 10
 SUBAGENT_RESEND_MAX_AGE_SECONDS = 24 * 3600
 SUBAGENT_MESSAGE_LIMIT = 5
 SUBAGENT_MESSAGE_WINDOW_SECONDS = 60
+WORKER_PRACTICE_LIMIT = 3
+WORKER_PRACTICE_TOKENS = 1200
+# Shadow mode: matches are only logged until their effect on real tasks has been judged.
+WORKER_PRACTICE_INJECT = False
 
+
+def worker_practices_text(rows) -> str:
+    if not rows:
+        return ""
+    items = []
+    for row in rows:
+        pitfalls = "".join(f"<pitfall>{escape(item)}</pitfall>" for item in row["meta"].get("pitfalls", []))
+        items.append(f"<practice id={quoteattr(str(row['id']))}>{escape(str(row['content']))}{pitfalls}</practice>")
+    return ("\n<practices>\n以往同类任务里验证过的做法，适用时照做；与任务要求冲突时以任务为准。\n"
+            + "\n".join(items) + "\n</practices>")
 
 class SubagentWorkflow:
     def _subagent_system(self) -> list[dict[str, Any]]:
@@ -207,13 +223,21 @@ class SubagentWorkflow:
             before_round=before_round,
         )
         now = datetime.now(self.store.timezone).isoformat(timespec="seconds")
+        practices = self.memory.triggered(
+            [task["title"], task["task"]], limit=WORKER_PRACTICE_LIMIT,
+            token_budget=WORKER_PRACTICE_TOKENS, scope=WORKER_SCOPE,
+        )
         messages = [{"role": "user", "content": (
             f"<task id=\"{task_id}\" title=\"{task['title']}\" current_time=\"{now}\" "
             f"workdir=\"{self.tool_executor.artifact_root.resolve()}\">\n"
-            f"{task['task']}\n</task>"
+            f"{task['task']}\n</task>" + (worker_practices_text(practices) if WORKER_PRACTICE_INJECT else "")
         )}]
         log_event(logger, logging.INFO, "subagent_started", task_id=task_id, turn_id=turn_id,
                   title=task["title"])
+        if practices:
+            log_event(logger, logging.INFO, "worker_practices_matched", task_id=task_id, turn_id=turn_id,
+                      injected=WORKER_PRACTICE_INJECT, practices=[row["id"] for row in practices],
+                      keys=[row["key"] for row in practices])
         try:
             await self._run_tool_loop(
                 self._subagent_system(), messages, self.tool_surface.worker_specs(), [], TurnDraft(),

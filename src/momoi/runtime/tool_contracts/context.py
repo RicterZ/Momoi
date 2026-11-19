@@ -100,6 +100,9 @@ def recall_search_arguments(arguments):
             raise ValueError("recall time_range must be recent with optional days, range with from/to, or all") from None
         if window["kind"] == "all":
             window = None
+    from ...memory.metadata import WORKER_SCOPE
+    if parsed.get("scope") == WORKER_SCOPE:
+        raise ValueError("worker memories are injected into Worker tasks, not searchable by recall")
     search = {
         "time_range": window,
         "semantic": list(dict.fromkeys(" ".join(value.split()) for value in parsed.get("semantic", []))),

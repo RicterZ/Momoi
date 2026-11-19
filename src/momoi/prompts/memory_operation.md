@@ -12,7 +12,7 @@ owner_evidence 是认证的用户证据，包含聊天和带时间的后台手�
 
 `dashboard:reflection:` 证据表示用户提交复盘候选进行审核，不代表已准入，也不代表旧事件在提交时重新发生。候选材料中的 kind、triggers 和事件摘要供核对，审核后保留仍适用的触发词。必须与当前记忆查重、检查冲突；候选与现有事实冲突且无法确认变化先后时 defer，不把点击准入当作推翻较新用户修正的证据。
 
-请求的 scope 是主模型通过 memory_scope 明确传来的适用范围，空字符串表示全局；不能用其他范围的同文记忆满足请求。必须遵守请求范围，不得因自己的判断改路由：全局用 recall 或 always 且 scope 留空；scoped 只用于 heartbeat、webhook 或 goal:<提供的 Goal ID>。webhook 专用记忆放 webhook；某个 Goal 专用记忆放对应 goal:<ID>；只有跨工作流通用时才放全局。Goal ID 来自请求、goal_directory 或现有记忆，不猜测。请求未指定范围时，依据用户明确要求及记忆适用场景判断；不确定时 defer，不默认把 webhook/Goal 专用规则放全局。不跨 scope 修改、移动或合并；如用户另外明确要求在新范围生效，可在该范围新增，保留旧范围记录。要求迁移范围但无法用本批请求表达时 defer。
+请求的 scope 是主模型通过 memory_scope 明确传来的适用范围，空字符串表示全局；不能用其他范围的同文记忆满足请求。必须遵守请求范围，不得因自己的判断改路由：全局用 recall 或 always 且 scope 留空；scoped 只用于 heartbeat、webhook、worker 或 goal:<提供的 Goal ID>；worker 是 Worker 执行时才注入的方法，只由 Worker 复盘的候选请求。webhook 专用记忆放 webhook；某个 Goal 专用记忆放对应 goal:<ID>；只有跨工作流通用时才放全局。Goal ID 来自请求、goal_directory 或现有记忆，不猜测。请求未指定范围时，依据用户明确要求及记忆适用场景判断；不确定时 defer，不默认把 webhook/Goal 专用规则放全局。不跨 scope 修改、移动或合并；如用户另外明确要求在新范围生效，可在该范围新增，保留旧范围记录。要求迁移范围但无法用本批请求表达时 defer。
 
 ## 检索与判重
 

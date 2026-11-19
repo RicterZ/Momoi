@@ -6,7 +6,7 @@ import time
 from datetime import date, datetime
 
 from ...memory.storage.transactions import transaction
-from ...memory.metadata import validate_triggers
+from ...memory.metadata import WORKER_SCOPE, validate_triggers
 from ...models import IncomingMessage, TurnDraft
 
 
@@ -145,7 +145,8 @@ class ReflectionCandidateStore:
                     raise ValueError('candidate_not_ready')
                 evidence = IncomingMessage(operation_id, operation_id, row['content'], now, now)
                 draft = TurnDraft(memory_operations=[{
-                    'id': 'admit', 'type': 'add', 'scope': '', 'content': row['content'],
+                    'id': 'admit', 'type': 'add', 'scope': WORKER_SCOPE if row['kind'] == 'practice' else '',
+                    'content': row['content'],
                     'event_id': operation_id, 'evidence': row['content'],
                 }], memory_conversation=[{'role': 'user', 'content':
                     'Dashboard 人工提交复盘候选，请审核重复和冲突后决定是否写入。候选材料：' +
