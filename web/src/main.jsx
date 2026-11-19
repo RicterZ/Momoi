@@ -3,7 +3,7 @@ import { Fragment, StrictMode, createContext, useContext, useEffect, useLayoutEf
 import { createRoot } from "react-dom/client";
 import "./themes.css";
 import "./styles.css";
-import { applyTheme, readTheme, saveTheme, themes } from "./theme.js";
+import { applyAppearance, readAppearance, saveAppearance, schemes } from "./theme.js";
 import "./trajectory.css";
 import Chat from "./Chat.jsx";
 import RequestMetrics from "./RequestMetrics.jsx";
@@ -2939,7 +2939,7 @@ const viewComponents = {
 
 function ThemeToggle({ theme, onChange, tabIndex }) {
   const next = theme === "dark" ? "light" : "dark";
-  const label = `切换到${themes.find(({ id }) => id === next).label}主题`;
+  const label = `切换到${schemes.find(({ id }) => id === next).label}主题`;
   return (
     <button className="theme-toggle" type="button" aria-label={label} title={label} tabIndex={tabIndex} onClick={() => onChange(next)}>
       <svg className="theme-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3012,8 +3012,9 @@ function TokenGate({ value, onChange, onUnlock }) {
   );
 }
 
-const initialTheme = readTheme();
-applyTheme(initialTheme);
+const initialTheme = readAppearance("scheme");
+applyAppearance("scheme", initialTheme);
+applyAppearance("style", readAppearance("style"));
 
 function App() {
   const [theme, setTheme] = useState(initialTheme);
@@ -3142,7 +3143,7 @@ function App() {
             <ThemeToggle
               theme={theme}
               tabIndex={locked ? -1 : undefined}
-              onChange={(value) => { saveTheme(value); setTheme(value); }}
+              onChange={(value) => { saveAppearance("scheme", value); setTheme(value); }}
             />
           </div>
         </aside>}

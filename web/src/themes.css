@@ -1,5 +1,6 @@
 :root {
   color-scheme: light;
+  --browser-chrome: #ff658d;
   --ink: #20243a;
   --muted: #697086;
   --soft: #9ca2b5;
@@ -23,8 +24,9 @@
   --shadow-blue: var(--blue);
 }
 
-:root[data-theme="dark"] {
+:root[data-scheme="dark"] {
   color-scheme: dark;
+  --browser-chrome: #e88ba4;
   --ink: #e4e6ef;
   --muted: #a9aec2;
   --soft: #7f869f;
@@ -46,4 +48,26 @@
   --edge: #5a6078;
   --shadow-pink: #7a4458;
   --shadow-blue: #3a5a70;
+}
+
+:root {
+  --stroke: 2px solid;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --press-shift: translate(1px, 1px);
+  --sidebar-width: 260px;
+  --sidebar-padding: 28px 20px 22px;
+  --panel-padding: 27px;
+  --panel-gap: 16px;
+  --button-padding: 9px 14px;
+  --button-weight: 750;
+  --shadow-subtle: 1px 1px 0 var(--shadow-blue);
+  --shadow-subtle-alt: 1px 1px 0 var(--shadow-pink);
+  --shadow-pressed: 2px 2px 0 var(--shadow-blue);
+  --shadow-pressed-alt: 2px 2px 0 var(--shadow-pink);
+  --shadow-control: 3px 3px 0 var(--shadow-blue);
+  --shadow-control-alt: 3px 3px 0 var(--shadow-pink);
+  --shadow-panel: 4px 4px 0 var(--shadow-blue);
+  --shadow-panel-alt: 4px 4px 0 var(--shadow-pink);
 }

@@ -7,10 +7,10 @@
   height: calc(100vh - 140px);
   min-height: 420px;
   overflow: hidden;
-  border: 2px solid var(--edge);
-  border-radius: 12px;
+  border: var(--stroke) var(--edge);
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: 4px 4px 0 var(--shadow-blue);
+  box-shadow: var(--shadow-panel);
 }
 .trajectory-page.has-panel { grid-template-columns: minmax(0, 1fr) 400px; }
 .trajectory-stream { min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
@@ -49,19 +49,19 @@
 .trajectory-group-title .trajectory-chip,
 .trajectory-lanes-toggle {
   padding: 2px 9px;
-  border: 2px solid var(--edge);
+  border: var(--stroke) var(--edge);
   border-radius: 8px;
   color: var(--ink);
   background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow-blue);
+  box-shadow: var(--shadow-pressed);
   font-size: 11px;
   font-weight: 750;
   white-space: nowrap;
   cursor: pointer;
 }
-.trajectory-lanes-toggle[aria-expanded="true"] { box-shadow: 2px 2px 0 var(--shadow-pink); }
+.trajectory-lanes-toggle[aria-expanded="true"] { box-shadow: var(--shadow-pressed-alt); }
 .trajectory-group-title .trajectory-chip:hover,
-.trajectory-lanes-toggle:hover { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--shadow-blue); }
+.trajectory-lanes-toggle:hover { transform: var(--press-shift); box-shadow: var(--shadow-subtle); }
 .trajectory-group-head .trajectory-lanes { margin: 8px -18px -8px; border-top: 2px dashed var(--line); border-bottom: 0; }
 
 .trajectory-step {
@@ -105,37 +105,37 @@
 .trajectory-step-tools code {
   padding: 0 6px;
   border: 1.5px solid var(--edge);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--ink);
   background: var(--surface);
-  box-shadow: 1px 1px 0 var(--shadow-pink);
+  box-shadow: var(--shadow-subtle-alt);
   font-size: 10px;
   font-weight: 700;
 }
 
-.trajectory-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; border-left: 2px solid var(--edge); }
+.trajectory-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; border-left: var(--stroke) var(--edge); }
 .trajectory-panel-head {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 14px 18px;
-  border-bottom: 2px solid var(--edge);
+  border-bottom: var(--stroke) var(--edge);
 }
 .trajectory-panel-head strong { color: var(--ink); font-size: 14px; font-weight: 850; }
 .trajectory-panel-head span { margin-right: auto; color: var(--soft); font-size: 10px; font-weight: 650; }
 .trajectory-panel-head button {
   padding: 3px 10px;
-  border: 2px solid var(--edge);
+  border: var(--stroke) var(--edge);
   border-radius: 8px;
   color: var(--ink);
   background: var(--surface);
-  box-shadow: 2px 2px 0 var(--shadow-blue);
+  box-shadow: var(--shadow-pressed);
   font-size: 11px;
   font-weight: 750;
   cursor: pointer;
 }
-.trajectory-panel-head button { box-shadow: 2px 2px 0 var(--shadow-pink); }
-.trajectory-panel-head button:hover { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--shadow-pink); }
+.trajectory-panel-head button { box-shadow: var(--shadow-pressed-alt); }
+.trajectory-panel-head button:hover { transform: var(--press-shift); box-shadow: var(--shadow-subtle-alt); }
 .trajectory-panel-body { overflow-y: auto; overscroll-behavior: contain; padding: 4px 18px 18px; }
 .trajectory-panel-body section { padding: 14px 0; border-bottom: 2px dashed var(--line); }
 .trajectory-panel-body section:last-child { border-bottom: 0; }
@@ -152,7 +152,7 @@
 
 @media (max-width: 860px) {
   .trajectory-page.has-panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr 1fr; }
-  .trajectory-panel { border-top: 2px solid var(--edge); border-left: 0; }
+  .trajectory-panel { border-top: var(--stroke) var(--edge); border-left: 0; }
   .trajectory-step { grid-template-columns: 44px 96px minmax(0, 1fr) 48px; }
   .trajectory-step-tools { display: none; }
 }
@@ -228,7 +228,7 @@
 
 .trajectory-memory-count { color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: 0; }
 .trajectory-memory-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-.trajectory-memory { min-width: 0; padding: 12px; border: 2px solid var(--edge); border-radius: 8px; background: var(--surface); box-shadow: 2px 2px 0 var(--shadow-blue); }
+.trajectory-memory { min-width: 0; padding: 12px; border: var(--stroke) var(--edge); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-pressed); }
 .trajectory-memory-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; font-size: 11px; }
 .trajectory-memory-source { padding: 3px 7px; border: 1px solid currentColor; border-radius: 4px; color: var(--pink); background: var(--pink-soft); font-size: 11px; font-weight: 750; }
 .trajectory-memory-source.is-scoped_memories { color: var(--blue); background: var(--blue-soft); }

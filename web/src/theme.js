@@ -1,31 +1,42 @@
-const STORAGE_KEY = "momoi-dashboard-appearance";
-
-export const themes = [
+export const schemes = [
   { id: "light", label: "浅色" },
   { id: "dark", label: "深色" },
 ];
 
-export function readTheme() {
+export const styles = [
+  { id: "pixel", label: "像素" },
+];
+
+const preferences = {
+  scheme: { key: "momoi-dashboard-appearance", options: schemes },
+  style: { key: "momoi-dashboard-style", options: styles },
+};
+
+export function readAppearance(axis) {
+  const { key, options } = preferences[axis];
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (themes.some(({ id }) => id === saved)) return saved;
+    const saved = localStorage.getItem(key);
+    if (options.some(({ id }) => id === saved)) return saved;
   } catch {
-    // The dashboard can still switch themes when storage is unavailable.
+    // CSS and the application both have defaults.
   }
-  return themes[0].id;
+  return options[0].id;
 }
 
-export function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  const accent = getComputedStyle(document.documentElement).getPropertyValue("--pink").trim();
-  if (accent) document.querySelector('meta[name="theme-color"]').content = accent;
+export function applyAppearance(axis, value) {
+  const root = document.documentElement;
+  root.dataset[axis] = value;
+  if (axis === "scheme") {
+    const color = getComputedStyle(root).getPropertyValue("--browser-chrome").trim();
+    if (color) document.querySelector('meta[name="theme-color"]').content = color;
+  }
 }
 
-export function saveTheme(theme) {
-  applyTheme(theme);
+export function saveAppearance(axis, value) {
+  applyAppearance(axis, value);
   try {
-    localStorage.setItem(STORAGE_KEY, theme);
+    localStorage.setItem(preferences[axis].key, value);
   } catch {
-    // Keep the selected theme for this page even if persistence fails.
+    // The selection still applies for the current page.
   }
 }
