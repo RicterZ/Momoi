@@ -4,9 +4,7 @@ export const schemes = [
 ];
 
 export const styles = [
-  { id: "pixel", label: "像素" },
-  { id: "flat", label: "紧凑扁平" },
-  { id: "brutal", label: "粗野" },
+  { id: "pixel", label: "默认" },
   { id: "workbench", label: "工作台" },
 ];
 
@@ -29,10 +27,8 @@ export function readAppearance(axis) {
 export function applyAppearance(axis, value) {
   const root = document.documentElement;
   root.dataset[axis] = value;
-  if (axis === "scheme") {
-    const color = getComputedStyle(root).getPropertyValue("--browser-chrome").trim();
-    if (color) document.querySelector('meta[name="theme-color"]').content = color;
-  }
+  const color = getComputedStyle(root).getPropertyValue("--browser-chrome").trim();
+  if (color) document.querySelector('meta[name="theme-color"]').content = color;
 }
 
 export function saveAppearance(axis, value) {

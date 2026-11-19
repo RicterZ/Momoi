@@ -1,4 +1,18 @@
+/* Neutral surfaces with separate tones for the two chart series. */
 :root[data-style="workbench"] {
+  --browser-chrome: #f6f6f5;
+  --ink: #222326;
+  --muted: #54575e;
+  --soft: #666a74;
+  --line: #d8dadd;
+  --surface: #fff;
+  --canvas: #f6f6f5;
+  --wash: #efefee;
+  --pink: #505877;
+  --pink-soft: #e9eaf0;
+  --blue: #45746a;
+  --blue-soft: #e7efec;
+  --on-accent: #fff;
   --stroke: 1px solid;
   --edge: var(--line);
   --radius-sm: 4px;
@@ -15,6 +29,22 @@
   --shadow-panel: none;
   --shadow-panel-alt: none;
   font-family: system-ui, sans-serif;
+}
+
+:root[data-style="workbench"][data-scheme="dark"] {
+  --browser-chrome: #18191b;
+  --ink: #ececee;
+  --muted: #bec0c6;
+  --soft: #a3a7b0;
+  --line: #404247;
+  --surface: #232427;
+  --canvas: #18191b;
+  --wash: #2e3034;
+  --pink: #afb9dc;
+  --pink-soft: #343a4d;
+  --blue: #9cc6b9;
+  --blue-soft: #293c38;
+  --on-accent: #18191b;
 }
 
 [data-style="workbench"] .shell:not(.is-setup) {
