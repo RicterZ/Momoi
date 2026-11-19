@@ -55,23 +55,25 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data['messages'][0]['content'], payload['text'])
         self.assertTrue(data['runtime']['budget']['blocked'])
 
-    async def test_validation_history_isolation_and_equal_timestamp_pagination(self):
+    async def test_validation_and_cross_channel_equal_timestamp_pagination(self):
         self.client.session.headers['Authorization'] = self.auth
         for payload in ([], {'text': '', 'id': 'valid_id'}, {'text': 'x' * 10001, 'id': 'valid_id'}, {'text': 'hi', 'id': '../bad'}):
             self.assertEqual((await self.client.post('/api/chat/messages', json=payload)).status, 400)
         now = time.time()
-        for channel in ('dashboard', 'onebot'):
+        for channel in ('dashboard', 'onebot', 'weixin', 'wechaty', 'qq_call'):
             for index in range(3):
                 self.store.add_event(IncomingMessage(f'{channel}:{index}', str(index), f'{channel} {index}', now, now, channel=channel))
-        first = await (await self.client.get('/api/chat/messages?limit=2')).json()
-        self.assertTrue(first['has_more'])
-        self.assertEqual(len(first['messages']), 2)
-        cursor = first['messages'][0]
-        second = await (await self.client.get('/api/chat/messages', params={'limit': 2, 'before': cursor['created_at'], 'before_id': cursor['id']})).json()
-        self.assertFalse(second['has_more'])
-        self.assertEqual(len(second['messages']), 1)
-        self.assertEqual(len({row['id'] for row in first['messages'] + second['messages']}), 3)
-        self.assertTrue(all(row['content'].startswith('dashboard') for row in first['messages'] + second['messages']))
+        params = {'limit': 2}
+        messages = []
+        for page in range(6):
+            data = await (await self.client.get('/api/chat/messages', params=params)).json()
+            self.assertEqual(data['has_more'], page < 5)
+            messages[:0] = data['messages']
+            cursor = data['messages'][0]
+            params.update(before=cursor['created_at'], before_id=cursor['id'])
+        expected = [f'{channel}:{index}' for channel in ('dashboard', 'onebot', 'wechaty', 'weixin') for index in range(3)]
+        self.assertEqual([row['id'] for row in messages], expected)
+        self.assertEqual([row['channel'] for row in messages], [identifier.split(':')[0] for identifier in expected])
         self.assertEqual((await self.client.get('/api/chat/messages?before=nan')).status, 400)
 
     async def test_history_ignores_malformed_legacy_event_payloads(self):
@@ -91,6 +93,34 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
         data = await response.json()
         self.assertEqual([row['content'] for row in data['messages']], ['你好'])
         self.assertTrue(data['typing'])
+
+    async def test_weixin_attachment_only_appears_after_delivery(self):
+        self.client.session.headers['Authorization'] = self.auth
+        now = time.time()
+        event = IncomingMessage('weixin:photo', 'photo', '看看这张图', now, now, channel='weixin')
+        self.store.add_event(event)
+        self.store.begin_turn('weixin-turn', 'owner', [event.event_id])
+        media = self.store._workspace / 'artifacts' / 'image.png'
+        media.parent.mkdir(exist_ok=True)
+        media.write_bytes(b'example-image')
+        self.store.queue_progress('weixin-turn', 'image', [
+            {'action': 'message', 'segments': [{'type': 'image', 'data': {'file': str(media)}}]},
+        ], 'weixin')
+        row = self.store.due_outbox()[0]
+        url = f'/api/chat/media/{row.id}'
+        first = await (await self.client.get('/api/chat/messages')).json()
+        self.assertEqual([message['id'] for message in first['messages']], [event.event_id])
+        self.assertFalse(first['typing'])
+        self.assertEqual((await self.client.get(url)).status, 404)
+
+        self.store.mark_sent(row.id)
+        second = await (await self.client.get('/api/chat/messages')).json()
+        reply = second['messages'][-1]
+        self.assertEqual((reply['channel'], reply['delivery_state'], reply['media_id']),
+                         ('weixin', 'delivered', row.id))
+        response = await self.client.get(url)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(await response.read(), b'example-image')
 
     async def test_live_reply_delivery_and_media_access(self):
         self.client.session.headers['Authorization'] = self.auth
@@ -184,7 +214,12 @@ class DashboardChatTest(unittest.IsolatedAsyncioTestCase):
                 daemon.store.mark_sent(row.id)
         self.client.session.headers['Authorization'] = self.auth
         history = await (await self.client.get('/api/chat/messages')).json()
-        self.assertEqual([row['content'] for row in history['messages']], ['接着聊吧', '老师，我记得！'])
+        self.assertEqual([(row['channel'], row['role'], row['content']) for row in history['messages']], [
+            ('onebot', 'user', '昨日在 QQ 聊的游戏'),
+            ('onebot', 'assistant', '老师，我记得！'),
+            ('dashboard', 'user', '接着聊吧'),
+            ('dashboard', 'assistant', '老师，我记得！'),
+        ])
 
     async def test_model_only_daemon_receives_and_delivers_web_chat(self):
         from dataclasses import replace

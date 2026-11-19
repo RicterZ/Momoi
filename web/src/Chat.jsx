@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import EmotionContent from "./EmotionContent.jsx";
 import "./chat.css";
 
+const CHANNEL_LABELS = { onebot: "QQ", wechaty: "微信", weixin: "微信" };
+
 function mergeMessages(old, fresh) {
   const byId = new Map(old.map(message => [message.id, message]));
   fresh.forEach(message => byId.set(message.id, message));
@@ -121,9 +123,11 @@ export default function Chat({ token, request, refreshKey }) {
         const date = new Date(message.created_at * 1000);
         const showDate = !index || date.toLocaleDateString() !== new Date(messages[index - 1].created_at * 1000).toLocaleDateString();
         const next = messages[index + 1];
-        const showTime = !message.turn_id || next?.role !== message.role || next?.turn_id !== message.turn_id || Math.floor(next.created_at / 60) !== Math.floor(message.created_at / 60);
-        const deliveryLabel = message.role === "user" ? "已发送" : ({ queued: "待发送", cancelled: "已取消", failed: "发送失败", uncertain: "发送状态待确认" })[message.delivery_state];
-        return <div key={message.id}>{showDate && <div className="chat-date"><span>{date.toLocaleDateString("zh-CN")}</span></div>}<div className={`chat-line ${message.role === "user" ? "owner" : "momoi"}`}><div className="chat-message">{message.media_id ? <ChatAttachment message={message} token={token} /> : <EmotionContent text={message.content} className="chat-text" />}</div>{(showTime || deliveryLabel) && <span className="chat-time">{showTime && date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}{deliveryLabel && `${showTime ? " · " : ""}${deliveryLabel}`}</span>}</div></div>;
+        const showTime = !message.turn_id || next?.role !== message.role || next?.turn_id !== message.turn_id || next?.channel !== message.channel || Math.floor(next.created_at / 60) !== Math.floor(message.created_at / 60);
+        const channelLabel = CHANNEL_LABELS[message.channel];
+        const deliveryLabel = message.role === "user" ? (channelLabel ? "" : "已发送") : ({ queued: "待发送", cancelled: "已取消", failed: "发送失败", uncertain: "发送状态待确认" })[message.delivery_state];
+        const metadata = [channelLabel, showTime && date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), deliveryLabel].filter(Boolean).join(" · ");
+        return <div key={message.id}>{showDate && <div className="chat-date"><span>{date.toLocaleDateString("zh-CN")}</span></div>}<div className={`chat-line ${message.role === "user" ? "owner" : "momoi"}`}><div className="chat-message">{message.media_id ? <ChatAttachment message={message} token={token} /> : <EmotionContent text={message.content} className="chat-text" />}</div>{metadata && <span className="chat-time">{metadata}</span>}</div></div>;
       })}
       {typing && <div className="chat-line momoi"><div className="chat-message chat-typing" role="status" aria-label="Momoi 正在回复"><i/><i/><i/></div><span className="chat-time">Momoi 正在回复…</span></div>}
     </div>
