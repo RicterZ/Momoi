@@ -1153,7 +1153,7 @@ a.tag:hover {
 .filter button {
   padding: 7px 10px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 6px;
   color: var(--muted);
   background: transparent;
   cursor: pointer;
@@ -2382,19 +2382,34 @@ a.tag:hover {
 
 .theme-picker {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 750;
-  white-space: nowrap;
-}
-.theme-picker select {
-  padding: 8px;
+  gap: 2px;
+  padding: 3px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  color: var(--ink);
-  background: var(--surface);
-  font: inherit;
+  background: var(--wash);
+  white-space: nowrap;
 }
-.theme-picker select:focus-visible { outline: 2px solid var(--blue); }
+.theme-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 0;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: background-color .15s, color .15s;
+}
+.theme-picker button:hover { color: var(--ink); }
+.theme-picker button[aria-pressed="true"] {
+  color: var(--pink);
+  background: var(--surface);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 14%, transparent);
+}
+.theme-picker button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }

@@ -2939,12 +2939,18 @@ const viewComponents = {
 
 function ThemePicker({ theme, onChange }) {
   return (
-    <label className="theme-picker">
-      <span>主题</span>
-      <select value={theme} onChange={(event) => onChange(event.target.value)}>
-        {themes.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
-      </select>
-    </label>
+    <div className="theme-picker" role="group" aria-label="主题">
+      {themes.map(({ id, label, icon }) => (
+        <button
+          key={id}
+          type="button"
+          aria-pressed={theme === id}
+          onClick={() => onChange(id)}
+        >
+          <span aria-hidden="true">{icon}</span>{label}
+        </button>
+      ))}
+    </div>
   );
 }
 
