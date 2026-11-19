@@ -164,6 +164,9 @@ class ToolBatchExecutor:
         self.replyer = replyer
         self.subagent_changed: Callable[[], None] = lambda: None
         self.subagent_cancelled: Callable[[str], None] = lambda task_id: None
+        self.subagent_messaged: Callable[[str, str], dict[str, Any]] = (
+            lambda task_id, message: {"ok": False, "error": "task_not_running"}
+        )
 
     def _subagent_tool(self, call: ToolCall, request: "ToolBatchRequest") -> dict[str, Any]:
         channel = request.delivery_channel.name
@@ -182,6 +185,11 @@ class ToolBatchExecutor:
                 self.subagent_cancelled(task["id"])
                 self.subagent_changed()
                 return {"ok": True, **subagent_view(task)}
+            if call.name == "subagent_message":
+                task = self.store.subagent_task(call.arguments["task_id"])
+                if task is None or task["channel"] != channel:
+                    raise ValueError("task not found in this channel")
+                return self.subagent_messaged(task["id"], call.arguments["message"])
             task_id = call.arguments.get("task_id")
             if task_id:
                 task = self.store.subagent_task(task_id)

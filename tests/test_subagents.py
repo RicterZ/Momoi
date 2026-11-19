@@ -180,6 +180,62 @@ def test_progress_wake_fires_while_worker_keeps_running(tmp_path, monkeypatch):
     asyncio.run(run())
 
 
+def test_planner_message_is_injected_and_reply_wakes_planner(tmp_path):
+    async def run():
+        daemon = MomoiDaemon(config(str(tmp_path)))
+        daemon._request_webhook_turn = AsyncMock(return_value=AgentReply([]))
+        channel = next(iter(daemon.channels))
+        task_id = daemon.store.create_subagent_task("turn", channel, "查电量", "查扫地机电量")["id"]
+        seen: list[str] = []
+        message_id = ""
+
+        async def complete(_system, messages, *_args, **_kwargs):
+            nonlocal message_id
+            seen.append(str(messages[-1]["content"]))
+            if len(seen) == 1:
+                message_id = daemon.message_running_subagent(task_id, "现在多少电量？")["message_id"]
+                return ProviderResponse([], [ToolCall("e", "subagent_report", {"progress": "开始查询"})])
+            if len(seen) == 2:
+                return ProviderResponse([], [ToolCall("r", "subagent_report", {
+                    "progress": "84%", "reply_to": message_id})])
+            return ProviderResponse([], [ToolCall("f", "subagent_finish", {
+                "outcome": "succeeded", "summary": "已启动", "output_refs": []})])
+
+        daemon.provider = type("P", (), {"complete": staticmethod(complete)})()
+        await daemon._run_subagent_task(daemon.store.claim_subagent_task())
+        await asyncio.gather(*daemon._subagent_wakeups)
+        assert f'<planner_message id="{message_id}">' in seen[1] and "现在多少电量？" in seen[1]
+        prompts = [call.args[0] for call in daemon._request_webhook_turn.await_args_list]
+        assert any("回答了你的消息" in p and "现在多少电量？" in p and "84%" in p for p in prompts)
+        assert "已结束" in prompts[-1]
+        assert daemon.message_running_subagent(task_id, "还在吗")["error"] == "task_not_running"
+        daemon.store.close()
+    asyncio.run(run())
+
+
+def test_planner_messages_are_rate_limited_and_unread_ones_reported(tmp_path):
+    async def run():
+        daemon = MomoiDaemon(config(str(tmp_path)))
+        daemon._request_webhook_turn = AsyncMock(return_value=AgentReply([]))
+        task_id = daemon.store.create_subagent_task("turn", next(iter(daemon.channels)), "查", "查一下")["id"]
+        results = []
+
+        async def complete(*_args, **_kwargs):
+            results.extend(daemon.message_running_subagent(task_id, f"问题{i}") for i in range(6))
+            return ProviderResponse([], [ToolCall("f", "subagent_finish", {
+                "outcome": "succeeded", "summary": "好了", "output_refs": []})])
+
+        daemon.provider = type("P", (), {"complete": staticmethod(complete)})()
+        await daemon._run_subagent_task(daemon.store.claim_subagent_task())
+        await asyncio.gather(*daemon._subagent_wakeups)
+        assert [r["ok"] for r in results] == [True] * 5 + [False]
+        assert results[-1]["error"] == "subagent_message_rate_limited"
+        prompt = daemon._request_webhook_turn.await_args_list[-1].args[0]
+        assert "没有读到你发的消息" in prompt and "问题4" in prompt
+        daemon.store.close()
+    asyncio.run(run())
+
+
 def test_unnotified_result_is_resent_after_restart(tmp_path):
     store = Store(tmp_path / "momoi.sqlite3")
     channel = "onebot"
