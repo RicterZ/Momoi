@@ -1,9 +1,13 @@
-"""Authenticated private chat through the existing owner-message runtime."""
+"""Authenticated owner chat and cross-channel history."""
 import re
 import time
 from pathlib import Path
 from aiohttp import web
 from ..models import IncomingMessage
+
+
+MIRRORED_CHANNELS = ("onebot", "wechaty", "weixin")
+MIRRORED_CHANNEL_SQL = ", ".join("?" for _ in MIRRORED_CHANNELS)
 
 
 def register_chat_routes(app, store, runtime):
@@ -16,22 +20,28 @@ def register_chat_routes(app, store, runtime):
         except ValueError:
             raise web.HTTPBadRequest(text="invalid pagination") from None
         before_id = request.query.get("before_id", "")
-        rows = store._db.execute("""SELECT * FROM (SELECT id, content, occurred_at AS created_at,
-                   'user' AS role, 'received' AS delivery_state, NULL AS media_id, 'text' AS kind, NULL AS turn_id FROM events
-                   WHERE json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END, '$.channel')='dashboard'
+        rows = store._db.execute(f"""SELECT * FROM (SELECT id, content, occurred_at AS created_at,
+                   'user' AS role, 'received' AS delivery_state, NULL AS media_id, 'text' AS kind, NULL AS turn_id,
+                   json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{{}}' END, '$.channel') AS channel
+                   FROM events
+                   WHERE channel='dashboard' OR (channel IN ({MIRRORED_CHANNEL_SQL}) AND events.kind=channel || '.message')
                    UNION ALL SELECT 'reply:' || o.id, o.text,
-                   COALESCE(m.created_at, p.created_at, t.started_at), 'assistant',
+                   COALESCE(CASE WHEN o.target_channel<>'dashboard' THEN
+                       json_extract(CASE WHEN json_valid(o.payload_json) THEN o.payload_json ELSE '{{}}' END, '$._sent_at')
+                   END, m.created_at, p.created_at, t.started_at), 'assistant',
                    CASE WHEN o.state='sent' THEN 'delivered'
                         WHEN o.state IN ('pending','sending') THEN 'queued'
                         WHEN o.state='superseded' THEN 'cancelled'
                         WHEN o.state='failed' THEN 'failed' ELSE 'uncertain' END,
-                   CASE WHEN o.media_path IS NOT NULL THEN o.id ELSE NULL END, o.kind, o.turn_id
+                   CASE WHEN o.media_path IS NOT NULL THEN o.id ELSE NULL END, o.kind, o.turn_id, o.target_channel
                    FROM outbox o JOIN turns t ON t.id=o.turn_id
                    LEFT JOIN messages m ON m.outbox_id=o.id
-                   LEFT JOIN turn_progress p ON o.dedupe_key='turn:' || p.turn_id || ':progress:' || p.tool_call_id || ':' || p.part_index
-                   WHERE o.target_channel='dashboard'
+                   LEFT JOIN turn_progress p ON p.turn_id=o.turn_id
+                       AND o.dedupe_key='turn:' || p.turn_id || ':progress:' || p.tool_call_id || ':' || p.part_index
+                   WHERE o.target_channel='dashboard' OR (o.target_channel IN ({MIRRORED_CHANNEL_SQL}) AND o.state='sent')
                    ) WHERE created_at < ? OR (created_at = ? AND id < ?)
-                   ORDER BY created_at DESC, id DESC LIMIT ?""", (before, before, before_id, limit + 1)).fetchall()
+                   ORDER BY created_at DESC, id DESC LIMIT ?""",
+                   (*MIRRORED_CHANNELS, *MIRRORED_CHANNELS, before, before, before_id, limit + 1)).fetchall()
         has_more = len(rows) > limit
         rows = rows[:limit]
         status = runtime.status()
@@ -83,7 +93,12 @@ def register_chat_routes(app, store, runtime):
             identifier = int(request.match_info["id"])
         except ValueError:
             raise web.HTTPNotFound() from None
-        row = store._db.execute("SELECT media_path FROM outbox WHERE id=? AND target_channel='dashboard'", (identifier,)).fetchone()
+        row = store._db.execute(
+            f"""SELECT media_path FROM outbox WHERE id=? AND (
+                target_channel='dashboard' OR (target_channel IN ({MIRRORED_CHANNEL_SQL}) AND state='sent')
+            )""",
+            (identifier, *MIRRORED_CHANNELS),
+        ).fetchone()
         if row is None or not row[0]:
             raise web.HTTPNotFound()
         workspace = store._workspace
