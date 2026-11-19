@@ -6,10 +6,12 @@ and the final result wake a Planner turn, which decides what to tell the user.
 import asyncio
 import logging
 import math
+from collections import deque
 from datetime import datetime
 from importlib.resources import files
 from time import time
 from typing import Any
+from uuid import uuid4
 
 from ...mcp.prompt import MCP_TOOL_POLICY
 from ...models import TurnDraft
@@ -27,6 +29,8 @@ SUBAGENT_REPORT_WAKE_SECONDS = 60
 SUBAGENT_IDLE_POLL_SECONDS = 5
 SUBAGENT_PROGRESS_WAKE_DELAY_SECONDS = 10
 SUBAGENT_RESEND_MAX_AGE_SECONDS = 24 * 3600
+SUBAGENT_MESSAGE_LIMIT = 5
+SUBAGENT_MESSAGE_WINDOW_SECONDS = 60
 
 
 class SubagentWorkflow:
@@ -49,6 +53,27 @@ class SubagentWorkflow:
         running = self._running_subagent
         if running is not None and running[0] == task_id and not running[1].done():
             running[1].cancel()
+
+    def message_running_subagent(self, task_id: str, message: str) -> dict[str, Any]:
+        inbox = self._subagent_inboxes.get(task_id)
+        if inbox is None:
+            return {"ok": False, "error": "task_not_running",
+                    "message": "Worker 没有在运行这个任务，消息未发送。"}
+        now = time()
+        sent = self._subagent_message_times.setdefault(task_id, deque())
+        while sent and now - sent[0] >= SUBAGENT_MESSAGE_WINDOW_SECONDS:
+            sent.popleft()
+        if len(sent) >= SUBAGENT_MESSAGE_LIMIT:
+            return {"ok": False, "error": "subagent_message_rate_limited", "message": (
+                f"{SUBAGENT_MESSAGE_WINDOW_SECONDS} 秒内已给这个 Worker 发了 {SUBAGENT_MESSAGE_LIMIT} 条消息，"
+                "先等它回答或汇报。"
+            )}
+        sent.append(now)
+        message_id = f"m_{uuid4().hex[:10]}"
+        inbox.append({"id": message_id, "message": message.strip()})
+        log_event(logger, logging.INFO, "subagent_message_queued", task_id=task_id, message_id=message_id)
+        return {"ok": True, "task_id": task_id, "message_id": message_id, "state": "queued",
+                "message": "已排队，Worker 下一步之前会看到；回答时运行时会唤醒你。"}
 
     def _subagent_reply_channel(self, name: str) -> str:
         channel = self.channels.get(name)
@@ -106,6 +131,9 @@ class SubagentWorkflow:
         finished: dict[str, Any] | None = None
         last_wake = 0.0
         progress_wake: asyncio.Task[None] | None = None
+        inbox: list[dict[str, str]] = []
+        self._subagent_inboxes[task_id] = inbox
+        delivered: dict[str, str] = {}
 
         async def delayed_progress_wake(progress: str) -> None:
             # A task that ends within the delay is reported once, by its result wake.
@@ -120,10 +148,18 @@ class SubagentWorkflow:
                 progress = args.get("progress")
                 if not isinstance(progress, str) or not progress.strip() or len(progress) > 1000:
                     return {"ok": False, "error": "invalid_progress"}
+                reply_to = args.get("reply_to")
+                if reply_to is not None and reply_to not in delivered:
+                    return {"ok": False, "error": "unknown_message_id"}
                 try:
                     self.store.add_subagent_report(task_id, progress.strip())
                 except ValueError:
                     return {"ok": False, "error": "task_not_running"}
+                if reply_to is not None:
+                    self._wake_planner_for_subagent(
+                        task, turn_id, "reply", progress.strip(), question=delivered.pop(reply_to),
+                    )
+                    return {"ok": True, "message": "已转达派发者，继续执行任务。"}
                 if time() - last_wake >= SUBAGENT_REPORT_WAKE_SECONDS:
                     last_wake = time()
                     progress_wake = asyncio.create_task(delayed_progress_wake(progress.strip()))
@@ -149,6 +185,16 @@ class SubagentWorkflow:
                     f"[运行时通知] 已用 {rounds} 轮模型调用，最多 {SUBAGENT_MAX_ROUNDS} 轮。"
                     "检查方向是否正确，尽快收尾；无法完成时用 subagent_finish 说明已完成和未完成的部分。"
                 )})
+            while inbox:
+                item = inbox.pop(0)
+                delivered[item["id"]] = item["message"]
+                live_messages.append({"role": "user", "content": (
+                    f"<planner_message id=\"{item['id']}\">\n{item['message']}\n</planner_message>\n"
+                    "派发者发来的消息。需要回答时用 subagent_report 回答，reply_to 填这条消息的 id；"
+                    "然后按调整后的要求继续任务。"
+                )})
+                log_event(logger, logging.INFO, "subagent_message_delivered",
+                          task_id=task_id, message_id=item["id"])
 
         def stopped():
             current = self.store.subagent_task(task_id)
@@ -199,13 +245,19 @@ class SubagentWorkflow:
         finally:
             if progress_wake is not None and not progress_wake.done():
                 progress_wake.cancel()
+            self._subagent_inboxes.pop(task_id, None)
+            self._subagent_message_times.pop(task_id, None)
+        unread = [item["message"] for item in inbox]
         current = self.store.subagent_task(task_id)
         log_event(logger, logging.INFO, "subagent_finished", task_id=task_id, turn_id=turn_id,
                   status=current["status"] if current else None)
         if current is not None and current["status"] != "cancelled":
-            self._wake_planner_for_subagent(task, turn_id, "finished", "")
+            self._wake_planner_for_subagent(task, turn_id, "finished", "", unread=unread)
 
-    def _wake_planner_for_subagent(self, task: dict[str, Any], worker_turn_id: str, kind: str, progress: str) -> None:
+    def _wake_planner_for_subagent(
+        self, task: dict[str, Any], worker_turn_id: str, kind: str, progress: str,
+        *, question: str = "", unread: list[str] | None = None,
+    ) -> None:
         current = self.store.subagent_task(task["id"]) or task
         if kind == "finished":
             lines = [
@@ -214,7 +266,16 @@ class SubagentWorkflow:
             ]
             if current.get("output_refs"):
                 lines.append("结果引用：" + "、".join(current["output_refs"]))
+            if unread:
+                lines.append("Worker 结束前没有读到你发的消息：" + "；".join(unread))
             lines.append("根据结果决定如何告知用户；需要继续时可以再派发 Worker。")
+        elif kind == "reply":
+            lines = [
+                f"Worker 任务「{current['title']}」（task_id={current['id']}）回答了你的消息，仍在执行。",
+                f"你的消息：{question}",
+                f"Worker 回答：{progress}",
+                "根据回答决定是否告知用户或继续给 Worker 发消息。",
+            ]
         else:
             lines = [
                 f"Worker 任务「{current['title']}」（task_id={current['id']}）仍在执行，阶段汇报：{progress}",

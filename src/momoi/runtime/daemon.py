@@ -253,8 +253,11 @@ class MomoiDaemon(
         self._subagent_changed = asyncio.Event()
         self._running_subagent: tuple[str, asyncio.Task[None]] | None = None
         self._subagent_wakeups: set[asyncio.Task[None]] = set()
+        self._subagent_inboxes: dict[str, list[dict[str, str]]] = {}
+        self._subagent_message_times: dict[str, deque[float]] = {}
         self.tool_batch.subagent_changed = self.notify_subagents_changed
         self.tool_batch.subagent_cancelled = self.cancel_running_subagent
+        self.tool_batch.subagent_messaged = self.message_running_subagent
         self.webhooks = (
             WebhookService(
                 config.webhooks,

@@ -29,11 +29,27 @@ SUBAGENT_CANCEL = {
         "task_id": {"type": "string", "minLength": 1},
     }, "required": ["task_id"], "additionalProperties": False},
 }
+SUBAGENT_MESSAGE = {
+    "name": "subagent_message",
+    "description": (
+        "给运行中的 Worker 发一条消息：补充信息、调整要求或询问当前进展。"
+        "消息在 Worker 下一步之前插入，立即返回，不等待回答；Worker 回答时运行时会唤醒你。"
+        "Worker 看不到聊天记录，消息要写清楚，不要直接转述用户原话。要停止任务用 subagent_cancel。"
+    ),
+    "input_schema": {"type": "object", "properties": {
+        "task_id": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1, "maxLength": 2000},
+    }, "required": ["task_id", "message"], "additionalProperties": False},
+}
 SUBAGENT_REPORT = {
     "name": "subagent_report",
-    "description": "向派发者汇报阶段性进展，例如已找到关键线索、某个耗时步骤开始或完成。只在有实质进展时调用；最终结果用 subagent_finish。",
+    "description": (
+        "向派发者汇报阶段性进展，例如已找到关键线索、某个耗时步骤开始或完成。只在有实质进展时调用；最终结果用 subagent_finish。"
+        "回答派发者的消息时，reply_to 填该消息的 id。"
+    ),
     "input_schema": {"type": "object", "properties": {
         "progress": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "reply_to": {"type": "string", "minLength": 1},
     }, "required": ["progress"], "additionalProperties": False},
 }
 SUBAGENT_FINISH = {
@@ -49,7 +65,7 @@ SUBAGENT_FINISH = {
     }, "required": ["outcome", "summary", "output_refs"], "additionalProperties": False},
 }
 
-PLANNER_SUBAGENT_TOOLS = [CREATE_SUBAGENT, SUBAGENT_STATUS, SUBAGENT_CANCEL]
+PLANNER_SUBAGENT_TOOLS = [CREATE_SUBAGENT, SUBAGENT_STATUS, SUBAGENT_MESSAGE, SUBAGENT_CANCEL]
 WORKER_SUBAGENT_TOOLS = [SUBAGENT_REPORT, SUBAGENT_FINISH]
 PLANNER_SUBAGENT_TOOL_NAMES = frozenset(spec["name"] for spec in PLANNER_SUBAGENT_TOOLS)
 WORKER_SUBAGENT_TOOL_NAMES = frozenset(spec["name"] for spec in WORKER_SUBAGENT_TOOLS)
