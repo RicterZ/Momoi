@@ -111,7 +111,7 @@
   flex: 0 0 auto;
 }
 .settings-studio .is-error {
-  color: #b32850;
+  color: var(--danger-strong);
 }
 .settings-runtime {
   display: grid;
@@ -282,10 +282,10 @@
 }
 .settings-field input::placeholder {
   opacity: 1;
-  color: #848c9d;
+  color: var(--muted);
 }
 .settings-field textarea[aria-invalid="true"] {
-  border-color: #bc395e;
+  border-color: var(--danger-strong);
 }
 .settings-input-wrap {
   position: relative;
@@ -312,7 +312,7 @@
   background: var(--blue-soft);
 }
 .settings-reveal[aria-pressed="true"] {
-  color: #137cae;
+  color: var(--info);
   background: var(--blue-soft);
 }
 .settings-reveal svg {
@@ -378,7 +378,7 @@
   background: var(--blue-soft);
 }
 .settings-select-menu li[aria-selected="true"] {
-  color: #9f2549;
+  color: var(--danger-strong);
   background: var(--pink-soft);
   font-weight: 750;
 }
@@ -723,7 +723,7 @@
 .settings-exec-control > div:first-child { flex: 1; min-width: 0; }
 .settings-exec-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 13px; }
 .settings-exec-heading h3 { margin: 0; font-size: 15px; font-weight: 750; }
-.settings-exec-warning { margin: 10px 0 0; color: #b32850; font-size: 12px; line-height: 1.8; }
+.settings-exec-warning { margin: 10px 0 0; color: var(--danger-strong); font-size: 12px; line-height: 1.8; }
 .settings-persona .quiet-button:focus-visible {
   outline: 3px solid var(--settings-focus);
   outline-offset: 3px;
@@ -984,7 +984,7 @@
   color: var(--ink);
 }
 .settings-apply-dialog::backdrop {
-  background: rgba(247, 248, 251, .7);
+  background: color-mix(in srgb, var(--canvas) 70%, transparent);
   backdrop-filter: blur(4px);
 }
 .settings-apply-dialog .loading {
@@ -1148,7 +1148,7 @@
   background: var(--muted);
 }
 .settings-channel-state.is-connected { color: var(--ink); }
-.settings-channel-state.is-connected i { background: var(--green, #77b88a); }
+.settings-channel-state.is-connected i { background: var(--green); }
 .settings-weixin-login .settings-channel-note { text-align: left; margin: 0; font-size: 10px; }
 @media (max-width: 650px) {
   .settings-channel-grid { grid-template-columns: minmax(0, 1fr); }

@@ -1,7 +1,9 @@
 import { hasModelApiKey } from "./setupGuide.js";
 import { Fragment, StrictMode, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import "./themes.css";
 import "./styles.css";
+import { applyTheme, readTheme, saveTheme, themes } from "./theme.js";
 import "./trajectory.css";
 import Chat from "./Chat.jsx";
 import RequestMetrics from "./RequestMetrics.jsx";
@@ -2935,7 +2937,18 @@ const viewComponents = {
   settings: Settings,
 };
 
-function TokenGate({ value, onChange, onUnlock }) {
+function ThemePicker({ theme, onChange }) {
+  return (
+    <label className="theme-picker">
+      <span>主题</span>
+      <select value={theme} onChange={(event) => onChange(event.target.value)}>
+        {themes.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function TokenGate({ value, onChange, onUnlock, themePicker }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   return (
@@ -2967,6 +2980,7 @@ function TokenGate({ value, onChange, onUnlock }) {
             <h2 id="token-gate-title">老师，出示通行证！</h2>
           </div>
         </div>
+        {themePicker}
         <p className="token-card-copy">
           嘿嘿，先把通行证交一下嘛。对上了才能进开发部的后台哦。
         </p>
@@ -2996,7 +3010,15 @@ function TokenGate({ value, onChange, onUnlock }) {
   );
 }
 
+const initialTheme = readTheme();
+applyTheme(initialTheme);
+
 function App() {
+  const [theme, setTheme] = useState(initialTheme);
+  const themePicker = <ThemePicker theme={theme} onChange={(value) => {
+    saveTheme(value);
+    setTheme(value);
+  }} />;
   const confirm = useConfirm();
   const { view, param } = useHashRoute();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -3127,14 +3149,17 @@ function App() {
               <p className="eyebrow">{eyebrow}</p>
               <h1>{pageTitle}</h1>
             </div>
-            <button
-              className="quiet-button"
-              type="button"
-              tabIndex={locked ? -1 : undefined}
-              onClick={async () => { if (await allowSettingsLeave()) setRefreshKey((value) => value + 1); }}
-            >
-              ↻ 刷新
-            </button>
+            <div className="topbar-actions">
+              {!locked && themePicker}
+              <button
+                className="quiet-button"
+                type="button"
+                tabIndex={locked ? -1 : undefined}
+                onClick={async () => { if (await allowSettingsLeave()) setRefreshKey((value) => value + 1); }}
+              >
+                ↻ 刷新
+              </button>
+            </div>
           </header>
           <div id="content">
             {setupError && <div role="status">{setupError}</div>}
@@ -3155,6 +3180,7 @@ function App() {
           value={tokenDraft}
           onChange={setTokenDraft}
           onUnlock={setToken}
+          themePicker={themePicker}
         />
       )}
     </>
