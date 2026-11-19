@@ -13,11 +13,7 @@
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-v2.png" />
     <title>Momoi Dashboard</title>
-    <script>
-      try {
-        if (localStorage.getItem("momoi-dashboard-appearance") === "dark") document.documentElement.dataset.theme = "dark";
-      } catch {}
-    </script>
+    <script src="/assets/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>
