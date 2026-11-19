@@ -3,7 +3,7 @@ import { Fragment, StrictMode, createContext, useContext, useEffect, useLayoutEf
 import { createRoot } from "react-dom/client";
 import "./themes.css";
 import "./styles.css";
-import { applyTheme, readTheme, saveTheme, themes } from "./theme.js";
+import { applyAppearance, readAppearance, saveAppearance, schemes } from "./theme.js";
 import "./trajectory.css";
 import Chat from "./Chat.jsx";
 import RequestMetrics from "./RequestMetrics.jsx";
@@ -34,18 +34,32 @@ const pages = {
 };
 
 const navItems = [
-  ["overview", "01", "主页"],
+  ["overview", "01", "主页", "概览"],
   ["chat", "02", "聊天"],
-  ["conversations", "03", "话题"],
+  ["conversations", "03", "话题", "记录"],
   ["thinking", "04", "轨迹"],
   ["reflections", "05", "复盘"],
   ["memories", "06", "记忆"],
   ["emotions", "07", "表情"],
   ["goals", "08", "任务"],
-  ["metrics", "09", "监控"],
+  ["metrics", "09", "监控", "系统"],
   ["tools", "10", "工具"],
   ["settings", "11", "设置"],
 ];
+
+const navIcons = {
+  overview: <><path d="M2.5 7 8 2.5 13.5 7v6a.5.5 0 0 1-.5.5H10V10H6v3.5H3a.5.5 0 0 1-.5-.5Z" /></>,
+  chat: <><path d="M2.5 4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H7l-3 2.5v-2.5h-.5a1 1 0 0 1-1-1Z" /></>,
+  conversations: <><path d="M3 4h10M3 8h10M3 12h6" /></>,
+  thinking: <><circle cx="4" cy="4" r="1.5" /><circle cx="12" cy="12" r="1.5" /><path d="M5.5 4H10a2 2 0 0 1 0 4H6a2 2 0 0 0 0 4h4.5" /></>,
+  reflections: <><path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v3h3" /><path d="M8 5.5V8l1.8 1.2" /></>,
+  memories: <><path d="M4 2.5h8a.5.5 0 0 1 .5.5v10.5L8 11l-4.5 2.5V3a.5.5 0 0 1 .5-.5Z" /></>,
+  emotions: <><circle cx="8" cy="8" r="5.5" /><path d="M5.8 9.6a2.8 2.8 0 0 0 4.4 0M6 6.5h.01M10 6.5h.01" /></>,
+  goals: <><rect x="2.5" y="2.5" width="11" height="11" rx="2" /><path d="m5.5 8 1.8 1.8L10.8 6.3" /></>,
+  metrics: <><path d="M2.5 13.5h11M4.5 11V8M8 11V4.5M11.5 11V6.5" /></>,
+  tools: <><path d="M9.8 2.7a3 3 0 0 0 3.5 3.5l-6.6 6.6a1.6 1.6 0 0 1-2.3-2.3l6.6-6.6Z" /></>,
+  settings: <><circle cx="8" cy="8" r="2" /><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1" /></>,
+};
 
 const thinkingStageLabels = {
   owner: "CHAT // 行为规划",
@@ -464,9 +478,9 @@ function OverviewBody({ data, token, routeParam }) {
     },
   ];
   return (
-    <>
+    <div className="overview-layout">
       <OverviewSection
-        label="Usage"
+        region="usage" label="Usage" workbenchLabel="调用与成本"
         note="账户余额与调用统计"
       >
         <UsageChart
@@ -481,11 +495,11 @@ function OverviewBody({ data, token, routeParam }) {
           days={narrow ? 7 : 30}
         />
       </OverviewSection>
-      <OverviewSection label="Now" note="当前状态与活动">
+      <OverviewSection region="now" label="Now" workbenchLabel="当前运行" note="当前状态与活动">
         <CurrentStatePanel state={data.current_state} token={token} />
         <div className="overview-grid">
           <article className="panel">
-            <span className="panel-label">Momoi activity</span>
+            <span className="panel-label default-heading">Momoi activity</span><span className="workbench-heading workbench-status-label">活动与心跳</span>
             <h2 className="state-name">{data.activity.name}</h2>
             <p className="state-detail">
               {data.activity.result || "Momoi 正在按自己的节奏生活。"}
@@ -493,7 +507,7 @@ function OverviewBody({ data, token, routeParam }) {
             <StampMeta items={activityMetaItems(data.activity, data.heartbeat)} />
           </article>
           {data.affinity?.enabled && <article className="panel">
-            <span className="panel-label">Affinity</span>
+            <span className="panel-label default-heading">Affinity</span><span className="workbench-heading workbench-status-label">好感度</span>
             <div className="affinity-meter">
               <div className="affinity-meter-label"><span>好感度</span><span>{data.affinity.value}<small> / 100</small></span></div>
               <div className="affinity-meter-track" role="progressbar" aria-label="好感度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.affinity.value}><span style={{width: `${data.affinity.value}%`}} /></div>
@@ -501,7 +515,7 @@ function OverviewBody({ data, token, routeParam }) {
           </article>}
         </div>
       </OverviewSection>
-      <OverviewSection label="Records" note="生活记录与待办概览">
+      <OverviewSection region="records" label="Records" workbenchLabel="记录与任务" note="生活记录与待办概览">
         <div className="overview-groups">
           {groups.map((group) => (
             <article
@@ -525,15 +539,16 @@ function OverviewBody({ data, token, routeParam }) {
           ))}
         </div>
       </OverviewSection>
-    </>
+    </div>
   );
 }
 
-function OverviewSection({ label, note, children }) {
+function OverviewSection({ region, label, workbenchLabel, note, children }) {
   return (
-    <section className="overview-section">
+    <section className="overview-section" data-region={region}>
       <div className="overview-section-head">
         <span className="panel-label">{label}</span>
+        <h2 className="workbench-heading">{workbenchLabel}</h2>
         <p>{note}</p>
       </div>
       {children}
@@ -559,7 +574,7 @@ function CurrentStatePanel({ state, token }) {
   return (
     <article className="panel current-state-panel" aria-label="Current state">
       <div className="current-state-heading">
-        <span className="panel-label">Current state</span>
+        <span className="panel-label default-heading">Current state</span><span className="workbench-heading workbench-status-label">状态记录</span>
         <span className="current-state-count">{slots.length} 条状态</span>
       </div>
       {slots.length ? (
@@ -2939,7 +2954,7 @@ const viewComponents = {
 
 function ThemeToggle({ theme, onChange, tabIndex }) {
   const next = theme === "dark" ? "light" : "dark";
-  const label = `切换到${themes.find(({ id }) => id === next).label}主题`;
+  const label = `切换到${schemes.find(({ id }) => id === next).label}主题`;
   return (
     <button className="theme-toggle" type="button" aria-label={label} title={label} tabIndex={tabIndex} onClick={() => onChange(next)}>
       <svg className="theme-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3012,8 +3027,9 @@ function TokenGate({ value, onChange, onUnlock }) {
   );
 }
 
-const initialTheme = readTheme();
-applyTheme(initialTheme);
+const initialTheme = readAppearance("scheme");
+applyAppearance("scheme", initialTheme);
+applyAppearance("style", readAppearance("style"));
 
 function App() {
   const [theme, setTheme] = useState(initialTheme);
@@ -3121,16 +3137,19 @@ function App() {
           </a>
           <p className="sidebar-label">NAV // CHANNELS</p>
           <nav aria-label="主导航">
-            {navItems.map(([target, index, label]) => (
-              <a
-                href={`#${target}`}
-                className={target === view ? "active" : ""}
-                key={target}
-                tabIndex={locked ? -1 : undefined}
-              >
-                <span>{index}</span>
-                <strong>{label}</strong>
-              </a>
+            {navItems.map(([target, index, label, group]) => (
+              <Fragment key={target}>
+                {group && <p className="nav-group">{group}</p>}
+                <a
+                  href={`#${target}`}
+                  className={target === view ? "active" : ""}
+                  tabIndex={locked ? -1 : undefined}
+                >
+                  <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{navIcons[target]}</svg>
+                  <span>{index}</span>
+                  <strong>{label}</strong>
+                </a>
+              </Fragment>
             ))}
           </nav>
           <div className="sidebar-foot">
@@ -3142,7 +3161,7 @@ function App() {
             <ThemeToggle
               theme={theme}
               tabIndex={locked ? -1 : undefined}
-              onChange={(value) => { saveTheme(value); setTheme(value); }}
+              onChange={(value) => { saveAppearance("scheme", value); setTheme(value); }}
             />
           </div>
         </aside>}
@@ -3150,7 +3169,10 @@ function App() {
           <header className="topbar">
             <div>
               <p className="eyebrow">{eyebrow}</p>
-              <h1>{pageTitle}</h1>
+              <h1>{view === "overview" && !setupMode ? <>
+                <span className="default-heading">{pageTitle}</span>
+                <span className="workbench-heading">运行概览</span>
+              </> : pageTitle}</h1>
             </div>
             <button
               className="quiet-button"

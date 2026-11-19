@@ -14,6 +14,7 @@ import DesktopQQ from "./DesktopQQ.jsx";
 import { waitForConfiguration } from "./configurationRuntime.js";
 import { testProviderConnection } from "./providerConnectionTest.js";
 import { runtimeFieldValue, runtimeFieldChanges } from "./runtimeFields.js";
+import { readAppearance, saveAppearance, styles } from "./theme.js";
 import "./settings.css";
 
 const modules = [
@@ -50,6 +51,7 @@ const modules = [
   { id: "budget", label: "费用预算", icon: "coin" },
   { id: "runtime", label: "运行设置" },
   { id: "backup", label: "备份与恢复" },
+  { id: "appearance", label: "外观" },
 ];
 const adapterLabels = {
   openai: "OpenAI Chat Completions",
@@ -1154,6 +1156,29 @@ function SectionHeader({ module, control }) {
   );
 }
 
+function AppearanceSection({ module }) {
+  const id = useId();
+  const [style, setStyle] = useState(() => document.documentElement.dataset.style || readAppearance("style"));
+  return (
+    <>
+      <SectionHeader module={module} />
+      <div className="settings-form-body">
+        <div className="settings-fields">
+          <div className="settings-field">
+            <label className="settings-label" htmlFor={id}>界面风格</label>
+            <select className="dash-input" id={id} value={style} onChange={event => {
+              saveAppearance("style", event.target.value);
+              setStyle(event.target.value);
+            }}>
+              {styles.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function TimeField({ label, value, onChange, allowDisabled = false }) {
   const options = Array.from({ length: 48 }, (_, index) => {
     const text = `${String(Math.floor(index / 2)).padStart(2, "0")}:${index % 2 ? "30" : "00"}`;
@@ -1824,7 +1849,7 @@ export default function ConfigurationSettings({
                   key={module.id}
                   hidden={activeSection !== module.id}
                 >
-                  {module.id === "backup" ? (<BackupSettings token={token} Dialog={SettingsDialog} header={<SectionHeader module={module} />} />) : module.id === "prompts" ? (
+                  {module.id === "appearance" ? <AppearanceSection module={module} /> : module.id === "backup" ? (<BackupSettings token={token} Dialog={SettingsDialog} header={<SectionHeader module={module} />} />) : module.id === "prompts" ? (
                     <>
                       <SectionHeader module={module} />
                       {promptContent({ next, previous, busy: saving || actionBusy })}
