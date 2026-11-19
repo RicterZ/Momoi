@@ -53,6 +53,13 @@ class ToolResultStore:
                 temporary.unlink()
         return result_ref
 
+    def load(self, result_ref: object) -> str | None:
+        """Whole snapshot text, or None when the reference is invalid or expired."""
+        try:
+            return self._path(str(result_ref or "")).read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError, UnicodeError, ValueError):
+            return None
+
     def read(
         self,
         result_ref: object,

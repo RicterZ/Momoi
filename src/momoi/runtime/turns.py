@@ -21,10 +21,12 @@ from .workflows import (
 from .workflows.weekly_reflection import WeeklyReflectionWorkflow
 from .workflows.memory_verification import MemoryVerificationWorkflow
 from .workflows.subagent import SubagentWorkflow
+from .workflows.worker_review import WorkerReviewWorkflow
 
 
 class TurnRunner(
     SubagentWorkflow,
+    WorkerReviewWorkflow,
     WeeklyReflectionWorkflow,
     MemoryVerificationWorkflow,
     CurrentStateWorkflow,

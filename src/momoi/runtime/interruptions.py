@@ -30,6 +30,7 @@ TURN_INGRESS = {
     "heartbeat": TurnIngressPolicy("yield"),
     "reflection": TurnIngressPolicy(),
     "weekly_reflection": TurnIngressPolicy(),
+    "worker_review": TurnIngressPolicy(),
     "memory_verification": TurnIngressPolicy(),
     "memory_operation": TurnIngressPolicy(),
     "current_state_maintenance": TurnIngressPolicy(),

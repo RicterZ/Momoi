@@ -63,6 +63,7 @@ from .ops.webhooks import WebhookStore
 from .core.lifecycle import LifecycleStore
 
 from .agenda.subagents import SubagentRepository
+from .agenda.worker_reviews import WorkerReviewStore
 from .repositories import RepositoryFacade
 from ..memory.storage.transactions import transaction
 
@@ -72,6 +73,7 @@ from .memory.activation import MemoryActivationStore
 from .memory.verification import MemoryVerificationStore
 
 class Store(
+    WorkerReviewStore,
     MemoryVerificationStore,
     MemoryActivationStore,
     MemoryAccessStore,
