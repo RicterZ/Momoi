@@ -1,7 +1,9 @@
 import { hasModelApiKey } from "./setupGuide.js";
 import { Fragment, StrictMode, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import "./themes.css";
 import "./styles.css";
+import { applyTheme, readTheme, saveTheme, themes } from "./theme.js";
 import "./trajectory.css";
 import Chat from "./Chat.jsx";
 import RequestMetrics from "./RequestMetrics.jsx";
@@ -2935,6 +2937,20 @@ const viewComponents = {
   settings: Settings,
 };
 
+function ThemeToggle({ theme, onChange, tabIndex }) {
+  const next = theme === "dark" ? "light" : "dark";
+  const label = `切换到${themes.find(({ id }) => id === next).label}主题`;
+  return (
+    <button className="theme-toggle" type="button" aria-label={label} title={label} tabIndex={tabIndex} onClick={() => onChange(next)}>
+      <svg className="theme-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {theme === "dark"
+          ? <path d="M13 9.6A5.5 5.5 0 0 1 6.4 3 5.5 5.5 0 1 0 13 9.6Z" />
+          : <><circle cx="8" cy="8" r="2.8" /><path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9" /></>}
+      </svg>
+    </button>
+  );
+}
+
 function TokenGate({ value, onChange, onUnlock }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2996,7 +3012,11 @@ function TokenGate({ value, onChange, onUnlock }) {
   );
 }
 
+const initialTheme = readTheme();
+applyTheme(initialTheme);
+
 function App() {
+  const [theme, setTheme] = useState(initialTheme);
   const confirm = useConfirm();
   const { view, param } = useHashRoute();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -3117,8 +3137,13 @@ function App() {
             <span className="status-led" aria-hidden="true">
               <PixelSprite className="pixel-led" grid={LED_PIXELS} />
             </span>
-            <span>SYSTEM ONLINE</span>
+            <span>ONLINE</span>
             {version ? <span className="sidebar-version">{version}</span> : null}
+            <ThemeToggle
+              theme={theme}
+              tabIndex={locked ? -1 : undefined}
+              onChange={(value) => { saveTheme(value); setTheme(value); }}
+            />
           </div>
         </aside>}
         <main className={isRecord ? `is-record${view === "chat" ? " is-chat" : ""}` : undefined}>

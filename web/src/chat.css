@@ -1,6 +1,6 @@
-.chat-room { width:100%; margin:0 auto; min-height:0; flex:1; display:flex; flex-direction:column; border:2px solid var(--ink); border-radius:12px; background:var(--surface); box-shadow:4px 4px 0 var(--blue); overflow:hidden; }
-.chat-room-head { display:flex; align-items:center; gap:12px; padding:18px 24px; border-bottom:2px solid var(--ink); }
-.chat-avatar { width:38px; height:38px; display:grid; place-items:center; font-weight:850; border:2px solid var(--ink); border-radius:10px; background:var(--pink-soft); color:var(--pink); box-shadow:2px 2px 0 var(--pink); }
+.chat-room { width:100%; margin:0 auto; min-height:0; flex:1; display:flex; flex-direction:column; border:2px solid var(--edge); border-radius:12px; background:var(--surface); box-shadow:4px 4px 0 var(--shadow-blue); overflow:hidden; }
+.chat-room-head { display:flex; align-items:center; gap:12px; padding:18px 24px; border-bottom:2px solid var(--edge); }
+.chat-avatar { width:38px; height:38px; display:grid; place-items:center; font-weight:850; border:2px solid var(--edge); border-radius:10px; background:var(--pink-soft); color:var(--pink); box-shadow:2px 2px 0 var(--shadow-pink); }
 .chat-room-head strong { font-size:14px; }
 .chat-room-head p { margin:4px 0 0; font-size:11px; color:var(--muted); }
 .chat-presence { margin-left:auto; display:flex; gap:8px; align-items:center; color:var(--muted); font-size:11px; }
@@ -11,12 +11,12 @@
 .chat-date span { padding:5px 12px; border:1px solid var(--line); border-radius:4px; background:var(--surface); }
 .chat-line { display:flex; flex-direction:column; align-items:flex-start; margin-bottom:22px; }
 .chat-line.owner { align-items:flex-end; }
-.chat-message { max-width:76%; padding:12px 16px; border:2px solid var(--ink); border-radius:10px; background:var(--surface); box-shadow:3px 3px 0 var(--pink); }
-.chat-line.owner .chat-message { box-shadow:3px 3px 0 var(--blue); }
+.chat-message { max-width:76%; padding:12px 16px; border:2px solid var(--edge); border-radius:10px; background:var(--surface); box-shadow:3px 3px 0 var(--shadow-pink); }
+.chat-line.owner .chat-message { box-shadow:3px 3px 0 var(--shadow-blue); }
 .chat-message p, .chat-text { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; line-height:1.8; }
 .chat-time { margin-top:9px; padding:0 3px; color:var(--soft); font-size:10px; }
-.chat-composer { display:flex; align-items:center; gap:16px; margin:18px 24px 20px; padding:14px 16px 12px; border:2px solid var(--ink); border-radius:12px; background:var(--surface); box-shadow:3px 3px 0 var(--pink-soft); }
-.chat-composer:focus-within { box-shadow:3px 3px 0 var(--pink); }
+.chat-composer { display:flex; align-items:center; gap:16px; margin:18px 24px 20px; padding:14px 16px 12px; border:2px solid var(--edge); border-radius:12px; background:var(--surface); box-shadow:3px 3px 0 var(--pink-soft); }
+.chat-composer:focus-within { box-shadow:3px 3px 0 var(--shadow-pink); }
 .chat-composer textarea { flex:1; min-width:0; width:100%; min-height:48px; max-height:160px; resize:none; border:0; outline:none; background:transparent; color:var(--ink); font:inherit; font-size:14px; line-height:1.7; }
 .chat-composer textarea::placeholder { color:var(--soft); }
 .chat-send { flex:0 0 auto; height:40px; display:flex; align-items:center; justify-content:center; gap:8px; background:var(--surface); padding:8px 14px; font-size:13px; font-weight:700; line-height:20px; border-radius:8px; }
@@ -26,7 +26,7 @@
 .chat-budget-note a { color:var(--ink); flex-shrink:0; }
 
 .chat-welcome { min-height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:16px; }
-.chat-welcome-mark { display:grid; place-items:center; width:64px; height:64px; border:2px solid var(--ink); border-radius:16px; box-shadow:4px 4px 0 var(--blue); color:var(--pink); background:var(--pink-soft); font-size:32px; font-weight:850; }
+.chat-welcome-mark { display:grid; place-items:center; width:64px; height:64px; border:2px solid var(--edge); border-radius:16px; box-shadow:4px 4px 0 var(--shadow-blue); color:var(--pink); background:var(--pink-soft); font-size:32px; font-weight:850; }
 .chat-welcome h2 { margin:0; font-size:24px; }
 .chat-welcome p { margin:0; font-size:13px; color:var(--muted); }
 .chat-typing { display:flex; gap:6px; padding:16px; }
