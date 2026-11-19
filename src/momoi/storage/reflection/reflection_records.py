@@ -76,6 +76,17 @@ class ReflectionRecordStore:
         ).fetchone()
         return dict(row) if row else None
 
+    def update_reflection_summary(self, local_date: str, summary: str) -> str | None:
+        summary = summary.strip()
+        if not 1 <= len(summary) <= 6000:
+            raise ValueError("summary must contain between 1 and 6000 characters")
+        with self._db:
+            result = self._db.execute(
+                "UPDATE reflections SET summary=? WHERE local_date=? AND state='completed'",
+                (summary, local_date),
+            )
+        return summary if result.rowcount else None
+
     def list_reflections(
         self, limit: int = 14, *, before: str | None = None, local_date: str | None = None
     ) -> dict[str, object]:

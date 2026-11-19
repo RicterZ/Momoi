@@ -1125,6 +1125,73 @@ function ConversationDetail({ item, token }) {
   );
 }
 
+function ReflectionSummary({ item, token, onSaved }) {
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const length = draft === null ? 0 : [...draft.trim()].length;
+
+  async function save(event) {
+    event.preventDefault();
+    if (saving || length < 1 || length > 6000) return;
+    setSaving(true);
+    setError("");
+    try {
+      const { summary } = await api(`/api/reflections/${encodeURIComponent(item.local_date)}`, {
+        method: "PATCH",
+        body: { summary: draft },
+        token,
+      });
+      onSaved(summary);
+      setDraft(null);
+    } catch (error) {
+      setError(`保存复盘失败：${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="card-head">
+        <h2>{item.local_date}</h2>
+        <div className="memory-badges">
+          <span className="status">{item.state}</span>
+          {item.state === "completed" && draft === null && (
+            <button type="button" className="quiet-button" onClick={() => setDraft(item.summary || "")}>
+              编辑
+            </button>
+          )}
+        </div>
+      </div>
+      {draft === null ? (
+        <p className="summary">
+          {item.summary || (item.error ? `等待重试：${item.error}` : "尚未生成复盘。")}
+        </p>
+      ) : (
+        <form className="summary" onSubmit={save}>
+          <textarea className="edit-area" aria-label="复盘正文" rows={6} autoFocus
+            disabled={saving} value={draft} onChange={(event) => setDraft(event.target.value)} />
+          {(error || length > 6000) && (
+            <p className="form-error" role="alert">{length > 6000 ? "复盘正文最多 6000 字。" : error}</p>
+          )}
+          <div className="card-actions">
+            <button className="quiet-button" disabled={saving || !length || length > 6000}>
+              {saving ? "保存中…" : "保存"}
+            </button>
+            <button type="button" className="quiet-button pink" disabled={saving} onClick={() => {
+              setDraft(null);
+              setError("");
+            }}>
+              取消
+            </button>
+          </div>
+        </form>
+      )}
+    </>
+  );
+}
+
 function Reflections({ refreshKey, token, routeParam }) {
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState({ loading: true });
@@ -1218,14 +1285,9 @@ function Reflections({ refreshKey, token, routeParam }) {
       <section className="card-list">
         {items.map((item) => (
           <article className="reflection-card" key={item.id}>
-            <div className="card-head">
-              <h2>{item.local_date}</h2>
-              <span className="status">{item.state}</span>
-            </div>
-            <p className="summary">
-              {item.summary ||
-                (item.error ? `等待重试：${item.error}` : "尚未生成复盘。")}
-            </p>
+            <ReflectionSummary item={item} token={token} onSaved={(summary) => {
+              setItems((rows) => rows.map((row) => row.id === item.id ? { ...row, summary } : row));
+            }} />
             {!!item.memories?.length && (
               <div className="reflection-snapshot">
                 <div className="memory-list">

@@ -498,6 +498,19 @@ def create_dashboard_app(
             )
         )
 
+    async def update_reflection(request: web.Request) -> web.Response:
+        local_date = request.match_info["local_date"]
+        payload = await _json_body(request)
+        if set(payload) != {"summary"} or not isinstance(payload["summary"], str):
+            raise web.HTTPBadRequest(text="summary must be a string")
+        try:
+            summary = store.update_reflection_summary(local_date, payload["summary"])
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        if summary is None:
+            raise web.HTTPNotFound(text="completed reflection not found")
+        return web.json_response({"summary": summary})
+
     async def reflection_memories(request: web.Request) -> web.Response:
         return web.json_response({"items": store.list_reflection_memories()})
 
@@ -850,6 +863,7 @@ def create_dashboard_app(
     app.router.add_delete('/api/reflection-candidates/{candidate_id}', change_reflection_candidate)
     app.router.add_post('/api/reflection-candidates/{candidate_id}/admit', change_reflection_candidate)
     app.router.add_get("/api/reflections", reflections)
+    app.router.add_patch("/api/reflections/{local_date}", update_reflection)
     app.router.add_get("/api/reflection-memories", reflection_memories)
     app.router.add_patch("/api/reflection-memories/{memory_id}", update_reflection_memory)
     app.router.add_delete("/api/reflection-memories/{memory_id}", delete_reflection_memory)
