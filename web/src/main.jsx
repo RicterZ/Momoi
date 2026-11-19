@@ -1262,96 +1262,12 @@ function Reflections({ refreshKey, token, routeParam }) {
   );
 }
 
-function ActivationSuggestions({ data, token, onMutated }) {
-  const [demoteIds, setDemoteIds] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const confirm = useConfirm();
-  async function review(item, approve) {
-    if (approve && !await confirm({ title: "确认调整记忆？", message: `将「${item.content}」${item.target === "always" ? "升级为常驻记忆" : "降为按需召回"}。${item.target === "always" && demoteIds.length ? `同时降级所选的 ${demoteIds.length} 条常驻记忆。` : ""}`, confirmLabel: "确认调整", cancelLabel: "取消" })) return;
-    setBusy(true);
-    setError("");
-    try {
-      await api(`/api/memory-activation-suggestions/${item.id}/review`, {
-        method: "POST", token, body: { approve, demote_ids: approve && item.target === "always" ? demoteIds : [] },
-      });
-      setDemoteIds([]);
-      onMutated();
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
-  }
-  return <section className="memory-section">
-    {data.items.length > 0 && <>
-      <h3>待审升降级建议</h3>
-      <p>建议不会自动修改记忆；降级后仍可按需召回。</p>
-      {data.items.some(item => item.target === "always") && data.always_memories.length > 0 &&
-        <fieldset className="reflection-card activation-demotions" disabled={busy}><legend>升级时同时降级的常驻记忆</legend>
-          {data.always_memories.map(item => <label key={item.id}>
-            <input type="checkbox" checked={demoteIds.includes(item.id)} onChange={event => setDemoteIds(ids => event.target.checked ? [...ids, item.id] : ids.filter(id => id !== item.id))} />
-            {item.content}
-          </label>)}
-        </fieldset>}
-      <div className="review-list">{data.items.map(item => <article className="reflection-card" key={item.id}>
-        <p>{item.target === "always" ? "升级为常驻" : "降为按需召回"} · {item.content}</p>
-        <p>{item.reason}</p>
-        <div className="card-actions">
-          <button type="button" className="quiet-button" disabled={busy} onClick={() => review(item, true)}>确认调整</button>
-          <button type="button" className="quiet-button" disabled={busy} onClick={() => review(item, false)}>忽略建议</button>
-        </div>
-      </article>)}</div>
-    </>}
-    {error && <p className="form-error" role="alert">{error}</p>}
-  </section>;
-}
-
-const verificationLabels = { possibly_outdated: "可能已过时", conflicts_with: "与其他记忆冲突" };
-
-function MemoryVerifications({ data, token, onMutated }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const confirm = useConfirm();
-  async function act(item, remove) {
-    if (remove && !await confirm({ title: "删除这条记忆？", message: `将删除「${item.content}」。`, confirmLabel: "删除", cancelLabel: "取消" })) return;
-    setBusy(true);
-    setError("");
-    try {
-      if (remove) await api(`/api/memories/${item.memory_id}`, { method: "DELETE", token });
-      else await api(`/api/memory-verifications/${item.id}/keep`, { method: "POST", token });
-      onMutated();
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
-  }
-  if (!data.items.length && !error) return null;
-  return <section className="memory-section">
-    <h3>待核对记忆</h3>
-    <p>每周核对的结论不会自动修改记忆；需要改写时可在下方记忆列表中编辑。</p>
-    <div className="review-list">{data.items.map(item => <article className="reflection-card" key={item.id}>
-      <p>{verificationLabels[item.verdict] || item.verdict} · {item.content}</p>
-      {item.conflicts_with && <p>冲突记忆：{item.conflicts_with.content}</p>}
-      <p>{item.reason}</p>
-      {item.citations.map((citation, index) => <blockquote key={index}>{citation.quote}</blockquote>)}
-      <div className="card-actions">
-        <button type="button" className="quiet-button" disabled={busy} onClick={() => act(item, false)}>仍然成立</button>
-        <button type="button" className="quiet-button" disabled={busy} onClick={() => act(item, true)}>删除记忆</button>
-      </div>
-    </article>)}</div>
-    {error && <p className="form-error" role="alert">{error}</p>}
-  </section>;
-}
-
 function Memories({ refreshKey, token, onMutated }) {
   const [activation, setActivation] = useState("always");
   const [query, setQuery] = useState("");
   const candidateMode = activation === "reflection";
   const path = candidateMode ? "/api/reflection-candidates" : "/api/memories?limit=400";
   return (
-    <>
-    <DataView path="/api/memory-verifications" refreshKey={refreshKey} token={token}>
-      {data => <MemoryVerifications {...{ data, token, onMutated }} />}
-    </DataView>
-    <DataView path="/api/memory-activation-suggestions" refreshKey={refreshKey} token={token}>
-      {data => <ActivationSuggestions {...{ data, token, onMutated }} />}
-    </DataView>
     <DataView key={candidateMode ? "reflection" : "confirmed"} path={path} refreshKey={refreshKey} token={token}>
       {(data) => <MemoryInventory candidateMode={candidateMode}
         items={data.items.map(item => candidateMode
@@ -1360,7 +1276,6 @@ function Memories({ refreshKey, token, onMutated }) {
           : { ...item, resource: "memories", identity: `memory:${item.id}` })}
         {...{ token, onMutated, activation, setActivation, query, setQuery }} />}
     </DataView>
-    </>
   );
 }
 
@@ -1596,7 +1511,11 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
           </section>
         ))
       ) : (
-        <Empty text={candidateMode ? "暂无累计达到 2 次的观察；达到 5 次且无冲突后，可在此提交审核，通过后进入召回记忆。" : undefined} />
+        <Empty text={query.trim()
+          ? "没有找到匹配的记忆，试试其他关键词。"
+          : candidateMode
+            ? "暂无复盘候选。"
+            : "当前分类还没有记忆。"} />
       )}
     </>
   );
