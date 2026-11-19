@@ -2,13 +2,14 @@ import asyncio
 from asyncio import CancelledError, Lock
 import json
 import logging
+import re
 from time import monotonic
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlsplit
 
 import aiohttp
 
-from .errors import ProviderContentFiltered, ProviderError, ProviderResponseError
+from .errors import ProviderContentFiltered, ProviderError, ProviderResponseError, ProviderUnsupportedLocation
 from .streaming import _stream
 from ..integrations.errors import error_category
 from ..observability.events import log_event
@@ -56,6 +57,8 @@ def responses_url(base_url: str) -> str:
 
 
 def should_retry(error: Exception) -> bool:
+    if isinstance(error, (ProviderContentFiltered, ProviderUnsupportedLocation)):
+        return False
     return getattr(error, "_http_status", 0) >= 500 or isinstance(
         error,
         (ProviderResponseError, aiohttp.ClientError, asyncio.TimeoutError),
@@ -151,7 +154,7 @@ async def retry_request(
                 reason=reason,
                 duration_ms=int((monotonic() - attempt_started) * 1000),
             )
-            if circuit is not None and not isinstance(error, ProviderContentFiltered):
+            if circuit is not None and not isinstance(error, (ProviderContentFiltered, ProviderUnsupportedLocation)):
                 circuit.failed(error)
             if isinstance(error, ProviderError):
                 raise
@@ -167,13 +170,23 @@ async def http_error(
     response: aiohttp.ClientResponse, protocol: str
 ) -> ProviderError:
     body = await response.text()
+    code = ""
     try:
         error_data = json.loads(body)
-        detail = str(error_data.get("error", {}).get("message", ""))[:300]
+        payload = error_data.get("error", {})
+        detail = str(payload.get("message", ""))[:300]
+        code = str(payload.get("code", "")).lower()
     except (ValueError, TypeError, AttributeError):
         detail = body.strip()[:300]
     suffix = f": {detail}" if detail else ""
-    error = ProviderError(
+    error_type = ProviderError
+    if code in {"unsupported_country_region_territory", "unsupported_location"} or re.search(
+        r"user location (?:is )?(?:not supported|unsupported)", detail, re.IGNORECASE
+    ):
+        error_type = ProviderUnsupportedLocation
+    elif code in {"content_filter", "content_policy_violation", "prohibited_content"}:
+        error_type = ProviderContentFiltered
+    error = error_type(
         f"{protocol} endpoint returned HTTP {response.status}{suffix}"
     )
     error._http_status = response.status  # type: ignore[attr-defined]

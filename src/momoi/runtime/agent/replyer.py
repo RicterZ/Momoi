@@ -111,7 +111,7 @@ class Replyer(ReplyerBase):
                             "turn_id": row["turn_id"]})
         return actions
 
-    async def generate(self, call, request):
+    async def generate(self, call, request, *, poke_already_sent=False):
         soul = self.expression_prompt()
         guide = prompt_text(self.config, "REPLYER.md", files("momoi").joinpath("prompts/replyer.md").read_text(encoding="utf-8"))
         system = "\n\n".join(part for part in (soul, guide) if part)
@@ -232,7 +232,7 @@ class Replyer(ReplyerBase):
                 for action in response.tool_calls:
                     if action.name != "qq_poke" or action.argument_error or action.arguments:
                         result = {"ok": False, "error": "invalid_poke_call"}
-                    elif request.delivery_channel.name != "onebot":
+                    elif poke_already_sent or request.delivery_channel.name != "onebot":
                         result = {"ok": True}
                     elif ((getattr(request, "pause_requested", None) and request.pause_requested())
                           or self.store.owner_channel_revision(request.delivery_channel.name) != owner_revision):

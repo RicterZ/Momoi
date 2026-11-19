@@ -4,6 +4,7 @@ import asyncio
 import copy
 from dataclasses import replace
 import logging
+from math import inf, nextafter
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
@@ -11,8 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from ...channel import Channel, ChannelMessage
+from ...llm.errors import ProviderContentFiltered, ProviderError, ProviderUnsupportedLocation
 from ...storage.core.timestamps import context_timestamp
 from ...observability.context import log_context
+from ...observability.values import safe_preview
 from ...models import MessageRecalled, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
 from ...mcp.content import attachment_blocks
 from ..turn_support import (
@@ -325,7 +328,7 @@ class ToolBatchExecutor:
                 if target.name == "dashboard":
                     await target.set_typing(True)
                 try:
-                    bubbles = await self.replyer.generate(call, reply_request)
+                    bubbles = await self._generate_reply(call, reply_request)
                 finally:
                     if target.name == "dashboard":
                         await target.set_typing(False)
@@ -368,6 +371,15 @@ class ToolBatchExecutor:
                     if delivery.bubbles is not None:
                         batch.last_sent_bubbles = copy.deepcopy(result["bubbles"])
                         batch.last_sent_channel = delivery.channel
+            except ProviderError as error:
+                result = {"ok": False, "error": "replyer_provider_error",
+                          "message": safe_preview(str(error), 500)}
+                if isinstance(error, ProviderUnsupportedLocation):
+                    result.update(error="replyer_unsupported_location",
+                                  guidance="Replyer 服务不支持当前用户地区，请暂时不要发送消息。")
+                elif isinstance(error, ProviderContentFiltered):
+                    result.update(error="replyer_content_filter_exhausted",
+                                  guidance="重置 Replyer 后已连续重试 3 次，请在本回合停止尝试发送。")
             except ValueError as error:
                 result = {"ok": False, "error": "invalid_reply", "message": str(error)}
             except Exception as error:
@@ -389,6 +401,25 @@ class ToolBatchExecutor:
             self.store, result, stage=execution.stage, seen=request.draft.triggered_episode_ids,
         )
         return result
+
+    async def _generate_reply(self, call: ToolCall, request: ToolBatchRequest):
+        target = request.delivery_channel
+        channel = getattr(target, "dialogue_channel", target.name)
+        generation_options = {}
+        for attempt in range(4):
+            try:
+                return await self.replyer.generate(call, request, **generation_options)
+            except ProviderContentFiltered:
+                if attempt == 3:
+                    raise
+                if self.store.reply_action_bubbles(request.turn_id, call.id):
+                    generation_options["poke_already_sent"] = True
+                # Keep this turn's active input available after dropping prior history.
+                reset_at = min((event.received_at for event in request.current_events), default=inf)
+                self.store.reset_replyer_history(
+                    channel, reset_at=max(self.store.replyer_reset_at(channel),
+                                          min(time.time(), nextafter(reset_at, -inf))),
+                )
 
     async def _qq_recall_message(
         self, call: ToolCall, request: ToolBatchRequest, batch: _BatchEffects,

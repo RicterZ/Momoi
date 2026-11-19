@@ -12,7 +12,7 @@ from aiohttp.test_utils import TestServer
 from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.adapters.anthropic import merge_adjacent_roles
-from momoi.llm.errors import ProviderContentFiltered
+from momoi.llm.errors import ProviderContentFiltered, ProviderUnsupportedLocation
 from momoi.integrations.adapters.anthropic import AnthropicProvider
 from momoi.integrations.adapters.openai import OpenAIProvider, openai_messages
 from momoi.integrations.models import LLMConfig, ThinkingConfig
@@ -137,11 +137,24 @@ class ReasoningContinuationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[0]["extra_content"]["google"]["thought_signature"], "skip_thought_signature_validator")
         self.assertNotIn("extra_content", openai_messages("", [replayed])[0]["tool_calls"][0])
 
-    async def test_content_filter_block_is_not_retried(self):
+    async def test_provider_policy_errors_are_not_retried(self):
         requests = []
+        cases = [
+            (200, {"choices": [{"finish_reason": "content_filter: PROHIBITED_CONTENT", "index": 0}]},
+             ProviderContentFiltered, "PROHIBITED_CONTENT"),
+            (200, {"choices": [{"finish_reason": "content_filter", "message": {"content": None}}]},
+             ProviderContentFiltered, "content_filter"),
+            (400, {"error": {"code": "content_policy_violation", "message": "Blocked by policy"}},
+             ProviderContentFiltered, "Blocked by policy"),
+            (400, {"error": {"message": "User location is not supported for the API use."}},
+             ProviderUnsupportedLocation, "User location is not supported"),
+        ]
+        replies = iter(cases)
+
         async def chat(request):
             requests.append(await request.json())
-            return web.json_response({"choices": [{"finish_reason": "content_filter: PROHIBITED_CONTENT", "index": 0}]})
+            status, payload, _, _ = next(replies)
+            return web.json_response(payload, status=status)
         app = web.Application()
         app.router.add_post("/v1/chat/completions", chat)
         server = TestServer(app)
@@ -149,9 +162,10 @@ class ReasoningContinuationTest(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(server.close)
         config = LLMConfig(str(server.make_url("/v1")), "test", "gemini-3.6-flash", 100, 0, 5, 3, "openai")
         async with OpenAIProvider(config) as provider:
-            with self.assertRaisesRegex(ProviderContentFiltered, "PROHIBITED_CONTENT"):
-                await provider.complete("", [{"role": "user", "content": "question"}])
-        self.assertEqual(len(requests), 1)
+            for _, _, error_type, detail in cases:
+                with self.subTest(detail=detail), self.assertRaisesRegex(error_type, detail):
+                    await provider.complete("", [{"role": "user", "content": "question"}])
+        self.assertEqual(len(requests), len(cases))
 
     async def test_anthropic_signed_thinking_is_replayed_before_tool_use(self):
         thinking = {"type": "thinking", "thinking": "private", "signature": "sig-a"}
