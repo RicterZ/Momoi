@@ -466,7 +466,7 @@ function OverviewBody({ data, token, routeParam }) {
   return (
     <div className="overview-layout">
       <OverviewSection
-        region="usage" label="Usage"
+        region="usage" label="Usage" workbenchLabel="调用与成本"
         note="账户余额与调用统计"
       >
         <UsageChart
@@ -481,11 +481,11 @@ function OverviewBody({ data, token, routeParam }) {
           days={narrow ? 7 : 30}
         />
       </OverviewSection>
-      <OverviewSection region="now" label="Now" note="当前状态与活动">
+      <OverviewSection region="now" label="Now" workbenchLabel="当前运行" note="当前状态与活动">
         <CurrentStatePanel state={data.current_state} token={token} />
         <div className="overview-grid">
           <article className="panel">
-            <span className="panel-label">Momoi activity</span>
+            <span className="panel-label default-heading">Momoi activity</span><span className="workbench-heading workbench-status-label">活动与心跳</span>
             <h2 className="state-name">{data.activity.name}</h2>
             <p className="state-detail">
               {data.activity.result || "Momoi 正在按自己的节奏生活。"}
@@ -493,7 +493,7 @@ function OverviewBody({ data, token, routeParam }) {
             <StampMeta items={activityMetaItems(data.activity, data.heartbeat)} />
           </article>
           {data.affinity?.enabled && <article className="panel">
-            <span className="panel-label">Affinity</span>
+            <span className="panel-label default-heading">Affinity</span><span className="workbench-heading workbench-status-label">好感度</span>
             <div className="affinity-meter">
               <div className="affinity-meter-label"><span>好感度</span><span>{data.affinity.value}<small> / 100</small></span></div>
               <div className="affinity-meter-track" role="progressbar" aria-label="好感度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.affinity.value}><span style={{width: `${data.affinity.value}%`}} /></div>
@@ -501,7 +501,7 @@ function OverviewBody({ data, token, routeParam }) {
           </article>}
         </div>
       </OverviewSection>
-      <OverviewSection region="records" label="Records" note="生活记录与待办概览">
+      <OverviewSection region="records" label="Records" workbenchLabel="记录与任务" note="生活记录与待办概览">
         <div className="overview-groups">
           {groups.map((group) => (
             <article
@@ -529,11 +529,12 @@ function OverviewBody({ data, token, routeParam }) {
   );
 }
 
-function OverviewSection({ region, label, note, children }) {
+function OverviewSection({ region, label, workbenchLabel, note, children }) {
   return (
     <section className="overview-section" data-region={region}>
       <div className="overview-section-head">
         <span className="panel-label">{label}</span>
+        <h2 className="workbench-heading">{workbenchLabel}</h2>
         <p>{note}</p>
       </div>
       {children}
@@ -559,7 +560,7 @@ function CurrentStatePanel({ state, token }) {
   return (
     <article className="panel current-state-panel" aria-label="Current state">
       <div className="current-state-heading">
-        <span className="panel-label">Current state</span>
+        <span className="panel-label default-heading">Current state</span><span className="workbench-heading workbench-status-label">状态记录</span>
         <span className="current-state-count">{slots.length} 条状态</span>
       </div>
       {slots.length ? (
@@ -3151,7 +3152,10 @@ function App() {
           <header className="topbar">
             <div>
               <p className="eyebrow">{eyebrow}</p>
-              <h1>{pageTitle}</h1>
+              <h1>{view === "overview" && !setupMode ? <>
+                <span className="default-heading">{pageTitle}</span>
+                <span className="workbench-heading">运行概览</span>
+              </> : pageTitle}</h1>
             </div>
             <button
               className="quiet-button"

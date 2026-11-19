@@ -612,6 +612,7 @@ main.is-record .error {
   box-shadow: var(--shadow-panel);
 }
 .overview-layout { display: contents; }
+.workbench-heading { display: none; }
 .overview-grid {
   display: grid;
   grid-template-columns: 1.2fr .8fr;
