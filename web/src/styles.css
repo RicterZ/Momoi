@@ -130,7 +130,8 @@ nav a {
   transition: transform 120ms ease, box-shadow 120ms ease, color 120ms ease,
     background 120ms ease;
 }
-nav a:nth-child(even) { box-shadow: var(--shadow-control-alt); }
+nav a:nth-of-type(even) { box-shadow: var(--shadow-control-alt); }
+nav .nav-group, nav .nav-icon { display: none; }
 nav a > span {
   color: var(--soft);
   font-size: 9px;
@@ -143,7 +144,7 @@ nav a:hover {
   transform: var(--press-shift);
   box-shadow: var(--shadow-pressed);
 }
-nav a:nth-child(even):hover { box-shadow: var(--shadow-pressed-alt); }
+nav a:nth-of-type(even):hover { box-shadow: var(--shadow-pressed-alt); }
 nav a.active {
   color: var(--on-accent);
   background: var(--pink);
