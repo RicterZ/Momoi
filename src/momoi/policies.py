@@ -13,6 +13,7 @@ class DaemonPolicy:
     message_gap_max_seconds: float = 7.0
     message_gap_min_chars: int = 4
     message_gap_saturation_chars: int = 60
+    emotion_gap_seconds: float = 1.0
     delivery_disconnect_give_up_seconds: float = 60.0
 
 
