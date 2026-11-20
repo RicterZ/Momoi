@@ -2426,7 +2426,7 @@ function TrajectoryGroupHead({ group }) {
   const tokens = steps.reduce((sum, step) => sum + Number(step.call.request_metrics?.input_tokens || 0) + Number(step.call.request_metrics?.output_tokens || 0), 0);
   const toolCalls = steps.reduce((sum, step) => sum + (step.call.actions || []).length, 0);
   return (
-    <li className="trajectory-group-head">
+    <li className="trajectory-group-head" data-anchor={group.id}>
       <div className="trajectory-group-title">
         <time>{formatDate(item.updated_at || item.created_at)}</time>
         {group.running ? <span className="trajectory-status is-live">执行中</span> : failed ? <span className="trajectory-status is-error">有失败</span> : null}
@@ -2448,7 +2448,7 @@ function TrajectoryStepRow({ group, step, active, onSelect }) {
   const failed = (call.actions || []).some((action) => action.result?.ok === false);
   const tools = (call.actions || []).map((action) => action.name);
   return (
-    <li>
+    <li data-anchor={`${group.id}/${step.id}`}>
       <button
         type="button"
         className={`trajectory-step is-${trajectoryStageTone(call.stage)}${active ? " is-active" : ""}${failed ? " is-error" : ""}`}
@@ -2479,7 +2479,7 @@ function trajectoryInputLabel(input) {
 
 function TrajectoryInputRow({ group, entry, active, onSelect }) {
   return (
-    <li>
+    <li data-anchor={`${group.id}/${entry.id}`}>
       <button type="button" className={`trajectory-step is-input${active ? " is-active" : ""}`} onClick={onSelect}>
         <time>{trajectoryOffset(entry.time === null ? null : entry.time - group.start)}</time>
         <span className="trajectory-step-stage">{trajectoryInputLabel(entry.input)}</span>
@@ -2648,26 +2648,37 @@ function ThinkingLayout({ items: olderItems, token, hasMore, loadingMore, onLoad
     .map((item) => loaded.get(item.id))
     .sort((left, right) => left.start - right.start);
 
+  // Pin the first visible row to its viewport offset across every render, so rows
+  // prepended above or appended below never move what the reader is looking at.
+  function captureAnchor(root) {
+    const top = root.getBoundingClientRect().top;
+    for (const row of root.querySelectorAll("[data-anchor]")) {
+      const offset = row.getBoundingClientRect().top - top;
+      if (offset + row.offsetHeight > 0) {
+        anchor.current = { id: row.dataset.anchor, offset };
+        return;
+      }
+    }
+    anchor.current = null;
+  }
+
   useLayoutEffect(() => {
     const root = scrollRef.current;
     if (!root || !ready) return;
-    if (anchor.current !== null) {
-      root.scrollTop += root.scrollHeight - anchor.current;
-      anchor.current = root.scrollHeight;
-    } else if (atBottom.current) {
+    if (atBottom.current) {
       root.scrollTop = root.scrollHeight;
+    } else if (anchor.current) {
+      const row = [...root.querySelectorAll("[data-anchor]")].find((node) => node.dataset.anchor === anchor.current.id);
+      if (row) root.scrollTop += row.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.current.offset;
     }
-  }, [loaded, ready]);
-
-  useEffect(() => {
-    if (!busy && stepCount >= target) anchor.current = null;
-  }, [busy, stepCount, target]);
+    captureAnchor(root);
+  });
 
   function onScroll(event) {
     const root = event.currentTarget;
     atBottom.current = root.scrollHeight - root.scrollTop - root.clientHeight < 40;
+    captureAnchor(root);
     if (busy || exhausted || stepCount < target || root.scrollTop > 60) return;
-    anchor.current = root.scrollHeight;
     setTarget(stepCount + TRAJECTORY_PAGE_STEPS);
   }
 
