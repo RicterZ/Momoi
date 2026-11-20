@@ -89,8 +89,8 @@ def test_worker_failure_reports_latest_progress_to_planner(tmp_path):
         finished = daemon.store.subagent_task(task["id"])
         assert finished["status"] == "failed" and "已找到两个候选" in finished["summary"]
         calls = daemon._request_webhook_turn.await_args_list
-        assert len(calls) == 1 and "已结束" in calls[0].args[0]
-        assert calls[0].kwargs["parent_turn_id"] == finished["turn_id"]
+        assert len(calls) == 2 and "已找到两个候选" in calls[0].args[0] and "已结束" in calls[1].args[0]
+        assert calls[1].kwargs["parent_turn_id"] == finished["turn_id"]
         assert finished["notified_at"] is not None
         daemon.store.close()
     asyncio.run(run())
@@ -152,8 +152,7 @@ def test_planner_wake_turn_releases_dispatcher(tmp_path):
     asyncio.run(run())
 
 
-def test_progress_wake_fires_while_worker_keeps_running(tmp_path, monkeypatch):
-    monkeypatch.setattr(subagent_workflow, "SUBAGENT_PROGRESS_WAKE_DELAY_SECONDS", 0)
+def test_every_progress_report_wakes_planner_immediately(tmp_path):
 
     async def run():
         daemon = MomoiDaemon(config(str(tmp_path)))
@@ -165,6 +164,8 @@ def test_progress_wake_fires_while_worker_keeps_running(tmp_path, monkeypatch):
             calls += 1
             if calls == 1:
                 return ProviderResponse([], [ToolCall("r", "subagent_report", {"progress": "过半"})])
+            if calls == 2:
+                return ProviderResponse([], [ToolCall("q", "subagent_report", {"progress": "请扫码"})])
             await asyncio.sleep(0.05)
             return ProviderResponse([], [ToolCall("f", "subagent_finish", {
                 "outcome": "succeeded", "summary": "好了", "output_refs": []})])
@@ -174,7 +175,7 @@ def test_progress_wake_fires_while_worker_keeps_running(tmp_path, monkeypatch):
         await daemon._run_subagent_task(daemon.store.claim_subagent_task())
         await asyncio.gather(*daemon._subagent_wakeups)
         prompts = [call.args[0] for call in daemon._request_webhook_turn.await_args_list]
-        assert len(prompts) == 2 and "过半" in prompts[0] and "已结束" in prompts[1]
+        assert len(prompts) == 3 and "过半" in prompts[0] and "请扫码" in prompts[1] and "已结束" in prompts[2]
         assert daemon.store.subagent_task(task_id)["notified_at"] is not None
         daemon.store.close()
     asyncio.run(run())
