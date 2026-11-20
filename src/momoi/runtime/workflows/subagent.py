@@ -16,7 +16,6 @@ from xml.sax.saxutils import escape, quoteattr
 
 from ...mcp.prompt import MCP_TOOL_POLICY
 from ...memory.metadata import WORKER_SCOPE
-from ...memory.text import estimate_tokens
 from ...models import TurnDraft
 from ...observability.events import log_event
 from ...tools.contracts.skills import SKILL_TOOL_POLICY
@@ -38,29 +37,6 @@ WORKER_PRACTICE_LIMIT = 3
 WORKER_PRACTICE_TOKENS = 1200
 # Shadow mode: matches are only logged until their effect on real tasks has been judged.
 WORKER_PRACTICE_INJECT = False
-
-
-def select_worker_practices(scored, dense):
-    """Provisional cut until shadow logs calibrate task-to-practice scores.
-
-    Indexed practices need the confirmed-memory cosine floor; unindexed ones, or all
-    of them when dense recall is unavailable, need any BM25 overlap.
-    """
-    thresholds = dense.thresholds("confirmed_memory") if dense is not None and not dense.fallback_reason else None
-    eligible = [row for row in scored if (
-        row["cosine"] >= thresholds.only if thresholds is not None and row["cosine"] is not None else row["bm25"] > 0
-    )]
-    eligible.sort(key=lambda row: (row["cosine"] or 0.0, row["bm25"], row["id"]), reverse=True)
-    selected, budget = [], WORKER_PRACTICE_TOKENS
-    for row in eligible:
-        cost = 64 + estimate_tokens(str(row["content"]) + row["key"])
-        if cost > budget:
-            continue
-        selected.append(row)
-        budget -= cost
-        if len(selected) >= WORKER_PRACTICE_LIMIT:
-            break
-    return selected
 
 
 def worker_practices_text(rows) -> str:
@@ -264,10 +240,10 @@ class SubagentWorkflow:
             before_round=before_round,
         )
         now = datetime.now(self.store.timezone).isoformat(timespec="seconds")
-        scored, dense = await self.memory.score_scoped(
-            f"{task['title']}\n{task['task']}", scope=WORKER_SCOPE, kinds=["practice"],
+        practices = self.memory.triggered(
+            [task["title"], task["task"]], limit=WORKER_PRACTICE_LIMIT,
+            token_budget=WORKER_PRACTICE_TOKENS, scope=WORKER_SCOPE,
         )
-        practices = select_worker_practices(scored, dense)
         messages = [{"role": "user", "content": (
             f"<task id=\"{task_id}\" title=\"{task['title']}\" current_time=\"{now}\" "
             f"workdir=\"{self.tool_executor.artifact_root.resolve()}\">\n"
@@ -275,12 +251,6 @@ class SubagentWorkflow:
         )}]
         log_event(logger, logging.INFO, "subagent_started", task_id=task_id, turn_id=turn_id,
                   title=task["title"])
-        if scored:
-            log_event(logger, logging.INFO, "worker_practices_scored", task_id=task_id, turn_id=turn_id,
-                      dense_fallback="disabled" if dense is None else dense.fallback_reason,
-                      scores=[{"id": row["id"], "key": row["key"],
-                               "cosine": None if row["cosine"] is None else round(row["cosine"], 4),
-                               "bm25": round(row["bm25"], 4)} for row in scored])
         if practices:
             log_event(logger, logging.INFO, "worker_practices_matched", task_id=task_id, turn_id=turn_id,
                       injected=WORKER_PRACTICE_INJECT, practices=[row["id"] for row in practices],

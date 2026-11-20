@@ -1,11 +1,9 @@
 """Public memory API over a caller-owned database and injected model capabilities."""
 import sqlite3
-import time
 from collections.abc import Callable, Mapping, Sequence
 
-from .retrieval.bm25 import bm25_scores
 from .retrieval.triggers import triggered_memories
-from .metadata import MemoryFilters, TagCatalog, validate_scope
+from .metadata import MemoryFilters, TagCatalog
 from .writing.models import MemoryPlan, MemoryPlanner
 from .writing.service import MemoryWritingService
 from .indexing.source import MemoryIndexSource
@@ -42,29 +40,6 @@ class Memory:
     def triggered(self, text: str | Sequence[str], *, limit: int = 6, token_budget: int = 1600, scope: str = ""):
         """Bounded literal triggers over active global recall or one scope's memories; no model call."""
         return triggered_memories(self.repository, text, limit=limit, token_budget=token_budget, scope=scope)
-
-    async def score_scoped(self, text: str, *, scope: str, kinds: Sequence[str]):
-        """Score every live memory of one scope against a text: dense cosine and BM25, no cutoff.
-
-        Returns (rows, dense) where each row carries `cosine` (None when unindexed or
-        dense recall is unavailable) and `bm25`; `dense` is the evidence or None.
-        """
-        rows = self.repository.recall_rows(now=time.time(), filters={"scope": validate_scope(scope), "kinds": list(kinds)})
-        if not rows or not text.strip():
-            return [], None
-        dense = None
-        if self.recall.dense_recall is not None:
-            query = MemoryRecallQuery(text)
-            dense = await self.recall.dense_recall(
-                [query], len(rows), eligible_ids={query.dense_expression: frozenset(str(row["id"]) for row in rows)},
-            )
-        hits = dense.memory.get(text, {}) if dense is not None and not dense.fallback_reason else {}
-        bm25 = bm25_scores(text, [f"{row['key']}\n{row['content']}" for row in rows])
-        return [
-            {**row, "cosine": hit.cosine if (hit := hits.get(("confirmed_memory", str(row["id"])))) else None,
-             "bm25": score}
-            for row, score in zip(rows, bm25)
-        ], dense
 
     async def search(
         self, query: str | list[MemoryRecallQuery], limit: int = 6, *,
