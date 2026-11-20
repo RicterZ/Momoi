@@ -386,6 +386,84 @@
 [data-style="workbench"] .recall-panel-body,
 [data-style="workbench"] .settings-form-body { background: var(--surface); }
 
+/* Tags: quiet grey chips, status carries a dot */
+[data-style="workbench"] :is(.tag, .status, .memory-tag, .memory-trigger) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  box-shadow: none;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+}
+[data-style="workbench"] .status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+}
+[data-style="workbench"] a.tag:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  transform: none;
+  box-shadow: none;
+}
+
+/* Emotions: six per row, small frames */
+[data-style="workbench"] .emotion-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+[data-style="workbench"] .emotion-frame { padding: 14px; }
+[data-style="workbench"] .emotion-copy { padding: 10px 12px 12px; }
+[data-style="workbench"] .emotion-copy h2 { color: var(--ink); font: 600 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+[data-style="workbench"] .emotion-copy p {
+  display: -webkit-box;
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+[data-style="workbench"] .emotion-copy .card-actions { gap: 6px; margin-top: 10px; }
+[data-style="workbench"] .emotion-copy .quiet-button { padding: 3px 8px; font-size: 12px; }
+
+/* Conversations: dense list, reading-width detail */
+[data-style="workbench"] .record-layout { grid-template-columns: 280px minmax(0, 1fr); }
+[data-style="workbench"] .record-item { padding: 10px 14px; }
+[data-style="workbench"] .record-item:hover { background: var(--hover); }
+[data-style="workbench"] .record-item.active { background: var(--selected); box-shadow: none; }
+[data-style="workbench"] .record-item h3 { margin: 0 0 2px; font-size: 13px; font-weight: 500; }
+[data-style="workbench"] .record-item p { font-size: 12px; -webkit-line-clamp: 1; }
+[data-style="workbench"] .record-item time { margin-top: 4px; font-size: 11.5px; }
+[data-style="workbench"] .conversation { padding: 20px 32px 32px; }
+[data-style="workbench"] .conversation > * { max-width: 760px; }
+[data-style="workbench"] .conversation-head { padding-bottom: 16px; }
+[data-style="workbench"] .conversation-head h2 { margin: 4px 0 8px; font-size: 16px; font-weight: 600; letter-spacing: 0; }
+[data-style="workbench"] .sort-toggle { width: 28px; height: 28px; }
+[data-style="workbench"] .messages { padding-top: 16px; }
+[data-style="workbench"] .message { grid-template-columns: 52px minmax(0, 1fr); gap: 12px; margin-bottom: 18px; }
+[data-style="workbench"] .message-role { padding-top: 1px; font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: lowercase; }
+[data-style="workbench"] .message-role::first-letter { text-transform: uppercase; }
+[data-style="workbench"] .message-content { font-size: 13.5px; line-height: 1.7; }
+[data-style="workbench"] .message-meta { margin-top: 4px; font-size: 11.5px; }
+
+/* Goals */
+[data-style="workbench"] .goal-card h2 { margin-top: 10px; }
+
+@media (max-width: 1280px) {
+  [data-style="workbench"] .emotion-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  [data-style="workbench"] .emotion-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+}
+
 @media (max-width: 1000px) {
   [data-style="workbench"] .overview-layout {
     grid-template-columns: minmax(0, 1fr);
