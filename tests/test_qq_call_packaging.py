@@ -88,6 +88,32 @@ def test_rejects_unsafe_source_before_extraction(tmp_path, monkeypatch):
     assert not (tmp_path.parent / 'escape').exists()
 
 
+def test_runtime_requirements_require_pinned_release_uv(tmp_path, monkeypatch):
+    module = load_script('build_release')
+    pin = tmp_path / 'release-uv-version.txt'
+    pin.write_text('0.13.9\n', encoding='utf-8')
+    monkeypatch.setattr(module, 'RELEASE_UV', pin)
+    calls = []
+
+    def check_output(args, **kwargs):
+        calls.append(args)
+        return 'uv 0.13.7 (abc 2026-11-01)\n' if args[1] == '--version' else 'pkg==1\n'
+
+    monkeypatch.setattr(module.subprocess, 'check_output', check_output)
+    with pytest.raises(RuntimeError, match='uv 0.13.9'):
+        module.runtime_requirements()
+    assert calls == [['uv', '--version']]
+    pin.write_text('0.13.7\n', encoding='utf-8')
+    assert module.runtime_requirements() == 'pkg==1\n'
+
+
+def test_release_uv_pin_matches_windows_workflow():
+    root = SCRIPTS.parents[1]
+    workflow = (root / '.github/workflows/windows.yml').read_text(encoding='utf-8')
+    assert 'release-uv-version.txt' in workflow
+    assert 'version: ${{ steps.release-uv.outputs.version }}' in workflow
+
+
 def test_code_zip_ships_windows_bridge_and_portable_media_worker(tmp_path, monkeypatch):
     module = load_script('build_release')
     paths = {
