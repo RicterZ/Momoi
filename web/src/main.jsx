@@ -966,7 +966,7 @@ function ConversationLayout({
               key={`${item.record_type}:${item.id}`}
               onClick={() => onSelect(record)}
             >
-              <h3>{item.title}</h3>
+              <h3 className="topic-list-title" title={item.title}>{item.title}</h3>
               <p>
                 {item.narrative_summary ||
                   item.summary ||
