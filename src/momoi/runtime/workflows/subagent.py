@@ -31,8 +31,8 @@ SUBAGENT_IDLE_POLL_SECONDS = 5
 SUBAGENT_RESEND_MAX_AGE_SECONDS = 24 * 3600
 SUBAGENT_MESSAGE_LIMIT = 5
 SUBAGENT_MESSAGE_WINDOW_SECONDS = 60
-SUBAGENT_WAIT_DEFAULT_SECONDS = 300
-SUBAGENT_WAIT_MAX_SECONDS = 900
+SUBAGENT_BLOCK_DEFAULT_SECONDS = 600
+SUBAGENT_BLOCK_MAX_SECONDS = 900
 WORKER_PRACTICE_LIMIT = 3
 WORKER_PRACTICE_TOKENS = 1200
 # Shadow mode: matches are only logged until their effect on real tasks has been judged.
@@ -173,23 +173,32 @@ class SubagentWorkflow:
                 else:
                     self._wake_planner_for_subagent(task, turn_id, "progress", progress.strip())
                 return {"ok": True, "message": "已转达派发者，继续执行任务。"}
-            if call.name == "subagent_wait":
-                timeout = args.get("timeout_seconds", SUBAGENT_WAIT_DEFAULT_SECONDS)
-                if not isinstance(timeout, int) or not 30 <= timeout <= SUBAGENT_WAIT_MAX_SECONDS:
+            if call.name == "subagent_block":
+                reason = args.get("reason")
+                if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000:
+                    return {"ok": False, "error": "invalid_reason"}
+                timeout = args.get("timeout_seconds", SUBAGENT_BLOCK_DEFAULT_SECONDS)
+                if not isinstance(timeout, int) or not 30 <= timeout <= SUBAGENT_BLOCK_MAX_SECONDS:
                     return {"ok": False, "error": "invalid_timeout"}
+                try:
+                    self.store.add_subagent_report(task_id, "阻塞：" + reason.strip())
+                except ValueError:
+                    return {"ok": False, "error": "task_not_running"}
+                inbox_signal.clear()
+                self._wake_planner_for_subagent(task, turn_id, "blocked", reason.strip())
                 if not inbox:
-                    inbox_signal.clear()
                     try:
                         await asyncio.wait_for(inbox_signal.wait(), timeout)
                     except TimeoutError:
-                        return {"ok": True, "received": False, "message": (
-                            f"等了 {timeout} 秒没有收到派发者的消息。按已知信息继续；"
-                            "确实无法继续时用 subagent_finish(blocked) 说明缺什么。"
-                        )}
-                return {"ok": True, "received": True,
-                        "message": "已收到派发者的消息，内容见随后的 <planner_message>。"}
+                        record = self.store.finish_subagent_task(
+                            task_id, "blocked", f"等待 {timeout} 秒未收到派发者回复。阻塞原因：{reason.strip()}", [],
+                        )
+                        finished = record or self.store.subagent_task(task_id)
+                        return {"ok": True, "status": finished["status"]}
+                return {"ok": True, "resumed": True,
+                        "message": "已收到派发者的消息，内容见随后的 <planner_message>，据此继续任务。"}
             outcome, summary, refs = args.get("outcome"), args.get("summary"), args.get("output_refs")
-            if (outcome not in {"succeeded", "failed", "blocked"}
+            if (outcome not in {"succeeded", "failed"}
                     or not isinstance(summary, str) or not summary.strip() or len(summary) > 6000
                     or not isinstance(refs, list) or len(refs) > 20
                     or any(not isinstance(ref, str) for ref in refs)):
@@ -227,7 +236,7 @@ class SubagentWorkflow:
         workflow = AgentWorkflow(
             stage="subagent", tool_names=WORKER_SUBAGENT_TOOL_NAMES, execute_tool=handle,
             is_complete=stopped, completion_result=lambda: finished,
-            no_tool_correction="继续用工具执行任务；完成或无法完成时调用 subagent_finish 提交结果。",
+            no_tool_correction="继续用工具执行任务；完成或失败时调用 subagent_finish 提交结果；缺少必要信息时调用 subagent_block。",
             before_round=before_round,
         )
         now = datetime.now(self.store.timezone).isoformat(timespec="seconds")
@@ -300,6 +309,12 @@ class SubagentWorkflow:
             if unread:
                 lines.append("Worker 结束前没有读到你发的消息：" + "；".join(unread))
             lines.append("根据结果决定如何告知用户；需要继续时可以再派发 Worker。")
+        elif kind == "blocked":
+            lines = [
+                f"Worker 任务「{current['title']}」（task_id={current['id']}）被阻塞，已挂起等你回复：{progress}",
+                "能补充时用 subagent_message 回复，Worker 会恢复并继续原任务，不要另派新的 Worker；"
+                "需要问用户时先用 reply 提问，拿到回答再转给 Worker。无法补充或不值得继续时用 subagent_cancel 结束。",
+            ]
         elif kind == "reply":
             lines = [
                 f"Worker 任务「{current['title']}」（task_id={current['id']}）回答了你的消息，仍在执行。",

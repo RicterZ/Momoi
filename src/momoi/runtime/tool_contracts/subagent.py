@@ -52,31 +52,34 @@ SUBAGENT_REPORT = {
         "reply_to": {"type": "string", "minLength": 1},
     }, "required": ["progress"], "additionalProperties": False},
 }
-SUBAGENT_WAIT = {
-    "name": "subagent_wait",
+SUBAGENT_BLOCK = {
+    "name": "subagent_block",
     "description": (
-        "暂停执行，等待派发者的消息。先用 subagent_report 说明需要什么，再调用本工具；"
-        "等待期间不消耗轮次，消息到达后立即返回并以 <planner_message> 给出内容，超时则返回 received=false。"
+        "缺少继续任务必需、自己又查不到的信息或用户操作时调用：说明缺什么，任务挂起并立即唤醒派发者。"
+        "挂起期间不消耗轮次；派发者回复后返回，回复以 <planner_message> 给出，据此继续原任务。"
+        "派发者可能直接取消任务；超时未回复时任务以 blocked 结束。"
     ),
     "input_schema": {"type": "object", "properties": {
+        "reason": {"type": "string", "minLength": 1, "maxLength": 1000,
+                   "description": "缺什么、为什么需要，以及已经完成的部分。"},
         "timeout_seconds": {"type": "integer", "minimum": 30, "maximum": 900,
-                            "description": "最长等待秒数，默认 300。"},
-    }, "additionalProperties": False},
+                            "description": "最长等待秒数，默认 600。"},
+    }, "required": ["reason"], "additionalProperties": False},
 }
 SUBAGENT_FINISH = {
     "name": "subagent_finish",
     "description": (
         "提交任务最终结果并结束。summary 写派发者需要的结论、关键数据和来源，区分已验证和未确认的内容；"
-        "需要原文时在 output_refs 附上工具结果的 result_ref。无法完成时用 failed 或 blocked 说明原因和缺少的信息。"
+        "需要原文时在 output_refs 附上工具结果的 result_ref。无法完成时用 failed 说明原因；缺少信息、需要派发者补充时用 subagent_block，不要结束。"
     ),
     "input_schema": {"type": "object", "properties": {
-        "outcome": {"enum": ["succeeded", "failed", "blocked"]},
+        "outcome": {"enum": ["succeeded", "failed"]},
         "summary": {"type": "string", "minLength": 1, "maxLength": 6000},
         "output_refs": {"type": "array", "maxItems": 20, "items": {"type": "string"}},
     }, "required": ["outcome", "summary", "output_refs"], "additionalProperties": False},
 }
 
 PLANNER_SUBAGENT_TOOLS = [CREATE_SUBAGENT, SUBAGENT_STATUS, SUBAGENT_MESSAGE, SUBAGENT_CANCEL]
-WORKER_SUBAGENT_TOOLS = [SUBAGENT_REPORT, SUBAGENT_WAIT, SUBAGENT_FINISH]
+WORKER_SUBAGENT_TOOLS = [SUBAGENT_REPORT, SUBAGENT_BLOCK, SUBAGENT_FINISH]
 PLANNER_SUBAGENT_TOOL_NAMES = frozenset(spec["name"] for spec in PLANNER_SUBAGENT_TOOLS)
 WORKER_SUBAGENT_TOOL_NAMES = frozenset(spec["name"] for spec in WORKER_SUBAGENT_TOOLS)
