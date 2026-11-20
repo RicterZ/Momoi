@@ -81,11 +81,14 @@ class OutboxWorker:
                     continue
                 delivery = (row.channel, row.turn_id)
                 if delivery == previous_delivery and channel.name != "qq_call" and not _is_attachment(row.payload):
-                    delay = random.uniform(
-                        *message_gap_bounds(row.text, self.daemon_policy)
-                    )
-                    if channel.name == "dashboard":
-                        delay /= 2
+                    if (row.payload or {}).get("emotion_slug"):
+                        delay = self.daemon_policy.emotion_gap_seconds
+                    else:
+                        delay = random.uniform(
+                            *message_gap_bounds(row.text, self.daemon_policy)
+                        )
+                        if channel.name == "dashboard":
+                            delay /= 2
                     log_event(
                         logger,
                         TRACE,

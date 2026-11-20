@@ -62,6 +62,27 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent, ['text', 'image', 'text'])
         self.assertEqual(gap.await_count, 1)
 
+    async def test_emotion_uses_fixed_short_gap(self):
+        image = Path(self.daemon.config.database).parent / 'happy.png'
+        image.write_bytes(b'png')
+        self.store.add_emotion('happy', image, 'test')
+        self.store.begin_turn('web-emotion', 'owner', [])
+        self.store.queue_progress('web-emotion', 'reply', ['第一条', 'emotion://happy'], 'dashboard')
+        stop = asyncio.Event()
+        sent = []
+
+        async def send(payload):
+            sent.append(payload['segments'][0]['type'])
+            if len(sent) == 2:
+                stop.set()
+            return 'dashboard:test'
+
+        self.daemon.channels['dashboard'].send_message = send
+        with patch.object(self.daemon, '_wait_outbox_gap', AsyncMock()) as gap:
+            await asyncio.wait_for(self.daemon._outbox_worker(stop), 1)
+        self.assertEqual(sent, ['text', 'image'])
+        self.assertEqual([call.args[1] for call in gap.await_args_list], [1.0])
+
     async def test_call_interrupt_preserves_reason_in_owner_turn_and_log(self):
         from momoi.channel.onebot.voice_call.channel import QQCallChannel
         from types import SimpleNamespace
