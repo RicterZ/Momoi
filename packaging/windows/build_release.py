@@ -11,7 +11,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+RELEASE_UV = ROOT / "packaging/windows/release-uv-version.txt"
+
+
 def runtime_requirements() -> str:
+    # runtime_id hashes the export text, whose marker formatting varies across uv
+    # releases; every builder must export with the same pinned uv.
+    expected = RELEASE_UV.read_text(encoding="utf-8").strip()
+    actual = subprocess.check_output(["uv", "--version"], text=True).split()[1]
+    if actual != expected:
+        raise RuntimeError(f"runtime_id requires uv {expected} (from {RELEASE_UV.name}), found {actual}")
     return subprocess.check_output([
         "uv", "export", "--locked", "--extra", "desktop", "--no-dev", "--no-default-groups",
         "--no-emit-project", "--no-header", "--no-annotate",

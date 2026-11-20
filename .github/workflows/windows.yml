@@ -79,7 +79,14 @@ jobs:
           New-Item -ItemType Directory -Path build/windows-qq-cache -Force | Out-Null
           Copy-Item build/qq-component-seed/components/Momoi-QQ-Components-*.exe build/windows-qq-cache/
           Copy-Item build/qq-component-seed/components/Momoi-QQ-Components-*.json build/windows-qq-cache/
+      - name: Read pinned release uv
+        id: release-uv
+        shell: pwsh
+        run: |
+          "version=$((Get-Content packaging/windows/release-uv-version.txt -Raw).Trim())" >> $env:GITHUB_OUTPUT
       - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ steps.release-uv.outputs.version }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
