@@ -44,7 +44,7 @@ SUBAGENT_MESSAGE = {
 SUBAGENT_REPORT = {
     "name": "subagent_report",
     "description": (
-        "向派发者汇报阶段性进展，例如已找到关键线索、某个耗时步骤开始或完成。只在有实质进展时调用；最终结果用 subagent_finish。"
+        "向派发者汇报，每次调用都会立即唤醒派发者。只在派发者或用户需要现在知道时调用，例如需要用户扫码、确认才能继续；普通进展不汇报，最终结果用 subagent_finish。"
         "回答派发者的消息时，reply_to 填该消息的 id。"
     ),
     "input_schema": {"type": "object", "properties": {

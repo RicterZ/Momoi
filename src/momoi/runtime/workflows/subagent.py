@@ -27,9 +27,7 @@ logger = logging.getLogger("momoi.runtime.turns")
 
 SUBAGENT_MAX_ROUNDS = 50
 SUBAGENT_SOFT_LIMIT_ROUNDS = 30
-SUBAGENT_REPORT_WAKE_SECONDS = 60
 SUBAGENT_IDLE_POLL_SECONDS = 5
-SUBAGENT_PROGRESS_WAKE_DELAY_SECONDS = 10
 SUBAGENT_RESEND_MAX_AGE_SECONDS = 24 * 3600
 SUBAGENT_MESSAGE_LIMIT = 5
 SUBAGENT_MESSAGE_WINDOW_SECONDS = 60
@@ -145,20 +143,12 @@ class SubagentWorkflow:
         self.store.attach_subagent_turn(task_id, turn_id)
         channel = self._channel_for(task["channel"])
         finished: dict[str, Any] | None = None
-        last_wake = 0.0
-        progress_wake: asyncio.Task[None] | None = None
         inbox: list[dict[str, str]] = []
         self._subagent_inboxes[task_id] = inbox
         delivered: dict[str, str] = {}
 
-        async def delayed_progress_wake(progress: str) -> None:
-            # A task that ends within the delay is reported once, by its result wake.
-            await asyncio.sleep(SUBAGENT_PROGRESS_WAKE_DELAY_SECONDS)
-            if finished is None and (self.store.subagent_task(task_id) or {}).get("status") == "running":
-                self._wake_planner_for_subagent(task, turn_id, "progress", progress)
-
         async def handle(call):
-            nonlocal finished, last_wake, progress_wake
+            nonlocal finished
             args = call.arguments
             if call.name == "subagent_report":
                 progress = args.get("progress")
@@ -175,11 +165,9 @@ class SubagentWorkflow:
                     self._wake_planner_for_subagent(
                         task, turn_id, "reply", progress.strip(), question=delivered.pop(reply_to),
                     )
-                    return {"ok": True, "message": "已转达派发者，继续执行任务。"}
-                if time() - last_wake >= SUBAGENT_REPORT_WAKE_SECONDS:
-                    last_wake = time()
-                    progress_wake = asyncio.create_task(delayed_progress_wake(progress.strip()))
-                return {"ok": True, "message": "已记录并转达派发者，继续执行任务。"}
+                else:
+                    self._wake_planner_for_subagent(task, turn_id, "progress", progress.strip())
+                return {"ok": True, "message": "已转达派发者，继续执行任务。"}
             outcome, summary, refs = args.get("outcome"), args.get("summary"), args.get("output_refs")
             if (outcome not in {"succeeded", "failed", "blocked"}
                     or not isinstance(summary, str) or not summary.strip() or len(summary) > 6000
@@ -267,8 +255,6 @@ class SubagentWorkflow:
                     task_id, "failed", "Worker 未提交结果就结束了。", [],
                 )
         finally:
-            if progress_wake is not None and not progress_wake.done():
-                progress_wake.cancel()
             self._subagent_inboxes.pop(task_id, None)
             self._subagent_message_times.pop(task_id, None)
         unread = [item["message"] for item in inbox]
