@@ -31,6 +31,8 @@ SUBAGENT_IDLE_POLL_SECONDS = 5
 SUBAGENT_RESEND_MAX_AGE_SECONDS = 24 * 3600
 SUBAGENT_MESSAGE_LIMIT = 5
 SUBAGENT_MESSAGE_WINDOW_SECONDS = 60
+SUBAGENT_WAIT_DEFAULT_SECONDS = 300
+SUBAGENT_WAIT_MAX_SECONDS = 900
 WORKER_PRACTICE_LIMIT = 3
 WORKER_PRACTICE_TOKENS = 1200
 # Shadow mode: matches are only logged until their effect on real tasks has been judged.
@@ -85,6 +87,8 @@ class SubagentWorkflow:
         sent.append(now)
         message_id = f"m_{uuid4().hex[:10]}"
         inbox.append({"id": message_id, "message": message.strip()})
+        if task_id in self._subagent_inbox_signals:
+            self._subagent_inbox_signals[task_id].set()
         log_event(logger, logging.INFO, "subagent_message_queued", task_id=task_id, message_id=message_id)
         return {"ok": True, "task_id": task_id, "message_id": message_id, "state": "queued",
                 "message": "已排队，Worker 下一步之前会看到；回答时运行时会唤醒你。"}
@@ -145,6 +149,7 @@ class SubagentWorkflow:
         finished: dict[str, Any] | None = None
         inbox: list[dict[str, str]] = []
         self._subagent_inboxes[task_id] = inbox
+        inbox_signal = self._subagent_inbox_signals[task_id] = asyncio.Event()
         delivered: dict[str, str] = {}
 
         async def handle(call):
@@ -168,6 +173,21 @@ class SubagentWorkflow:
                 else:
                     self._wake_planner_for_subagent(task, turn_id, "progress", progress.strip())
                 return {"ok": True, "message": "已转达派发者，继续执行任务。"}
+            if call.name == "subagent_wait":
+                timeout = args.get("timeout_seconds", SUBAGENT_WAIT_DEFAULT_SECONDS)
+                if not isinstance(timeout, int) or not 30 <= timeout <= SUBAGENT_WAIT_MAX_SECONDS:
+                    return {"ok": False, "error": "invalid_timeout"}
+                if not inbox:
+                    inbox_signal.clear()
+                    try:
+                        await asyncio.wait_for(inbox_signal.wait(), timeout)
+                    except TimeoutError:
+                        return {"ok": True, "received": False, "message": (
+                            f"等了 {timeout} 秒没有收到派发者的消息。按已知信息继续；"
+                            "确实无法继续时用 subagent_finish(blocked) 说明缺什么。"
+                        )}
+                return {"ok": True, "received": True,
+                        "message": "已收到派发者的消息，内容见随后的 <planner_message>。"}
             outcome, summary, refs = args.get("outcome"), args.get("summary"), args.get("output_refs")
             if (outcome not in {"succeeded", "failed", "blocked"}
                     or not isinstance(summary, str) or not summary.strip() or len(summary) > 6000
@@ -257,6 +277,7 @@ class SubagentWorkflow:
         finally:
             self._subagent_inboxes.pop(task_id, None)
             self._subagent_message_times.pop(task_id, None)
+            self._subagent_inbox_signals.pop(task_id, None)
         unread = [item["message"] for item in inbox]
         current = self.store.subagent_task(task_id)
         log_event(logger, logging.INFO, "subagent_finished", task_id=task_id, turn_id=turn_id,
