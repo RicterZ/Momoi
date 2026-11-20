@@ -443,7 +443,6 @@
 [data-style="workbench"] .record-item p { font-size: 12px; -webkit-line-clamp: 1; }
 [data-style="workbench"] .record-item time { margin-top: 4px; font-size: 11.5px; }
 [data-style="workbench"] .conversation { padding: 20px 32px 32px; }
-[data-style="workbench"] .conversation > * { max-width: 760px; }
 [data-style="workbench"] .conversation-head { padding-bottom: 16px; }
 [data-style="workbench"] .conversation-head h2 { margin: 4px 0 8px; font-size: 16px; font-weight: 600; letter-spacing: 0; }
 [data-style="workbench"] .sort-toggle { width: 28px; height: 28px; }
