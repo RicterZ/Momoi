@@ -596,6 +596,16 @@ function previewNow() {
   return Math.floor(Date.now() / 1000);
 }
 
+function previewEmotions() {
+  const names = ["shy", "happy", "sleepy", "angry", "thinking", "cheer", "sad", "wave"];
+  return names.map((slug, index) => ({
+    id: index + 1,
+    slug,
+    description: `预览表情 ${index + 1}：${slug} 的时候用`,
+    asset_url: "/icon-192.png",
+  }));
+}
+
 function previewRecords() {
   const now = previewNow();
   const conversations = [
@@ -957,7 +967,7 @@ function previewUsageApi() {
               goals: records.goals.filter((item) =>
                 ["active", "waiting", "blocked"].includes(item.status),
               ).length,
-              emotions: 0,
+              emotions: previewEmotions().length,
               memories: records.memories.length,
             },
             affinity: {enabled: true, value: 20, maximum: 100},
@@ -1070,12 +1080,16 @@ function previewUsageApi() {
           });
           return;
         }
+        if (req.method === "GET" && path === "/api/emotions") {
+          json(res, { items: previewEmotions() });
+          return;
+        }
         if (req.method === "GET" && path === "/api/conversations") {
           json(res, { items: records.conversations });
           return;
         }
         if (req.method === "GET" && path.startsWith("/api/conversations/")) {
-          const id = decodeURIComponent(path.slice("/api/conversations/".length));
+          const id = decodeURIComponent(path.slice("/api/conversations/".length).split("/").pop());
           const item =
             records.conversationDetails[id] || {
               ...records.conversations.find((row) => row.id === id),
