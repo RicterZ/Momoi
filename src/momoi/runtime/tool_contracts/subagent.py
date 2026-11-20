@@ -52,6 +52,17 @@ SUBAGENT_REPORT = {
         "reply_to": {"type": "string", "minLength": 1},
     }, "required": ["progress"], "additionalProperties": False},
 }
+SUBAGENT_WAIT = {
+    "name": "subagent_wait",
+    "description": (
+        "暂停执行，等待派发者的消息。先用 subagent_report 说明需要什么，再调用本工具；"
+        "等待期间不消耗轮次，消息到达后立即返回并以 <planner_message> 给出内容，超时则返回 received=false。"
+    ),
+    "input_schema": {"type": "object", "properties": {
+        "timeout_seconds": {"type": "integer", "minimum": 30, "maximum": 900,
+                            "description": "最长等待秒数，默认 300。"},
+    }, "additionalProperties": False},
+}
 SUBAGENT_FINISH = {
     "name": "subagent_finish",
     "description": (
@@ -66,6 +77,6 @@ SUBAGENT_FINISH = {
 }
 
 PLANNER_SUBAGENT_TOOLS = [CREATE_SUBAGENT, SUBAGENT_STATUS, SUBAGENT_MESSAGE, SUBAGENT_CANCEL]
-WORKER_SUBAGENT_TOOLS = [SUBAGENT_REPORT, SUBAGENT_FINISH]
+WORKER_SUBAGENT_TOOLS = [SUBAGENT_REPORT, SUBAGENT_WAIT, SUBAGENT_FINISH]
 PLANNER_SUBAGENT_TOOL_NAMES = frozenset(spec["name"] for spec in PLANNER_SUBAGENT_TOOLS)
 WORKER_SUBAGENT_TOOL_NAMES = frozenset(spec["name"] for spec in WORKER_SUBAGENT_TOOLS)
