@@ -412,3 +412,49 @@
   [data-style="workbench"] .overview-group,
   [data-style="workbench"] .overview-group.stickers { grid-template-columns: 76px minmax(0, 1fr); }
 }
+
+/* Let a page-level loader fill the space beneath its toolbar. */
+[data-style="workbench"] main:has(> #content > .loading, .settings-studio > .loading),
+[data-style="workbench"] #content:has(> .loading, .settings-studio > .loading),
+[data-style="workbench"] .settings-page:has(.settings-studio > .loading),
+[data-style="workbench"] .settings-studio:has(> .loading),
+[data-style="workbench"] .conversation:has(> .loading) {
+  display: flex;
+  flex-direction: column;
+}
+[data-style="workbench"] :is(#content, .settings-studio, .conversation) > .loading,
+[data-style="workbench"] #content:has(> .loading, .settings-studio > .loading),
+[data-style="workbench"] .settings-page:has(.settings-studio > .loading),
+[data-style="workbench"] .settings-studio:has(> .loading) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+[data-style="workbench"] main:has(> #content > .loading, .settings-studio > .loading) > .topbar {
+  flex-shrink: 0;
+  align-self: stretch;
+}
+[data-style="workbench"] .loading-mark {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--line);
+  border-top-color: var(--pink);
+  border-radius: 50%;
+  background: transparent;
+  font-size: 0;
+  animation: workbench-loading 750ms linear infinite;
+}
+@keyframes workbench-loading {
+  to { transform: rotate(1turn); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-style="workbench"] .loading-mark { animation: none; }
+}
+@media (max-width: 760px) {
+  [data-style="workbench"] .shell:has(#content > .loading, .settings-studio > .loading) {
+    display: flex;
+    flex-direction: column;
+  }
+  [data-style="workbench"] main:has(> #content > .loading, .settings-studio > .loading) {
+    flex: 1 1 auto;
+  }
+}

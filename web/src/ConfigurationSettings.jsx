@@ -1894,9 +1894,7 @@ export default function ConfigurationSettings({
           </div>
         </div>
       ) : loading ? (
-        <div role="status">
-          <Loading>正在读取配置…</Loading>
-        </div>
+        <Loading>正在读取配置…</Loading>
       ) : (
         <section className="settings-panel settings-load-error" aria-label="配置载入失败">
           <SectionHeader module={{ id: "configuration", label: "配置读取" }} />
