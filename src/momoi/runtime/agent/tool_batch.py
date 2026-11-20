@@ -170,14 +170,28 @@ class ToolBatchExecutor:
         self.subagent_messaged: Callable[[str, str], dict[str, Any]] = (
             lambda task_id, message: {"ok": False, "error": "task_not_running"}
         )
+        self._known_subagent_tasks: set[str] = set()
 
     def _subagent_tool(self, call: ToolCall, request: "ToolBatchRequest") -> dict[str, Any]:
         channel = request.delivery_channel.name
         try:
             if call.name == "create_subagent":
+                # A turn replayed after a restart cannot see the Workers it dispatched before.
+                earlier = [task for task in self.store.subagent_tasks_for_turn(request.turn_id)
+                           if task["id"] not in self._known_subagent_tasks]
+                if earlier:
+                    self._known_subagent_tasks.update(task["id"] for task in earlier)
+                    return {"ok": False, "error": "turn_has_earlier_subagent_tasks",
+                            "earlier_tasks": [subagent_view(task, detail=True) for task in earlier],
+                            "message": (
+                                "本回合在运行时重启前已经派发过这些 Worker，本次没有派发。"
+                                "中断的任务可能已有部分操作生效：先根据状态和汇报判断，需要时派发核实或续做的任务，"
+                                "不要盲目重做。再次调用 create_subagent 会正常派发。"
+                            )}
                 task = self.store.create_subagent_task(
                     request.turn_id, channel, call.arguments["title"], call.arguments["task"],
                 )
+                self._known_subagent_tasks.add(task["id"])
                 self.subagent_changed()
                 return {"ok": True, **subagent_view(task), "message": (
                     "已派发，Worker 正在执行。" if not task.get("queue_position")

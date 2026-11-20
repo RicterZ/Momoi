@@ -52,6 +52,18 @@ SUBAGENT_REPORT = {
         "reply_to": {"type": "string", "minLength": 1},
     }, "required": ["progress"], "additionalProperties": False},
 }
+SUBAGENT_ASK = {
+    "name": "subagent_ask",
+    "description": (
+        "缺少继续任务必需的信息时，向派发者提问并等待回答（派发者可能需要去问用户）。"
+        "回答到达或超时后返回；超时则按已知信息继续，或用 blocked 结束并说明缺什么。"
+        "能自己查到的信息不要问。"
+    ),
+    "input_schema": {"type": "object", "properties": {
+        "question": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "timeout_seconds": {"type": "integer", "minimum": 30, "maximum": 900},
+    }, "required": ["question"], "additionalProperties": False},
+}
 SUBAGENT_FINISH = {
     "name": "subagent_finish",
     "description": (
@@ -66,6 +78,6 @@ SUBAGENT_FINISH = {
 }
 
 PLANNER_SUBAGENT_TOOLS = [CREATE_SUBAGENT, SUBAGENT_STATUS, SUBAGENT_MESSAGE, SUBAGENT_CANCEL]
-WORKER_SUBAGENT_TOOLS = [SUBAGENT_REPORT, SUBAGENT_FINISH]
+WORKER_SUBAGENT_TOOLS = [SUBAGENT_REPORT, SUBAGENT_ASK, SUBAGENT_FINISH]
 PLANNER_SUBAGENT_TOOL_NAMES = frozenset(spec["name"] for spec in PLANNER_SUBAGENT_TOOLS)
 WORKER_SUBAGENT_TOOL_NAMES = frozenset(spec["name"] for spec in WORKER_SUBAGENT_TOOLS)

@@ -237,6 +237,60 @@ def test_planner_messages_are_rate_limited_and_unread_ones_reported(tmp_path):
     asyncio.run(run())
 
 
+def test_worker_ask_waits_for_planner_answer(tmp_path, monkeypatch):
+    monkeypatch.setattr(subagent_workflow, "SUBAGENT_ASK_POLL_SECONDS", 0.01)
+
+    async def run():
+        daemon = MomoiDaemon(config(str(tmp_path)))
+        task_id = daemon.store.create_subagent_task("turn", next(iter(daemon.channels)), "开空调", "开空调")["id"]
+
+        async def wake(prompt, *_args, **_kwargs):
+            if "正在等你回答" in prompt:
+                daemon.message_running_subagent(task_id, "二楼")
+            return AgentReply([])
+
+        daemon._request_webhook_turn = wake
+        results = []
+
+        async def complete(_system, messages, *_args, **_kwargs):
+            if len(results) == 0:
+                results.append(None)
+                return ProviderResponse([], [ToolCall("a", "subagent_ask", {"question": "开哪层？"})])
+            results.append(messages[-1]["content"])
+            return ProviderResponse([], [ToolCall("f", "subagent_finish", {
+                "outcome": "succeeded", "summary": "已开二楼", "output_refs": []})])
+
+        daemon.provider = type("P", (), {"complete": staticmethod(complete)})()
+        await daemon._run_subagent_task(daemon.store.claim_subagent_task())
+        await asyncio.gather(*daemon._subagent_wakeups)
+        assert "二楼" in str(results[1]) and '"answered": true' in str(results[1])
+        assert daemon.store.subagent_task(task_id)["status"] == "succeeded"
+        daemon.store.close()
+    asyncio.run(run())
+
+
+def test_replayed_turn_sees_earlier_workers_before_dispatching(tmp_path):
+    async def run():
+        daemon = MomoiDaemon(config(str(tmp_path)))
+        channel = next(iter(daemon.channels))
+        earlier = daemon.store.create_subagent_task("turn-1", channel, "开空调制热", "开二楼空调")
+        daemon.store.claim_subagent_task()
+        daemon.store.finish_subagent_task(earlier["id"], "failed", "Worker 被中断，可能已有部分操作生效。", [])
+        request = type("R", (), {"turn_id": "turn-1",
+                                 "delivery_channel": type("C", (), {"name": channel})()})()
+        call = ToolCall("c", "create_subagent", {"title": "开空调并核实", "task": "开二楼空调"})
+        first = daemon.tool_batch._subagent_tool(call, request)
+        assert first["error"] == "turn_has_earlier_subagent_tasks"
+        assert first["earlier_tasks"][0]["task_id"] == earlier["id"]
+        second = daemon.tool_batch._subagent_tool(call, request)
+        assert second["ok"] and second["task_id"] != earlier["id"]
+        third = daemon.tool_batch._subagent_tool(
+            ToolCall("d", "create_subagent", {"title": "另一件事", "task": "查天气"}), request)
+        assert third["ok"]
+        daemon.store.close()
+    asyncio.run(run())
+
+
 def test_unnotified_result_is_resent_after_restart(tmp_path):
     store = Store(tmp_path / "momoi.sqlite3")
     channel = "onebot"

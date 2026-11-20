@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS worker_reviews (
 """
 
 FINAL_TASK_STATUSES = ("succeeded", "failed", "blocked", "cancelled")
-WORKFLOW_TOOLS = frozenset({"subagent_finish", "subagent_report"})
+WORKFLOW_TOOLS = frozenset({"subagent_finish", "subagent_report", "subagent_ask"})
 
 
 class WorkerReviewStore:
