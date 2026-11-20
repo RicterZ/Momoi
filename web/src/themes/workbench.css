@@ -59,9 +59,9 @@
   --green: #5cc28a;
 }
 
-/* App frame: grey sidebar, content on an inset sheet. */
+/* A continuous workspace surface beside the navigation. */
 [data-style="workbench"] .sidebar {
-  border-right: 0;
+  border-right: 1px solid var(--line);
   background: var(--canvas);
 }
 [data-style="workbench"] .brand { gap: 9px; padding: 6px 8px 4px; }
@@ -150,16 +150,10 @@
 [data-style="workbench"] .theme-toggle:hover { color: var(--ink); background: var(--hover); }
 
 [data-style="workbench"] main {
-  min-height: calc(100dvh - 16px);
-  margin: 8px 8px 8px 0;
   padding: 0 28px 40px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
   background: var(--surface);
 }
 [data-style="workbench"] main.is-record {
-  height: calc(100dvh - 16px);
-  min-height: 0;
   padding-bottom: 20px;
 }
 [data-style="workbench"] .topbar {
@@ -173,7 +167,8 @@
 [data-style="workbench"] main.is-record .topbar { margin-bottom: 16px; }
 [data-style="workbench"] .eyebrow { display: none; }
 [data-style="workbench"] h1 { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
-[data-style="workbench"] #content { max-width: 1280px; margin: 0; }
+[data-style="workbench"] #content { max-width: none; margin: 0; }
+[data-style="workbench"] main.is-record #content { padding: 0; }
 
 /* Controls */
 [data-style="workbench"] .quiet-button {
@@ -408,15 +403,8 @@
   [data-style="workbench"] nav a:nth-of-type(even) { height: 32px; padding: 0 10px; }
   [data-style="workbench"] .sidebar-foot { margin: 0; padding: 0; border: 0; }
   [data-style="workbench"] .theme-toggle { width: 30px; height: 30px; }
-  [data-style="workbench"] main,
-  [data-style="workbench"] main.is-record {
-    min-height: 0;
-    margin: 0;
-    padding: 0 16px 32px;
-    border: 0;
-    border-radius: 0;
-  }
-  [data-style="workbench"] main.is-record { height: auto; padding-bottom: 16px; }
+  [data-style="workbench"] main { padding: 0 16px 32px; }
+  [data-style="workbench"] main.is-record { padding-bottom: 16px; }
   [data-style="workbench"] .topbar { margin: 0 -16px 16px; padding: 0 16px; min-height: 48px; }
   [data-style="workbench"] .usage-home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   [data-style="workbench"] .usage-home-stats > div:nth-child(odd) { border-left: 0; }
