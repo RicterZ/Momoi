@@ -31,8 +31,6 @@ SUBAGENT_IDLE_POLL_SECONDS = 5
 SUBAGENT_RESEND_MAX_AGE_SECONDS = 24 * 3600
 SUBAGENT_MESSAGE_LIMIT = 5
 SUBAGENT_MESSAGE_WINDOW_SECONDS = 60
-SUBAGENT_ASK_DEFAULT_SECONDS = 600
-SUBAGENT_ASK_POLL_SECONDS = 1
 WORKER_PRACTICE_LIMIT = 3
 WORKER_PRACTICE_TOKENS = 1200
 # Shadow mode: matches are only logged until their effect on real tasks has been judged.
@@ -170,26 +168,6 @@ class SubagentWorkflow:
                 else:
                     self._wake_planner_for_subagent(task, turn_id, "progress", progress.strip())
                 return {"ok": True, "message": "已转达派发者，继续执行任务。"}
-            if call.name == "subagent_ask":
-                question = args.get("question")
-                if not isinstance(question, str) or not question.strip() or len(question) > 1000:
-                    return {"ok": False, "error": "invalid_question"}
-                timeout = min(max(int(args.get("timeout_seconds") or SUBAGENT_ASK_DEFAULT_SECONDS), 30), 900)
-                try:
-                    self.store.add_subagent_report(task_id, "提问：" + question.strip())
-                except ValueError:
-                    return {"ok": False, "error": "task_not_running"}
-                self._wake_planner_for_subagent(task, turn_id, "question", question.strip())
-                deadline = time() + timeout
-                while not inbox and time() < deadline:
-                    await asyncio.sleep(SUBAGENT_ASK_POLL_SECONDS)
-                if not inbox:
-                    return {"ok": True, "answered": False, "message": (
-                        f"{timeout} 秒内没有收到回答。按已知信息继续；确实无法继续时用 subagent_finish(blocked) 说明缺什么。"
-                    )}
-                answers = [inbox.pop(0) for _ in range(len(inbox))]
-                return {"ok": True, "answered": True,
-                        "messages": [{"id": item["id"], "message": item["message"]} for item in answers]}
             outcome, summary, refs = args.get("outcome"), args.get("summary"), args.get("output_refs")
             if (outcome not in {"succeeded", "failed", "blocked"}
                     or not isinstance(summary, str) or not summary.strip() or len(summary) > 6000
@@ -301,12 +279,6 @@ class SubagentWorkflow:
             if unread:
                 lines.append("Worker 结束前没有读到你发的消息：" + "；".join(unread))
             lines.append("根据结果决定如何告知用户；需要继续时可以再派发 Worker。")
-        elif kind == "question":
-            lines = [
-                f"Worker 任务「{current['title']}」（task_id={current['id']}）缺少信息，正在等你回答：{progress}",
-                "能从已知信息回答就直接用 subagent_message 回复它；需要问用户时用 reply 提问，"
-                "拿到回答后再用 subagent_message 转给 Worker。Worker 会继续执行原任务，不要另派新的 Worker。",
-            ]
         elif kind == "reply":
             lines = [
                 f"Worker 任务「{current['title']}」（task_id={current['id']}）回答了你的消息，仍在执行。",

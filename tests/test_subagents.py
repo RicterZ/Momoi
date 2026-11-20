@@ -237,38 +237,6 @@ def test_planner_messages_are_rate_limited_and_unread_ones_reported(tmp_path):
     asyncio.run(run())
 
 
-def test_worker_ask_waits_for_planner_answer(tmp_path, monkeypatch):
-    monkeypatch.setattr(subagent_workflow, "SUBAGENT_ASK_POLL_SECONDS", 0.01)
-
-    async def run():
-        daemon = MomoiDaemon(config(str(tmp_path)))
-        task_id = daemon.store.create_subagent_task("turn", next(iter(daemon.channels)), "开空调", "开空调")["id"]
-
-        async def wake(prompt, *_args, **_kwargs):
-            if "正在等你回答" in prompt:
-                daemon.message_running_subagent(task_id, "二楼")
-            return AgentReply([])
-
-        daemon._request_webhook_turn = wake
-        results = []
-
-        async def complete(_system, messages, *_args, **_kwargs):
-            if len(results) == 0:
-                results.append(None)
-                return ProviderResponse([], [ToolCall("a", "subagent_ask", {"question": "开哪层？"})])
-            results.append(messages[-1]["content"])
-            return ProviderResponse([], [ToolCall("f", "subagent_finish", {
-                "outcome": "succeeded", "summary": "已开二楼", "output_refs": []})])
-
-        daemon.provider = type("P", (), {"complete": staticmethod(complete)})()
-        await daemon._run_subagent_task(daemon.store.claim_subagent_task())
-        await asyncio.gather(*daemon._subagent_wakeups)
-        assert "二楼" in str(results[1]) and '"answered": true' in str(results[1])
-        assert daemon.store.subagent_task(task_id)["status"] == "succeeded"
-        daemon.store.close()
-    asyncio.run(run())
-
-
 def test_replayed_turn_sees_earlier_workers_before_dispatching(tmp_path):
     async def run():
         daemon = MomoiDaemon(config(str(tmp_path)))
