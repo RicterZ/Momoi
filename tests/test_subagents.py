@@ -237,7 +237,7 @@ def test_planner_messages_are_rate_limited_and_unread_ones_reported(tmp_path):
     asyncio.run(run())
 
 
-def test_worker_wait_pauses_until_planner_message(tmp_path):
+def test_worker_block_suspends_until_planner_message(tmp_path):
     async def run():
         daemon = MomoiDaemon(config(str(tmp_path)))
         task_id = daemon.store.create_subagent_task("turn", next(iter(daemon.channels)), "开空调", "开空调")["id"]
@@ -254,10 +254,7 @@ def test_worker_wait_pauses_until_planner_message(tmp_path):
         async def complete(_system, messages, *_args, **_kwargs):
             seen.append(messages[-1]["content"])
             if len(seen) == 1:
-                return ProviderResponse([], [
-                    ToolCall("r", "subagent_report", {"progress": "开哪层？"}),
-                    ToolCall("w", "subagent_wait", {"timeout_seconds": 30}),
-                ])
+                return ProviderResponse([], [ToolCall("b", "subagent_block", {"reason": "开哪层？"})])
             return ProviderResponse([], [ToolCall("f", "subagent_finish", {
                 "outcome": "succeeded", "summary": "已开二楼", "output_refs": []})])
 
@@ -266,6 +263,36 @@ def test_worker_wait_pauses_until_planner_message(tmp_path):
         await asyncio.gather(*daemon._subagent_wakeups)
         assert len(seen) == 2 and "<planner_message" in str(seen[1]) and "二楼" in str(seen[1])
         assert daemon.store.subagent_task(task_id)["status"] == "succeeded"
+        daemon.store.close()
+    asyncio.run(run())
+
+
+def test_worker_block_times_out_as_blocked(tmp_path, monkeypatch):
+    real_wait_for = asyncio.wait_for
+
+    async def short_wait_for(awaitable, timeout):
+        return await real_wait_for(awaitable, min(timeout, 0.01))
+
+    monkeypatch.setattr(subagent_workflow.asyncio, "wait_for", short_wait_for)
+
+    async def run():
+        daemon = MomoiDaemon(config(str(tmp_path)))
+        daemon._request_webhook_turn = AsyncMock(return_value=AgentReply([]))
+        task_id = daemon.store.create_subagent_task("turn", next(iter(daemon.channels)), "开空调", "开空调")["id"]
+        calls = 0
+
+        async def complete(*_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            return ProviderResponse([], [ToolCall("b", "subagent_block", {"reason": "开哪层？", "timeout_seconds": 30})])
+
+        daemon.provider = type("P", (), {"complete": staticmethod(complete)})()
+        await daemon._run_subagent_task(daemon.store.claim_subagent_task())
+        await asyncio.gather(*daemon._subagent_wakeups)
+        task = daemon.store.subagent_task(task_id)
+        assert calls == 1 and task["status"] == "blocked" and "开哪层？" in task["summary"]
+        prompts = [call.args[0] for call in daemon._request_webhook_turn.await_args_list]
+        assert "已挂起等你回复" in prompts[0] and "已结束" in prompts[-1]
         daemon.store.close()
     asyncio.run(run())
 
