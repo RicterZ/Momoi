@@ -1024,6 +1024,11 @@ main.is-record .error {
   box-shadow: inset 4px 0 0 var(--shadow-pink);
 }
 .record-item h3 { margin: 0 0 9px; font-size: 14px; line-height: 1.45; }
+.topic-list-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .record-item p {
   display: -webkit-box;
   margin: 0;
