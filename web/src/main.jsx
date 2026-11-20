@@ -1412,7 +1412,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
 
   async function admit(item) {
     const ok = await confirm({ title: "提交记忆审核？",
-      message: `Momoi 会先检查重复和冲突，审核通过后才写入或合并记忆：${item.content}`,
+      message: "Momoi 会先检查重复和冲突，审核通过后才写入或合并记忆。",
       confirmLabel: "提交审核", cancelLabel: "继续观察" });
     if (!ok) return;
     setBusyId(item.identity);
