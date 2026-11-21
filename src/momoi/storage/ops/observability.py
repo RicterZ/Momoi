@@ -255,10 +255,9 @@ class ObservabilityStore:
             links[child] = root
         return links
 
-    def dashboard_thinking_detail(self, turn_id: str) -> dict[str, object]:
-        links = self._dashboard_followup_links()
-        root = links.get(turn_id, turn_id)
-        members = [root, *[child for child, parent in links.items() if parent == root]]
+    def _dashboard_timeline_calls(
+        self, members: list[str],
+    ) -> tuple[list[dict], set[str]]:
         calls = [
             call for member in members
             for call in self.read_thinking(member).get("calls") or []
@@ -269,7 +268,6 @@ class ObservabilityStore:
             int(call.get("round") or 0),
             str(call.get("call_id") or ""),
         ))
-        self.enrich_thinking_calls(calls)
         placeholders = ",".join("?" for _ in members)
         reports = {str(row[0]) for row in self._db.execute(
             f"""SELECT child.id FROM turns child JOIN turns parent ON parent.id=child.parent_turn_id
@@ -278,6 +276,15 @@ class ObservabilityStore:
         for call in calls:
             if call.get("turn_id") in reports and call.get("stage") == "webhook":
                 call["stage"] = "subagent_report"
+        return calls, reports
+
+    def dashboard_thinking_detail(self, turn_id: str) -> dict[str, object]:
+        links = self._dashboard_followup_links()
+        root = links.get(turn_id, turn_id)
+        members = [root, *[child for child, parent in links.items() if parent == root]]
+        calls, reports = self._dashboard_timeline_calls(members)
+        self.enrich_thinking_calls(calls)
+        placeholders = ",".join("?" for _ in members)
         inputs = [dict(row) for row in self._db.execute(
             f"""SELECT DISTINCT e.id, e.content, e.occurred_at, e.kind FROM turns t,
                 json_each(t.source_ids_json) src JOIN events e ON e.id=src.value
@@ -318,7 +325,7 @@ class ObservabilityStore:
         deliveries = [dict(row) for row in self._db.execute(
             f"""SELECT o.id, o.turn_id, o.text, o.kind, o.state, o.target_channel, o.last_error,
                        p.tool_call_id, p.part_index FROM outbox o
-                LEFT JOIN turn_progress p ON o.dedupe_key =
+                LEFT JOIN turn_progress p ON p.turn_id = o.turn_id AND o.dedupe_key =
                     'turn:' || p.turn_id || ':progress:' || p.tool_call_id || ':' || p.part_index
                 WHERE o.turn_id IN ({placeholders}) ORDER BY o.id""", members)]
         return {"ok": bool(calls), "turn_id": root, "turn_ids": members,
@@ -406,21 +413,25 @@ class ObservabilityStore:
         # Resolve explicit links before pagination, including parents outside
         # the month's search window. Keep independent execution IDs on calls.
         links = self._dashboard_followup_links()
-        by_turn = {str(item.get("turn_id") or ""): item for item in turns}
-        roots = {links.get(tid, tid) for tid in by_turn}
+        children_by_root: dict[str, list[str]] = {}
+        for child, root in links.items():
+            children_by_root.setdefault(root, []).append(child)
+        roots = {links.get(tid, tid) for item in turns if (tid := str(item["turn_id"]))}
+        replaced: set[str] = set()
+        merged = []
         for root in roots:
-            children = [child for child, parent in links.items() if parent == root]
+            children = children_by_root.get(root)
             if not children:
                 continue
-            detail = self.dashboard_thinking_detail(root)
-            calls = detail["calls"]
+            members = [root, *children]
+            calls, _ = self._dashboard_timeline_calls(members)
             if not calls:
                 continue
             grouped = _group_thinking_turns([{**call, "turn_id": root} for call in calls])[0]
-            grouped["turn_ids"] = [root, *children]
-            members = {root, *children}
-            turns = [item for item in turns if item.get("turn_id") not in members]
-            turns.append(grouped)
+            grouped["turn_ids"] = members
+            replaced.update(members)
+            merged.append(grouped)
+        turns = [item for item in turns if item["turn_id"] not in replaced] + merged
         turns.sort(
             key=lambda item: (
                 -float(item.get("updated_at") or 0),
