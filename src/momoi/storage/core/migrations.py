@@ -901,6 +901,13 @@ def _drop_worker_experience_candidates(database: sqlite3.Connection) -> None:
     database.execute("DROP TABLE IF EXISTS worker_experience_candidates")
 
 
+def _clear_runtime_archive_triggers(database: sqlite3.Connection) -> None:
+    database.execute(
+        """UPDATE conversation_episodes SET triggers_json='[]', triggers_manual=0
+           WHERE archive_kind IS NOT NULL AND archive_kind<>''"""
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -957,6 +964,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _drop_tool_discovery,
     _add_worker_review,
     _drop_worker_experience_candidates,
+    _clear_runtime_archive_triggers,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 
