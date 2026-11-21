@@ -29,7 +29,7 @@ def test_old_database_upgrades_before_parent_index(tmp_path):
         store.close()
 
 
-def test_followup_merges_across_months_without_merging_other_children(tmp_path):
+def test_followup_merges_across_months_without_merging_other_children(tmp_path, monkeypatch):
     store = Store(tmp_path / "momoi.sqlite3")
     try:
         store.begin_turn("owner", "owner", [])
@@ -43,7 +43,16 @@ def test_followup_merges_across_months_without_merging_other_children(tmp_path):
                 turn_id=tid, call_id=tid, stage=stage, reasoning=tid,
                 created_at=datetime(2026, month, 15, tzinfo=timezone.utc).timestamp(),
             )
-        page = store.dashboard_thinking(month="2026-09")
+        with monkeypatch.context() as patch:
+            def unexpected_detail(*args):
+                pytest.fail("The trajectory list should not load detail data")
+
+            patch.setattr(Store, "dashboard_thinking_detail", unexpected_detail)
+            patch.setattr(Store, "enrich_thinking_calls", unexpected_detail)
+            page = store.dashboard_thinking(month="2026-09", limit=1)
+            assert page["next_cursor"] == 1
+            tail = store.dashboard_thinking(month="2026-09", limit=1, cursor=1)
+        page["items"] += tail["items"]
         items = {item["id"]: item for item in page["items"]}
         assert set(items) == {"owner", "maintenance"}
         assert items["owner"]["excerpt"] == "owner"
