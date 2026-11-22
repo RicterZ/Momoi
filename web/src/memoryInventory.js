@@ -1,4 +1,5 @@
 export const memoryTagLabels = {
+  personal_background: "个人背景",
   mental_wellbeing: "心理状态", finance: "金融", shopping: "购物", home_living: "居家生活",
   food_drink: "饮食", health: "健康", work_study: "工作学习",
   technology: "技术", travel: "出行", leisure: "休闲",
