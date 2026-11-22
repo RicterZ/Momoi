@@ -1536,8 +1536,8 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                       </>}
                     </div>
                   </div>
-                  <MemoryMetadata item={item} />
-                  {!candidateMode && item.access && item.activation !== "always" && <div className="memory-access" aria-label="记忆访问统计" title="召回包含 recall 工具和触发词命中；搜索为 memory_search 命中。统计从功能启用后开始。">
+                  {(candidateMode || openIds.has(item.identity) || editingId === item.identity) && <MemoryMetadata item={item} />}
+                  {!candidateMode && openIds.has(item.identity) && item.access && item.activation !== "always" && <div className="memory-access" aria-label="记忆访问统计" title="召回包含 recall 工具和触发词命中；搜索为 memory_search 命中。统计从功能启用后开始。">
                     <span>召回 {item.access.counts.recalled} · 搜索 {item.access.counts.searched}</span>
                     <span>近 30 天 {item.access.recent_30_days} 次 · 最后访问 {item.access.last_at ? new Date(item.access.last_at * 1000).toLocaleString() : "从未使用"}</span>
                   </div>}
@@ -1565,7 +1565,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                       <small>最多 8 个，每个不超过 40 字；仅全局召回记忆参与自动触发。</small>
                     </label>
                   )}
-                  {item.evidence && (
+                  {item.evidence && (candidateMode || openIds.has(item.identity)) && (
                     <p className="secondary memory-evidence">依据：{item.evidence}</p>
                   )}
                   {candidateMode && item.review_state && (
