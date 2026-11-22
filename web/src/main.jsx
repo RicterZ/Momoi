@@ -91,7 +91,6 @@ function thinkingStageLabel(stage) {
   return thinkingStageLabels[key] || key;
 }
 
-const MEMORY_GROUP_PREVIEW = 5;
 const activationLabels = {
   always: "长期",
   recall: "召回",
@@ -1369,8 +1368,6 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState("");
   const [tagFilter, setTagFilter] = useState([]);
-  const [sort, setSort] = useState("usage");
-  const [expanded, setExpanded] = useState(() => new Set());
   const [openIds, setOpenIds] = useState(() => new Set());
 
   async function save(item) {
@@ -1438,13 +1435,8 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
   const groups = candidateMode
     ? ["pending", "observation"].map((name) => ({ key: name, label: labels[name], items: visible.filter((item) => item.activation === name) }))
       .filter((group) => group.items.length)
-    : groupMemories(visible, { by: activation === "scoped" ? "scope" : "tag", sort });
+    : groupMemories(visible, { by: activation === "scoped" ? "scope" : "tag" });
   const toggleTag = (tag) => setTagFilter((tags) => tags.includes(tag) ? tags.filter((value) => value !== tag) : [...tags, tag]);
-  const toggleGroup = (key) => setExpanded((keys) => {
-    const next = new Set(keys);
-    if (!next.delete(key)) next.add(key);
-    return next;
-  });
   return (
     <>
       <section className="section-tools memory-toolbar">
@@ -1481,31 +1473,23 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
             ))}
             {!!activeTags.length && <button type="button" className="memory-facet-clear" onClick={() => setTagFilter([])}>清除</button>}
           </div>
-          <label className="memory-sort">排序
-            <select className="dash-input" value={sort} onChange={(event) => setSort(event.target.value)}>
-              <option value="usage">常用优先</option>
-              <option value="updated">最近更新</option>
-            </select>
-          </label>
         </div>
       )}
       {error && <p className="form-error">{error}</p>}
       {groups.length ? (
-        <div className="memory-groups">
+        <div className={`memory-groups${!candidateMode && groups.length > 1 ? " has-nav" : ""}`}>
         {!candidateMode && groups.length > 1 && (
-          <nav className="memory-group-nav" aria-label="记忆分组">
+          <div role="navigation" className="memory-group-nav" aria-label="记忆分组">
             {groups.map((group) => (
               <a key={group.key} href={`#memory-group-${encodeURIComponent(group.key)}`} onClick={(event) => {
                 event.preventDefault();
                 document.getElementById(`memory-group-${encodeURIComponent(group.key)}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
               }}>{group.label}<span>{group.items.length}</span></a>
             ))}
-          </nav>
+          </div>
         )}
         <div className="memory-group-stack">
-        {groups.map((group) => {
-          const limit = candidateMode || expanded.has(group.key) ? group.items.length : MEMORY_GROUP_PREVIEW;
-          return (
+        {groups.map((group) => (
           <section className="memory-section memory-group" key={group.key} id={`memory-group-${encodeURIComponent(group.key)}`}>
             <div className="section-tools memory-group-head">
               <p>
@@ -1513,10 +1497,10 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
               </p>
             </div>
             <div className="memory-row-head" aria-hidden="true">
-              <span>内容</span><span>主题</span><span>召回 · 搜索</span><span>更新于</span><span />
+              <span>内容</span><span>主题</span><span>更新于</span><span />
             </div>
             <section className="card-list">
-              {group.items.slice(0, limit).map((item) => (
+              {group.items.map((item) => (
                 <article className={`reflection-card memory-card${openIds.has(item.identity) || editingId === item.identity ? " is-open" : ""}`} key={item.identity}>
                   <div className="card-head">
                     <h2 className="memory-card-title">
@@ -1536,10 +1520,6 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                     </div>
                   </div>
                   {(candidateMode || openIds.has(item.identity) || editingId === item.identity) && <MemoryMetadata item={item} />}
-                  {!candidateMode && openIds.has(item.identity) && item.access && item.activation !== "always" && <div className="memory-access" aria-label="记忆访问统计" title="召回包含 recall 工具和触发词命中；搜索为 memory_search 命中。统计从功能启用后开始。">
-                    <span>召回 {item.access.counts.recalled} · 搜索 {item.access.counts.searched}</span>
-                    <span>近 30 天 {item.access.recent_30_days} 次 · 最后访问 {item.access.last_at ? new Date(item.access.last_at * 1000).toLocaleString() : "从未使用"}</span>
-                  </div>}
                   {editingId === item.identity ? (
                     <textarea
                       aria-label="记忆内容"
@@ -1638,17 +1618,8 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                 </article>
               ))}
             </section>
-            {group.items.length > limit && (
-              <button type="button" className="quiet-button memory-group-more" onClick={() => toggleGroup(group.key)}>
-                展开其余 {group.items.length - limit} 条
-              </button>
-            )}
-            {!candidateMode && expanded.has(group.key) && group.items.length > MEMORY_GROUP_PREVIEW && (
-              <button type="button" className="quiet-button memory-group-more" onClick={() => toggleGroup(group.key)}>收起</button>
-            )}
           </section>
-          );
-        })}
+        ))}
         </div>
         </div>
       ) : (

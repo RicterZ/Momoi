@@ -2395,14 +2395,6 @@ a.tag:hover {
 .episode-triggers-field { display: grid; gap: 8px; min-width: 0; }
 .episode-triggers-field .secondary { font-size: 12px; }
 .episode-triggers-form .card-actions { margin-top: 0; }
-.memory-access {
-  display: grid;
-  gap: 4px;
-  margin: 10px 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-
 
 /* Memory topic groups */
 .memory-facets { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: -4px 0 20px; }
@@ -2417,8 +2409,6 @@ a.tag:hover {
 .memory-facet.active { border-color: var(--pink); color: var(--pink); background: var(--pink-soft); }
 .memory-facet.active span { color: inherit; }
 .memory-facet-clear { border-style: dashed; color: var(--muted); }
-.memory-sort { display: inline-flex; align-items: center; gap: 8px; flex: none; color: var(--muted); font-size: 12px; }
-.memory-sort .dash-input { width: auto; min-width: 0; padding-block: 4px; font-size: 12px; }
 .memory-group-nav, .memory-row-head { display: none; }
 .memory-group-head p { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; font-weight: 750; }
 .memory-group-head p::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--pink); }
@@ -2426,7 +2416,6 @@ a.tag:hover {
 .memory-card:not(.is-open) .summary { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 button.memory-tag { font: inherit; font-size: 12px; background: transparent; cursor: pointer; }
 button.memory-tag:hover, button.memory-tag.active { color: var(--pink); }
-.memory-group-more { display: block; margin: 12px auto 0; }
 @media (max-width: 760px) {
   .memory-facets { flex-direction: column; }
 }
