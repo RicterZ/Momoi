@@ -9,7 +9,7 @@ import Chat from "./Chat.jsx";
 import RequestMetrics from "./RequestMetrics.jsx";
 import Loading from "./Loading.jsx";
 import MemoryMetadata, { MemoryTriggerTags } from "./MemoryMetadata.jsx";
-import { filterMemories, memoryTagLabels } from "./memoryInventory.js";
+import { filterMemories, groupMemories, memoryTagCounts, memoryTagLabel } from "./memoryInventory.js";
 import Tools from "./Tools.jsx";
 import EmotionContent from "./EmotionContent.jsx";
 import TrajectoryMemories, { memoryEntries, memoryEntryKey } from "./TrajectoryMemories.jsx";
@@ -91,7 +91,7 @@ function thinkingStageLabel(stage) {
   return thinkingStageLabels[key] || key;
 }
 
-const activationOrder = ["always", "recall", "scoped"];
+const MEMORY_GROUP_PREVIEW = 5;
 const activationLabels = {
   always: "长期",
   recall: "召回",
@@ -1369,6 +1369,10 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
   const [triggerDraft, setTriggerDraft] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState("");
+  const [tagFilter, setTagFilter] = useState([]);
+  const [sort, setSort] = useState("usage");
+  const [expanded, setExpanded] = useState(() => new Set());
+  const [openIds, setOpenIds] = useState(() => new Set());
 
   async function save(item) {
     setBusyId(item.identity);
@@ -1428,13 +1432,20 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
 
   const labels = candidateMode ? { observation: "观察记忆", pending: "待准入记忆" } : activationLabels;
 
-  const visible = filterMemories(items, { activation: candidateMode ? "all" : activation, query });
-  const groups = (candidateMode ? ["pending", "observation"] : activationOrder)
-    .map((name) => [
-      name,
-      visible.filter((item) => item.activation === name),
-    ])
-    .filter(([, group]) => group.length);
+  const matched = filterMemories(items, { activation: candidateMode ? "all" : activation, query });
+  const tagCounts = candidateMode ? [] : memoryTagCounts(matched);
+  const activeTags = tagFilter.filter((tag) => tagCounts.some((entry) => entry.tag === tag));
+  const visible = filterMemories(matched, { tags: activeTags });
+  const groups = candidateMode
+    ? ["pending", "observation"].map((name) => ({ key: name, label: labels[name], items: visible.filter((item) => item.activation === name) }))
+      .filter((group) => group.items.length)
+    : groupMemories(visible, { by: activation === "scoped" ? "scope" : "tag", sort });
+  const toggleTag = (tag) => setTagFilter((tags) => tags.includes(tag) ? tags.filter((value) => value !== tag) : [...tags, tag]);
+  const toggleGroup = (key) => setExpanded((keys) => {
+    const next = new Set(keys);
+    if (!next.delete(key)) next.add(key);
+    return next;
+  });
   return (
     <>
       <section className="section-tools memory-toolbar">
@@ -1460,18 +1471,54 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
           )}
         </div>
       </section>
+      {!candidateMode && !!tagCounts.length && (
+        <div className="memory-facets">
+          <div className="memory-facet-list" role="group" aria-label="按主题筛选">
+            {tagCounts.map(({ tag, label, count }) => (
+              <button type="button" key={tag} aria-pressed={activeTags.includes(tag)}
+                className={`memory-facet${activeTags.includes(tag) ? " active" : ""}`} onClick={() => toggleTag(tag)}>
+                {label}<span>{count}</span>
+              </button>
+            ))}
+            {!!activeTags.length && <button type="button" className="memory-facet-clear" onClick={() => setTagFilter([])}>清除</button>}
+          </div>
+          <label className="memory-sort">排序
+            <select className="dash-input" value={sort} onChange={(event) => setSort(event.target.value)}>
+              <option value="usage">常用优先</option>
+              <option value="updated">最近更新</option>
+            </select>
+          </label>
+        </div>
+      )}
       {error && <p className="form-error">{error}</p>}
       {groups.length ? (
-        groups.map(([name, group]) => (
-          <section className="memory-section" key={name}>
-            <div className="section-tools">
+        <div className="memory-groups">
+        {!candidateMode && groups.length > 1 && (
+          <nav className="memory-group-nav" aria-label="记忆分组">
+            {groups.map((group) => (
+              <a key={group.key} href={`#memory-group-${encodeURIComponent(group.key)}`} onClick={(event) => {
+                event.preventDefault();
+                document.getElementById(`memory-group-${encodeURIComponent(group.key)}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}>{group.label}<span>{group.items.length}</span></a>
+            ))}
+          </nav>
+        )}
+        <div className="memory-group-stack">
+        {groups.map((group) => {
+          const limit = candidateMode || expanded.has(group.key) ? group.items.length : MEMORY_GROUP_PREVIEW;
+          return (
+          <section className="memory-section memory-group" key={group.key} id={`memory-group-${encodeURIComponent(group.key)}`}>
+            <div className="section-tools memory-group-head">
               <p>
-                {labels[name]} · {group.length}
+                {group.label} · {group.items.length}
               </p>
             </div>
+            <div className="memory-row-head" aria-hidden="true">
+              <span>内容</span><span>主题</span><span>召回 · 搜索</span><span>更新于</span><span />
+            </div>
             <section className="card-list">
-              {group.map((item) => (
-                <article className="reflection-card" key={item.identity}>
+              {group.items.slice(0, limit).map((item) => (
+                <article className={`reflection-card memory-card${openIds.has(item.identity) || editingId === item.identity ? " is-open" : ""}`} key={item.identity}>
                   <div className="card-head">
                     <h2 className="memory-card-title">
                       <span>{memoryKindLabel(item.kind)}</span>
@@ -1484,7 +1531,7 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                       {!candidateMode && !!item.meta?.tags?.length && <>
                         <span className="memory-tag-divider" aria-hidden="true">//</span>
                         <div className="memory-chips" aria-label="主题标签">
-                          {item.meta.tags.map(tag => <span className="memory-tag" key={tag} title={tag}>{memoryTagLabels[tag] || tag}</span>)}
+                          {item.meta.tags.map(tag => <button type="button" className={`memory-tag${activeTags.includes(tag) ? " active" : ""}`} key={tag} title={`只看「${memoryTagLabel(tag)}」`} onClick={() => toggleTag(tag)}>{memoryTagLabel(tag)}</button>)}
                         </div>
                       </>}
                     </div>
@@ -1504,7 +1551,11 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                       rows={4}
                     />
                   ) : (
-                    <p className="summary">{item.content}</p>
+                    <p className="summary" title={openIds.has(item.identity) ? undefined : "点击展开全文"} onClick={() => setOpenIds((ids) => {
+                      const next = new Set(ids);
+                      if (!next.delete(item.identity)) next.add(item.identity);
+                      return next;
+                    })}>{item.content}</p>
                   )}
                   {!candidateMode && item.activation === "recall" && editingId === item.identity && (
                     <label className="memory-trigger-editor">触发词
@@ -1591,8 +1642,19 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                 </article>
               ))}
             </section>
+            {group.items.length > limit && (
+              <button type="button" className="quiet-button memory-group-more" onClick={() => toggleGroup(group.key)}>
+                展开其余 {group.items.length - limit} 条
+              </button>
+            )}
+            {!candidateMode && expanded.has(group.key) && group.items.length > MEMORY_GROUP_PREVIEW && (
+              <button type="button" className="quiet-button memory-group-more" onClick={() => toggleGroup(group.key)}>收起</button>
+            )}
           </section>
-        ))
+          );
+        })}
+        </div>
+        </div>
       ) : (
         <Empty text={query.trim()
           ? "没有找到匹配的记忆，试试其他关键词。"
