@@ -1321,7 +1321,6 @@ function Reflections({ refreshKey, token, routeParam }) {
                         <MemoryTriggerTags triggers={memory.triggers} />
                       </div>
                       <p>{memory.content}</p>
-                      {memory.evidence && <small>依据：{memory.evidence}</small>}
                     </div>
                   ))}
                 </div>
@@ -1564,9 +1563,6 @@ function MemoryInventory({ candidateMode = false, items, token, onMutated, activ
                         placeholder="每行一个词或正则，如 （$；留空可清除" />
                       <small>最多 8 个，每个不超过 40 字；仅全局召回记忆参与自动触发。</small>
                     </label>
-                  )}
-                  {item.evidence && (candidateMode || openIds.has(item.identity)) && (
-                    <p className="secondary memory-evidence">依据：{item.evidence}</p>
                   )}
                   {candidateMode && item.review_state && (
                     <p className="secondary">
