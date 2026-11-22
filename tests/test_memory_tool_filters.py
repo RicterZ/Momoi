@@ -91,10 +91,10 @@ def test_search_and_writing_share_expanded_tag_catalog():
     search = next(s for s in MEMORY_TOOL_SPECS if s['name'] == 'memory_search')
     tags = search['input_schema']['properties']['filters']['properties']['tags_any']
     assert set(tags['items']['enum']) == set(MOMOI_MEMORY_TAGS.tags)
-    assert len(MOMOI_MEMORY_TAGS.tags) == 13
+    assert len(MOMOI_MEMORY_TAGS.tags) == 14
     import json
     schema = json.dumps(MEMORY_OPERATION_FINISH_SPEC, ensure_ascii=False)
-    for tag in ('finance', 'mental_wellbeing', 'shopping', 'home_living'):
+    for tag in ('finance', 'mental_wellbeing', 'shopping', 'home_living', 'personal_background'):
         assert tag in schema
         assert MOMOI_MEMORY_TAGS.tags[tag] in tags['description']
         assert MOMOI_MEMORY_TAGS.validate({'tags': [tag]})['tags'] == [tag]

@@ -2,6 +2,7 @@
 from ...memory.metadata import TagCatalog
 
 MOMOI_MEMORY_TAGS = TagCatalog({
+    "personal_background": "个人身份、成长背景、自我描述与自报性格类型（如 MBTI）",
     "food_drink": "饮食、饮品、口味及相关限制",
     "health": "身体健康、用药、运动、体重及长期健康习惯",
     "mental_wellbeing": "压力、情绪调节与心理状态",
