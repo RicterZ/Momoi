@@ -55,7 +55,6 @@ desktop/Momoi.Desktop/keys/*.pem
 /docs/architecture/
 
 # Local agent instructions.
-/AGENTS.md
 
 # multica
 .multica

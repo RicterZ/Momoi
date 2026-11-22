@@ -11,7 +11,11 @@ def topic_turn_sql(turn: str) -> str:
 
 
 def runtime_archive_kind_sql(episode: str) -> str:
-    """Resolve explicit archive ownership, with one legacy-read fallback."""
+    """Resolve explicit archive ownership, with one legacy-read fallback.
+
+    An Episode the owner took part in is a conversation even when it started
+    from a Goal or webhook notification, so the fallback never applies to it.
+    """
 
     legacy_workflow = turn_workflow_kind_sql("legacy_archive_source")
     # Preserve webhook > heartbeat > goal precedence in one legacy Turn scan.
@@ -27,4 +31,11 @@ def runtime_archive_kind_sql(episode: str) -> str:
             JOIN turns AS legacy_archive_source
               ON legacy_archive_source.id=legacy_archive_turn.turn_id
             WHERE legacy_archive_turn.episode_id={episode}.id
+              AND NOT EXISTS (
+                  SELECT 1 FROM episode_turns AS legacy_owner_turn
+                  JOIN turns AS legacy_owner_source
+                    ON legacy_owner_source.id=legacy_owner_turn.turn_id
+                  WHERE legacy_owner_turn.episode_id={episode}.id
+                    AND legacy_owner_source.kind='owner'
+              )
         ))"""

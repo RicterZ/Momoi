@@ -198,6 +198,38 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(daemon.store.episode("fresh-topic")["status"], "open")
             self.assertEqual(daemon.store.episode("runtime-archive")["status"], "open")
 
+    async def test_summary_candidates_exclude_runtime_archives_but_keep_goal_chats(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.create_episode("骑行提醒", episode_id="episode-main")
+            add_turn(daemon, 1)
+            add_turn(daemon, 2)
+            with daemon.store._db:
+                daemon.store._db.execute(
+                    "UPDATE turns SET kind='autonomous', workflow_kind='goal' WHERE id='turn-1'"
+                )
+                daemon.store._db.execute(
+                    "UPDATE conversation_episodes SET status='closed' WHERE id='episode-main'"
+                )
+            self.assertIsNone(daemon.store._runtime_archive_kind("episode-main"))
+            claimed = daemon.store.claim_episode_annealing_candidate(6, 1000)
+            self.assertEqual(claimed["episode"]["id"], "episode-main")
+            daemon.store.release_episode_annealing("episode-main", failed=False)
+            with daemon.store._db:
+                daemon.store._db.execute(
+                    "UPDATE turns SET kind='autonomous', workflow_kind='goal' WHERE id='turn-2'"
+                )
+            self.assertEqual(daemon.store._runtime_archive_kind("episode-main"), "goal")
+            self.assertIsNone(daemon.store.claim_episode_annealing_candidate(6, 1000))
+            with daemon.store._db:
+                daemon.store._db.execute(
+                    "UPDATE turns SET kind='owner', workflow_kind=NULL"
+                )
+                daemon.store._db.execute(
+                    "UPDATE conversation_episodes SET archive_kind='goal' WHERE id='episode-main'"
+                )
+            self.assertIsNone(daemon.store.claim_episode_annealing_candidate(6, 1000))
+
     async def test_scheduler_ignores_deferrals_after_eight_hours_without_llm(
         self,
     ) -> None:
