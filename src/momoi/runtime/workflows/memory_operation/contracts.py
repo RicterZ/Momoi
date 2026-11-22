@@ -1,8 +1,6 @@
 from typing import Any
 
 from ....memory.metadata import PRACTICE_META_SCHEMA, TRIGGER_INPUT_SCHEMA
-
-from ....memory.writing.validation import ALWAYS_MEMORY_KINDS
 from ....memory.storage.records import MEMORY_ACTIVATIONS, MEMORY_KINDS
 from ....storage.memory.catalog import MOMOI_MEMORY_TAGS
 
@@ -71,24 +69,6 @@ _MEMORY = {
         "if": {"properties": {"kind": {"const": "practice"}}, "required": ["kind"]},
         "then": {"required": ["meta"], "properties": {"meta": {"required": ["verification"]}}},
     }],
-    "oneOf": [
-        {
-            "properties": {
-                "activation": {"enum": ["recall"]},
-            }
-        },
-        {
-            "properties": {
-                "activation": {"enum": ["always"]},
-                "kind": {"enum": sorted(ALWAYS_MEMORY_KINDS)},
-            }
-        },
-        {
-            "properties": {
-                "activation": {"enum": ["scoped"]},
-            }
-        },
-    ],
     "additionalProperties": False,
 }
 MEMORY_OPERATION_FINISH_SPEC: dict[str, Any] = {
