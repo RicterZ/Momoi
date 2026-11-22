@@ -3,10 +3,10 @@ from momoi.storage.memory.catalog import MOMOI_MEMORY_TAGS
 from momoi.storage.memory.context import memory_catalog_text
 
 
-def seed(memory, key, tags, *, scope='', activation=None, content='无糖咖啡'):
+def seed(memory, key, tags, *, scope='', activation=None, kind='preference', content='无糖咖啡'):
     source = {'event_id': 'e', 'quote': content}
     return memory.repository.write(
-        {'kind': 'preference', 'key': key, 'content': content,
+        {'kind': kind, 'key': key, 'content': content,
          'activation': activation or ('scoped' if scope else 'recall'), 'expires_at': None,
          'meta': {'tags': tags, 'scope': scope}}, [], source, [source], now=100,
     )

@@ -6,9 +6,6 @@ from ..metadata import PRACTICE_META_FIELDS, TagCatalog
 from ..storage.records import MEMORY_ACTIVATIONS, MEMORY_KINDS
 
 
-ALWAYS_MEMORY_KINDS = {"profile", "preference", "relationship"}
-
-
 def parse_decisions(
     arguments: dict[str, Any],
     operations: list[dict[str, Any]],
@@ -129,13 +126,6 @@ def parse_decisions(
             or memory["activation"] not in MEMORY_ACTIVATIONS
         ):
             raise ValueError("invalid memory kind or activation")
-        if (
-            memory["activation"] == "always"
-            and memory["kind"] not in ALWAYS_MEMORY_KINDS
-        ):
-            raise ValueError(
-                "always memory requires profile, preference, or relationship kind"
-            )
         if not isinstance(memory["key"], str) or not re.fullmatch(
             r"[a-z0-9][a-z0-9_.-]{0,199}", memory["key"]
         ):

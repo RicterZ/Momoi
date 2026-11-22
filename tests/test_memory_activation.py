@@ -25,7 +25,7 @@ def seed_volatile(store):
 
 def reviewed(store, demote_ids=()):
     command = decision(key='new')
-    command['memory']['activation'] = 'always'
+    command['memory'].update(kind='third_party', activation='always')
     command['demote_ids'] = list(demote_ids)
     return store.memories.writing.review(context(store.memories, demote_ids), {'decisions': [command]})
 
@@ -53,7 +53,7 @@ def test_reviewer_can_demote_in_same_atomic_batch_and_retry(store):
     planned = reviewed(store, [old])
     result = store.memories.apply(planned, operation_id='budget-review')
     assert store.memories.apply(planned, operation_id='budget-review') == result
-    assert [row['key'] for row in repository.rows('always')] == ['new']
+    assert [(row['kind'], row['key']) for row in repository.rows('always')] == [('third_party', 'new')]
     assert [row['key'] for row in repository.rows('recall')] == ['old']
     assert store.always_memory_tokens() <= 90
     assert store._db.execute('SELECT 1 FROM memory_evidence WHERE memory_id=? AND source_event_id=?',
@@ -98,7 +98,7 @@ def add_usage(store, identifier, now, *, kinds=None, topics=None):
 
 def test_promotion_threshold_topics_time_window_and_lineage(store):
     now = time.time()
-    eligible = seed(store.memories, 'eligible', [])
+    eligible = seed(store.memories, 'eligible', [], kind='third_party')
     two = seed(store.memories, 'two', [])
     old = seed(store.memories, 'old', [])
     browse = seed(store.memories, 'browse', [])

@@ -4,7 +4,6 @@ import time
 from uuid import uuid4
 
 from ...memory.text import estimate_tokens
-from ...memory.writing.validation import ALWAYS_MEMORY_KINDS
 
 DAY = 86400
 VOLATILE_KINDS = {'cross_event_state'}
@@ -42,8 +41,7 @@ class MemoryActivationStore:
                         WHERE v.activation!='always'), 0)) AS always_since
             ''', (memory['kind'], memory['key'], now - 30*DAY, now, now - 30*DAY, now, now)).fetchone()
             reason = None
-            if (memory['activation'] == 'recall' and memory['kind'] in ALWAYS_MEMORY_KINDS
-                    and usage['hits'] >= 5 and usage['topics'] >= 3):
+            if (memory['activation'] == 'recall' and usage['hits'] >= 5 and usage['topics'] >= 3):
                 target, reason = 'always', '最近 30 天召回或读取至少 5 次，覆盖至少 3 个话题'
             elif memory['activation'] == 'always':
                 if memory['kind'] in VOLATILE_KINDS:
