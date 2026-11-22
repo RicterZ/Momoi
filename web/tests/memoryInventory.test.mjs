@@ -25,3 +25,20 @@ test("search matches normalized triggers, tag labels and scope titles", () => {
   assert.equal(memoryScopeLabel(rows[0]), "全局");
   assert.deepEqual(filterMemories(rows, { query: "  " }), rows);
 });
+
+test("groups by primary tag, sorts by usage and keeps untagged last", async () => {
+  const { groupMemories, memoryTagCounts, UNTAGGED } = await import("../src/memoryInventory.js");
+  const items = [
+    { id: 1, updated_at: 10, meta: { tags: ["health", "food_drink"] } },
+    { id: 2, updated_at: 20, meta: { tags: ["health"] }, access: { counts: { recalled: 3, searched: 1 } } },
+    { id: 3, updated_at: 30, meta: { tags: [] } },
+    { id: 4, updated_at: 40, meta: { tags: ["food_drink"] } },
+    { id: 5, updated_at: 50, meta: { tags: ["health"] } },
+  ];
+  const groups = groupMemories(items);
+  assert.deepEqual(groups.map(g => [g.key, g.items.map(x => x.id)]), [["health", [2, 5, 1]], ["food_drink", [4]], [UNTAGGED, [3]]]);
+  assert.deepEqual(groupMemories(items, { sort: "updated" })[0].items.map(x => x.id), [5, 2, 1]);
+  assert.deepEqual(memoryTagCounts(items).map(x => [x.tag, x.count]), [["health", 3], ["food_drink", 2], [UNTAGGED, 1]]);
+  assert.deepEqual(filterMemories(items, { tags: [UNTAGGED, "food_drink"] }).map(x => x.id), [1, 3, 4]);
+  assert.deepEqual(groupMemories(rows.slice(1, 3), { by: "scope" }).map(g => g.label), ["Goal · 喝水", "webhook"]);
+});

@@ -535,3 +535,56 @@
     flex: 1 1 auto;
   }
 }
+
+/* Memory topic groups: anchor rail + compact rows */
+[data-style="workbench"] .memory-facet { border-radius: 4px; }
+[data-style="workbench"] .memory-group-head p::before { display: none; }
+[data-style="workbench"] .memory-groups { display: grid; grid-template-columns: 148px minmax(0, 1fr); gap: 20px; align-items: start; }
+[data-style="workbench"] .memory-group-nav { position: sticky; top: 12px; display: grid; gap: 2px; }
+[data-style="workbench"] .memory-group-nav a {
+  display: flex; justify-content: space-between; gap: 8px; padding: 5px 8px; border-radius: 4px;
+  color: var(--muted); font-size: 12px; text-decoration: none;
+}
+[data-style="workbench"] .memory-group-nav a:hover { color: var(--ink); background: var(--hover); }
+[data-style="workbench"] .memory-group-nav a span { display: inline; font-variant-numeric: tabular-nums; color: var(--soft); }
+[data-style="workbench"] .memory-group { overflow: clip; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+[data-style="workbench"] .memory-section + .memory-section { margin-top: 16px; }
+[data-style="workbench"] .memory-group-head { position: sticky; top: 0; z-index: 1; margin: 0; padding: 9px 14px; border-bottom: 1px solid var(--line); background: var(--wash); }
+[data-style="workbench"] .memory-group-head p { font-size: 13px; font-weight: 600; }
+[data-style="workbench"] .memory-group .card-list { display: block; }
+[data-style="workbench"] .memory-row-head,
+[data-style="workbench"] .memory-group .memory-card {
+  display: grid; grid-template-columns: minmax(0, 1fr) 150px 104px 150px 104px; column-gap: 14px; align-items: center;
+}
+[data-style="workbench"] .memory-row-head { padding: 6px 14px; border-bottom: 1px solid var(--line); color: var(--soft); font-size: 11px; }
+[data-style="workbench"] .memory-group .memory-card {
+  grid-template-areas: "content tags access updated actions" "meta meta meta meta meta";
+  padding: 9px 14px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; box-shadow: none; background: transparent;
+}
+[data-style="workbench"] .memory-group .memory-card:last-child { border-bottom: 0; }
+[data-style="workbench"] .memory-group .memory-card:hover { background: var(--hover); }
+[data-style="workbench"] .memory-card > .summary,
+[data-style="workbench"] .memory-card > .edit-area { grid-area: content; margin: 0; font-size: 13px; line-height: 1.55; }
+[data-style="workbench"] .memory-card:not(.is-open) > .summary { -webkit-line-clamp: 1; }
+[data-style="workbench"] .memory-card > .card-head { grid-area: tags; display: block; margin: 0; min-width: 0; }
+[data-style="workbench"] .memory-card .memory-card-title,
+[data-style="workbench"] .memory-card .memory-badges > .status { display: none; }
+[data-style="workbench"] .memory-card .memory-badges { justify-content: flex-start; }
+[data-style="workbench"] .memory-card > .memory-access { grid-area: access; margin: 0; font-variant-numeric: tabular-nums; }
+[data-style="workbench"] .memory-card > .memory-access span:last-child { display: none; }
+[data-style="workbench"] .memory-card > .stamp-meta { grid-area: updated; margin: 0; font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+[data-style="workbench"] .memory-card > .stamp-meta .stamp-meta-label { display: none; }
+[data-style="workbench"] .memory-card > .stamp-meta .stamp-meta-item:not(:first-child) { display: none; }
+[data-style="workbench"] .memory-card > .card-actions { grid-area: actions; justify-content: flex-end; margin: 0; }
+[data-style="workbench"] .memory-card > .card-actions .quiet-button { padding: 2px 8px; font-size: 12px; }
+[data-style="workbench"] .memory-card > :is(.memory-metadata, .memory-evidence, .memory-trigger-editor) { grid-column: 1 / -1; margin: 8px 0 0; }
+[data-style="workbench"] .memory-card:not(.is-open) > :is(.memory-metadata, .memory-evidence) { display: none; }
+[data-style="workbench"] .memory-card.is-open > .memory-access span:last-child { display: inline; }
+[data-style="workbench"] .memory-group-more { margin: 0; width: 100%; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+@media (max-width: 1000px) {
+  [data-style="workbench"] .memory-groups { grid-template-columns: 1fr; }
+  [data-style="workbench"] .memory-group-nav { display: none; }
+  [data-style="workbench"] .memory-row-head { display: none; }
+  [data-style="workbench"] .memory-group .memory-card { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "content content" "tags actions"; row-gap: 6px; }
+  [data-style="workbench"] .memory-card > :is(.memory-access, .stamp-meta) { display: none; }
+}
