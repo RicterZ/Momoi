@@ -251,7 +251,6 @@ def _episode_context(
 
 
 _REVISION_HOPS = 2
-_FOLLOW_UP_HOPS = 2
 _INJECTED_SUMMARY_TOKENS = 80
 _FOLLOWED_BY_LIMIT = 2
 _CONTEXT_LIMIT = 1
@@ -327,59 +326,11 @@ def _order_after_targets(records):
     return ordered
 
 
-def _follow_up_chain(store, episode_id, neighbors, excluded, hops):
-    """Walk incoming follows_up edges breadth-first, nearest supplements first."""
-    chain, frontier = [], [episode_id]
-    for _ in range(hops):
-        missing = [item for item in frontier if item not in neighbors]
-        if missing:
-            neighbors.update(store.episode_relation_neighbors(missing, per_episode=5))
-        frontier = [
-            item["episode_id"] for current in frontier
-            for item in [
-                related for related in neighbors.get(current, [])
-                if related["direction"] == "incoming" and related["type"] == "follows_up"
-            ][:_FOLLOWED_BY_LIMIT]
-            if item["episode_id"] not in excluded and item["episode_id"] != episode_id
-            and item["episode_id"] not in chain
-        ]
-        chain.extend(dict.fromkeys(frontier))
-        if not frontier:
-            break
-    return chain
-
-
-def topic_slot(store, episode_id, neighbors, excluded=frozenset()):
-    """A related-topic group is shown once: the root of its follow-up chain, at its newest revision."""
-    current = episode_id
-    for _ in range(_FOLLOW_UP_HOPS):
-        if current not in neighbors:
-            neighbors.update(store.episode_relation_neighbors([current], per_episode=5))
-        parent = next((item["episode_id"] for item in neighbors.get(current, [])
-                       if item["direction"] == "outgoing" and item["type"] == "follows_up"
-                       and item["episode_id"] not in excluded), None)
-        if parent is None:
-            break
-        current = parent
-    return latest_reviser(store, current, neighbors, excluded) or current
-
-
-def _nest_supplements(records):
-    """Fold injected supplements under the slot whose follow-up chain they extend."""
+def _nest_supplements(records, injected):
     by_id = {record["id"]: record for record in records}
-
-    def owner(record):
-        while record.get("injected") == "follows_up":
-            parent = next((by_id[item["id"]] for item in record.get("follows_up", [])
-                           if item["id"] in by_id), None)
-            if parent is None:
-                return None
-            record = parent
-        return record
-
     top = []
     for record in records:
-        slot = owner(record) if record.get("injected") == "follows_up" else None
+        slot = by_id.get(injected.get(record["id"]))
         if slot is None:
             top.append(record)
         else:
@@ -387,38 +338,72 @@ def _nest_supplements(records):
     return top
 
 
-def episode_recall_records(store, episodes, budget):
-    """Return one record per related-topic group; details live in episode_read.
+def _load_neighbors(store, neighbors, ids):
+    missing = [episode_id for episode_id in dict.fromkeys(ids) if episode_id not in neighbors]
+    if missing:
+        neighbors.update(store.episode_relation_neighbors(missing, per_episode=5))
+        for episode_id in missing:
+            neighbors.setdefault(episode_id, [])
 
-    Supplements ride inside their slot and superseded versions stay as revises pointers,
-    so neither consumes a slot of its own."""
+
+def _direct_group(store, episode_id, neighbors, excluded):
+    _load_neighbors(store, neighbors, [episode_id])
+    return [episode_id, *[
+        item["episode_id"] for item in neighbors[episode_id]
+        if item["direction"] == "incoming" and item["type"] == "follows_up"
+        and item["episode_id"] not in excluded
+    ][:_FOLLOWED_BY_LIMIT]]
+
+
+def topic_groups(store, hit_ids, neighbors, activity, excluded=frozenset()):
+    """Edges are pairwise, not transitive: each hit groups only with its direct follow-ups.
+
+    Groups of different hits merge only when they share a member. A group is shown as
+    its most recently active member at that member's newest revision; the rest ride
+    inside it. Returns [(slot, attached_ids, hit_ids)] in first-hit order."""
+    merged: list[tuple[list[str], list[str]]] = []
+    for hit in dict.fromkeys(hit_ids):
+        members, hits = _direct_group(store, hit, neighbors, excluded), [hit]
+        for group in [group for group in merged if set(group[0]) & set(members)]:
+            merged.remove(group)
+            members, hits = [*group[0], *members], [*group[1], *hits]
+        merged.append((list(dict.fromkeys(members)), hits))
+    merged.sort(key=lambda group: min(hit_ids.index(hit) for hit in group[1]))
+    result = []
+    for members, hits in merged:
+        activity.update(store.episode_activity_times([m for m in members if m not in activity]))
+        newest = max(members, key=lambda member: (activity.get(member, 0), member))
+        slot = latest_reviser(store, newest, neighbors, excluded) or newest
+        if slot not in activity:
+            activity.update(store.episode_activity_times([slot]))
+        result.append((slot, [m for m in members if m not in (slot, newest)], hits))
+    return result
+
+
+def episode_recall_records(store, episodes, budget):
+    """Return one record per topic group; details live in episode_read.
+
+    Direct follow-ups ride inside the group as supplements and superseded versions stay
+    as revises pointers, so neither consumes a slot of its own."""
     excluded = {str(item["episode_id"]) for item in episodes or [] if item.get("is_new")}
     neighbors: dict = {}
-    selected_ids = list(dict.fromkeys(
-        topic_slot(store, str(item["episode_id"]), neighbors, excluded)
-        for item in episodes or [] if not item.get("is_new")
-    ))
-    missing = [episode_id for episode_id in selected_ids if episode_id not in neighbors]
-    if missing:
-        neighbors.update(store.episode_relation_neighbors(missing, per_episode=5))
-    injected: dict[str, tuple[str, str]] = {}
-    for episode_id in selected_ids:
-        reviser = latest_reviser(store, episode_id, neighbors, excluded)
-        if reviser and reviser not in selected_ids and reviser not in injected:
-            injected[reviser] = (episode_id, "revises")
-    for episode_id in selected_ids:
-        for follower in _follow_up_chain(store, episode_id, neighbors, excluded, _FOLLOW_UP_HOPS):
-            if follower not in selected_ids and follower not in injected:
-                injected[follower] = (episode_id, "follows_up")
-    missing = [episode_id for episode_id in injected if episode_id not in neighbors]
-    if missing:
-        neighbors.update(store.episode_relation_neighbors(missing, per_episode=5))
+    hit_ids = [str(item["episode_id"]) for item in episodes or [] if not item.get("is_new")]
+    groups: dict[str, list[str]] = {}
+    for slot, attached, _ in topic_groups(store, hit_ids, neighbors, {}, excluded):
+        groups.setdefault(slot, []).extend(attached)
+    selected_ids = list(groups)
+    injected: dict[str, str] = {}
+    for slot, attached in groups.items():
+        for member in attached:
+            if member not in groups and member not in injected:
+                injected[member] = slot
+    _load_neighbors(store, neighbors, [*selected_ids, *injected])
     visible = {*selected_ids, *injected}
     per_episode = max(1, budget // max(1, len(selected_ids) + len(injected)))
     records, summaries, shares = [], [], []
     order = [
         value for episode_id in selected_ids
-        for value in (episode_id, *(r for r, (base, _) in injected.items() if base == episode_id))
+        for value in (episode_id, *(r for r, base in injected.items() if base == episode_id))
     ]
     for episode_id in order:
         episode = store.episode(episode_id)
@@ -433,8 +418,6 @@ def episode_recall_records(store, episodes, budget):
             summary_tokens //= 3
         record = {"id": episode["id"], "title": episode["title"], "summary": "",
                   "details_omitted": True}
-        if episode_id in injected:
-            record["injected"] = injected[episode_id][1]
         record.update(fields)
         records.append(record)
         summaries.append(summary)
@@ -451,7 +434,7 @@ def episode_recall_records(store, episodes, budget):
             records=len(records), budget=budget, summary_scale=round(scale, 3),
             pointers_dropped=dropped, summaries_shortened=shortened,
         )
-    return _nest_supplements(_order_after_targets(records))
+    return _order_after_targets(_nest_supplements(records, injected))
 
 
 def _record_tokens(record):

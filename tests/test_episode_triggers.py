@@ -140,52 +140,102 @@ def test_owner_episode_context_escapes_titles_and_ignores_notices(tmp_path):
         store.close()
 
 
-def test_trigger_brings_follow_up_and_revision_graph(tmp_path):
-    from momoi.models import IncomingMessage
-    from momoi.runtime.context.triggers import triggered_episode_context, attach_reply_episode_triggers
-    from xml.etree import ElementTree
-    store = Store(tmp_path / 'graph.sqlite3', tmp_path)
-    try:
-        for identifier, title, summary in [
-            ('a', 'GTA6 预载', '主人预载了 GTA6'), ('b', 'PS5 开玩', '在 PS5 上开玩 GTA6'),
-            ('c', '30 帧', '抱怨 30 帧但喜欢自在一日'), ('d', '旧计划', '原定周末玩'),
-            ('e', '新计划', '改到周五玩'),
-        ]:
-            store.create_episode(title, episode_id=identifier)
+def _activity(store, episode_id, at):
+    with store._db:
+        store._db.execute("UPDATE conversation_episodes SET created_at=? WHERE id=?", (at, episode_id))
+
+
+def _relate(store, source, target, relation):
+    with store._db:
+        store._db.execute(
+            """INSERT INTO episode_relations
+               (source_episode_id,target_episode_id,relation,explanation,
+                evidence_json,source_summary_ordinal,created_at,updated_at)
+               VALUES (?,?,?,'关联','{}',1,1,1)""", (source, target, relation))
+
+
+def _topics(store, *rows):
+    for identifier, at in rows:
+        store.create_episode(f'话题 {identifier}', episode_id=identifier)
+        with store._db:
             store._db.execute(
                 "UPDATE conversation_episodes SET narrative_summary=?, summarized_through_ordinal=1 WHERE id=?",
-                (summary, identifier))
-        store.set_episode_triggers('a', ['GTA6'])
-        store.set_episode_triggers('d', ['周末'])
-        with store._db:
-            for source, target, relation in [('b', 'a', 'follows_up'), ('c', 'b', 'follows_up'), ('e', 'd', 'revises')]:
-                store._db.execute(
-                    """INSERT INTO episode_relations
-                       (source_episode_id,target_episode_id,relation,explanation,
-                        evidence_json,source_summary_ordinal,created_at,updated_at)
-                       VALUES (?,?,?,'后续','{}',1,1,1)""", (source, target, relation))
-        store.set_episode_triggers('b', ['GTA6'])
-        store.set_episode_triggers('c', ['GTA6'])
-        event = IncomingMessage('m', 'owner', 'gta6 周末', 1, 1)
-        node = ElementTree.fromstring(triggered_episode_context(store, [event]))
-        assert [item.attrib['id'] for item in node.findall('episode')] == ['a', 'e']
-        root = node.find('episode')
-        assert root.attrib['status'] == 'open'
-        supplements = root.findall('.//supplement')
-        assert [item.attrib['id'] for item in supplements] == ['b', 'c']
-        assert supplements[1].find('summary').text == '抱怨 30 帧但喜欢自在一日'
-        latest = node.findall('episode')[1]
-        assert latest.find('revises').attrib['id'] == 'd'
-        assert latest.find('title').text == '新计划'
+                (f'摘要 {identifier}', identifier))
+        _activity(store, identifier, at)
+
+
+def _slots(store, text):
+    from momoi.models import IncomingMessage
+    from momoi.runtime.context.triggers import triggered_episode_context
+    from xml.etree import ElementTree
+    context = triggered_episode_context(store, [IncomingMessage('m', 'owner', text, 1, 1)])
+    return ElementTree.fromstring(context).findall('episode') if context else []
+
+
+def test_trigger_group_is_shown_as_newest_direct_follow_up(tmp_path):
+    store = Store(tmp_path / 'group.sqlite3', tmp_path)
+    try:
+        _topics(store, ('root', 1), ('next', 2), ('later', 3))
+        _relate(store, 'next', 'root', 'follows_up')
+        _relate(store, 'later', 'next', 'follows_up')
+        store.set_episode_triggers('root', ['alpha'])
+        store.set_episode_triggers('next', ['alpha'])
+        slots = _slots(store, 'alpha')
+        assert [item.attrib['id'] for item in slots] == ['later']
+        assert [item.attrib['id'] for item in slots[0].findall('supplement')] == ['next', 'root']
+        assert slots[0].find('supplement/summary').text == '摘要 next'
+        assert slots[0].attrib['status'] == 'open'
+    finally:
+        store.close()
+
+
+def test_trigger_does_not_walk_past_one_hop(tmp_path):
+    store = Store(tmp_path / 'hop.sqlite3', tmp_path)
+    try:
+        _topics(store, ('start', 1), ('bridge', 2), ('other', 3))
+        _relate(store, 'bridge', 'start', 'follows_up')
+        _relate(store, 'other', 'bridge', 'follows_up')
+        store.set_episode_triggers('start', ['alpha'])
+        slots = _slots(store, 'alpha')
+        assert [item.attrib['id'] for item in slots] == ['bridge']
+        assert [item.attrib['id'] for item in slots[0].findall('supplement')] == ['start']
+        assert 'other' not in [item.get('id') for item in slots[0].iter('supplement')]
+        assert slots[0].find('followed_by').attrib['id'] == 'other'
+    finally:
+        store.close()
+
+
+def test_trigger_branches_ride_inside_newest_branch(tmp_path):
+    store = Store(tmp_path / 'branch.sqlite3', tmp_path)
+    try:
+        _topics(store, ('root', 1), ('left', 2), ('right', 3))
+        _relate(store, 'left', 'root', 'follows_up')
+        _relate(store, 'right', 'root', 'follows_up')
+        store.set_episode_triggers('root', ['alpha'])
+        slots = _slots(store, 'alpha')
+        assert [item.attrib['id'] for item in slots] == ['right']
+        assert sorted(item.attrib['id'] for item in slots[0].findall('supplement')) == ['left', 'root']
+    finally:
+        store.close()
+
+
+def test_trigger_revision_shows_latest_and_keeps_pointer(tmp_path):
+    from momoi.runtime.context.triggers import attach_reply_episode_triggers
+    store = Store(tmp_path / 'revise.sqlite3', tmp_path)
+    try:
+        _topics(store, ('plan', 1), ('change', 2), ('x0', 3), ('x1', 4), ('x2', 5), ('x3', 6))
+        _relate(store, 'change', 'plan', 'revises')
+        store.set_episode_triggers('plan', ['alpha'])
+        slots = _slots(store, 'alpha')
+        assert [item.attrib['id'] for item in slots] == ['change']
+        assert slots[0].find('revises').attrib['id'] == 'plan'
+        assert slots[0].find('supplement') is None
+        for identifier in ('x0', 'x1', 'x2', 'x3'):
+            store.set_episode_triggers(identifier, ['alpha'])
+        assert [item.attrib['id'] for item in _slots(store, 'alpha')] == ['x3', 'x2', 'x1', 'x0', 'change']
         seen = set()
-        result = {'bubbles': ['GTA6 怎么样']}
+        result = {'bubbles': ['alpha']}
         attach_reply_episode_triggers(store, result, stage='heartbeat', seen=seen)
-        assert [row['id'] for row in result['triggered_episodes']] == ['a']
-        assert seen == {'a', 'b', 'c'}
-        for index in range(3):
-            store.create_episode(f'其他 {index}', episode_id=f'x{index}')
-            store.set_episode_triggers(f'x{index}', ['GTA6'])
-        slots = ElementTree.fromstring(triggered_episode_context(store, [event])).findall('episode')
-        assert sorted(item.attrib['id'] for item in slots) == ['a', 'e', 'x0', 'x1', 'x2']
+        assert seen == {'x3', 'x2', 'x1', 'x0', 'change'}
     finally:
         store.close()

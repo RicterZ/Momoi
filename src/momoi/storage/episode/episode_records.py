@@ -31,6 +31,23 @@ class EpisodeRecordStore:
             )
         return cursor.rowcount
 
+    def episode_activity_times(self, episode_ids: list[str]) -> dict[str, float]:
+        """Latest linked conversation message per episode, falling back to creation time."""
+        ids = [episode_id for episode_id in dict.fromkeys(episode_ids) if episode_id]
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        rows = self._db.execute(
+            f"""SELECT e.id, COALESCE((
+                    SELECT MAX(m.created_at) FROM episode_turns et
+                    JOIN messages m ON m.turn_id=et.turn_id
+                    WHERE et.episode_id=e.id
+                ), e.created_at) AS active_at
+                FROM conversation_episodes e WHERE e.id IN ({placeholders})""",
+            tuple(ids),
+        ).fetchall()
+        return {str(row["id"]): float(row["active_at"]) for row in rows}
+
     def episodes_for_turns(
         self, turn_ids: list[str]
     ) -> dict[str, dict[str, str]]:
