@@ -99,7 +99,7 @@ class DaemonTest(unittest.TestCase):
             self.assertIn("自定义运行指引\n\n# 人格设定\n<soul>\nNew soul\n</soul>", custom_system)
             planner.write_text("自定义运行指引\n# 人格\n<soul>\n{{SOUL}}\n</soul>")
             self.assertEqual(daemon._system(planner=True)[0]["text"].count("<soul>"), 1)
-            self.assertIn("运行与核心规则", daemon._system(planner=True)[1]["text"])
+            self.assertIn("执行与纠错", daemon._system(planner=True)[1]["text"])
             (root / "SYSTEM.md").write_text("自定义系统规则")
             self.assertEqual(daemon._system(planner=True)[1]["text"], "自定义系统规则")
             (root / "SYSTEM.md").unlink()
