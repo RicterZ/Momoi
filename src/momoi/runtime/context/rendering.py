@@ -258,7 +258,7 @@ _CONTEXT_LIMIT = 1
 _OPTIONAL_RELATION_FIELDS = ("context", "followed_by", "follows_up")
 
 
-def _latest_reviser(store, episode_id, neighbors, excluded):
+def latest_reviser(store, episode_id, neighbors, excluded):
     """Follow incoming revises edges to the newest valid version, at most two hops."""
     current, chain = episode_id, []
     for _ in range(_REVISION_HOPS):
@@ -359,7 +359,7 @@ def episode_recall_records(store, episodes, budget, *, follow_up_hops=0):
     neighbors = store.episode_relation_neighbors(selected_ids, per_episode=5)
     injected: dict[str, tuple[str, str]] = {}
     for episode_id in selected_ids:
-        reviser = _latest_reviser(store, episode_id, neighbors, excluded)
+        reviser = latest_reviser(store, episode_id, neighbors, excluded)
         if reviser and reviser not in selected_ids and reviser not in injected:
             injected[reviser] = (episode_id, "revises")
     for episode_id in selected_ids if follow_up_hops > 0 else ():

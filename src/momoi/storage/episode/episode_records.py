@@ -117,11 +117,14 @@ class EpisodeRecordStore:
                 raise KeyError(episode_id)
         return self.episode(episode_id)
 
-    def triggered_episodes(self, text: str, *, limit: int = 5) -> list[dict[str, str]]:
-        """Literal topic lookup; return titles, IDs and freshness, never full archives."""
+    def triggered_episodes(self, text: str, *, limit: int | None = 5) -> list[dict[str, str]]:
+        """Literal topic lookup; return titles, IDs and freshness, never full archives.
+
+        Integer limits are capped at five; None returns every ranked match so callers
+        can fold related topics into one slot before capping."""
         if not isinstance(text, str):
             raise ValueError("trigger input must be a string")
-        if not text.strip() or limit <= 0:
+        if not text.strip() or (limit is not None and limit <= 0):
             return []
         normalized_text = normalize_trigger(text)
         matches = []
@@ -137,7 +140,7 @@ class EpisodeRecordStore:
         return [
             {"id": item[2], "title": item[3], "status": item[4],
              "updated_at": context_timestamp(item[1], self._timezone)}
-            for item in matches[:min(limit, 5)]
+            for item in (matches if limit is None else matches[:min(limit, 5)])
         ]
 
     def create_episode(

@@ -164,19 +164,28 @@ def test_trigger_brings_follow_up_and_revision_graph(tmp_path):
                        (source_episode_id,target_episode_id,relation,explanation,
                         evidence_json,source_summary_ordinal,created_at,updated_at)
                        VALUES (?,?,?,'后续','{}',1,1,1)""", (source, target, relation))
+        store.set_episode_triggers('b', ['GTA6'])
+        store.set_episode_triggers('c', ['GTA6'])
         event = IncomingMessage('m', 'owner', 'gta6 周末', 1, 1)
         node = ElementTree.fromstring(triggered_episode_context(store, [event]))
-        episodes = {item.attrib['id']: item for item in node.findall('episode')}
-        assert set(episodes) == {'a', 'b', 'c', 'd', 'e'}
-        assert episodes['b'].attrib['injected'] == 'follows_up'
-        assert episodes['c'].find('summary').text == '抱怨 30 帧但喜欢自在一日'
-        assert 'status' not in episodes['c'].attrib
-        assert episodes['e'].attrib['injected'] == 'revises'
-        assert episodes['d'].find('revised_by').attrib['id'] == 'e'
+        assert [item.attrib['id'] for item in node.findall('episode')] == ['a', 'e']
+        root = node.find('episode')
+        assert root.attrib['status'] == 'open'
+        supplements = root.findall('.//supplement')
+        assert [item.attrib['id'] for item in supplements] == ['b', 'c']
+        assert supplements[1].find('summary').text == '抱怨 30 帧但喜欢自在一日'
+        latest = node.findall('episode')[1]
+        assert latest.find('revises').attrib['id'] == 'd'
+        assert latest.find('title').text == '新计划'
         seen = set()
         result = {'bubbles': ['GTA6 怎么样']}
         attach_reply_episode_triggers(store, result, stage='heartbeat', seen=seen)
-        assert [row['id'] for row in result['triggered_episodes']] == ['a', 'b', 'c']
+        assert [row['id'] for row in result['triggered_episodes']] == ['a']
         assert seen == {'a', 'b', 'c'}
+        for index in range(3):
+            store.create_episode(f'其他 {index}', episode_id=f'x{index}')
+            store.set_episode_triggers(f'x{index}', ['GTA6'])
+        slots = ElementTree.fromstring(triggered_episode_context(store, [event])).findall('episode')
+        assert sorted(item.attrib['id'] for item in slots) == ['a', 'e', 'x0', 'x1', 'x2']
     finally:
         store.close()
