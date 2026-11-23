@@ -435,7 +435,9 @@
 [data-style="workbench"] .emotion-copy .quiet-button { padding: 3px 8px; font-size: 12px; }
 
 /* Conversations: dense list, reading-width detail */
-[data-style="workbench"] .record-layout { grid-template-columns: 280px minmax(0, 1fr); }
+@media (width > 760px) {
+  [data-style="workbench"] .record-layout { grid-template-columns: 280px minmax(0, 1fr); }
+}
 [data-style="workbench"] .record-item { padding: 10px 14px; }
 [data-style="workbench"] .record-item:hover { background: var(--hover); }
 [data-style="workbench"] .record-item.active { background: var(--selected); box-shadow: none; }
