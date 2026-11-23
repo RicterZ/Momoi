@@ -50,8 +50,7 @@ def test_image_prompt_upgrade_preserves_existing_and_dashboard_edits(tmp_path):
     settings.update("image_recognition", "自定义识别要求")
     manager.validate()
     assert prompt_path.read_text() == "自定义识别要求"
-    with pytest.raises(ValueError):
-        settings.update("image_recognition", "")
+    assert settings.update("image_recognition", "")["content"].strip()
     prompt_path.write_text("")
     manager.validate()
     assert prompt_path.read_text() == ""

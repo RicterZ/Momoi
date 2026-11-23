@@ -26,12 +26,12 @@ class DashboardSettings:
             (
                 PromptFile("soul", config.soul_prompt_path, True),
                 PromptFile("heartbeat", config.heartbeat_prompt_path, False),
-                PromptFile("system", config.soul_prompt_path.parent / "SYSTEM.md", True),
-                PromptFile("planner", config.soul_prompt_path.parent / "PLANNER.md", True),
-                PromptFile("affinity", config.soul_prompt_path.parent / "AFFINITY.md", True),
-                PromptFile("image_recognition", config.soul_prompt_path.parent / "IMAGE_RECOGNITION.md", True),
-                PromptFile("replyer", config.soul_prompt_path.parent / "REPLYER.md", True),
-                PromptFile("phone_replyer", config.soul_prompt_path.parent / "PHONE_REPLYER.md", True),
+                PromptFile("system", config.soul_prompt_path.parent / "SYSTEM.md", False),
+                PromptFile("planner", config.soul_prompt_path.parent / "PLANNER.md", False),
+                PromptFile("affinity", config.soul_prompt_path.parent / "AFFINITY.md", False),
+                PromptFile("image_recognition", config.soul_prompt_path.parent / "IMAGE_RECOGNITION.md", False),
+                PromptFile("replyer", config.soul_prompt_path.parent / "REPLYER.md", False),
+                PromptFile("phone_replyer", config.soul_prompt_path.parent / "PHONE_REPLYER.md", False),
             )
         )
 

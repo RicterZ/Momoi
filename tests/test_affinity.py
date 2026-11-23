@@ -22,8 +22,7 @@ def test_affinity_config_prompt_and_persistence(tmp_path):
     assert settings.read('affinity')['filename'] == 'AFFINITY.md'
     settings.update('affinity', '亲近与信任')
     assert settings.read('affinity')['content'] == '亲近与信任'
-    with pytest.raises(ValueError):
-        settings.update('affinity', '')
+    assert settings.update('affinity', '')['content'].strip()
     store = Store(config.database, config.workspace)
     assert store.self_state()['affinity'] == 20
     with store._db:
