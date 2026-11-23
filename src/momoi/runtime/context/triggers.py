@@ -1,7 +1,7 @@
 """Attach phrase-triggered memories to live owner input, never its source text."""
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from .rendering import episode_recall_records, latest_reviser
+from .rendering import episode_recall_records, topic_slot
 
 
 def triggered_memory_context(memory, events, snapshots, *, only_new=False, on_injected=None, draft=None):
@@ -33,56 +33,16 @@ def triggered_memory_context(memory, events, snapshots, *, only_new=False, on_in
 
 TRIGGERED_EPISODE_BUDGET = 1200
 TRIGGERED_EPISODE_LIMIT = 5
-TRIGGERED_FOLLOW_UP_HOPS = 2
 _RELATION_FIELDS = ("revises", "revised_by", "follows_up", "followed_by", "context")
-
-
-def _representative(store, episode_id, neighbors):
-    """A topic slot is shown as the root of its follow-up chain, at its newest revision."""
-    current = episode_id
-    for _ in range(TRIGGERED_FOLLOW_UP_HOPS):
-        if current not in neighbors:
-            neighbors.update(store.episode_relation_neighbors([current], per_episode=5))
-        parent = next((item["episode_id"] for item in neighbors[current]
-                       if item["direction"] == "outgoing" and item["type"] == "follows_up"), None)
-        if parent is None:
-            break
-        current = parent
-    return latest_reviser(store, current, neighbors, set()) or current
-
-
-def _nest(records):
-    """Fold injected supplements under the slot whose follow-up chain they extend."""
-    by_id = {record["id"]: record for record in records}
-
-    def owner(record):
-        while "injected" in record:
-            parent = next((by_id[item["id"]] for item in record.get("follows_up", [])
-                           if item["id"] in by_id), None)
-            if parent is None:
-                return None
-            record = parent
-        return record
-
-    top = [record for record in records if "injected" not in record]
-    for record in records:
-        if "injected" in record:
-            slot = owner(record)
-            if slot is None:
-                top.append(record)
-            else:
-                slot.setdefault("attached", []).append(record)
-    return top
 
 
 def triggered_episode_records(store, text, *, exclude=()):
     """Trigger hits folded into topic slots; graph rendering is shared with recall."""
     rows = store.triggered_episodes(text, limit=None)
     neighbors: dict = {}
-    slots, matched = [], {}
+    slots = []
     for row in rows:
-        slot = _representative(store, row["id"], neighbors)
-        matched.setdefault(slot, []).append(row)
+        slot = topic_slot(store, row["id"], neighbors)
         if slot not in slots and slot not in exclude:
             slots.append(slot)
     slots = slots[:TRIGGERED_EPISODE_LIMIT]
@@ -90,20 +50,19 @@ def triggered_episode_records(store, text, *, exclude=()):
         return []
     records = episode_recall_records(
         store, [{"episode_id": slot} for slot in slots], TRIGGERED_EPISODE_BUDGET,
-        follow_up_hops=TRIGGERED_FOLLOW_UP_HOPS,
     )
     for record in records:
         episode = store.episode(record["id"]) if record["id"] in slots else None
         if episode is not None:
             record["status"] = episode["status"]
             record["updated_at"] = episode["updated_timestamp"]
-    return _nest([record for record in records if record["id"] not in exclude])
+    return [record for record in records if record["id"] not in exclude]
 
 
 def _flatten(records):
     for record in records:
         yield record
-        yield from _flatten(record.get("attached", []))
+        yield from _flatten(record.get("supplements", []))
 
 
 def _episode_element(parent, record, tag="episode"):
@@ -115,7 +74,7 @@ def _episode_element(parent, record, tag="episode"):
     for name in _RELATION_FIELDS:
         for pointer in record.get(name, []):
             SubElement(item, name, {key: str(value) for key, value in pointer.items()})
-    for child in record.get("attached", []):
+    for child in record.get("supplements", []):
         _episode_element(item, child, "supplement")
 
 
