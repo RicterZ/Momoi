@@ -326,25 +326,55 @@ def _order_after_targets(records):
     return ordered
 
 
-def episode_recall_records(store, episodes, budget):
-    """Return topic summaries and relation pointers; details live in episode_read."""
+def _follow_up_chain(store, episode_id, neighbors, excluded, hops):
+    """Walk incoming follows_up edges breadth-first, nearest supplements first."""
+    chain, frontier = [], [episode_id]
+    for _ in range(hops):
+        missing = [item for item in frontier if item not in neighbors]
+        if missing:
+            neighbors.update(store.episode_relation_neighbors(missing, per_episode=5))
+        frontier = [
+            item["episode_id"] for current in frontier
+            for item in [
+                related for related in neighbors.get(current, [])
+                if related["direction"] == "incoming" and related["type"] == "follows_up"
+            ][:_FOLLOWED_BY_LIMIT]
+            if item["episode_id"] not in excluded and item["episode_id"] != episode_id
+            and item["episode_id"] not in chain
+        ]
+        chain.extend(dict.fromkeys(frontier))
+        if not frontier:
+            break
+    return chain
+
+
+def episode_recall_records(store, episodes, budget, *, follow_up_hops=0):
+    """Return topic summaries and relation pointers; details live in episode_read.
+
+    follow_up_hops > 0 also injects short summaries of later supplements, for callers
+    whose selection comes from a single entry point such as a trigger word."""
     selected = [e for e in episodes or [] if not e.get("is_new")]
     selected_ids = [str(item["episode_id"]) for item in selected]
     excluded = {str(item["episode_id"]) for item in episodes or [] if item.get("is_new")}
     neighbors = store.episode_relation_neighbors(selected_ids, per_episode=5)
-    injected: dict[str, str] = {}
+    injected: dict[str, tuple[str, str]] = {}
     for episode_id in selected_ids:
         reviser = _latest_reviser(store, episode_id, neighbors, excluded)
         if reviser and reviser not in selected_ids and reviser not in injected:
-            injected[reviser] = episode_id
-    if injected:
-        neighbors.update(store.episode_relation_neighbors(list(injected), per_episode=5))
+            injected[reviser] = (episode_id, "revises")
+    for episode_id in selected_ids if follow_up_hops > 0 else ():
+        for follower in _follow_up_chain(store, episode_id, neighbors, excluded, follow_up_hops):
+            if follower not in selected_ids and follower not in injected:
+                injected[follower] = (episode_id, "follows_up")
+    missing = [episode_id for episode_id in injected if episode_id not in neighbors]
+    if missing:
+        neighbors.update(store.episode_relation_neighbors(missing, per_episode=5))
     visible = {*selected_ids, *injected}
     per_episode = max(1, budget // max(1, len(selected_ids) + len(injected)))
     records, summaries, shares = [], [], []
     order = [
         value for episode_id in selected_ids
-        for value in (episode_id, *(r for r, base in injected.items() if base == episode_id))
+        for value in (episode_id, *(r for r, (base, _) in injected.items() if base == episode_id))
     ]
     for episode_id in order:
         episode = store.episode(episode_id)
@@ -360,7 +390,7 @@ def episode_recall_records(store, episodes, budget):
         record = {"id": episode["id"], "title": episode["title"], "summary": "",
                   "details_omitted": True}
         if episode_id in injected:
-            record["injected"] = "revises"
+            record["injected"] = injected[episode_id][1]
         record.update(fields)
         records.append(record)
         summaries.append(summary)

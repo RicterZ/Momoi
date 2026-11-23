@@ -1,6 +1,8 @@
 """Attach phrase-triggered memories to live owner input, never its source text."""
 from xml.etree.ElementTree import Element, SubElement, tostring
 
+from .rendering import episode_recall_records
+
 
 def triggered_memory_context(memory, events, snapshots, *, only_new=False, on_injected=None, draft=None):
     rows = memory.triggered([
@@ -29,16 +31,45 @@ def triggered_memory_context(memory, events, snapshots, *, only_new=False, on_in
     return "\n".join(tostring(child, encoding="unicode") for child in node)
 
 
+TRIGGERED_EPISODE_BUDGET = 1200
+TRIGGERED_FOLLOW_UP_HOPS = 2
+
+
+def triggered_episode_records(store, text, *, exclude=()):
+    """Trigger hits plus their topic graph, rendered by the same rules as recall."""
+    rows = [row for row in store.triggered_episodes(text) if row["id"] not in exclude]
+    if not rows:
+        return []
+    matched = {row["id"]: row for row in rows}
+    records = episode_recall_records(
+        store, [{"episode_id": row["id"]} for row in rows], TRIGGERED_EPISODE_BUDGET,
+        follow_up_hops=TRIGGERED_FOLLOW_UP_HOPS,
+    )
+    for record in records:
+        row = matched.get(record["id"])
+        if row is not None:
+            record["status"], record["updated_at"] = row["status"], row["updated_at"]
+    return [record for record in records if record["id"] not in exclude]
+
+
+_RELATION_FIELDS = ("revises", "revised_by", "follows_up", "followed_by", "context")
+
+
 def triggered_episode_context(store, events, *, wrapped=True):
     texts = [event.text for event in events if not event.delivery_context.get("channel_notice")]
-    rows = store.triggered_episodes("\n\n".join(texts))
-    if not rows:
+    records = triggered_episode_records(store, "\n\n".join(texts))
+    if not records:
         return ""
     node = Element("triggered_episodes")
-    for row in rows:
-        SubElement(node, "episode", {
-            "id": row["id"], "status": row["status"], "updated_at": row["updated_at"],
-        }).text = row["title"]
+    for record in records:
+        attrs = {name: record[name] for name in ("id", "status", "updated_at", "injected") if name in record}
+        item = SubElement(node, "episode", attrs)
+        SubElement(item, "title").text = record["title"]
+        if record["summary"]:
+            SubElement(item, "summary").text = record["summary"]
+        for name in _RELATION_FIELDS:
+            for pointer in record.get(name, []):
+                SubElement(item, name, {key: str(value) for key, value in pointer.items()})
     return (tostring(node, encoding="unicode") if wrapped else
             "\n".join(tostring(child, encoding="unicode") for child in node))
 
@@ -47,8 +78,7 @@ def attach_reply_episode_triggers(store, result, *, stage, seen):
     """Owner replies never trigger a second lookup; autonomous replies do."""
     if stage == "owner" or not result.get("bubbles") or len(seen) >= 5:
         return
-    rows = [row for row in store.triggered_episodes("\n\n".join(result["bubbles"]))
-            if row["id"] not in seen][:5 - len(seen)]
-    if rows:
-        result["triggered_episodes"] = rows
-        seen.update(row["id"] for row in rows)
+    records = triggered_episode_records(store, "\n\n".join(result["bubbles"]), exclude=seen)
+    if records:
+        result["triggered_episodes"] = records
+        seen.update(record["id"] for record in records)
