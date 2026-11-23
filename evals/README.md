@@ -148,7 +148,7 @@ uv run --locked --env-file .env.evals python -m evals.replay --live
 路径、参数或凭据。不是逐条生产案例的匿名副本：以线上观察到的操作形态驱动选题，
 实际文字完全采用已有合成 fixture，避免正则脱敏遗漏私人语义。
 
-五条记忆回放复用 `scripts/replay_memory_operation.py` 的真实宿主和存储流程，验证新增、
+五条记忆回放复用 `evals/memory_operation_replay.py` 的真实宿主和存储流程，验证新增、
 重复语义不新增、更正旧版本、遗忘墓碑及单次经历不固化。仅启用字面检索，显式提供现有
 记忆快照，不覆盖 embedding 和检索质量；脚本化通过不代表真实模型决策正确。
 

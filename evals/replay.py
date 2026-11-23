@@ -2,7 +2,6 @@
 import argparse
 import asyncio
 from dataclasses import asdict
-import importlib.util
 import json
 from pathlib import Path
 import tempfile
@@ -13,6 +12,7 @@ from momoi.integrations.configuration import ProviderBinding, ProviderCatalog
 from momoi.integrations.models import LLMConfig
 from momoi.models import ProviderResponse, ToolCall
 from momoi.storage import Store
+from . import memory_operation_replay as memory
 from .runner import ROOT, TEMP_ROOT, model_config, write_json
 
 SHAPES = ROOT / 'datasets/production_shapes.json'
@@ -81,10 +81,6 @@ def scripted_finish(case):
 
 async def run(args):
     shapes = json.loads(SHAPES.read_text())
-    # Reuse the existing real memory host; no production provider file is loaded.
-    spec = importlib.util.spec_from_file_location('momoi_eval_memory_replay', ROOT.parent / 'scripts/replay_memory_operation.py')
-    memory = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(memory)
     config = model_config('MOMOI_EVAL') if args.live else LLMConfig('http://127.0.0.1:1', 'synthetic', 'scripted', 1024, 0, 1, 0, api_format='openai')
     options = asdict(config)
     options.pop('api_format')

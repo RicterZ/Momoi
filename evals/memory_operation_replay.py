@@ -1,14 +1,11 @@
-#!/usr/bin/env python3
 """Replay synthetic transcripts through the real private memory workflow.
 
-Uses the configured LLM and embedding provider, isolated temporary databases,
-no scheduler, channels, MCP or delivery. Outputs model inputs, tool results and
-expectation checks; never opens the application's memory database.
+Runs the configured providers in an isolated temporary workspace without starting
+the scheduler, channels, MCP or delivery. Records model inputs, tool results
+and expectation checks.
 """
-import argparse
 import asyncio
 from copy import deepcopy
-from dataclasses import replace
 from html import escape
 import json
 from pathlib import Path
@@ -17,7 +14,6 @@ import time
 
 from momoi.channel.onebot import OneBotConfig
 from momoi.config.models import AppConfig, HeartbeatConfig
-from momoi.integrations.configuration import load_provider_catalog
 from momoi.models import AgentReply, IncomingMessage, TurnDraft
 from momoi.runtime import MomoiDaemon
 
@@ -138,36 +134,3 @@ async def replay(case, catalog, output):
             (output/'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str)+'\n')
     print(json.dumps({key: result.get(key) for key in ('name', 'decisions', 'failures', 'error')}, ensure_ascii=False), flush=True)
     return result
-
-
-async def main(args):
-    loaded = load_provider_catalog(args.providers)
-    if not loaded.enabled('llm'):
-        raise ValueError('replay requires an enabled LLM')
-    catalog = replace(loaded, bindings={key: value for key, value in loaded.bindings.items() if key in {'llm', 'embedding'}})
-    cases = json.loads(args.fixtures.read_text())
-    selected = set(args.cases.split(',')) if args.cases else None
-    if selected and selected - {case['name'] for case in cases}:
-        raise ValueError('unknown scenario name')
-    gate = asyncio.Semaphore(2)
-    async def run(case, iteration):
-        async with gate:
-            return await replay(case, catalog, args.output/f'{case["name"]}-{iteration}')
-    results = await asyncio.gather(*(run(case, i) for case in cases if not selected or case['name'] in selected
-                                     for i in range(1, args.repeat+1)))
-    summary = [{'name': r['name'], 'failures': r['failures'], 'actions': [d['action'] for d in r.get('decisions', [])]} for r in results]
-    (args.output/'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2)+'\n')
-    return any(row['failures'] for row in summary)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--providers', type=Path, required=True)
-    parser.add_argument('--output', type=Path, required=True, help='New output directory; contains synthetic model transcripts.')
-    parser.add_argument('--fixtures', type=Path, default=FIXTURES)
-    parser.add_argument('--cases', default='')
-    parser.add_argument('--repeat', type=int, default=1)
-    args = parser.parse_args()
-    if args.repeat < 1:
-        parser.error('--repeat must be positive')
-    raise SystemExit(asyncio.run(main(args)))
