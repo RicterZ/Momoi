@@ -85,10 +85,9 @@ def test_relation_recall_shape_includes_both_directions():
                 )
             selected = [{"episode_id": "new", "matched_keywords": []}]
             records = rendering.episode_recall_records(store, selected, 6000)
-            assert [record["id"] for record in records] == ["old"]
-            supplement = records[0]["supplements"][0]
-            assert supplement["id"] == "new" and supplement["injected"] == "follows_up"
-            assert supplement["follows_up"] == [{"id": "old"}]
+            assert [record["id"] for record in records] == ["new"]
+            assert records[0]["follows_up"] == [{"id": "old", "title": "项目启动"}]
+            assert "supplements" not in records[0]
             assert store.episode_relation_neighbors(["new"])["new"] == [{
                 "direction": "outgoing", "type": "follows_up", "episode_id": "old",
                 "title": "项目启动", "summary": "团队确认项目启动", "explanation": "同一项目继续推进",
@@ -97,7 +96,8 @@ def test_relation_recall_shape_includes_both_directions():
             incoming = rendering.episode_recall_records(
                 store, [{"episode_id": "old", "matched_keywords": []}], 6000
             )
-            assert incoming == records
+            assert [record["id"] for record in incoming] == ["new"]
+            assert [item["id"] for item in incoming[0]["supplements"]] == ["old"]
             assert "turns" not in records[0]
             assert records[0]["details_omitted"] is True
         finally:
@@ -161,9 +161,8 @@ def test_follow_up_within_results_is_written_once_and_ordered():
             _summarize(store, "b", "后续", "进展", 2)
             _relate(store, "b", "a", "follows_up")
             records = _recall(store, "b", "a")
-            assert [record["id"] for record in records] == ["a"]
-            assert "followed_by" not in records[0]
-            assert [item["id"] for item in records[0]["supplements"]] == ["b"]
+            assert [record["id"] for record in records] == ["b"]
+            assert [item["id"] for item in records[0]["supplements"]] == ["a"]
         finally:
             store.close()
 
@@ -177,9 +176,9 @@ def test_unrecalled_follow_ups_are_capped_pointers():
                 _summarize(store, f"f{index}", f"后续{index}", "进展", index + 2)
                 _relate(store, f"f{index}", "a", "follows_up", updated=index)
             records = _recall(store, "a")
-            assert [record["id"] for record in records] == ["a"]
-            assert [item["id"] for item in records[0]["supplements"]] == ["f2", "f1"]
-            assert [item["id"] for item in records[0]["followed_by"]] == ["f0"]
+            assert [record["id"] for record in records] == ["f2"]
+            assert [item["id"] for item in records[0]["supplements"]] == ["a", "f1"]
+            assert [item["id"] for item in records[0]["supplements"][0]["followed_by"]] == ["f0"]
         finally:
             store.close()
 
@@ -196,8 +195,9 @@ def test_tight_budget_drops_pointers_before_revisions():
             _relate(store, "f", "a", "follows_up")
             _relate(store, "k", "a", "context")
             records = _recall(store, "a", budget=60)
-            assert records[0]["id"] == "b"
-            assert records[0]["revises"][0]["id"] == "a"
+            assert records[0]["id"] == "f"
+            assert [item["id"] for item in records[0]["supplements"]] == ["a"]
+            assert records[0]["supplements"][0]["revised_by"][0]["id"] == "b"
         finally:
             store.close()
 

@@ -1,7 +1,7 @@
 """Attach phrase-triggered memories to live owner input, never its source text."""
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from .rendering import episode_recall_records, topic_slot
+from .rendering import episode_recall_records, topic_groups
 
 
 def triggered_memory_context(memory, events, snapshots, *, only_new=False, on_injected=None, draft=None):
@@ -37,22 +37,21 @@ _RELATION_FIELDS = ("revises", "revised_by", "follows_up", "followed_by", "conte
 
 
 def triggered_episode_records(store, text, *, exclude=()):
-    """Trigger hits folded into topic slots; graph rendering is shared with recall."""
-    rows = store.triggered_episodes(text, limit=None)
+    """Trigger hits folded into topic groups, most recently active group first."""
     neighbors: dict = {}
-    slots = []
-    for row in rows:
-        slot = topic_slot(store, row["id"], neighbors)
-        if slot not in slots and slot not in exclude:
-            slots.append(slot)
-    slots = slots[:TRIGGERED_EPISODE_LIMIT]
-    if not slots:
+    activity: dict = {}
+    hit_ids = [row["id"] for row in store.triggered_episodes(text, limit=None)]
+    groups = sorted(
+        (group for group in topic_groups(store, hit_ids, neighbors, activity) if group[0] not in exclude),
+        key=lambda group: activity.get(group[0], 0), reverse=True,
+    )[:TRIGGERED_EPISODE_LIMIT]
+    if not groups:
         return []
     records = episode_recall_records(
-        store, [{"episode_id": slot} for slot in slots], TRIGGERED_EPISODE_BUDGET,
+        store, [{"episode_id": hit} for _, _, hits in groups for hit in hits], TRIGGERED_EPISODE_BUDGET,
     )
     for record in records:
-        episode = store.episode(record["id"]) if record["id"] in slots else None
+        episode = store.episode(record["id"])
         if episode is not None:
             record["status"] = episode["status"]
             record["updated_at"] = episode["updated_timestamp"]
