@@ -136,8 +136,7 @@ def test_phone_prompt_dashboard_edit_is_used_next_request(tmp_path):
         assert '电话自定义表达要求' in system
         return ProviderResponse([{'type': 'text', 'text': '你好'}], [])
     asyncio.run(PhoneReplyer(cfg, store, SimpleNamespace(complete=complete)).generate([], 'now'))
-    with pytest.raises(ValueError):
-        settings.update('phone_replyer', '')
+    assert settings.update('phone_replyer', '')['content'].strip()
 
 
 @pytest.mark.parametrize('fail', [False, True])

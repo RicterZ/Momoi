@@ -47,7 +47,7 @@ EPISODE_CONSOLIDATION_SYSTEM_PROMPT = (
 def live_prompt(path: Any, fallback: str, *, optional: bool = False) -> str:
     try:
         if optional and not path.is_file():
-            return ""
+            return fallback
         text = path.read_text(encoding="utf-8").strip()
     except OSError as error:
         log_event(
@@ -58,8 +58,8 @@ def live_prompt(path: Any, fallback: str, *, optional: bool = False) -> str:
             error_type=type(error).__name__,
             reason=safe_preview(str(error), 300),
         )
-        return "" if optional else fallback
-    return text if text or optional else fallback
+        return fallback
+    return text or fallback
 
 
 def sections(*items: tuple[str, str]) -> str:
