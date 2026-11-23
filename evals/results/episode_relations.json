@@ -1,0 +1,38 @@
+{
+  "model": "deepseek-flash",
+  "repeat": 5,
+  "cases": 20,
+  "pairs_per_run": 2,
+  "before": {
+    "runs": 100,
+    "errors": 0,
+    "pairs": 200,
+    "pair_accuracy": 0.92,
+    "follows_up_precision": 0.9136,
+    "follows_up_recall": 1.0,
+    "negative_follows_up_rate": 0.0636,
+    "negative_wrong_edge_rate": 0.1455,
+    "mistakes": {
+      "bridge:none->follows_up": 6,
+      "incidental:none->context": 5,
+      "bridge:none->context": 3,
+      "same_period:none->context": 1,
+      "routine:none->follows_up": 1
+    },
+    "prompt_commit": "d360abb0"
+  },
+  "after": {
+    "runs": 100,
+    "errors": 0,
+    "pairs": 200,
+    "pair_accuracy": 0.985,
+    "follows_up_precision": 0.9747,
+    "follows_up_recall": 1.0,
+    "negative_follows_up_rate": 0.0182,
+    "negative_wrong_edge_rate": 0.0273,
+    "mistakes": {
+      "routine:none->follows_up": 2,
+      "similar_topic:none->context": 1
+    }
+  }
+}
