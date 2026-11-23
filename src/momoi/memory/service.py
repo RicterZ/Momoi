@@ -1,9 +1,11 @@
 """Public memory API over a caller-owned database and injected model capabilities."""
 import sqlite3
+import time
 from collections.abc import Callable, Mapping, Sequence
 
+from .retrieval.bm25 import bm25_scores
 from .retrieval.triggers import triggered_memories
-from .metadata import MemoryFilters, TagCatalog
+from .metadata import MemoryFilters, TagCatalog, validate_scope
 from .writing.models import MemoryPlan, MemoryPlanner
 from .writing.service import MemoryWritingService
 from .indexing.source import MemoryIndexSource
@@ -40,6 +42,14 @@ class Memory:
     def triggered(self, text: str | Sequence[str], *, limit: int = 6, token_budget: int = 1600, scope: str = ""):
         """Bounded literal triggers over active global recall or one scope's memories; no model call."""
         return triggered_memories(self.repository, text, limit=limit, token_budget=token_budget, scope=scope)
+
+    def bm25_scoped(self, text: str, *, scope: str, kinds: Sequence[str]):
+        """BM25 of a text against every live memory of one scope; IDF comes from that scope only."""
+        rows = self.repository.recall_rows(now=time.time(), filters={"scope": validate_scope(scope), "kinds": list(kinds)})
+        if not rows or not text.strip():
+            return []
+        scores = bm25_scores(text, [f"{row['key']}\n{row['content']}" for row in rows])
+        return [{**row, "bm25": score} for row, score in zip(rows, scores)]
 
     async def search(
         self, query: str | list[MemoryRecallQuery], limit: int = 6, *,

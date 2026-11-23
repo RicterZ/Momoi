@@ -16,6 +16,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from ...mcp.prompt import MCP_TOOL_POLICY
 from ...memory.metadata import WORKER_SCOPE
+from ...memory.text import estimate_tokens
 from ...models import TurnDraft
 from ...observability.events import log_event
 from ...tools.contracts.skills import SKILL_TOOL_POLICY
@@ -37,6 +38,24 @@ WORKER_PRACTICE_LIMIT = 3
 WORKER_PRACTICE_TOKENS = 1200
 # Shadow mode: matches are only logged until their effect on real tasks has been judged.
 WORKER_PRACTICE_INJECT = False
+# Offline replay of 108 Worker tasks against the worker-scope practices, 2026-11-23.
+# Absolute BM25 shifts as the scope's corpus grows, so recheck once it has ~10 practices.
+WORKER_PRACTICE_MIN_BM25 = 15.0
+
+
+def select_worker_practices(scored):
+    eligible = sorted((row for row in scored if row["bm25"] >= WORKER_PRACTICE_MIN_BM25),
+                      key=lambda row: (row["bm25"], row["id"]), reverse=True)
+    selected, budget = [], WORKER_PRACTICE_TOKENS
+    for row in eligible:
+        cost = 64 + estimate_tokens(str(row["content"]) + row["key"])
+        if cost > budget:
+            continue
+        selected.append(row)
+        budget -= cost
+        if len(selected) >= WORKER_PRACTICE_LIMIT:
+            break
+    return selected
 
 
 def worker_practices_text(rows) -> str:
@@ -240,10 +259,10 @@ class SubagentWorkflow:
             before_round=before_round,
         )
         now = datetime.now(self.store.timezone).isoformat(timespec="seconds")
-        practices = self.memory.triggered(
-            [task["title"], task["task"]], limit=WORKER_PRACTICE_LIMIT,
-            token_budget=WORKER_PRACTICE_TOKENS, scope=WORKER_SCOPE,
+        scored = self.memory.bm25_scoped(
+            f"{task['title']}\n{task['task']}", scope=WORKER_SCOPE, kinds=["practice"],
         )
+        practices = select_worker_practices(scored)
         messages = [{"role": "user", "content": (
             f"<task id=\"{task_id}\" title=\"{task['title']}\" current_time=\"{now}\" "
             f"workdir=\"{self.tool_executor.artifact_root.resolve()}\">\n"
@@ -251,6 +270,10 @@ class SubagentWorkflow:
         )}]
         log_event(logger, logging.INFO, "subagent_started", task_id=task_id, turn_id=turn_id,
                   title=task["title"])
+        if scored:
+            log_event(logger, logging.INFO, "worker_practices_scored", task_id=task_id, turn_id=turn_id,
+                      threshold=WORKER_PRACTICE_MIN_BM25,
+                      scores=[{"id": row["id"], "key": row["key"], "bm25": round(row["bm25"], 4)} for row in scored])
         if practices:
             log_event(logger, logging.INFO, "worker_practices_matched", task_id=task_id, turn_id=turn_id,
                       injected=WORKER_PRACTICE_INJECT, practices=[row["id"] for row in practices],

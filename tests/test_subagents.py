@@ -416,7 +416,24 @@ def test_voice_call_result_falls_back_to_text_channel(tmp_path):
         daemon.store.close()
 
 
-def test_worker_task_carries_triggered_worker_practices_only(tmp_path, monkeypatch):
+def test_bm25_scores_chinese_bigrams_and_ascii_words():
+    from momoi.memory.retrieval.bm25 import bm25_scores, bm25_tokens
+
+    assert bm25_tokens("用 HomeAssistant 查温度") == ["用", "homeassistant", "查温", "温度"]
+    scores = bm25_scores("核实 HomeAssistant 空调", ["HomeAssistant 查实体", "brave 搜索限流", ""])
+    assert scores[0] > 0 and scores[1] == 0 and scores[2] == 0
+    assert bm25_scores("任何", []) == []
+
+
+def test_worker_practice_selection_applies_bm25_threshold():
+    floor = subagent_workflow.WORKER_PRACTICE_MIN_BM25
+    rows = [{"id": 1, "key": "a", "content": "x", "bm25": floor - 0.01},
+            {"id": 2, "key": "b", "content": "y", "bm25": floor + 3},
+            {"id": 3, "key": "c", "content": "z", "bm25": floor}]
+    assert [row["id"] for row in subagent_workflow.select_worker_practices(rows)] == [2, 3]
+
+
+def test_worker_task_carries_scored_worker_practices_only(tmp_path, monkeypatch):
     import json
     from momoi.models import IncomingMessage
     from momoi.runtime.tool_contracts.context import recall_search_arguments
@@ -426,9 +443,10 @@ def test_worker_task_carries_triggered_worker_practices_only(tmp_path, monkeypat
         daemon = MomoiDaemon(config(str(tmp_path)))
         daemon._request_webhook_turn = AsyncMock(return_value=AgentReply([]))
         event = IncomingMessage("e", "owner", "x", time.time(), time.time())
-        for key, scope, content in (("practice.search.rate-limit", "worker", "两次搜索之间间隔几秒"),
-                                    ("practice.search.global", "", "全局记忆不该注入")):
-            memory_id = seed_memory(daemon.store, event, key=key, content=content, kind="practice",
+        for key, scope, content, kind in (("practice.search.rate-limit", "worker", "两次搜索之间间隔几秒", "practice"),
+                                          ("practice.search.global", "", "全局记忆不该注入", "practice"),
+                                          ("pref.search.worker", "worker", "搜索时非经验不该注入", "preference")):
+            memory_id = seed_memory(daemon.store, event, key=key, content=content, kind=kind,
                                     activation="scoped" if scope else "recall")
             with daemon.store._db:
                 daemon.store._db.execute("UPDATE memories SET scope_key=?, meta_json=? WHERE id=?", (scope, json.dumps(
@@ -446,11 +464,12 @@ def test_worker_task_carries_triggered_worker_practices_only(tmp_path, monkeypat
         await daemon._run_subagent_task(daemon.store.claim_subagent_task())
         assert "<practices>" not in seen.pop()
         monkeypatch.setattr(subagent_workflow, "WORKER_PRACTICE_INJECT", True)
+        monkeypatch.setattr(subagent_workflow, "WORKER_PRACTICE_MIN_BM25", 0.1)
         for title, text in (("查资料", "搜索一下店铺"), ("关灯", "关客厅灯")):
             daemon.store.create_subagent_task("turn", channel, title, text)
             await daemon._run_subagent_task(daemon.store.claim_subagent_task())
         assert "<practices>" in seen[0] and "两次搜索之间间隔几秒" in seen[0] and "<pitfall>429 后先等</pitfall>" in seen[0]
-        assert "全局记忆不该注入" not in seen[0] and "<practices>" not in seen[1]
+        assert "全局记忆不该注入" not in seen[0] and "非经验不该注入" not in seen[0] and "<practices>" not in seen[1]
         with pytest.raises(ValueError):
             recall_search_arguments({"scope": "worker"})
         assert daemon.store.memories.triggered("搜索", scope="")[0]["key"] == "practice.search.global"
