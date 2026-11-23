@@ -257,5 +257,5 @@ def test_owner_injects_episode_title_in_current_message(daemon):
     episode = root.find('triggered_episodes/episode')
     assert episode.attrib['id'] == 'gift'
     assert set(episode.attrib) == {'id', 'status', 'updated_at'}
-    assert episode.text == '老师答应送我礼物'
+    assert episode.find('title').text == '老师答应送我礼物'
     assert all('triggered_episodes' not in str(m) for m in messages[:-1])

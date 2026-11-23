@@ -85,7 +85,10 @@ def test_relation_recall_shape_includes_both_directions():
                 )
             selected = [{"episode_id": "new", "matched_keywords": []}]
             records = rendering.episode_recall_records(store, selected, 6000)
-            assert records[0]["follows_up"] == [{"id": "old", "title": "项目启动"}]
+            assert [record["id"] for record in records] == ["old"]
+            supplement = records[0]["supplements"][0]
+            assert supplement["id"] == "new" and supplement["injected"] == "follows_up"
+            assert supplement["follows_up"] == [{"id": "old"}]
             assert store.episode_relation_neighbors(["new"])["new"] == [{
                 "direction": "outgoing", "type": "follows_up", "episode_id": "old",
                 "title": "项目启动", "summary": "团队确认项目启动", "explanation": "同一项目继续推进",
@@ -94,7 +97,7 @@ def test_relation_recall_shape_includes_both_directions():
             incoming = rendering.episode_recall_records(
                 store, [{"episode_id": "old", "matched_keywords": []}], 6000
             )
-            assert incoming[0]["followed_by"] == [{"id": "new", "title": "项目进展"}]
+            assert incoming == records
             assert "turns" not in records[0]
             assert records[0]["details_omitted"] is True
         finally:
@@ -129,13 +132,9 @@ def test_revised_topic_injects_latest_reviser_after_it():
             _relate(store, "b", "a", "revises", "改为周六出发")
             _relate(store, "c", "b", "revises", "再改为周日出发")
             records = _recall(store, "a", "other")
-            assert [record["id"] for record in records] == ["a", "c", "other"]
-            assert records[0]["revised_by"] == [
-                {"id": "b", "title": "b 标题", "explanation": "改为周六出发"}
-            ]
-            assert records[1]["injected"] == "revises"
-            assert records[1]["revises"] == [{"id": "b", "title": "b 标题"}]
-            assert len(records[0]["summary"]) < len(records[2]["summary"])
+            assert [record["id"] for record in records] == ["c", "other"]
+            assert "injected" not in records[0]
+            assert records[0]["revises"] == [{"id": "b", "title": "b 标题"}]
         finally:
             store.close()
 
@@ -148,9 +147,8 @@ def test_recalled_reviser_is_not_duplicated():
             _summarize(store, "b", "新", "新决定", 2)
             _relate(store, "b", "a", "revises", "改主意")
             records = _recall(store, "b", "a")
-            assert [record["id"] for record in records] == ["a", "b"]
-            assert "injected" not in records[1]
-            assert records[1]["revises"] == [{"id": "a"}]
+            assert [record["id"] for record in records] == ["b"]
+            assert records[0]["revises"] == [{"id": "a", "title": "旧"}]
         finally:
             store.close()
 
@@ -163,9 +161,9 @@ def test_follow_up_within_results_is_written_once_and_ordered():
             _summarize(store, "b", "后续", "进展", 2)
             _relate(store, "b", "a", "follows_up")
             records = _recall(store, "b", "a")
-            assert [record["id"] for record in records] == ["a", "b"]
+            assert [record["id"] for record in records] == ["a"]
             assert "followed_by" not in records[0]
-            assert records[1]["follows_up"] == [{"id": "a"}]
+            assert [item["id"] for item in records[0]["supplements"]] == ["b"]
         finally:
             store.close()
 
@@ -180,7 +178,8 @@ def test_unrecalled_follow_ups_are_capped_pointers():
                 _relate(store, f"f{index}", "a", "follows_up", updated=index)
             records = _recall(store, "a")
             assert [record["id"] for record in records] == ["a"]
-            assert [item["id"] for item in records[0]["followed_by"]] == ["f2", "f1"]
+            assert [item["id"] for item in records[0]["supplements"]] == ["f2", "f1"]
+            assert [item["id"] for item in records[0]["followed_by"]] == ["f0"]
         finally:
             store.close()
 
@@ -197,9 +196,8 @@ def test_tight_budget_drops_pointers_before_revisions():
             _relate(store, "f", "a", "follows_up")
             _relate(store, "k", "a", "context")
             records = _recall(store, "a", budget=60)
-            assert records[0]["revised_by"][0]["id"] == "b"
-            assert "context" not in records[0]
-            assert "followed_by" not in records[0]
+            assert records[0]["id"] == "b"
+            assert records[0]["revises"][0]["id"] == "a"
         finally:
             store.close()
 
