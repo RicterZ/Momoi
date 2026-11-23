@@ -1,11 +1,8 @@
 """Replay harness checks use scripted model outputs; live runs are explicit CLI only."""
-import importlib.util
 import json
-from pathlib import Path
 
-SPEC = importlib.util.spec_from_file_location('memory_replay', Path(__file__).resolve().parents[1] / 'scripts/replay_memory_operation.py')
-replay = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(replay)
+from evals import memory_operation_replay as replay
+
 
 
 def test_transcripts_cover_distinct_write_boundaries():

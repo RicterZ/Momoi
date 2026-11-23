@@ -1,14 +1,7 @@
 """Historical replay must not count future or superseded versions as targets."""
-import importlib.util
 import json
-from pathlib import Path
 
-SPEC = importlib.util.spec_from_file_location(
-    'candidate_calibration',
-    Path(__file__).resolve().parents[1] / 'scripts/calibrate_memory_candidates.py',
-)
-calibration = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(calibration)
+from evals import memory_candidate_samples as calibration
 
 
 def memory(identifier, created_at, superseded_by=None):
