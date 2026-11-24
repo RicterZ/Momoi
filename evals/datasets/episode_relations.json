@@ -3,182 +3,1546 @@
   "cases": [
     {
       "id": "game_progress",
-      "source": {"title": "《星港之夜》推进到第三章", "summary": "用户继续玩前几天开坑的《星港之夜》，主线推进到第三章，卡在港口追逐战，我建议先升级载具。",
-        "conversation": [["user", "星港之夜打到第三章了，港口那段追车好难"], ["assistant", "是要追那辆货车的那段吗？载具升级过没有"], ["user", "还没升，我先去改车"]]},
+      "source": {
+        "title": "《星港之夜》推进到第三章",
+        "summary": "用户继续玩前几天开坑的《星港之夜》，主线推进到第三章，卡在港口追逐战，我建议先升级载具。",
+        "conversation": [
+          [
+            "user",
+            "星港之夜打到第三章了，港口那段追车好难"
+          ],
+          [
+            "assistant",
+            "是要追那辆货车的那段吗？载具升级过没有"
+          ],
+          [
+            "user",
+            "还没升，我先去改车"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_game_start", "label": "follows_up", "category": "core", "title": "《星港之夜》首日开玩", "summary": "用户新买的《星港之夜》到货，当晚开始玩序章，觉得开放世界很大。", "turns": [["user", "星港之夜到了，今晚开玩"], ["assistant", "终于等到了，先玩序章熟悉一下"]]},
-        {"id": "ep_robot", "label": "none", "category": "same_period", "title": "扫地机器人卡在床底", "summary": "用户玩游戏的间隙发现扫地机器人卡在床底，让我帮忙查怎么设置禁区。", "turns": [["user", "打游戏打一半扫地机又卡床底了"], ["assistant", "可以在 App 里给床底画个禁区"]]}
+        {
+          "id": "ep_game_start",
+          "label": "follows_up",
+          "category": "core",
+          "title": "《星港之夜》首日开玩",
+          "summary": "用户新买的《星港之夜》到货，当晚开始玩序章，觉得开放世界很大。",
+          "turns": [
+            [
+              "user",
+              "星港之夜到了，今晚开玩"
+            ],
+            [
+              "assistant",
+              "终于等到了，先玩序章熟悉一下"
+            ]
+          ]
+        },
+        {
+          "id": "ep_robot",
+          "label": "none",
+          "category": "same_period",
+          "title": "扫地机器人卡在床底",
+          "summary": "用户玩游戏的间隙发现扫地机器人卡在床底，让我帮忙查怎么设置禁区。",
+          "turns": [
+            [
+              "user",
+              "打游戏打一半扫地机又卡床底了"
+            ],
+            [
+              "assistant",
+              "可以在 App 里给床底画个禁区"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "dinner_injury",
-      "source": {"title": "晚饭吃了麻辣香锅", "summary": "用户晚饭和同事吃了麻辣香锅，点了很多虾，我顺口问了一句他脚踝还疼不疼，他说好多了。话题主要围绕这顿饭和下次想吃什么。",
-        "conversation": [["user", "今晚和同事吃麻辣香锅，点了好多虾"], ["assistant", "好香！对了脚踝还疼吗"], ["user", "好多了。下次想试试旁边那家烤鱼"], ["assistant", "烤鱼也不错，记得叫上同事"]]},
+      "source": {
+        "title": "晚饭吃了麻辣香锅",
+        "summary": "用户晚饭和同事吃了麻辣香锅，点了很多虾，我顺口问了一句他脚踝还疼不疼，他说好多了。话题主要围绕这顿饭和下次想吃什么。",
+        "conversation": [
+          [
+            "user",
+            "今晚和同事吃麻辣香锅，点了好多虾"
+          ],
+          [
+            "assistant",
+            "好香！对了脚踝还疼吗"
+          ],
+          [
+            "user",
+            "好多了。下次想试试旁边那家烤鱼"
+          ],
+          [
+            "assistant",
+            "烤鱼也不错，记得叫上同事"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_ankle", "label": "none", "category": "incidental", "title": "打球扭伤脚踝", "summary": "用户周末打篮球扭到脚踝，肿了起来，我建议冰敷并休息几天。", "turns": [["user", "打球把脚踝扭了，肿了"], ["assistant", "先冰敷，别再走动了"]]},
-        {"id": "ep_hotpot_plan", "label": "follows_up", "category": "core", "title": "约同事周四吃麻辣香锅", "summary": "用户说周四要和同事去公司楼下新开的麻辣香锅店，问我推荐点什么菜。", "turns": [["user", "周四和同事去楼下新开的麻辣香锅"], ["assistant", "虾和藕片必点"]]}
+        {
+          "id": "ep_ankle",
+          "label": "none",
+          "category": "incidental",
+          "title": "打球扭伤脚踝",
+          "summary": "用户周末打篮球扭到脚踝，肿了起来，我建议冰敷并休息几天。",
+          "turns": [
+            [
+              "user",
+              "打球把脚踝扭了，肿了"
+            ],
+            [
+              "assistant",
+              "先冰敷，别再走动了"
+            ]
+          ]
+        },
+        {
+          "id": "ep_hotpot_plan",
+          "label": "follows_up",
+          "category": "core",
+          "title": "约同事周四吃麻辣香锅",
+          "summary": "用户说周四要和同事去公司楼下新开的麻辣香锅店，问我推荐点什么菜。",
+          "turns": [
+            [
+              "user",
+              "周四和同事去楼下新开的麻辣香锅"
+            ],
+            [
+              "assistant",
+              "虾和藕片必点"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "ankle_recovery",
-      "source": {"title": "脚踝复查", "summary": "用户去医院复查扭伤的脚踝，医生说韧带恢复得不错，可以开始慢走，但一个月内别打球。",
-        "conversation": [["user", "今天去复查脚踝了"], ["assistant", "医生怎么说"], ["user", "韧带长得还行，能慢走了，一个月内不许打球"]]},
+      "source": {
+        "title": "脚踝复查",
+        "summary": "用户去医院复查扭伤的脚踝，医生说韧带恢复得不错，可以开始慢走，但一个月内别打球。",
+        "conversation": [
+          [
+            "user",
+            "今天去复查脚踝了"
+          ],
+          [
+            "assistant",
+            "医生怎么说"
+          ],
+          [
+            "user",
+            "韧带长得还行，能慢走了，一个月内不许打球"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_ankle", "label": "follows_up", "category": "core", "title": "打球扭伤脚踝", "summary": "用户周末打篮球扭到脚踝，肿了起来，我建议冰敷并休息几天。", "turns": [["user", "打球把脚踝扭了，肿了"], ["assistant", "先冰敷，别再走动了"]]},
-        {"id": "ep_basketball_league", "label": "none", "category": "similar_topic", "title": "报名公司篮球联赛", "summary": "用户报名了公司秋季篮球联赛，在纠结打哪个位置。", "turns": [["user", "报名了公司篮球赛"], ["assistant", "你想打后卫还是前锋"]]}
+        {
+          "id": "ep_ankle",
+          "label": "follows_up",
+          "category": "core",
+          "title": "打球扭伤脚踝",
+          "summary": "用户周末打篮球扭到脚踝，肿了起来，我建议冰敷并休息几天。",
+          "turns": [
+            [
+              "user",
+              "打球把脚踝扭了，肿了"
+            ],
+            [
+              "assistant",
+              "先冰敷，别再走动了"
+            ]
+          ]
+        },
+        {
+          "id": "ep_basketball_league",
+          "label": "none",
+          "category": "similar_topic",
+          "title": "报名公司篮球联赛",
+          "summary": "用户报名了公司秋季篮球联赛，在纠结打哪个位置。",
+          "turns": [
+            [
+              "user",
+              "报名了公司篮球赛"
+            ],
+            [
+              "assistant",
+              "你想打后卫还是前锋"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "bridge_trip_novel",
-      "source": {"title": "高铁上看完《雾港来信》", "summary": "用户坐高铁去杭州出差的路上把小说《雾港来信》看完了，和我讨论结局里的反转，觉得伏笔埋得很好。",
-        "conversation": [["user", "去杭州的高铁上把雾港来信看完了"], ["assistant", "结局那个反转你猜到了吗"], ["user", "完全没猜到，第二章那封信原来是伏笔"], ["assistant", "回头看确实处处有暗示"]]},
+      "source": {
+        "title": "高铁上看完《雾港来信》",
+        "summary": "用户坐高铁去杭州出差的路上把小说《雾港来信》看完了，和我讨论结局里的反转，觉得伏笔埋得很好。",
+        "conversation": [
+          [
+            "user",
+            "去杭州的高铁上把雾港来信看完了"
+          ],
+          [
+            "assistant",
+            "结局那个反转你猜到了吗"
+          ],
+          [
+            "user",
+            "完全没猜到，第二章那封信原来是伏笔"
+          ],
+          [
+            "assistant",
+            "回头看确实处处有暗示"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_novel_start", "label": "follows_up", "category": "core", "title": "开始读《雾港来信》", "summary": "用户开始读推理小说《雾港来信》，读到第二章，觉得那封匿名信很可疑。", "turns": [["user", "开始看雾港来信，第二章那封信好怪"], ["assistant", "匿名信肯定有问题"]]},
-        {"id": "ep_hangzhou_trip", "label": "none", "category": "bridge", "title": "安排杭州出差行程", "summary": "用户下周要去杭州出差两天，让我帮忙看高铁时间和酒店。", "turns": [["user", "下周去杭州出差，帮我看看高铁"], ["assistant", "早上八点那班比较合适"]]}
+        {
+          "id": "ep_novel_start",
+          "label": "follows_up",
+          "category": "core",
+          "title": "开始读《雾港来信》",
+          "summary": "用户开始读推理小说《雾港来信》，读到第二章，觉得那封匿名信很可疑。",
+          "turns": [
+            [
+              "user",
+              "开始看雾港来信，第二章那封信好怪"
+            ],
+            [
+              "assistant",
+              "匿名信肯定有问题"
+            ]
+          ]
+        },
+        {
+          "id": "ep_hangzhou_trip",
+          "label": "none",
+          "category": "bridge",
+          "title": "安排杭州出差行程",
+          "summary": "用户下周要去杭州出差两天，让我帮忙看高铁时间和酒店。",
+          "turns": [
+            [
+              "user",
+              "下周去杭州出差，帮我看看高铁"
+            ],
+            [
+              "assistant",
+              "早上八点那班比较合适"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "bridge_trip_core",
-      "source": {"title": "杭州出差第一天", "summary": "用户到了杭州，入住酒店后去客户公司开会，会议顺利；路上顺便提到高铁上在看一本小说。",
-        "conversation": [["user", "到杭州了，酒店还不错"], ["assistant", "下午的会准备好了吗"], ["user", "开完了，挺顺利，路上还看了会儿小说"], ["assistant", "顺利就好，晚上早点休息"]]},
+      "source": {
+        "title": "杭州出差第一天",
+        "summary": "用户到了杭州，入住酒店后去客户公司开会，会议顺利；路上顺便提到高铁上在看一本小说。",
+        "conversation": [
+          [
+            "user",
+            "到杭州了，酒店还不错"
+          ],
+          [
+            "assistant",
+            "下午的会准备好了吗"
+          ],
+          [
+            "user",
+            "开完了，挺顺利，路上还看了会儿小说"
+          ],
+          [
+            "assistant",
+            "顺利就好，晚上早点休息"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_hangzhou_trip", "label": "follows_up", "category": "core", "title": "安排杭州出差行程", "summary": "用户下周要去杭州出差两天，让我帮忙看高铁时间和酒店。", "turns": [["user", "下周去杭州出差，帮我看看高铁"], ["assistant", "早上八点那班比较合适"]]},
-        {"id": "ep_novel_start", "label": "none", "category": "bridge", "title": "开始读《雾港来信》", "summary": "用户开始读推理小说《雾港来信》，读到第二章，觉得那封匿名信很可疑。", "turns": [["user", "开始看雾港来信，第二章那封信好怪"], ["assistant", "匿名信肯定有问题"]]}
+        {
+          "id": "ep_hangzhou_trip",
+          "label": "follows_up",
+          "category": "core",
+          "title": "安排杭州出差行程",
+          "summary": "用户下周要去杭州出差两天，让我帮忙看高铁时间和酒店。",
+          "turns": [
+            [
+              "user",
+              "下周去杭州出差，帮我看看高铁"
+            ],
+            [
+              "assistant",
+              "早上八点那班比较合适"
+            ]
+          ]
+        },
+        {
+          "id": "ep_novel_start",
+          "label": "none",
+          "category": "bridge",
+          "title": "开始读《雾港来信》",
+          "summary": "用户开始读推理小说《雾港来信》，读到第二章，觉得那封匿名信很可疑。",
+          "turns": [
+            [
+              "user",
+              "开始看雾港来信，第二章那封信好怪"
+            ],
+            [
+              "assistant",
+              "匿名信肯定有问题"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "punishment_material",
-      "source": {"title": "输掉赌约要唱歌", "summary": "用户和我打赌猜球赛比分输了，按约定惩罚是用之前学的那首粤语歌唱一段发语音。",
-        "conversation": [["user", "我输了，比分猜错了"], ["assistant", "那就按约定，唱一段你上次学的那首粤语歌"], ["user", "好吧好吧，等我录"]]},
+      "source": {
+        "title": "输掉赌约要唱歌",
+        "summary": "用户和我打赌猜球赛比分输了，按约定惩罚是用之前学的那首粤语歌唱一段发语音。",
+        "conversation": [
+          [
+            "user",
+            "我输了，比分猜错了"
+          ],
+          [
+            "assistant",
+            "那就按约定，唱一段你上次学的那首粤语歌"
+          ],
+          [
+            "user",
+            "好吧好吧，等我录"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_cantonese_song", "label": "context", "category": "material", "accept": ["context", "none"], "title": "学唱粤语歌", "summary": "用户在学一首粤语老歌，让我帮忙标注发音，练了好几遍副歌。", "turns": [["user", "帮我标一下这句粤语发音"], ["assistant", "我把拼音标在下面了"]]},
-        {"id": "ep_bet", "label": "follows_up", "category": "core", "title": "和我打赌猜比分", "summary": "用户和我约定猜周末球赛比分，输的人要接受惩罚。", "turns": [["user", "我们来猜比分，输了要受罚"], ["assistant", "好，我猜 2:1"]]}
+        {
+          "id": "ep_cantonese_song",
+          "label": "context",
+          "category": "material",
+          "accept": [
+            "context",
+            "none"
+          ],
+          "title": "学唱粤语歌",
+          "summary": "用户在学一首粤语老歌，让我帮忙标注发音，练了好几遍副歌。",
+          "turns": [
+            [
+              "user",
+              "帮我标一下这句粤语发音"
+            ],
+            [
+              "assistant",
+              "我把拼音标在下面了"
+            ]
+          ]
+        },
+        {
+          "id": "ep_bet",
+          "label": "follows_up",
+          "category": "core",
+          "title": "和我打赌猜比分",
+          "summary": "用户和我约定猜周末球赛比分，输的人要接受惩罚。",
+          "turns": [
+            [
+              "user",
+              "我们来猜比分，输了要受罚"
+            ],
+            [
+              "assistant",
+              "好，我猜 2:1"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "bilibili_share",
-      "source": {"title": "分享猫咪翻车视频", "summary": "用户给我分享了一个 B 站猫咪跳柜子翻车的视频，我们笑了好一会儿。当时他正在出差的酒店里休息。",
-        "conversation": [["user", "你看这个猫跳柜子翻车哈哈哈"], ["assistant", "它落地那一下太好笑了"], ["user", "酒店里刷到的，笑死"]]},
+      "source": {
+        "title": "分享猫咪翻车视频",
+        "summary": "用户给我分享了一个 B 站猫咪跳柜子翻车的视频，我们笑了好一会儿。当时他正在出差的酒店里休息。",
+        "conversation": [
+          [
+            "user",
+            "你看这个猫跳柜子翻车哈哈哈"
+          ],
+          [
+            "assistant",
+            "它落地那一下太好笑了"
+          ],
+          [
+            "user",
+            "酒店里刷到的，笑死"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_hangzhou_trip", "label": "none", "category": "same_period", "title": "安排杭州出差行程", "summary": "用户下周要去杭州出差两天，让我帮忙看高铁时间和酒店。", "turns": [["user", "下周去杭州出差，帮我看看高铁"], ["assistant", "早上八点那班比较合适"]]},
-        {"id": "ep_dog_video", "label": "none", "category": "similar_topic", "title": "分享柯基游泳视频", "summary": "用户分享了一个柯基第一次游泳的视频，说想养狗。", "turns": [["user", "柯基游泳也太可爱了"], ["assistant", "小短腿划得好努力"]]}
+        {
+          "id": "ep_hangzhou_trip",
+          "label": "none",
+          "category": "same_period",
+          "title": "安排杭州出差行程",
+          "summary": "用户下周要去杭州出差两天，让我帮忙看高铁时间和酒店。",
+          "turns": [
+            [
+              "user",
+              "下周去杭州出差，帮我看看高铁"
+            ],
+            [
+              "assistant",
+              "早上八点那班比较合适"
+            ]
+          ]
+        },
+        {
+          "id": "ep_dog_video",
+          "label": "none",
+          "category": "similar_topic",
+          "title": "分享柯基游泳视频",
+          "summary": "用户分享了一个柯基第一次游泳的视频，说想养狗。",
+          "turns": [
+            [
+              "user",
+              "柯基游泳也太可爱了"
+            ],
+            [
+              "assistant",
+              "小短腿划得好努力"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "plan_revised",
-      "source": {"title": "周末露营改成去看展", "summary": "用户说周末下雨，原定的露营取消，改去市美术馆看印象派展。",
-        "conversation": [["user", "周末要下雨，露营不去了"], ["assistant", "那改什么安排"], ["user", "去美术馆看印象派展吧"]]},
+      "source": {
+        "title": "周末露营改成去看展",
+        "summary": "用户说周末下雨，原定的露营取消，改去市美术馆看印象派展。",
+        "conversation": [
+          [
+            "user",
+            "周末要下雨，露营不去了"
+          ],
+          [
+            "assistant",
+            "那改什么安排"
+          ],
+          [
+            "user",
+            "去美术馆看印象派展吧"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_camping", "label": "revises", "category": "core", "accept": ["revises", "follows_up"], "title": "计划周末去山里露营", "summary": "用户计划周末和朋友去郊区山里露营，让我列装备清单。", "turns": [["user", "周末去山里露营，帮我列个装备"], ["assistant", "帐篷、睡袋、头灯先备上"]]},
-        {"id": "ep_museum_old", "label": "none", "category": "similar_topic", "title": "去年看过的雕塑展", "summary": "用户回忆去年在市美术馆看过一个现代雕塑展，觉得一般。", "turns": [["user", "去年那个雕塑展挺一般的"], ["assistant", "现代雕塑确实看个人口味"]]}
+        {
+          "id": "ep_camping",
+          "label": "revises",
+          "category": "core",
+          "accept": [
+            "revises",
+            "follows_up"
+          ],
+          "title": "计划周末去山里露营",
+          "summary": "用户计划周末和朋友去郊区山里露营，让我列装备清单。",
+          "turns": [
+            [
+              "user",
+              "周末去山里露营，帮我列个装备"
+            ],
+            [
+              "assistant",
+              "帐篷、睡袋、头灯先备上"
+            ]
+          ]
+        },
+        {
+          "id": "ep_museum_old",
+          "label": "none",
+          "category": "similar_topic",
+          "title": "去年看过的雕塑展",
+          "summary": "用户回忆去年在市美术馆看过一个现代雕塑展，觉得一般。",
+          "turns": [
+            [
+              "user",
+              "去年那个雕塑展挺一般的"
+            ],
+            [
+              "assistant",
+              "现代雕塑确实看个人口味"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "diet_routine",
-      "source": {"title": "今天的午饭打卡", "summary": "用户按减脂计划打卡午饭：鸡胸肉沙拉和一个玉米。",
-        "conversation": [["user", "午饭打卡：鸡胸沙拉加玉米"], ["assistant", "蛋白质够了，很棒"]]},
+      "source": {
+        "title": "今天的午饭打卡",
+        "summary": "用户按减脂计划打卡午饭：鸡胸肉沙拉和一个玉米。",
+        "conversation": [
+          [
+            "user",
+            "午饭打卡：鸡胸沙拉加玉米"
+          ],
+          [
+            "assistant",
+            "蛋白质够了，很棒"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_lunch_old", "label": "none", "category": "routine", "title": "昨天的午饭打卡", "summary": "用户按减脂计划打卡午饭：牛肉饭，少饭。", "turns": [["user", "午饭牛肉饭，饭只吃了一半"], ["assistant", "控制得不错"]]},
-        {"id": "ep_diet_plan", "label": "none", "category": "routine", "accept": ["none", "context"], "title": "制定减脂计划", "summary": "用户决定开始减脂，和我一起定了每天饮食打卡的规则。", "turns": [["user", "我要减脂了，每天给你打卡吃什么"], ["assistant", "好，每餐拍给我看"]]}
+        {
+          "id": "ep_lunch_old",
+          "label": "none",
+          "category": "routine",
+          "title": "昨天的午饭打卡",
+          "summary": "用户按减脂计划打卡午饭：牛肉饭，少饭。",
+          "turns": [
+            [
+              "user",
+              "午饭牛肉饭，饭只吃了一半"
+            ],
+            [
+              "assistant",
+              "控制得不错"
+            ]
+          ]
+        },
+        {
+          "id": "ep_diet_plan",
+          "label": "none",
+          "category": "routine",
+          "accept": [
+            "none",
+            "context"
+          ],
+          "title": "制定减脂计划",
+          "summary": "用户决定开始减脂，和我一起定了每天饮食打卡的规则。",
+          "turns": [
+            [
+              "user",
+              "我要减脂了，每天给你打卡吃什么"
+            ],
+            [
+              "assistant",
+              "好，每餐拍给我看"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "job_offer",
-      "source": {"title": "接受了新公司的 offer", "summary": "用户最终决定接受那家做机器人公司的 offer，下个月入职。",
-        "conversation": [["user", "我决定去那家机器人公司了"], ["assistant", "恭喜！什么时候入职"], ["user", "下个月一号"]]},
+      "source": {
+        "title": "接受了新公司的 offer",
+        "summary": "用户最终决定接受那家做机器人公司的 offer，下个月入职。",
+        "conversation": [
+          [
+            "user",
+            "我决定去那家机器人公司了"
+          ],
+          [
+            "assistant",
+            "恭喜！什么时候入职"
+          ],
+          [
+            "user",
+            "下个月一号"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_interview", "label": "follows_up", "category": "core", "title": "机器人公司终面", "summary": "用户参加了一家机器人公司的终面，感觉聊得不错，在等结果。", "turns": [["user", "机器人那家终面面完了"], ["assistant", "感觉怎么样"]]},
-        {"id": "ep_robot", "label": "none", "category": "similar_topic", "title": "扫地机器人卡在床底", "summary": "用户发现扫地机器人卡在床底，让我帮忙查怎么设置禁区。", "turns": [["user", "扫地机又卡床底了"], ["assistant", "可以在 App 里给床底画个禁区"]]}
+        {
+          "id": "ep_interview",
+          "label": "follows_up",
+          "category": "core",
+          "title": "机器人公司终面",
+          "summary": "用户参加了一家机器人公司的终面，感觉聊得不错，在等结果。",
+          "turns": [
+            [
+              "user",
+              "机器人那家终面面完了"
+            ],
+            [
+              "assistant",
+              "感觉怎么样"
+            ]
+          ]
+        },
+        {
+          "id": "ep_robot",
+          "label": "none",
+          "category": "similar_topic",
+          "title": "扫地机器人卡在床底",
+          "summary": "用户发现扫地机器人卡在床底，让我帮忙查怎么设置禁区。",
+          "turns": [
+            [
+              "user",
+              "扫地机又卡床底了"
+            ],
+            [
+              "assistant",
+              "可以在 App 里给床底画个禁区"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "same_day_errands",
-      "source": {"title": "下午去修自行车", "summary": "用户下午把漏气的自行车推去车行补胎，顺便换了刹车片。",
-        "conversation": [["user", "车胎漏气了，推去车行补"], ["assistant", "刹车也让师傅看看"], ["user", "换了刹车片，一共八十"]]},
+      "source": {
+        "title": "下午去修自行车",
+        "summary": "用户下午把漏气的自行车推去车行补胎，顺便换了刹车片。",
+        "conversation": [
+          [
+            "user",
+            "车胎漏气了，推去车行补"
+          ],
+          [
+            "assistant",
+            "刹车也让师傅看看"
+          ],
+          [
+            "user",
+            "换了刹车片，一共八十"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_morning_meeting", "label": "none", "category": "same_period", "title": "上午的周会", "summary": "同一天上午用户开周会，被分配了新项目的需求整理。", "turns": [["user", "上午周会给我派了新项目"], ["assistant", "需求多吗"]]},
-        {"id": "ep_bike_flat", "label": "follows_up", "category": "core", "title": "骑车上班时胎漏气", "summary": "用户早上骑车上班发现后胎慢慢漏气，打算下午拿去修。", "turns": [["user", "后胎好像漏气了，下午拿去修"], ["assistant", "先打点气凑合骑过去"]]}
+        {
+          "id": "ep_morning_meeting",
+          "label": "none",
+          "category": "same_period",
+          "title": "上午的周会",
+          "summary": "同一天上午用户开周会，被分配了新项目的需求整理。",
+          "turns": [
+            [
+              "user",
+              "上午周会给我派了新项目"
+            ],
+            [
+              "assistant",
+              "需求多吗"
+            ]
+          ]
+        },
+        {
+          "id": "ep_bike_flat",
+          "label": "follows_up",
+          "category": "core",
+          "title": "骑车上班时胎漏气",
+          "summary": "用户早上骑车上班发现后胎慢慢漏气，打算下午拿去修。",
+          "turns": [
+            [
+              "user",
+              "后胎好像漏气了，下午拿去修"
+            ],
+            [
+              "assistant",
+              "先打点气凑合骑过去"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "serial_episode",
-      "source": {"title": "追《潮汐之城》第五集", "summary": "用户看了动画《潮汐之城》第五集，主角终于和哥哥重逢，他觉得这集作画特别好。",
-        "conversation": [["user", "潮汐之城第五集，兄弟终于见面了"], ["assistant", "等了四集了！作画怎么样"], ["user", "这集作画炸裂"]]},
+      "source": {
+        "title": "追《潮汐之城》第五集",
+        "summary": "用户看了动画《潮汐之城》第五集，主角终于和哥哥重逢，他觉得这集作画特别好。",
+        "conversation": [
+          [
+            "user",
+            "潮汐之城第五集，兄弟终于见面了"
+          ],
+          [
+            "assistant",
+            "等了四集了！作画怎么样"
+          ],
+          [
+            "user",
+            "这集作画炸裂"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_tide_ep4", "label": "follows_up", "category": "core", "title": "追《潮汐之城》第四集", "summary": "用户看了《潮汐之城》第四集，主角找到哥哥留下的线索，他很期待下一集重逢。", "turns": [["user", "第四集找到哥哥的信了"], ["assistant", "下集应该要见面了"]]},
-        {"id": "ep_other_anime", "label": "none", "category": "similar_topic", "title": "补完《星海旅团》", "summary": "用户补完了另一部动画《星海旅团》，评价一般。", "turns": [["user", "星海旅团补完了，一般般"], ["assistant", "后半段确实有点拖"]]}
+        {
+          "id": "ep_tide_ep4",
+          "label": "follows_up",
+          "category": "core",
+          "title": "追《潮汐之城》第四集",
+          "summary": "用户看了《潮汐之城》第四集，主角找到哥哥留下的线索，他很期待下一集重逢。",
+          "turns": [
+            [
+              "user",
+              "第四集找到哥哥的信了"
+            ],
+            [
+              "assistant",
+              "下集应该要见面了"
+            ]
+          ]
+        },
+        {
+          "id": "ep_other_anime",
+          "label": "none",
+          "category": "similar_topic",
+          "title": "补完《星海旅团》",
+          "summary": "用户补完了另一部动画《星海旅团》，评价一般。",
+          "turns": [
+            [
+              "user",
+              "星海旅团补完了，一般般"
+            ],
+            [
+              "assistant",
+              "后半段确实有点拖"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "game_session_chat",
-      "source": {"title": "边打《星港之夜》边聊晚饭", "summary": "用户一边玩《星港之夜》一边说晚饭点了外卖酸菜鱼，主要在聊外卖太辣、下次换一家。",
-        "conversation": [["user", "边打游戏边吃酸菜鱼外卖"], ["assistant", "辣不辣"], ["user", "超辣，下次换家店"], ["assistant", "可以试试评分高的那家"]]},
+      "source": {
+        "title": "边打《星港之夜》边聊晚饭",
+        "summary": "用户一边玩《星港之夜》一边说晚饭点了外卖酸菜鱼，主要在聊外卖太辣、下次换一家。",
+        "conversation": [
+          [
+            "user",
+            "边打游戏边吃酸菜鱼外卖"
+          ],
+          [
+            "assistant",
+            "辣不辣"
+          ],
+          [
+            "user",
+            "超辣，下次换家店"
+          ],
+          [
+            "assistant",
+            "可以试试评分高的那家"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_game_start", "label": "none", "category": "incidental", "title": "《星港之夜》首日开玩", "summary": "用户新买的《星港之夜》到货，当晚开始玩序章，觉得开放世界很大。", "turns": [["user", "星港之夜到了，今晚开玩"], ["assistant", "终于等到了，先玩序章熟悉一下"]]},
-        {"id": "ep_fish_order", "label": "none", "category": "similar_topic", "title": "上周点的烤鱼外卖", "summary": "用户上周点过一次烤鱼外卖，觉得分量少。", "turns": [["user", "这烤鱼分量也太少了"], ["assistant", "下次看看评价再点"]]}
+        {
+          "id": "ep_game_start",
+          "label": "none",
+          "category": "incidental",
+          "title": "《星港之夜》首日开玩",
+          "summary": "用户新买的《星港之夜》到货，当晚开始玩序章，觉得开放世界很大。",
+          "turns": [
+            [
+              "user",
+              "星港之夜到了，今晚开玩"
+            ],
+            [
+              "assistant",
+              "终于等到了，先玩序章熟悉一下"
+            ]
+          ]
+        },
+        {
+          "id": "ep_fish_order",
+          "label": "none",
+          "category": "similar_topic",
+          "title": "上周点的烤鱼外卖",
+          "summary": "用户上周点过一次烤鱼外卖，觉得分量少。",
+          "turns": [
+            [
+              "user",
+              "这烤鱼分量也太少了"
+            ],
+            [
+              "assistant",
+              "下次看看评价再点"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "context_background",
-      "source": {"title": "新同事是大学室友", "summary": "用户发现新入职的同事竟然是大学时那个总熬夜打游戏的室友阿城，两人约了周末吃饭。",
-        "conversation": [["user", "新同事居然是阿城"], ["assistant", "就是大学那个熬夜打游戏的室友？"], ["user", "对，约了周末吃饭"]]},
+      "source": {
+        "title": "新同事是大学室友",
+        "summary": "用户发现新入职的同事竟然是大学时那个总熬夜打游戏的室友阿城，两人约了周末吃饭。",
+        "conversation": [
+          [
+            "user",
+            "新同事居然是阿城"
+          ],
+          [
+            "assistant",
+            "就是大学那个熬夜打游戏的室友？"
+          ],
+          [
+            "user",
+            "对，约了周末吃饭"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_roommate", "label": "context", "category": "context", "accept": ["context", "follows_up"], "title": "回忆大学室友阿城", "summary": "用户聊起大学室友阿城每天熬夜打游戏，后来毕业就断了联系。", "turns": [["user", "大学室友阿城天天熬夜打游戏"], ["assistant", "后来还有联系吗"], ["user", "毕业就断了"]]},
-        {"id": "ep_onboarding", "label": "none", "category": "similar_topic", "title": "公司新人培训", "summary": "用户被安排带新人培训，准备了一份入职文档。", "turns": [["user", "下周要带新人培训"], ["assistant", "文档写好了吗"]]}
+        {
+          "id": "ep_roommate",
+          "label": "context",
+          "category": "context",
+          "accept": [
+            "context",
+            "follows_up"
+          ],
+          "title": "回忆大学室友阿城",
+          "summary": "用户聊起大学室友阿城每天熬夜打游戏，后来毕业就断了联系。",
+          "turns": [
+            [
+              "user",
+              "大学室友阿城天天熬夜打游戏"
+            ],
+            [
+              "assistant",
+              "后来还有联系吗"
+            ],
+            [
+              "user",
+              "毕业就断了"
+            ]
+          ]
+        },
+        {
+          "id": "ep_onboarding",
+          "label": "none",
+          "category": "similar_topic",
+          "title": "公司新人培训",
+          "summary": "用户被安排带新人培训，准备了一份入职文档。",
+          "turns": [
+            [
+              "user",
+              "下周要带新人培训"
+            ],
+            [
+              "assistant",
+              "文档写好了吗"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "moving_followup",
-      "source": {"title": "搬家后整理书架", "summary": "用户搬进新家第三天，在整理书架，发现有两箱书还没拆。",
-        "conversation": [["user", "新家书架终于装好了"], ["assistant", "书都上架了吗"], ["user", "还有两箱没拆"]]},
+      "source": {
+        "title": "搬家后整理书架",
+        "summary": "用户搬进新家第三天，在整理书架，发现有两箱书还没拆。",
+        "conversation": [
+          [
+            "user",
+            "新家书架终于装好了"
+          ],
+          [
+            "assistant",
+            "书都上架了吗"
+          ],
+          [
+            "user",
+            "还有两箱没拆"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_moving_day", "label": "follows_up", "category": "core", "title": "搬家当天", "summary": "用户今天搬家，搬家公司搬了一整天，书箱特别重。", "turns": [["user", "今天搬家，书太重了"], ["assistant", "辛苦了，先把床铺好"]]},
-        {"id": "ep_novel_start", "label": "none", "category": "incidental", "title": "开始读《雾港来信》", "summary": "用户开始读推理小说《雾港来信》，读到第二章，觉得那封匿名信很可疑。", "turns": [["user", "开始看雾港来信，第二章那封信好怪"], ["assistant", "匿名信肯定有问题"]]}
+        {
+          "id": "ep_moving_day",
+          "label": "follows_up",
+          "category": "core",
+          "title": "搬家当天",
+          "summary": "用户今天搬家，搬家公司搬了一整天，书箱特别重。",
+          "turns": [
+            [
+              "user",
+              "今天搬家，书太重了"
+            ],
+            [
+              "assistant",
+              "辛苦了，先把床铺好"
+            ]
+          ]
+        },
+        {
+          "id": "ep_novel_start",
+          "label": "none",
+          "category": "incidental",
+          "title": "开始读《雾港来信》",
+          "summary": "用户开始读推理小说《雾港来信》，读到第二章，觉得那封匿名信很可疑。",
+          "turns": [
+            [
+              "user",
+              "开始看雾港来信，第二章那封信好怪"
+            ],
+            [
+              "assistant",
+              "匿名信肯定有问题"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "cat_vet",
-      "source": {"title": "猫咪复诊拆线", "summary": "用户带猫去宠物医院复诊拆线，伤口愈合良好；回来路上买了奶茶。",
-        "conversation": [["user", "带团子去拆线了"], ["assistant", "伤口怎么样"], ["user", "长好了，回来顺手买了杯奶茶"]]},
+      "source": {
+        "title": "猫咪复诊拆线",
+        "summary": "用户带猫去宠物医院复诊拆线，伤口愈合良好；回来路上买了奶茶。",
+        "conversation": [
+          [
+            "user",
+            "带团子去拆线了"
+          ],
+          [
+            "assistant",
+            "伤口怎么样"
+          ],
+          [
+            "user",
+            "长好了，回来顺手买了杯奶茶"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_cat_surgery", "label": "follows_up", "category": "core", "title": "猫咪做绝育手术", "summary": "用户的猫团子做了绝育手术，医生说十天后拆线。", "turns": [["user", "团子今天绝育了"], ["assistant", "十天后记得去拆线"]]},
-        {"id": "ep_milk_tea", "label": "none", "category": "incidental", "title": "新开的奶茶店", "summary": "用户发现楼下开了家新奶茶店，试了招牌款觉得太甜。", "turns": [["user", "楼下新奶茶店太甜了"], ["assistant", "下次点三分糖"]]}
+        {
+          "id": "ep_cat_surgery",
+          "label": "follows_up",
+          "category": "core",
+          "title": "猫咪做绝育手术",
+          "summary": "用户的猫团子做了绝育手术，医生说十天后拆线。",
+          "turns": [
+            [
+              "user",
+              "团子今天绝育了"
+            ],
+            [
+              "assistant",
+              "十天后记得去拆线"
+            ]
+          ]
+        },
+        {
+          "id": "ep_milk_tea",
+          "label": "none",
+          "category": "incidental",
+          "title": "新开的奶茶店",
+          "summary": "用户发现楼下开了家新奶茶店，试了招牌款觉得太甜。",
+          "turns": [
+            [
+              "user",
+              "楼下新奶茶店太甜了"
+            ],
+            [
+              "assistant",
+              "下次点三分糖"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "material_quiz",
-      "source": {"title": "用旅行照片出猜地点题", "summary": "用户无聊，让我出题，我用他之前分享过的几张旅行照片里的地点出了猜谜，他猜对了两个。",
-        "conversation": [["user", "好无聊，出个题考我"], ["assistant", "考你上次发的旅行照片：那座白塔在哪"], ["user", "大理！"]]},
+      "source": {
+        "title": "用旅行照片出猜地点题",
+        "summary": "用户无聊，让我出题，我用他之前分享过的几张旅行照片里的地点出了猜谜，他猜对了两个。",
+        "conversation": [
+          [
+            "user",
+            "好无聊，出个题考我"
+          ],
+          [
+            "assistant",
+            "考你上次发的旅行照片：那座白塔在哪"
+          ],
+          [
+            "user",
+            "大理！"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_yunnan_trip", "label": "context", "category": "material", "accept": ["context", "none"], "title": "云南旅行照片", "summary": "用户分享了云南旅行的照片，有大理的白塔和洱海。", "turns": [["user", "给你看大理拍的白塔"], ["assistant", "洱海好蓝"]]},
-        {"id": "ep_quiz_old", "label": "none", "category": "similar_topic", "title": "上周的成语接龙", "summary": "用户上周和我玩成语接龙，玩了二十轮。", "turns": [["user", "来成语接龙"], ["assistant", "一马当先"]]}
+        {
+          "id": "ep_yunnan_trip",
+          "label": "context",
+          "category": "material",
+          "accept": [
+            "context",
+            "none"
+          ],
+          "title": "云南旅行照片",
+          "summary": "用户分享了云南旅行的照片，有大理的白塔和洱海。",
+          "turns": [
+            [
+              "user",
+              "给你看大理拍的白塔"
+            ],
+            [
+              "assistant",
+              "洱海好蓝"
+            ]
+          ]
+        },
+        {
+          "id": "ep_quiz_old",
+          "label": "none",
+          "category": "similar_topic",
+          "title": "上周的成语接龙",
+          "summary": "用户上周和我玩成语接龙，玩了二十轮。",
+          "turns": [
+            [
+              "user",
+              "来成语接龙"
+            ],
+            [
+              "assistant",
+              "一马当先"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "exam_result",
-      "source": {"title": "驾照科目二通过", "summary": "用户科目二考试通过了，倒车入库一次过，下一步约科目三。",
-        "conversation": [["user", "科目二过了！"], ["assistant", "恭喜！倒库稳吗"], ["user", "一把过，接着约科目三"]]},
+      "source": {
+        "title": "驾照科目二通过",
+        "summary": "用户科目二考试通过了，倒车入库一次过，下一步约科目三。",
+        "conversation": [
+          [
+            "user",
+            "科目二过了！"
+          ],
+          [
+            "assistant",
+            "恭喜！倒库稳吗"
+          ],
+          [
+            "user",
+            "一把过，接着约科目三"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_driving_practice", "label": "follows_up", "category": "core", "title": "练车倒库总压线", "summary": "用户在驾校练科目二，倒车入库总压线，很焦虑考试。", "turns": [["user", "倒库又压线了"], ["assistant", "看后视镜的点位再找找"]]},
-        {"id": "ep_ankle", "label": "none", "category": "incidental", "title": "打球扭伤脚踝", "summary": "用户周末打篮球扭到脚踝，肿了起来，我建议冰敷并休息几天。", "turns": [["user", "打球把脚踝扭了，肿了"], ["assistant", "先冰敷，别再走动了"]]}
+        {
+          "id": "ep_driving_practice",
+          "label": "follows_up",
+          "category": "core",
+          "title": "练车倒库总压线",
+          "summary": "用户在驾校练科目二，倒车入库总压线，很焦虑考试。",
+          "turns": [
+            [
+              "user",
+              "倒库又压线了"
+            ],
+            [
+              "assistant",
+              "看后视镜的点位再找找"
+            ]
+          ]
+        },
+        {
+          "id": "ep_ankle",
+          "label": "none",
+          "category": "incidental",
+          "title": "打球扭伤脚踝",
+          "summary": "用户周末打篮球扭到脚踝，肿了起来，我建议冰敷并休息几天。",
+          "turns": [
+            [
+              "user",
+              "打球把脚踝扭了，肿了"
+            ],
+            [
+              "assistant",
+              "先冰敷，别再走动了"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "weekend_mix",
-      "source": {"title": "周日在家做饭", "summary": "用户周日在家照着视频学做红烧肉，第一次就成功了；期间提到下午还要继续追《潮汐之城》。",
-        "conversation": [["user", "照着视频做了红烧肉，居然成功了"], ["assistant", "厉害！糖色炒得好吗"], ["user", "有点焦但能吃，下午继续追潮汐之城"]]},
+      "source": {
+        "title": "周日在家做饭",
+        "summary": "用户周日在家照着视频学做红烧肉，第一次就成功了；期间提到下午还要继续追《潮汐之城》。",
+        "conversation": [
+          [
+            "user",
+            "照着视频做了红烧肉，居然成功了"
+          ],
+          [
+            "assistant",
+            "厉害！糖色炒得好吗"
+          ],
+          [
+            "user",
+            "有点焦但能吃，下午继续追潮汐之城"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_tide_ep4", "label": "none", "category": "bridge", "title": "追《潮汐之城》第四集", "summary": "用户看了《潮汐之城》第四集，主角找到哥哥留下的线索，他很期待下一集重逢。", "turns": [["user", "第四集找到哥哥的信了"], ["assistant", "下集应该要见面了"]]},
-        {"id": "ep_cooking_plan", "label": "follows_up", "category": "core", "title": "想学做红烧肉", "summary": "用户说想周末学做红烧肉，问我需要买哪些材料。", "turns": [["user", "周末想学红烧肉，要买啥"], ["assistant", "五花肉、冰糖、生抽老抽"]]}
+        {
+          "id": "ep_tide_ep4",
+          "label": "none",
+          "category": "bridge",
+          "title": "追《潮汐之城》第四集",
+          "summary": "用户看了《潮汐之城》第四集，主角找到哥哥留下的线索，他很期待下一集重逢。",
+          "turns": [
+            [
+              "user",
+              "第四集找到哥哥的信了"
+            ],
+            [
+              "assistant",
+              "下集应该要见面了"
+            ]
+          ]
+        },
+        {
+          "id": "ep_cooking_plan",
+          "label": "follows_up",
+          "category": "core",
+          "title": "想学做红烧肉",
+          "summary": "用户说想周末学做红烧肉，问我需要买哪些材料。",
+          "turns": [
+            [
+              "user",
+              "周末想学红烧肉，要买啥"
+            ],
+            [
+              "assistant",
+              "五花肉、冰糖、生抽老抽"
+            ]
+          ]
+        }
       ]
     },
     {
       "id": "gift_followup",
-      "source": {"title": "女朋友收到生日礼物", "summary": "用户说女朋友收到了他挑的那条项链，很喜欢，当晚一起吃了火锅庆祝。",
-        "conversation": [["user", "她收到项链了，超喜欢"], ["assistant", "太好了，眼光不错"], ["user", "晚上还一起吃了火锅"]]},
+      "source": {
+        "title": "女朋友收到生日礼物",
+        "summary": "用户说女朋友收到了他挑的那条项链，很喜欢，当晚一起吃了火锅庆祝。",
+        "conversation": [
+          [
+            "user",
+            "她收到项链了，超喜欢"
+          ],
+          [
+            "assistant",
+            "太好了，眼光不错"
+          ],
+          [
+            "user",
+            "晚上还一起吃了火锅"
+          ]
+        ]
+      },
       "candidates": [
-        {"id": "ep_gift_choice", "label": "follows_up", "category": "core", "title": "挑选生日礼物", "summary": "用户在纠结给女朋友买项链还是包作为生日礼物，最后倾向项链。", "turns": [["user", "项链还是包？"], ["assistant", "她平时爱戴首饰的话就项链"]]},
-        {"id": "ep_hotpot_plan", "label": "none", "category": "incidental", "title": "约同事周四吃麻辣香锅", "summary": "用户说周四要和同事去公司楼下新开的麻辣香锅店，问我推荐点什么菜。", "turns": [["user", "周四和同事去楼下新开的麻辣香锅"], ["assistant", "虾和藕片必点"]]}
+        {
+          "id": "ep_gift_choice",
+          "label": "follows_up",
+          "category": "core",
+          "title": "挑选生日礼物",
+          "summary": "用户在纠结给女朋友买项链还是包作为生日礼物，最后倾向项链。",
+          "turns": [
+            [
+              "user",
+              "项链还是包？"
+            ],
+            [
+              "assistant",
+              "她平时爱戴首饰的话就项链"
+            ]
+          ]
+        },
+        {
+          "id": "ep_hotpot_plan",
+          "label": "none",
+          "category": "incidental",
+          "title": "约同事周四吃麻辣香锅",
+          "summary": "用户说周四要和同事去公司楼下新开的麻辣香锅店，问我推荐点什么菜。",
+          "turns": [
+            [
+              "user",
+              "周四和同事去楼下新开的麻辣香锅"
+            ],
+            [
+              "assistant",
+              "虾和藕片必点"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "routine_inventory",
+      "source": {
+        "title": "每天19:00检查冰箱临期食材 · 2026-03-12",
+        "summary": "按每日目标检查冰箱：没有过期食材，临期只有一盒牛奶（3-14 到期），已提醒用户尽快喝掉。",
+        "conversation": [
+          [
+            "assistant",
+            "19:00 冰箱检查：没有过期的，牛奶 3-14 到期，记得这两天喝掉"
+          ],
+          [
+            "user",
+            "好"
+          ]
+        ]
+      },
+      "candidates": [
+        {
+          "id": "ep_inv_0311",
+          "label": "none",
+          "category": "routine",
+          "title": "每天19:00检查冰箱临期食材 · 2026-03-11",
+          "summary": "按每日目标检查冰箱：没有过期或临期食材，静默未发消息。",
+          "turns": [
+            [
+              "assistant",
+              "（内部）检查完毕，无临期项，不发消息"
+            ]
+          ]
+        },
+        {
+          "id": "ep_inv_goal",
+          "label": "none",
+          "category": "routine",
+          "title": "设置每天19:00检查冰箱临期食材",
+          "summary": "用户让我每天晚上七点检查冰箱，有临期或过期的就提醒他。",
+          "turns": [
+            [
+              "user",
+              "以后每天七点帮我看看冰箱有没有快过期的"
+            ],
+            [
+              "assistant",
+              "好，每天19:00检查"
+            ]
+          ],
+          "accept": [
+            "none",
+            "context"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "routine_water",
+      "source": {
+        "title": "工作日喝水提醒 · 2026-03-10",
+        "summary": "10:30 和 14:00 两档喝水提醒都发了，用户回了「在喝」；16:00 他在开会，没有发。",
+        "conversation": [
+          [
+            "assistant",
+            "十点半了，喝口水"
+          ],
+          [
+            "user",
+            "在喝"
+          ],
+          [
+            "assistant",
+            "两点了，再来一杯"
+          ]
+        ]
+      },
+      "candidates": [
+        {
+          "id": "ep_water_0309",
+          "label": "none",
+          "category": "routine",
+          "title": "工作日喝水提醒 · 2026-03-09",
+          "summary": "三档喝水提醒都发了，用户都回了表情。",
+          "turns": [
+            [
+              "assistant",
+              "十点半，喝水时间"
+            ],
+            [
+              "user",
+              "👌"
+            ]
+          ]
+        },
+        {
+          "id": "ep_water_0306",
+          "label": "none",
+          "category": "routine",
+          "title": "工作日喝水提醒 · 2026-03-06",
+          "summary": "周五三档提醒只发了两档，下午用户请假。",
+          "turns": [
+            [
+              "assistant",
+              "两点了，喝水"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "routine_real_followup",
+      "source": {
+        "title": "每天19:00检查冰箱临期食材 · 2026-03-15",
+        "summary": "检查时发现昨天提醒的那盒牛奶已经过期一天还没喝，用户说已经倒掉了；今天没有其他临期项。",
+        "conversation": [
+          [
+            "assistant",
+            "昨天说的那盒牛奶今天过期了，还在冰箱里"
+          ],
+          [
+            "user",
+            "刚倒掉了"
+          ],
+          [
+            "assistant",
+            "好，那今天没别的了"
+          ]
+        ]
+      },
+      "candidates": [
+        {
+          "id": "ep_inv_0314",
+          "label": "follows_up",
+          "category": "core",
+          "title": "每天19:00检查冰箱临期食材 · 2026-03-14",
+          "summary": "检查发现牛奶今天到期，提醒用户今晚喝掉，他说明天再说。",
+          "turns": [
+            [
+              "assistant",
+              "牛奶今天到期，今晚喝掉吧"
+            ],
+            [
+              "user",
+              "明天再说"
+            ]
+          ],
+          "accept": [
+            "follows_up",
+            "context"
+          ]
+        },
+        {
+          "id": "ep_inv_0313",
+          "label": "none",
+          "category": "routine",
+          "title": "每天19:00检查冰箱临期食材 · 2026-03-13",
+          "summary": "检查无变化，牛奶仍是 3-14 到期，静默未发。",
+          "turns": [
+            [
+              "assistant",
+              "（内部）无新增临期，不重复提醒"
+            ]
+          ],
+          "accept": [
+            "none",
+            "context"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "weather_trip_context",
+      "source": {
+        "title": "每日早间天气播报 · 2026-04-03",
+        "summary": "7:30 播报时判断用户今天在外地出差、不通勤，只发了出差城市的天气，没有给骑行建议。",
+        "conversation": [
+          [
+            "assistant",
+            "早！你在成都，今天多云 18 度，不用操心骑车啦"
+          ]
+        ]
+      },
+      "candidates": [
+        {
+          "id": "ep_weather_0402",
+          "label": "none",
+          "category": "routine",
+          "title": "每日早间天气播报 · 2026-04-02",
+          "summary": "7:30 播报本地天气小雨，建议坐地铁不要骑车。",
+          "turns": [
+            [
+              "assistant",
+              "今天小雨，坐地铁吧"
+            ]
+          ]
+        },
+        {
+          "id": "ep_trip_plan",
+          "label": "context",
+          "category": "context",
+          "title": "用户下周去成都出差三天",
+          "summary": "用户说 4-02 晚上飞成都，出差到 4-05。",
+          "turns": [
+            [
+              "user",
+              "下周二晚上飞成都，待到周五"
+            ],
+            [
+              "assistant",
+              "记下了"
+            ]
+          ],
+          "accept": [
+            "context",
+            "follows_up"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "share_rule",
+      "source": {
+        "title": "分享猫咪视频，用户说以后直接发",
+        "summary": "我分享了一个猫咪视频，问他现在有没有空看，他说以后别问，直接发过来就行。",
+        "conversation": [
+          [
+            "assistant",
+            "有个猫咪视频，你现在有空看吗"
+          ],
+          [
+            "user",
+            "以后别问，直接发"
+          ],
+          [
+            "assistant",
+            "好"
+          ]
+        ]
+      },
+      "candidates": [
+        {
+          "id": "ep_share_old",
+          "label": "none",
+          "category": "similar_topic",
+          "title": "分享一个做菜视频",
+          "summary": "我分享了一个 20 分钟的做菜视频，说等他晚上有空再看。",
+          "turns": [
+            [
+              "assistant",
+              "这个做菜视频挺长，晚上空了看"
+            ],
+            [
+              "user",
+              "好"
+            ]
+          ],
+          "accept": [
+            "none",
+            "context"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "routine_wording",
+      "source": {
+        "title": "工作日喝水提醒 · 2026-03-17",
+        "summary": "按同一目标执行三档喝水提醒。为了不和 03-16 的说法重复，换了措辞；14:00 那档用户在午睡，沿用前一天的做法静默跳过。",
+        "conversation": [
+          [
+            "assistant",
+            "十点半啦，杯子里还有水吗"
+          ],
+          [
+            "assistant",
+            "（内部）14:00 他在午睡，和昨天一样先不打扰"
+          ],
+          [
+            "assistant",
+            "四点了，起来走走顺便接杯水"
+          ]
+        ]
+      },
+      "candidates": [
+        {
+          "id": "ep_water_0316",
+          "label": "none",
+          "category": "routine",
+          "title": "工作日喝水提醒 · 2026-03-16",
+          "summary": "三档喝水提醒，用的是「喝口水」「再来一杯」这类说法；14:00 用户午睡没发。",
+          "turns": [
+            [
+              "assistant",
+              "十点半，喝口水"
+            ],
+            [
+              "assistant",
+              "四点了，再来一杯"
+            ]
+          ],
+          "accept": [
+            "none",
+            "context"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "routine_forecast_check",
+      "source": {
+        "title": "每日早间天气播报 · 2026-04-08",
+        "summary": "7:30 播报今天阴转小雨。顺带核对了昨天播报里「今天凌晨有雷雨」的预报：凌晨确实下了雨。建议坐地铁。",
+        "conversation": [
+          [
+            "assistant",
+            "早，昨天说凌晨有雷雨，果然下了；今天还会有小雨，坐地铁吧"
+          ]
+        ]
+      },
+      "candidates": [
+        {
+          "id": "ep_weather_0407",
+          "label": "none",
+          "category": "routine",
+          "title": "每日早间天气播报 · 2026-04-07",
+          "summary": "7:30 播报今天晴，并提示明天凌晨可能有雷雨。",
+          "turns": [
+            [
+              "assistant",
+              "今天晴，不过明天凌晨可能有雷雨"
+            ]
+          ],
+          "accept": [
+            "none",
+            "context"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "routine_batch_tracking",
+      "source": {
+        "title": "每天19:00检查冰箱临期食材 · 2026-03-20",
+        "summary": "例行检查：没有过期食材，临期仍然只有那批鸡蛋（3-28 到期），数量从 6 个变成 5 个，按约定不重复提醒。",
+        "conversation": [
+          [
+            "assistant",
+            "（内部）临期仍只有鸡蛋 3-28，剩 5 个，之前提过，不重复提醒"
+          ]
+        ]
+      },
+      "candidates": [
+        {
+          "id": "ep_inv_0318",
+          "label": "none",
+          "category": "routine",
+          "title": "每天19:00检查冰箱临期食材 · 2026-03-18",
+          "summary": "例行检查：临期只有一批鸡蛋（3-28 到期），剩 6 个，已提醒过一次。",
+          "turns": [
+            [
+              "assistant",
+              "鸡蛋 3-28 到期，还剩 6 个"
+            ]
+          ],
+          "accept": [
+            "none",
+            "context"
+          ]
+        }
       ]
     }
   ]
