@@ -240,3 +240,4 @@
 .trajectory-memory-notes dt { color: var(--muted); }
 .trajectory-memory-notes dd { margin: 0; white-space: pre-wrap; }
 .trajectory-panel-body .trajectory-memory-empty { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.trajectory-memory-source.is-triggered_episodes { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }

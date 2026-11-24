@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from time import monotonic, time
 from typing import Any, Callable
+from xml.etree import ElementTree
 
 from .dumps import dump_response
 from ..integrations.models import LLMConfig
@@ -17,23 +18,73 @@ from ..storage.ops.thinking import persist_thinking_failure
 logger = logging.getLogger(__name__)
 _tool_schema_hashes: dict[str, str] = {}
 _MEMORY_SECTIONS = re.compile(r"<(triggered_memories|scoped_memories)>\s*(.*?)</\1>", re.DOTALL)
+_EPISODE_SECTIONS = re.compile(r"<triggered_episodes>\s*(.*?)</triggered_episodes>", re.DOTALL)
+_EPISODE_RELATIONS = ("revises", "revised_by", "follows_up", "followed_by", "context")
 
 
-def injected_memory_context(messages: list[dict[str, Any]]) -> dict[str, str]:
-    """Snapshot the memory sections actually present in this request, including interjections."""
+def _episode_from_element(node: ElementTree.Element) -> dict[str, Any]:
+    record: dict[str, Any] = {name: node.get(name) for name in ("id", "status", "updated_at", "injected") if node.get(name)}
+    record["title"] = node.findtext("title") or ""
+    record["summary"] = node.findtext("summary") or ""
+    record["relations"] = [
+        {"relation": child.tag, **child.attrib} for child in node if child.tag in _EPISODE_RELATIONS
+    ]
+    record["supplements"] = [_episode_from_element(child) for child in node.findall("supplement")]
+    return record
+
+
+def _episode_from_record(value: dict[str, Any]) -> dict[str, Any]:
+    record = {name: str(value[name]) for name in ("id", "status", "updated_at", "injected") if value.get(name)}
+    record["title"] = str(value.get("title") or "")
+    record["summary"] = str(value.get("summary") or "")
+    record["relations"] = [
+        {"relation": name, **{key: str(item) for key, item in pointer.items()}}
+        for name in _EPISODE_RELATIONS for pointer in value.get(name) or [] if isinstance(pointer, dict)
+    ]
+    record["supplements"] = [_episode_from_record(child) for child in value.get("supplements") or [] if isinstance(child, dict)]
+    return record
+
+
+def _reply_triggered_episodes(content: Any) -> list[dict[str, Any]]:
+    try:
+        value = json.loads(content) if isinstance(content, str) else None
+    except ValueError:
+        return []
+    records = value.get("triggered_episodes") if isinstance(value, dict) else None
+    return [_episode_from_record(item) for item in records or [] if isinstance(item, dict)]
+
+
+def injected_memory_context(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    """Snapshot the memory sections and triggered topics actually present in this request.
+
+    Tool results never supply memory sections. Only the runtime-attached topic hits of
+    tool results after the latest user text count, so replayed history is not repeated."""
     sections: dict[str, list[str]] = {"triggered_memories": [], "scoped_memories": []}
+    episodes: list[dict[str, Any]] = []
     for message in messages:
         if message.get("role") != "user":
             continue
         content = message.get("content") or ""
+        blocks = content if isinstance(content, list) else []
         text = content if isinstance(content, str) else "".join(
-            block.get("text", "") for block in content
+            block.get("text", "") for block in blocks
             if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)
         )
+        if text:
+            episodes = []
         for name, value in _MEMORY_SECTIONS.findall(text):
             if value.strip():
                 sections[name].append(value.strip())
-    return {name: "\n\n".join(values) for name, values in sections.items()}
+        for value in _EPISODE_SECTIONS.findall(text):
+            try:
+                root = ElementTree.fromstring(f"<triggered_episodes>{value}</triggered_episodes>")
+            except ElementTree.ParseError:
+                continue
+            episodes.extend({"source": "input", **_episode_from_element(node)} for node in root.findall("episode"))
+        for block in blocks:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                episodes.extend({"source": "reply", **record} for record in _reply_triggered_episodes(block.get("content")))
+    return {**{name: "\n\n".join(values) for name, values in sections.items()}, "triggered_episodes": episodes}
 
 
 def usage_metrics(data: dict[str, Any]) -> dict[str, float | int | bool] | None:
@@ -115,7 +166,7 @@ def persist_thinking(
     tool_calls: list[dict[str, Any]] | None = None,
     dump_file: str = "",
     protocol: str = "",
-    memory_context: dict[str, str] | None = None,
+    memory_context: dict[str, Any] | None = None,
 ) -> None:
     if sink is None:
         return

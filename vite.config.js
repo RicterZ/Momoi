@@ -135,6 +135,10 @@ function previewThinkingCalls() {
       trace: { memory_context: {
         triggered_memories: '<usage>历史记忆，以用户当前意图为准。</usage><memory id="42" kind="rule" key="laundry.reminder"><trigger>衣服</trigger><trigger>洗好</trigger><content>衣服洗好后，及时提醒老师取出晾晒。</content></memory>',
         scoped_memories: '<memory id="73">处理洗衣完成通知时，先确认设备状态与发送记录，避免重复提醒。</memory>',
+        triggered_episodes: [
+          { source: "input", id: "e1a2b3c4d5", status: "closed", title: "洗衣机洗完后忘了提醒晾衣服", summary: "上周洗衣完成通知到达时没有提醒，老师回家才发现。", relations: [{ relation: "follows_up", id: "a9b8c7d6e5", title: "约定洗衣完成后提醒晾晒" }], supplements: [] },
+          { source: "reply", id: "f0e1d2c3b4", status: "open", title: "阳台晾衣杆坏了", summary: "", relations: [{ relation: "context", id: "c1d2e3f4a5", direction: "outgoing" }], supplements: [] },
+        ],
       } },
       actions: [
         {
