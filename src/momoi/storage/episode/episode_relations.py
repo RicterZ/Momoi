@@ -106,7 +106,8 @@ class EpisodeRelationStore:
         now = time.time()
         with self._db:
             row = self._db.execute(
-                f"""SELECT e.* FROM conversation_episodes e
+                f"""SELECT e.*, COALESCE(j.review_generation, 0) AS review_generation
+                   FROM conversation_episodes e
                    LEFT JOIN episode_relation_jobs j ON j.episode_id=e.id
                    WHERE e.created_at >= (SELECT enabled_at FROM episode_relation_settings WHERE id=1)
                      AND COALESCE({runtime_archive_kind_sql('e')}, '') NOT IN ('webhook', 'subagent_report', 'heartbeat')
@@ -124,7 +125,20 @@ class EpisodeRelationStore:
                    VALUES (?, ?) ON CONFLICT(episode_id) DO UPDATE SET claimed_at=excluded.claimed_at""",
                 (row["id"], now),
             )
-        return self._episode_dict(row)
+        return {**self._episode_dict(row), "review_generation": int(row["review_generation"])}
+
+    def requeue_episode_relations(self, episode_ids) -> int:
+        """Review these Episodes again under a new generation, so earlier completed
+        review turns do not suppress the rerun. Claimed jobs are left alone."""
+        now = time.time()
+        with self._db:
+            return sum(self._db.execute(
+                """UPDATE episode_relation_jobs
+                   SET processed_ordinal=0, review_generation=review_generation+1,
+                       retry_at=?, failure_count=0, updated_at=?
+                   WHERE episode_id=? AND claimed_at IS NULL""",
+                (now, now, episode_id),
+            ).rowcount for episode_id in dict.fromkeys(episode_ids))
 
     def episode_relation_target_eligible(self, source, target) -> bool:
         return (str(target["id"]) != str(source["id"])

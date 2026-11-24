@@ -89,6 +89,13 @@ def _add_plan_context(database):
         database.execute("ALTER TABLE task_plans ADD COLUMN context_json TEXT")
 
 
+def _add_episode_relation_review_generation(database):
+    if "review_generation" not in _columns(database, "episode_relation_jobs"):
+        database.execute(
+            "ALTER TABLE episode_relation_jobs ADD COLUMN review_generation INTEGER NOT NULL DEFAULT 0"
+        )
+
+
 Migration = Callable[[sqlite3.Connection], None]
 
 
@@ -965,6 +972,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_worker_review,
     _drop_worker_experience_candidates,
     _clear_runtime_archive_triggers,
+    _add_episode_relation_review_generation,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

@@ -23,7 +23,8 @@ class EpisodeRelationWorkflow:
             return False
         episode_id = str(episode["id"])
         ordinal = int(episode["summarized_through_ordinal"])
-        turn_id = self._turn_id("episode-relation", episode_id, ordinal)
+        generation = int(episode.get("review_generation") or 0)
+        turn_id = self._turn_id("episode-relation", episode_id, ordinal, *([generation] if generation else []))
         state = self.store.begin_turn(
             turn_id, "episode_relation", [f"episode-relation:{episode_id}:{ordinal}"],
         )
