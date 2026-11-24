@@ -438,6 +438,42 @@ def test_workflow_model_chooses_query_then_finishes():
             store.close()
 
 
+def test_requeued_review_runs_again_under_a_new_turn():
+    from momoi.runtime.turns import TurnRunner
+
+    with tempfile.TemporaryDirectory() as directory:
+        store = Store(Path(directory) / "db")
+        try:
+            enabled_at = store._db.execute("SELECT enabled_at FROM episode_relation_settings").fetchone()[0]
+            _summarize(store, "old", "项目启动", "团队确认项目启动", enabled_at - 10)
+            _summarize(store, "new", "项目进展", "团队完成首个阶段", enabled_at + 10)
+            turns = []
+
+            class Runner(EpisodeRelationWorkflow):
+                _turn_id = staticmethod(TurnRunner._turn_id)
+
+                async def _build_episode_relations(self, episode, ordinal, turn_id):
+                    turns.append(turn_id)
+                    store.finish_episode_relations(episode["id"], ordinal, [], {"old"})
+
+            runner = Runner()
+            runner.store = store
+            runner.config = SimpleNamespace(episode_annealing=SimpleNamespace(max_seconds=5))
+            assert asyncio.run(runner._run_episode_relation_once())
+            assert turns == [TurnRunner._turn_id("episode-relation", "new", 1)]
+            assert store.claim_episode_relation_candidate() is None
+            assert store.requeue_episode_relations(["new", "new", "missing"]) == 1
+            assert asyncio.run(runner._run_episode_relation_once())
+            assert turns[1] == TurnRunner._turn_id("episode-relation", "new", 1, 1)
+            job = store._db.execute("SELECT * FROM episode_relation_jobs WHERE episode_id='new'").fetchone()
+            assert (job["processed_ordinal"], job["review_generation"], job["failure_count"]) == (1, 1, 0)
+            assert store._db.execute(
+                "SELECT state FROM turns WHERE id=?", (turns[1],)
+            ).fetchone()[0] == "completed"
+        finally:
+            store.close()
+
+
 def test_relation_recall_hides_newer_episodes():
     with tempfile.TemporaryDirectory() as directory:
         store = Store(Path(directory) / "db")

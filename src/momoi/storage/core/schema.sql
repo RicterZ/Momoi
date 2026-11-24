@@ -373,7 +373,8 @@ CREATE TABLE IF NOT EXISTS episode_relation_jobs (
     claimed_at REAL,
     retry_at REAL NOT NULL DEFAULT 0,
     failure_count INTEGER NOT NULL DEFAULT 0,
-    updated_at REAL NOT NULL DEFAULT 0
+    updated_at REAL NOT NULL DEFAULT 0,
+    review_generation INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS episode_consolidation_decisions (
     turn_id TEXT PRIMARY KEY,
