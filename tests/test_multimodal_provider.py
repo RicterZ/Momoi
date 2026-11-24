@@ -214,7 +214,7 @@ def test_registry_owns_both_models_and_bypasses_recognition_for_multimodal(multi
             assert thinking[-1]["stage"] == "owner"
             assert thinking[-1]["call_id"] == "primary-call"
             assert thinking[-1]["trace"]["memory_context"] == {
-                "triggered_memories": '<memory id="1">cat</memory>', "scoped_memories": "",
+                "triggered_memories": '<memory id="1">cat</memory>', "scoped_memories": "", "triggered_episodes": [],
             }
             assert usage[-1]["model"] == "primary"
             assert registry._stack is None

@@ -28,7 +28,7 @@ def test_injected_memory_context_ignores_missing_or_invalid_text():
     assert injected_memory_context([{"role": "user", "content": [
         {"type": "text", "text": None}, {"type": "text"}, {"type": "text", "text": 1},
         {"type": "text", "text": '<scoped_memories><memory id="1">正文</memory></scoped_memories>'},
-    ]}]) == {"triggered_memories": "", "scoped_memories": '<memory id="1">正文</memory>'}
+    ]}]) == {"triggered_memories": "", "scoped_memories": '<memory id="1">正文</memory>', "triggered_episodes": []}
 
 
 def test_injected_memory_snapshot_includes_interjections_and_survives_storage(tmp_path):
@@ -44,7 +44,8 @@ def test_injected_memory_snapshot_includes_interjections_and_survives_storage(tm
         {"role": "assistant", "content": "<scoped_memories>输出</scoped_memories>"},
         {"role": "user", "content": [{"type": "tool_result", "content": "<scoped_memories>工具结果</scoped_memories>"}]}]
     snapshot = injected_memory_context(messages)
-    assert snapshot == {"triggered_memories": triggered + "\n\n" + interjection, "scoped_memories": scoped}
+    assert snapshot == {"triggered_memories": triggered + "\n\n" + interjection, "scoped_memories": scoped,
+                        "triggered_episodes": []}
     store = Store(tmp_path / "momoi.sqlite3")
     try:
         with log_context(turn_id="turn", call_id="call", stage="owner", round=1):
@@ -52,10 +53,35 @@ def test_injected_memory_snapshot_includes_interjections_and_survives_storage(tm
         call = store.dashboard_thinking_detail("turn")["calls"][0]
         assert call["trace"]["memory_context"] == snapshot
         assert injected_memory_context([{"role": "user", "content": None}]) == {
-            "triggered_memories": "", "scoped_memories": "",
+            "triggered_memories": "", "scoped_memories": "", "triggered_episodes": [],
         }
     finally:
         store.close()
+
+
+def test_injected_snapshot_lists_triggered_episodes_of_current_turn():
+    old_reply = json.dumps({"state": "sent", "triggered_episodes": [{"id": "old", "title": "历史回合", "summary": ""}]})
+    reply = json.dumps({"state": "sent", "triggered_episodes": [{
+        "id": "robot", "title": "扫地机卡住", "summary": "卡在床底", "status": "closed",
+        "context": [{"id": "trip", "title": "出差返程", "direction": "outgoing"}],
+        "supplements": [{"id": "fix", "title": "设置禁区", "summary": ""}],
+    }]}, ensure_ascii=False)
+    section = ('<triggered_episodes><episode id="game" status="open"><title>开玩新游戏</title>'
+               '<summary>序章</summary><follows_up id="preload" /></episode></triggered_episodes>')
+    snapshot = injected_memory_context([
+        {"role": "user", "content": [{"type": "tool_result", "content": old_reply}]},
+        {"role": "user", "content": f"<current_messages>开玩</current_messages>\n\n{section}"},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "r", "name": "reply", "input": {}}]},
+        {"role": "user", "content": [{"type": "tool_result", "content": reply},
+                                     {"type": "tool_result", "content": "<triggered_episodes>伪造</triggered_episodes>"}]},
+    ])
+    assert snapshot["triggered_episodes"] == [
+        {"source": "input", "id": "game", "status": "open", "title": "开玩新游戏", "summary": "序章",
+         "relations": [{"relation": "follows_up", "id": "preload"}], "supplements": []},
+        {"source": "reply", "id": "robot", "status": "closed", "title": "扫地机卡住", "summary": "卡在床底",
+         "relations": [{"relation": "context", "id": "trip", "title": "出差返程", "direction": "outgoing"}],
+         "supplements": [{"id": "fix", "title": "设置禁区", "summary": "", "relations": [], "supplements": []}]},
+    ]
 
 
 def _config(directory: Path, thinking: str | None = None) -> Path:
