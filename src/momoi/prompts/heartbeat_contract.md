@@ -1,5 +1,0 @@
-{{HEARTBEAT}}
-
-## 心跳任务
-
-{{HEARTBEAT_ACTIVITIES}}
