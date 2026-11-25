@@ -173,7 +173,7 @@ def test_save_and_load_preserve_order(tmp_path):
 def _rendered_contract(tmp_path, workspace_text):
     from types import SimpleNamespace
     from momoi.runtime.prompt_renderer import PromptRenderer
-    from momoi.runtime.turn_support import HEARTBEAT_DEFAULT_RULES
+    from momoi.runtime.turn_support import HEARTBEAT_SYSTEM_PROMPT as HEARTBEAT_DEFAULT_RULES
 
     heartbeat = tmp_path / "HEARTBEAT.md"
     heartbeat.write_text(workspace_text, encoding="utf-8")
@@ -186,7 +186,7 @@ def _rendered_contract(tmp_path, workspace_text):
 def test_workspace_heartbeat_replaces_default_rules(tmp_path):
     contract, default_rules = _rendered_contract(tmp_path, "只看微博。")
     assert "只看微博。" in contract and default_rules not in contract
-    assert "heartbeat_begin" in contract
+    assert contract.startswith("只看微博。") and "## 心跳任务" in contract
 
 
 def test_default_rules_apply_once_when_workspace_heartbeat_is_empty_or_identical(tmp_path):

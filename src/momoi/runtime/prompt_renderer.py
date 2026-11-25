@@ -10,9 +10,7 @@ from ..observability.events import log_event
 from ..tools.contracts.memory import MEMORY_TOOL_POLICY
 from ..tools.contracts.images import IMAGE_TOOL_POLICY
 from .turn_support import (
-    HEARTBEAT_DEFAULT_RULES,
     HEARTBEAT_PROMPT_PATH,
-    HEARTBEAT_RULES_PATH,
     HEARTBEAT_SYSTEM_PROMPT,
     OWNER_PROMPT_PATH,
     OWNER_SYSTEM_PROMPT,
@@ -154,11 +152,10 @@ class PromptRenderer:
             return HeartbeatPlan()
 
     def _heartbeat_system_prompt(self, plan: HeartbeatPlan | None = None) -> str:
-        prompt = _live_prompt(HEARTBEAT_PROMPT_PATH, HEARTBEAT_SYSTEM_PROMPT)
-        workspace_prompt = (self._workspace_heartbeat_guidance(log=False)
-                            or _live_prompt(HEARTBEAT_RULES_PATH, HEARTBEAT_DEFAULT_RULES))
+        contract = (self._workspace_heartbeat_guidance(log=False)
+                    or _live_prompt(HEARTBEAT_PROMPT_PATH, HEARTBEAT_SYSTEM_PROMPT))
         catalog = activity_catalog(self._heartbeat_plan() if plan is None else plan)
-        return prompt.replace("{{HEARTBEAT}}", workspace_prompt).replace("{{HEARTBEAT_ACTIVITIES}}", catalog)
+        return f"{contract}\n\n## 心跳任务\n\n{catalog}"
 
     def _owner_system_prompt(self) -> str:
         return _live_prompt(OWNER_PROMPT_PATH, OWNER_SYSTEM_PROMPT)
