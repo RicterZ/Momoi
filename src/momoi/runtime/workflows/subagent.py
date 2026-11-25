@@ -36,8 +36,8 @@ SUBAGENT_BLOCK_DEFAULT_SECONDS = 600
 SUBAGENT_BLOCK_MAX_SECONDS = 900
 WORKER_PRACTICE_LIMIT = 3
 WORKER_PRACTICE_TOKENS = 1200
-# Shadow mode: matches are only logged until their effect on real tasks has been judged.
-WORKER_PRACTICE_INJECT = False
+# False keeps matching in shadow mode: matches are only logged, never attached to the task.
+WORKER_PRACTICE_INJECT = True
 # Offline replay of 108 Worker tasks against the worker-scope practices, 2026-11-23.
 # Absolute BM25 shifts as the scope's corpus grows, so recheck once it has ~10 practices.
 WORKER_PRACTICE_MIN_BM25 = 15.0

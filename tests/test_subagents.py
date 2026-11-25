@@ -460,11 +460,12 @@ def test_worker_task_carries_scored_worker_practices_only(tmp_path, monkeypatch)
 
         daemon.provider = type("P", (), {"complete": staticmethod(complete)})()
         channel = next(iter(daemon.channels))
+        monkeypatch.setattr(subagent_workflow, "WORKER_PRACTICE_MIN_BM25", 0.1)
+        monkeypatch.setattr(subagent_workflow, "WORKER_PRACTICE_INJECT", False)
         daemon.store.create_subagent_task("turn", channel, "影子", "搜索一下店铺")
         await daemon._run_subagent_task(daemon.store.claim_subagent_task())
         assert "<practices>" not in seen.pop()
         monkeypatch.setattr(subagent_workflow, "WORKER_PRACTICE_INJECT", True)
-        monkeypatch.setattr(subagent_workflow, "WORKER_PRACTICE_MIN_BM25", 0.1)
         for title, text in (("查资料", "搜索一下店铺"), ("关灯", "关客厅灯")):
             daemon.store.create_subagent_task("turn", channel, title, text)
             await daemon._run_subagent_task(daemon.store.claim_subagent_task())
