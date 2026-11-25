@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ...config.heartbeat_activities import HeartbeatActivity
+from ...config.heartbeat_activities import HeartbeatPlan
 from ...models import ToolCall
 from .harness import TURN_HARNESS_SPECS
 
@@ -35,7 +35,7 @@ class TurnExecutionSpec:
     permitted_tools: frozenset[str] | None = None
     absorb_owner_updates: bool = True
     required_before_end: frozenset[str] = frozenset()
-    heartbeat_activities: tuple[HeartbeatActivity, ...] = ()
+    heartbeat_plan: HeartbeatPlan = HeartbeatPlan()
 
     def __post_init__(self) -> None:
         if self.stage not in TURN_HARNESS_SPECS:

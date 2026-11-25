@@ -691,7 +691,7 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
             "test-secret"
         )
         self.assertEqual(
-            set(await (await client.get("/api/settings")).json()), {"prompts", "heartbeat_activities"}
+            set(await (await client.get("/api/settings")).json()), {"prompts", "heartbeat_plan"}
         )
         response = await client.put("/api/settings/heartbeat-activities", json={"activities": [
             {"id": "weibo", "title": "刷微博", "detail": "看首页时间线", "probability": 100},

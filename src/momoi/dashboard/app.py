@@ -670,15 +670,15 @@ def create_dashboard_app(
         return web.json_response({"items": settings.prompts()})
 
     async def dashboard_settings(_request: web.Request) -> web.Response:
-        return web.json_response({"prompts": settings.prompts(), "heartbeat_activities": settings.heartbeat_activities()})
+        return web.json_response({"prompts": settings.prompts(), "heartbeat_plan": settings.heartbeat_plan()})
 
     async def update_heartbeat_activities(request: web.Request) -> web.Response:
         payload = await _json_body(request)
         try:
-            items = settings.update_heartbeat_activities(payload.get("activities"))
+            plan = settings.update_heartbeat_plan(payload)
         except ValueError as error:
             raise web.HTTPBadRequest(text=str(error)) from None
-        return web.json_response({"activities": items})
+        return web.json_response(plan)
 
     async def update_prompt(request: web.Request) -> web.Response:
         payload = await _json_body(request)

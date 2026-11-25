@@ -3,7 +3,7 @@ import re
 from typing import Any
 
 from ..config.heartbeat_activities import (
-    HeartbeatActivity, activities_path, activity_catalog, load_activities,
+    HeartbeatPlan, activities_path, activity_catalog, load_plan,
 )
 from ..tools.contracts.agenda import AGENDA_TOOL_POLICY
 from ..observability.events import log_event
@@ -140,21 +140,21 @@ class PromptRenderer:
             self._log_workspace_prompt("heartbeat", path, text, optional=True)
         return text
 
-    def _heartbeat_activities(self) -> tuple[HeartbeatActivity, ...]:
+    def _heartbeat_plan(self) -> HeartbeatPlan:
         path = self.config.heartbeat_prompt_path
         if path is None:
-            return ()
+            return HeartbeatPlan()
         try:
-            return load_activities(activities_path(path))
+            return load_plan(activities_path(path))
         except (OSError, ValueError) as error:
             log_event(logger, logging.WARNING, "heartbeat_activities_invalid",
                       path=str(activities_path(path)), error=str(error))
-            return ()
+            return HeartbeatPlan()
 
-    def _heartbeat_system_prompt(self, activities: tuple[HeartbeatActivity, ...] | None = None) -> str:
+    def _heartbeat_system_prompt(self, plan: HeartbeatPlan | None = None) -> str:
         prompt = _live_prompt(HEARTBEAT_PROMPT_PATH, HEARTBEAT_SYSTEM_PROMPT)
         workspace_prompt = self._workspace_heartbeat_guidance(log=False)
-        catalog = activity_catalog(self._heartbeat_activities() if activities is None else activities)
+        catalog = activity_catalog(self._heartbeat_plan() if plan is None else plan)
         return prompt.replace("{{HEARTBEAT}}", workspace_prompt).replace("{{HEARTBEAT_ACTIVITIES}}", catalog)
 
     def _owner_system_prompt(self) -> str:

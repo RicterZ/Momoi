@@ -914,12 +914,12 @@ function previewUsageApi() {
   };
 
   const settingsPreview = createSettingsPreview(json);
-  let heartbeatActivities = [
-    { id: "weibo", title: "刷微博", detail: "去微博首页时间线看关注的人在聊什么，留意游戏和动画相关的新消息。", probability: 50 },
-    { id: "news", title: "看新闻", detail: "浏览科技和游戏资讯，挑一两条值得和主人聊的。", probability: 30 },
+  let heartbeatPlan = { rest_probability: 20, activities: [
+    { id: "weibo", title: "刷微博", detail: "去微博首页时间线看关注的人在聊什么，留意游戏和动画相关的新消息。", probability: 40 },
+    { id: "news", title: "看新闻", detail: "浏览科技和游戏资讯，挑一两条值得和主人聊的。", probability: 25 },
     { id: "diary", title: "写日记", detail: "回顾今天和主人的对话，整理成一段简短的日记。", probability: 0 },
-    { id: "music", title: "听歌", detail: "从最近常听的歌单里挑一首，记下感受。", probability: 20 },
-  ];
+    { id: "music", title: "听歌", detail: "从最近常听的歌单里挑一首，记下感受。", probability: 15 },
+  ] };
 
   return {
     name: "momoi-preview-api",
@@ -952,7 +952,7 @@ function previewUsageApi() {
           return;
         }
         if (req.method === "GET" && path === "/api/settings") {
-          json(res, { prompts: [...prompts.values()], heartbeat_activities: heartbeatActivities });
+          json(res, { prompts: [...prompts.values()], heartbeat_plan: heartbeatPlan });
           return;
         }
         if (req.method === "PUT" && path === "/api/settings/heartbeat-activities") {
@@ -965,8 +965,8 @@ function previewUsageApi() {
               json(res, { error: "activities must be a list" }, 400);
               return;
             }
-            heartbeatActivities = body.activities;
-            json(res, { activities: heartbeatActivities });
+            heartbeatPlan = { activities: body.activities, rest_probability: body.rest_probability || 0 };
+            json(res, heartbeatPlan);
           });
           return;
         }
