@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..config.models import AppConfig
-from ..config.heartbeat_activities import activities_path, load_activities, parse_activities, save_activities
+from ..config.heartbeat_activities import DEFAULT_PLAN, activities_path, load_plan, parse_plan, save_plan
 from ..config.workspace import atomic_write
 
 
@@ -60,16 +60,16 @@ class DashboardSettings:
         self._write(item.path, content)
         return self.read(prompt_id)
 
-    def heartbeat_activities(self) -> list[dict[str, object]]:
+    def heartbeat_plan(self) -> dict[str, object]:
         if self._activities_path is None:
-            return []
-        return [item.public() for item in load_activities(self._activities_path)]
+            return DEFAULT_PLAN.public()
+        return load_plan(self._activities_path).public()
 
-    def update_heartbeat_activities(self, raw: object) -> list[dict[str, object]]:
+    def update_heartbeat_plan(self, raw: object) -> dict[str, object]:
         if self._activities_path is None:
             raise ValueError("heartbeat prompt path is not configured")
-        save_activities(self._activities_path, parse_activities(raw))
-        return self.heartbeat_activities()
+        save_plan(self._activities_path, parse_plan(raw))
+        return self.heartbeat_plan()
 
     _write = staticmethod(atomic_write)
 

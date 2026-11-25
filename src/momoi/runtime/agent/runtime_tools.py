@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from ...config.heartbeat_activities import HeartbeatActivity, select_activity
+from ...config.heartbeat_activities import REST, HeartbeatPlan, select_activity
 from ...models import IncomingMessage, ToolCall, TurnDraft
 from .tool_surface import ToolSurface
 from ..tool_contracts.context import recall_correction
@@ -53,7 +53,7 @@ async def begin_heartbeat(
     *,
     heartbeat_turn: bool,
     harness_started: bool,
-    activities: tuple[HeartbeatActivity, ...] = (),
+    plan: HeartbeatPlan = HeartbeatPlan(),
 ) -> dict[str, object]:
     if not heartbeat_turn or harness_started:
         return {"ok": False, "error": "invalid_heartbeat_begin"}
@@ -71,18 +71,22 @@ async def begin_heartbeat(
         return {"ok": True, "state": "started", "choice": choice, "activity": {"title": " ".join(custom.split())}}
     if choice == "rest":
         return {"ok": True, "state": "started", "choice": choice}
-    selected, error = select_activity(activities, choice, activity_id)
+    selected, error = select_activity(plan, choice, activity_id)
     if selected is None:
         message = ("No activity has a random probability configured; choose pick, custom or rest."
                    if error == "random_heartbeat_disabled"
                    else "activity_id is not in the heartbeat activity catalog.")
         return {"ok": False, "error": error, "message": message}
-    result: dict[str, object] = {
-        "ok": True, "state": "started", "choice": choice,
-        "activity": {"id": selected.id, "title": selected.title, "detail": selected.detail},
-    }
+    result: dict[str, object] = {"ok": True, "state": "started", "choice": choice}
+    if selected == REST:
+        result["outcome"] = REST
+    else:
+        result["activity"] = {"id": selected.id, "title": selected.title, "detail": selected.detail}
     if choice == "random":
-        result["probabilities"] = {item.id: item.probability for item in activities if item.probability > 0}
+        result["probabilities"] = {
+            **{item.id: item.probability for item in plan.activities if item.probability > 0},
+            **({REST: plan.rest_probability} if plan.rest_probability else {}),
+        }
     return result
 
 
