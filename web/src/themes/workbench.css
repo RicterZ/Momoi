@@ -588,9 +588,13 @@
 }
 
 [data-style="workbench"] .heartbeat-activities { border-top-width: 1px; }
-[data-style="workbench"] .heartbeat-activity { border-width: 1px; border-color: var(--line); border-radius: 8px; background: var(--surface); box-shadow: none; }
-[data-style="workbench"] .heartbeat-activity:hover { background: var(--hover); }
-[data-style="workbench"] .heartbeat-activity-index { color: var(--muted); font-weight: 600; letter-spacing: 0; }
+[data-style="workbench"] .heartbeat-activity { border-width: 1px; border-color: var(--line); border-radius: 8px; box-shadow: none; }
+[data-style="workbench"] .heartbeat-activity:focus-within { border-color: var(--muted); }
+[data-style="workbench"] .heartbeat-activity-foot { border-top-width: 1px; }
+[data-style="workbench"] .heartbeat-activity-index { color: var(--soft); font-weight: 600; letter-spacing: 0; }
+[data-style="workbench"] .heartbeat-activity-title { font-weight: 600; }
+[data-style="workbench"] .heartbeat-activity-meter i { background: var(--ink); }
+[data-style="workbench"] .heartbeat-activity-weight input:focus { border-color: var(--muted); }
 [data-style="workbench"] .heartbeat-activities-head h3 { font-weight: 600; }
 [data-style="workbench"] .heartbeat-activities-empty { border-width: 1px; border-radius: 8px; }
 [data-style="workbench"] .heartbeat-activity-share { font-weight: 600; }

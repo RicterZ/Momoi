@@ -1537,19 +1537,27 @@
 .heartbeat-activities-head p { margin: 6px 0 0; max-width: 62ch; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .heartbeat-activities-head .quiet-button { flex: 0 0 auto; }
 .heartbeat-activities-empty { margin: 0; padding: 18px; border: var(--stroke) dashed var(--line); border-radius: var(--radius-lg); color: var(--muted); font-size: 12px; text-align: center; }
-.heartbeat-activity-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
-.heartbeat-activity { display: grid; gap: 8px; padding: 12px; border: var(--stroke) var(--edge); border-radius: var(--radius-lg); background: var(--canvas); }
-.heartbeat-activity-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 64px auto; align-items: center; gap: 10px; }
-.heartbeat-activity-index { color: var(--pink); font: 850 10px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
+.heartbeat-activity-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.heartbeat-activity { display: flex; flex-direction: column; min-width: 0; border: var(--stroke) var(--edge); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
+.heartbeat-activity:focus-within { border-color: var(--pink); }
+.heartbeat-activity-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 0 12px; }
+.heartbeat-activity-index { flex: 0 0 auto; color: var(--pink); font: 850 10px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
+.heartbeat-activity-title { flex: 1; min-width: 0; height: 28px; padding: 0 4px; border: 0; border-radius: 4px; color: var(--ink); background: transparent; font-family: inherit; font-size: 13px; font-weight: 700; line-height: 28px; }
+.heartbeat-activity-title:focus { outline: none; background: var(--canvas); }
+.heartbeat-activity-title::placeholder, .heartbeat-activity-detail::placeholder { color: var(--soft); font-weight: 400; }
+.heartbeat-activity-remove { flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 4px; color: var(--soft); background: transparent; font-size: 16px; line-height: 1; cursor: pointer; }
+.heartbeat-activity-remove:hover:not(:disabled) { color: var(--danger); background: var(--canvas); }
+.heartbeat-activity-detail { flex: 1; width: 100%; min-height: 72px; margin: 0; padding: 6px 16px 8px; border: 0; color: var(--muted); background: transparent; resize: vertical; font-family: inherit; font-size: 12px; line-height: 1.7; }
+.heartbeat-activity-detail:focus { outline: none; color: var(--ink); }
+.heartbeat-activity-foot { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: var(--stroke) var(--line); background: var(--canvas); }
 .heartbeat-activity-weight { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
-.heartbeat-activity-weight input { width: 64px; text-align: right; }
-.heartbeat-activity-share { color: var(--ink); font: 800 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
+.heartbeat-activity-weight input { width: 48px; height: 24px; padding: 0 6px; border: var(--stroke) var(--line); border-radius: 4px; color: var(--ink); background: var(--surface); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
+.heartbeat-activity-weight input:focus { outline: none; border-color: var(--pink); }
+.heartbeat-activity-meter { flex: 1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.heartbeat-activity-meter i { display: block; height: 100%; background: var(--pink); transition: width .2s ease; }
+.heartbeat-activity-share { min-width: 44px; color: var(--ink); font: 800 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
 .heartbeat-activity-share.is-manual { color: var(--soft); font-weight: 600; }
-.heartbeat-activity textarea { width: 100%; resize: vertical; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
-@media (max-width: 720px) {
+@media (max-width: 960px) {
   .heartbeat-activities-head { flex-direction: column; }
-  .heartbeat-activity-row { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .heartbeat-activity-weight { grid-column: 2; }
-  .heartbeat-activity-share { grid-column: 3; grid-row: 2; }
-  .heartbeat-activity-remove { grid-column: 3; grid-row: 1; }
+  .heartbeat-activity-list { grid-template-columns: minmax(0, 1fr); }
 }

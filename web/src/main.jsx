@@ -2927,23 +2927,26 @@ function HeartbeatActivities({ value, onChange, disabled }) {
           const share = total > 0 && weight > 0 ? Math.round((weight / total) * 100) : 0;
           return (
             <li className="heartbeat-activity" key={item.id}>
-              <div className="heartbeat-activity-row">
+              <div className="heartbeat-activity-head">
                 <span className="heartbeat-activity-index">{String(index + 1).padStart(2, "0")}</span>
-                <input className="dash-input" aria-label={`活动 ${index + 1} 标题`} placeholder="标题，如：刷微博" maxLength={60}
+                <input className="heartbeat-activity-title" aria-label={`活动 ${index + 1} 标题`} placeholder="活动标题" maxLength={60}
                   value={item.title} disabled={disabled} onChange={event => update(item.id, { title: event.target.value })} />
+                <button type="button" className="heartbeat-activity-remove" aria-label={`删除活动 ${index + 1}`} title="删除" disabled={disabled}
+                  onClick={() => onChange(value.filter(entry => entry.id !== item.id))}>×</button>
+              </div>
+              <textarea className="heartbeat-activity-detail" rows={3} maxLength={4000} aria-label={`活动 ${index + 1} 详情`}
+                placeholder="去哪里、看什么、什么值得告诉你……" value={item.detail} disabled={disabled}
+                onChange={event => update(item.id, { detail: event.target.value })} />
+              <div className="heartbeat-activity-foot">
                 <label className="heartbeat-activity-weight">
                   <span>权重</span>
-                  <input className="dash-input" type="number" min="0" max="100" step="1" inputMode="numeric"
+                  <input type="number" min="0" max="100" step="1" inputMode="numeric"
                     aria-label={`活动 ${index + 1} 权重`} value={item.weight} disabled={disabled}
                     onChange={event => update(item.id, { weight: event.target.value === "" ? "" : Math.max(0, Math.min(100, Math.trunc(Number(event.target.value)))) })} />
                 </label>
+                <span className="heartbeat-activity-meter" aria-hidden="true"><i style={{ width: `${share}%` }} /></span>
                 <span className={`heartbeat-activity-share${share ? "" : " is-manual"}`} title="随机抽取时的概率">{share ? `${share}%` : "仅手选"}</span>
-                <button type="button" className="quiet-button heartbeat-activity-remove" aria-label={`删除活动 ${index + 1}`} disabled={disabled}
-                  onClick={() => onChange(value.filter(entry => entry.id !== item.id))}>删除</button>
               </div>
-              <textarea className="dash-input" rows={3} maxLength={4000} aria-label={`活动 ${index + 1} 详情`}
-                placeholder="详情：去哪里、看什么、什么值得告诉你……" value={item.detail} disabled={disabled}
-                onChange={event => update(item.id, { detail: event.target.value })} />
             </li>
           );
         })}
