@@ -1565,9 +1565,3 @@
   .heartbeat-activities-head { flex-direction: column; }
   .heartbeat-activity-list { grid-template-columns: minmax(0, 1fr); }
 }
-.heartbeat-allocation-bar i.is-rest { background: var(--soft); }
-.heartbeat-allocation-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.heartbeat-rest { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
-.heartbeat-rest-swatch { width: 10px; height: 10px; border-radius: 3px; background: var(--soft); }
-.heartbeat-rest input { width: 52px; height: 24px; padding: 0 6px; border: var(--stroke) var(--line); border-radius: 4px; color: var(--ink); background: var(--surface); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
-.heartbeat-rest input:focus { outline: none; border-color: var(--pink); }

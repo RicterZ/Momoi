@@ -2910,7 +2910,7 @@ const activitiesEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const segmentHue = index => (338 + index * 137.5) % 360;
 const percent = value => Number(value) || 0;
 const clampPercent = raw => raw === "" ? "" : Math.max(0, Math.min(100, Math.trunc(Number(raw))));
-const probabilityTotal = plan => percent(plan.rest_probability) + plan.activities.reduce((sum, item) => sum + percent(item.probability), 0);
+const probabilityTotal = plan => plan.activities.reduce((sum, item) => sum + percent(item.probability), 0);
 
 function allocationState(plan) {
   const total = probabilityTotal(plan);
@@ -2923,48 +2923,34 @@ function HeartbeatActivities({ value: plan, onChange: onPlanChange, disabled }) 
   const value = plan.activities;
   const onChange = activities => onPlanChange({ ...plan, activities });
   const allocation = allocationState(plan);
-  const rest = percent(plan.rest_probability);
   const update = (id, patch) => onChange(value.map(item => item.id === id ? { ...item, ...patch } : item));
   const distributeEvenly = () => {
-    const slots = value.length + 1;
-    const base = Math.floor(100 / slots);
-    const share = index => base + (index < 100 - base * slots ? 1 : 0);
-    onPlanChange({ activities: value.map((item, index) => ({ ...item, probability: share(index) })), rest_probability: share(value.length) });
+    const base = Math.floor(100 / value.length);
+    onChange(value.map((item, index) => ({ ...item, probability: base + (index < 100 - base * value.length ? 1 : 0) })));
   };
   return (
     <section className="heartbeat-activities" aria-labelledby="heartbeat-activities-title">
       <header className="heartbeat-activities-head">
         <div>
           <h3 id="heartbeat-activities-title">心跳活动</h3>
-          <p>各活动与休息的随机概率相加需达到 100%。概率为 0% 的活动不参与随机抽取，仅能由 Momoi 手动选择触发。</p>
+          <p>各活动的概率相加需达到 100%。概率为 0% 的活动不参与随机抽取，仅能由 Momoi 手动选择触发。</p>
         </div>
         <div className="heartbeat-activities-actions">
-          <button type="button" className="quiet-button" disabled={disabled} onClick={distributeEvenly}>平均分配</button>
+          <button type="button" className="quiet-button" disabled={disabled || value.length === 0} onClick={distributeEvenly}>平均分配</button>
           <button type="button" className="quiet-button" disabled={disabled || value.length >= 50}
             onClick={() => onChange([...value, { id: newActivityId(), title: "", detail: "", probability: 0 }])}>添加活动</button>
         </div>
       </header>
-      <div className={`heartbeat-allocation${allocation.valid ? "" : " is-invalid"}`}>
-        <div className="heartbeat-allocation-bar" role="img" aria-label={[...value.map(item => `${item.title || "未命名"} ${percent(item.probability)}%`), `休息 ${rest}%`].join("，")}>
+      {value.length > 0 && <div className={`heartbeat-allocation${allocation.valid ? "" : " is-invalid"}`}>
+        <div className="heartbeat-allocation-bar" role="img" aria-label={value.map(item => `${item.title || "未命名"} ${percent(item.probability)}%`).join("，")}>
           {value.map((item, index) => {
             const share = percent(item.probability);
             return share > 0 && <i key={item.id} style={{ flexGrow: share, "--segment-hue": segmentHue(index) }} title={`${item.title || "未命名"} ${share}%`} />;
           })}
-          {rest > 0 && <i className="is-rest" style={{ flexGrow: rest }} title={`休息 ${rest}%`} />}
           {allocation.total < 100 && <i className="is-free" style={{ flexGrow: 100 - allocation.total }} />}
         </div>
-        <div className="heartbeat-allocation-foot">
-          <p className="heartbeat-allocation-status" role="status">{allocation.text}</p>
-          <label className="heartbeat-rest">
-            <span className="heartbeat-rest-swatch" aria-hidden="true" />
-            <span>休息</span>
-            <input type="number" min="0" max="100" step="1" inputMode="numeric" aria-label="休息随机概率"
-              value={plan.rest_probability} disabled={disabled}
-              onChange={event => onPlanChange({ ...plan, rest_probability: clampPercent(event.target.value) })} />
-            <span>%</span>
-          </label>
-        </div>
-      </div>
+        <p className="heartbeat-allocation-status" role="status">{allocation.text}</p>
+      </div>}
       {value.length === 0 && <p className="heartbeat-activities-empty">暂无活动</p>}
       <ol className="heartbeat-activity-list">
         {value.map((item, index) => (
@@ -2996,7 +2982,7 @@ function HeartbeatActivities({ value: plan, onChange: onPlanChange, disabled }) 
   );
 }
 
-const emptyHeartbeatPlan = { activities: [], rest_probability: 100 };
+const emptyHeartbeatPlan = { activities: [] };
 
 function PromptSettings({ items, heartbeatPlan: savedActivities = emptyHeartbeatPlan, token, navigation }) {
   const orderedItems = [...items].sort((a, b) => ["soul", "replyer", "phone_replyer", "planner", "affinity", "image_recognition", "system", "heartbeat"].indexOf(a.id) - ["soul", "replyer", "phone_replyer", "planner", "affinity", "image_recognition", "system", "heartbeat"].indexOf(b.id));
@@ -3037,7 +3023,7 @@ function PromptSettings({ items, heartbeatPlan: savedActivities = emptyHeartbeat
       } else if (activitiesDirty) {
         try {
           const result = await api("/api/settings/heartbeat-activities", {
-            method: "PUT", token, body: { activities: activities.activities.map(item => ({ ...item, probability: percent(item.probability) })), rest_probability: percent(activities.rest_probability) }, signal: AbortSignal.timeout(30000),
+            method: "PUT", token, body: { activities: activities.activities.map(item => ({ ...item, probability: percent(item.probability) })) }, signal: AbortSignal.timeout(30000),
           });
           setActivitiesSaved(result);
           setActivities(result);
