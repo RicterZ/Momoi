@@ -2907,28 +2907,54 @@ function PromptEditor({ item, value, onChange, disabled, children }) {
 const newActivityId = () => `act-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const activitiesEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
+const segmentHue = index => (338 + index * 137.5) % 360;
+const probabilityTotal = activities => activities.reduce((sum, item) => sum + (Number(item.probability) || 0), 0);
+
+function allocationState(activities) {
+  const total = probabilityTotal(activities);
+  if (total === 100) return { total, valid: true, text: "已分配 100%" };
+  if (total === 0) return { total, valid: true, text: "未分配概率：仅手选，不启用随机" };
+  return { total, valid: false, text: total > 100 ? `已分配 ${total}%，请减去 ${total - 100}%` : `已分配 ${total}%，还差 ${100 - total}%` };
+}
+
 function HeartbeatActivities({ value, onChange, disabled }) {
-  const total = value.reduce((sum, item) => sum + (Number(item.weight) || 0), 0);
+  const allocation = allocationState(value);
   const update = (id, patch) => onChange(value.map(item => item.id === id ? { ...item, ...patch } : item));
+  const distributeEvenly = () => {
+    const base = Math.floor(100 / value.length);
+    onChange(value.map((item, index) => ({ ...item, probability: base + (index < 100 - base * value.length ? 1 : 0) })));
+  };
   return (
     <section className="heartbeat-activities" aria-labelledby="heartbeat-activities-title">
       <header className="heartbeat-activities-head">
         <div>
           <h3 id="heartbeat-activities-title">心跳活动</h3>
-          <p>心跳开始时，Momoi 只看到标题目录；手选或按权重抽中一项后才读取详情。权重为 0 的活动不参与随机，但仍可手选。</p>
+          <p>Momoi 心跳时先看到活动标题，可以自己挑一项，也可以交给随机；选中后才读取详情。下面的百分比是随机时各活动被抽中的概率，合计须为 100%。概率为 0% 的活动不参与随机，但仍可被挑中。</p>
         </div>
-        <button type="button" className="quiet-button" disabled={disabled || value.length >= 50}
-          onClick={() => onChange([...value, { id: newActivityId(), title: "", detail: "", weight: 1 }])}>添加活动</button>
+        <div className="heartbeat-activities-actions">
+          <button type="button" className="quiet-button" disabled={disabled || value.length === 0} onClick={distributeEvenly}>平均分配</button>
+          <button type="button" className="quiet-button" disabled={disabled || value.length >= 50}
+            onClick={() => onChange([...value, { id: newActivityId(), title: "", detail: "", probability: 0 }])}>添加活动</button>
+        </div>
       </header>
+      {value.length > 0 && (
+        <div className={`heartbeat-allocation${allocation.valid ? "" : " is-invalid"}`}>
+          <div className="heartbeat-allocation-bar" role="img" aria-label={value.map(item => `${item.title || "未命名"} ${Number(item.probability) || 0}%`).join("，")}>
+            {value.map((item, index) => {
+              const share = Number(item.probability) || 0;
+              return share > 0 && <i key={item.id} style={{ flexGrow: share, "--segment-hue": segmentHue(index) }} title={`${item.title || "未命名"} ${share}%`} />;
+            })}
+            {allocation.total < 100 && <i className="is-free" style={{ flexGrow: 100 - allocation.total }} />}
+          </div>
+          <p className="heartbeat-allocation-status" role="status">{allocation.text}</p>
+        </div>
+      )}
       {value.length === 0 && <p className="heartbeat-activities-empty">还没有活动。未配置时 Momoi 只能自行决定做什么或休息。</p>}
       <ol className="heartbeat-activity-list">
-        {value.map((item, index) => {
-          const weight = Number(item.weight) || 0;
-          const share = total > 0 && weight > 0 ? Math.round((weight / total) * 100) : 0;
-          return (
-            <li className="heartbeat-activity" key={item.id}>
+        {value.map((item, index) => (
+            <li className="heartbeat-activity" key={item.id} style={{ "--segment-hue": segmentHue(index) }}>
               <div className="heartbeat-activity-head">
-                <span className="heartbeat-activity-index">{String(index + 1).padStart(2, "0")}</span>
+                <span className="heartbeat-activity-swatch" aria-hidden="true" />
                 <input className="heartbeat-activity-title" aria-label={`活动 ${index + 1} 标题`} placeholder="活动标题" maxLength={60}
                   value={item.title} disabled={disabled} onChange={event => update(item.id, { title: event.target.value })} />
                 <button type="button" className="heartbeat-activity-remove" aria-label={`删除活动 ${index + 1}`} title="删除" disabled={disabled}
@@ -2938,18 +2964,17 @@ function HeartbeatActivities({ value, onChange, disabled }) {
                 placeholder="去哪里、看什么、什么值得告诉你……" value={item.detail} disabled={disabled}
                 onChange={event => update(item.id, { detail: event.target.value })} />
               <div className="heartbeat-activity-foot">
-                <label className="heartbeat-activity-weight">
-                  <span>权重</span>
+                <label className="heartbeat-activity-probability">
+                  <span>随机抽中概率</span>
                   <input type="number" min="0" max="100" step="1" inputMode="numeric"
-                    aria-label={`活动 ${index + 1} 权重`} value={item.weight} disabled={disabled}
-                    onChange={event => update(item.id, { weight: event.target.value === "" ? "" : Math.max(0, Math.min(100, Math.trunc(Number(event.target.value)))) })} />
+                    aria-label={`活动 ${index + 1} 随机抽中概率`} value={item.probability} disabled={disabled}
+                    onChange={event => update(item.id, { probability: event.target.value === "" ? "" : Math.max(0, Math.min(100, Math.trunc(Number(event.target.value)))) })} />
+                  <span>%</span>
                 </label>
-                <span className="heartbeat-activity-meter" aria-hidden="true"><i style={{ width: `${share}%` }} /></span>
-                <span className={`heartbeat-activity-share${share ? "" : " is-manual"}`} title="随机抽取时的概率">{share ? `${share}%` : "仅手选"}</span>
+                {!(Number(item.probability) > 0) && <span className="heartbeat-activity-manual">仅手选</span>}
               </div>
             </li>
-          );
-        })}
+        ))}
       </ol>
     </section>
   );
@@ -2989,10 +3014,12 @@ function PromptSettings({ items, activities: savedActivities = [], token, naviga
       setSaved(current => ({ ...current, ...completed }));
       setDrafts(current => ({ ...current, ...completed }));
       const failed = results.flatMap((result, index) => result.status === "rejected" ? [`${promptDetails[dirtyItems[index].id].title}：${result.reason.message}`] : []);
-      if (activitiesDirty) {
+      if (activitiesDirty && !allocationState(activities).valid) {
+        failed.push(`心跳活动：${allocationState(activities).text}`);
+      } else if (activitiesDirty) {
         try {
           const result = await api("/api/settings/heartbeat-activities", {
-            method: "PUT", token, body: { activities: activities.map(item => ({ ...item, weight: item.weight === "" ? 0 : item.weight })) }, signal: AbortSignal.timeout(30000),
+            method: "PUT", token, body: { activities: activities.map(item => ({ ...item, probability: item.probability === "" ? 0 : item.probability })) }, signal: AbortSignal.timeout(30000),
           });
           setActivitiesSaved(result.activities);
           setActivities(result.activities);

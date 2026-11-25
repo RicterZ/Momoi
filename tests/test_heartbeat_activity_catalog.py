@@ -20,8 +20,8 @@ from momoi.runtime.tool_contracts.context import heartbeat_begin_spec
 
 def activities(*entries):
     return parse_activities([
-        {"id": activity_id, "title": f"标题 {activity_id}", "detail": f"详情 {activity_id}", "weight": weight}
-        for activity_id, weight in entries
+        {"id": activity_id, "title": f"标题 {activity_id}", "detail": f"详情 {activity_id}", "probability": probability}
+        for activity_id, probability in entries
     ])
 
 
@@ -33,12 +33,12 @@ def begin(arguments, catalog=(), started=False):
 
 
 @pytest.mark.parametrize("entry, message", [
-    ({"id": "Bad Id", "title": "t", "detail": "d", "weight": 1}, "invalid id"),
-    ({"id": "a", "title": "", "detail": "d", "weight": 1}, "title"),
-    ({"id": "a", "title": "t", "detail": "", "weight": 1}, "detail"),
-    ({"id": "a", "title": "t", "detail": "d", "weight": -1}, "weight"),
-    ({"id": "a", "title": "t", "detail": "d", "weight": 1.5}, "weight"),
-    ({"id": "a", "title": "t", "detail": "d", "weight": True}, "weight"),
+    ({"id": "Bad Id", "title": "t", "detail": "d", "probability": 100}, "invalid id"),
+    ({"id": "a", "title": "", "detail": "d", "probability": 100}, "title"),
+    ({"id": "a", "title": "t", "detail": "", "probability": 100}, "detail"),
+    ({"id": "a", "title": "t", "detail": "d", "probability": -1}, "probability"),
+    ({"id": "a", "title": "t", "detail": "d", "probability": 1.5}, "probability"),
+    ({"id": "a", "title": "t", "detail": "d", "probability": True}, "probability"),
 ])
 def test_parse_rejects_invalid_entries(entry, message):
     with pytest.raises(ValueError, match=message):
@@ -47,11 +47,21 @@ def test_parse_rejects_invalid_entries(entry, message):
 
 def test_parse_rejects_duplicate_ids():
     with pytest.raises(ValueError, match="duplicate"):
-        activities(("a", 1), ("a", 2))
+        activities(("a", 50), ("a", 50))
 
 
-def test_weighted_draw_follows_configured_weights():
-    catalog = activities(("weibo", 3), ("news", 1), ("manual", 0))
+@pytest.mark.parametrize("probabilities", [(60, 30), (60, 50), (100, 1)])
+def test_probabilities_must_total_exactly_100(probabilities):
+    with pytest.raises(ValueError, match="add up to 100"):
+        activities(*((f"a{index}", value) for index, value in enumerate(probabilities)))
+
+
+def test_all_zero_probabilities_mean_manual_only():
+    assert len(activities(("a", 0), ("b", 0))) == 2
+
+
+def test_draw_follows_allocated_probabilities():
+    catalog = activities(("weibo", 75), ("news", 25), ("manual", 0))
     rng = random.Random(7)
     counts = {"weibo": 0, "news": 0, "manual": 0}
     for _ in range(4000):
@@ -62,24 +72,24 @@ def test_weighted_draw_follows_configured_weights():
     assert 0.72 < counts["weibo"] / 4000 < 0.78
 
 
-def test_zero_weight_activity_can_still_be_picked():
+def test_zero_probability_activity_can_still_be_picked():
     selected, error = select_activity(activities(("manual", 0)), "pick", "manual")
     assert error is None and selected.id == "manual"
 
 
-def test_random_without_positive_weight_fails_explicitly():
-    assert select_activity((), "random") == (None, "no_weighted_heartbeat_activity")
-    assert select_activity(activities(("a", 0)), "random") == (None, "no_weighted_heartbeat_activity")
+def test_random_without_probabilities_fails_explicitly():
+    assert select_activity((), "random") == (None, "random_heartbeat_disabled")
+    assert select_activity(activities(("a", 0)), "random") == (None, "random_heartbeat_disabled")
     result = begin({"choice": "random"}, activities(("a", 0)))
-    assert result["ok"] is False and result["error"] == "no_weighted_heartbeat_activity"
+    assert result["ok"] is False and result["error"] == "random_heartbeat_disabled"
 
 
 def test_begin_returns_detail_for_pick_and_random():
-    catalog = activities(("weibo", 1))
+    catalog = activities(("weibo", 100))
     picked = begin({"choice": "pick", "activity_id": "weibo"}, catalog)
     assert picked["activity"] == {"id": "weibo", "title": "标题 weibo", "detail": "详情 weibo"}
     drawn = begin({"choice": "random"}, catalog)
-    assert drawn["activity"]["detail"] == "详情 weibo" and drawn["draw"] == {"weibo": 1}
+    assert drawn["activity"]["detail"] == "详情 weibo" and drawn["probabilities"] == {"weibo": 100}
 
 
 @pytest.mark.parametrize("arguments", [
@@ -92,7 +102,7 @@ def test_begin_returns_detail_for_pick_and_random():
     {"choice": "other"},
 ])
 def test_begin_rejects_mismatched_arguments(arguments):
-    assert begin(arguments, activities(("weibo", 1)))["ok"] is False
+    assert begin(arguments, activities(("weibo", 100)))["ok"] is False
 
 
 def test_begin_custom_and_rest_need_no_catalog():
@@ -112,8 +122,8 @@ def test_schema_does_not_embed_activity_ids():
 
 
 def test_catalog_lists_ids_and_titles_only():
-    text = activity_catalog(activities(("weibo", 2)))
-    assert "weibo：标题 weibo" in text and "详情" not in text and "2" not in text
+    text = activity_catalog(activities(("weibo", 100)))
+    assert "weibo：标题 weibo" in text and "详情" not in text and "100" not in text
     assert "random 不可用" in activity_catalog(activities(("a", 0)))
     assert "custom 或 rest" in activity_catalog(())
 
@@ -123,18 +133,18 @@ def test_dashboard_round_trip(tmp_path):
     settings = DashboardSettings((PromptFile("heartbeat", heartbeat, False),))
     assert settings.heartbeat_activities() == []
     saved = settings.update_heartbeat_activities([
-        {"id": "weibo", "title": "刷微博", "detail": "看首页时间线", "weight": 3},
+        {"id": "weibo", "title": "刷微博", "detail": "看首页时间线", "probability": 100},
     ])
-    assert saved == [{"id": "weibo", "title": "刷微博", "detail": "看首页时间线", "weight": 3}]
+    assert saved == [{"id": "weibo", "title": "刷微博", "detail": "看首页时间线", "probability": 100}]
     stored = json.loads(activities_path(heartbeat).read_text(encoding="utf-8"))
     assert stored["activities"][0]["id"] == "weibo"
     with pytest.raises(ValueError):
-        settings.update_heartbeat_activities([{"id": "x", "title": "t", "detail": "d", "weight": 999}])
+        settings.update_heartbeat_activities([{"id": "x", "title": "t", "detail": "d", "probability": 999}])
     assert len(load_activities(activities_path(heartbeat))) == 1
 
 
 def test_save_and_load_preserve_order(tmp_path):
     path = tmp_path / "HEARTBEAT_ACTIVITIES.json"
-    catalog = activities(("b", 1), ("a", 2))
+    catalog = activities(("b", 40), ("a", 60))
     save_activities(path, catalog)
     assert load_activities(path) == catalog

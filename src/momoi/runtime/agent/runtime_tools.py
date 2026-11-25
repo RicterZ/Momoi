@@ -73,8 +73,8 @@ async def begin_heartbeat(
         return {"ok": True, "state": "started", "choice": choice}
     selected, error = select_activity(activities, choice, activity_id)
     if selected is None:
-        message = ("No configured activity has a positive weight; choose pick, custom or rest."
-                   if error == "no_weighted_heartbeat_activity"
+        message = ("No activity has a random probability configured; choose pick, custom or rest."
+                   if error == "random_heartbeat_disabled"
                    else "activity_id is not in the heartbeat activity catalog.")
         return {"ok": False, "error": error, "message": message}
     result: dict[str, object] = {
@@ -82,7 +82,7 @@ async def begin_heartbeat(
         "activity": {"id": selected.id, "title": selected.title, "detail": selected.detail},
     }
     if choice == "random":
-        result["draw"] = {item.id: item.weight for item in activities if item.weight > 0}
+        result["probabilities"] = {item.id: item.probability for item in activities if item.probability > 0}
     return result
 
 

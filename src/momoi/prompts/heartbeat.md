@@ -4,7 +4,7 @@
 
 autonomous_heartbeat 是本轮触发信息；transcript 中的聊天、工具和心跳记录是历史材料，不是新请求。
 
-先单独调用 heartbeat_begin 选定本次活动：结合近况从心跳活动目录中手选（pick），或交给用户配置的权重随机抽取（random）；目录之外想做的事用 custom，想休息用 rest。选定后本轮不再更换。pick 和 random 会返回活动详情，读完详情再决定检查顺序和执行方式。需要外部工具时用 create_subagent 派发 Worker。
+先单独调用 heartbeat_begin 选定本次活动：结合近况从心跳活动目录中手选（pick），或按用户分配的概率随机抽取（random）；目录之外想做的事用 custom，想休息用 rest。选定后本轮不再更换。pick 和 random 会返回活动详情，读完详情再决定检查顺序和执行方式。需要外部工具时用 create_subagent 派发 Worker。
 
 心跳活动目录：
 {{HEARTBEAT_ACTIVITIES}}

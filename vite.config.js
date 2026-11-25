@@ -915,10 +915,10 @@ function previewUsageApi() {
 
   const settingsPreview = createSettingsPreview(json);
   let heartbeatActivities = [
-    { id: "weibo", title: "刷微博", detail: "去微博首页时间线看关注的人在聊什么，留意游戏和动画相关的新消息。", weight: 3 },
-    { id: "news", title: "看新闻", detail: "浏览科技和游戏资讯，挑一两条值得和主人聊的。", weight: 1 },
-    { id: "diary", title: "写日记", detail: "回顾今天和主人的对话，整理成一段简短的日记。", weight: 0 },
-    { id: "music", title: "听歌", detail: "从最近常听的歌单里挑一首，记下感受。", weight: 2 },
+    { id: "weibo", title: "刷微博", detail: "去微博首页时间线看关注的人在聊什么，留意游戏和动画相关的新消息。", probability: 50 },
+    { id: "news", title: "看新闻", detail: "浏览科技和游戏资讯，挑一两条值得和主人聊的。", probability: 30 },
+    { id: "diary", title: "写日记", detail: "回顾今天和主人的对话，整理成一段简短的日记。", probability: 0 },
+    { id: "music", title: "听歌", detail: "从最近常听的歌单里挑一首，记下感受。", probability: 20 },
   ];
 
   return {

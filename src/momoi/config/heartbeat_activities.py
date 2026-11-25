@@ -11,7 +11,7 @@ ACTIVITIES_FILENAME = "HEARTBEAT_ACTIVITIES.json"
 MAX_ACTIVITIES = 50
 MAX_TITLE = 60
 MAX_DETAIL = 4000
-MAX_WEIGHT = 100
+TOTAL_PROBABILITY = 100
 _ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 
 
@@ -20,10 +20,10 @@ class HeartbeatActivity:
     id: str
     title: str
     detail: str
-    weight: int
+    probability: int
 
     def public(self) -> dict[str, object]:
-        return {"id": self.id, "title": self.title, "detail": self.detail, "weight": self.weight}
+        return {"id": self.id, "title": self.title, "detail": self.detail, "probability": self.probability}
 
 
 def activities_path(heartbeat_prompt_path: Path) -> Path:
@@ -44,7 +44,7 @@ def parse_activities(raw: object) -> tuple[HeartbeatActivity, ...]:
         activity_id = entry.get("id")
         title = " ".join(str(entry.get("title") or "").split())
         detail = str(entry.get("detail") or "").strip()
-        weight = entry.get("weight")
+        probability = entry.get("probability")
         if not isinstance(activity_id, str) or not _ID.fullmatch(activity_id):
             raise ValueError(f"activity {index} has an invalid id")
         if activity_id in seen:
@@ -53,10 +53,13 @@ def parse_activities(raw: object) -> tuple[HeartbeatActivity, ...]:
             raise ValueError(f"activity {index} title must be 1-{MAX_TITLE} characters")
         if not detail or len(detail) > MAX_DETAIL:
             raise ValueError(f"activity {index} detail must be 1-{MAX_DETAIL} characters")
-        if type(weight) is not int or not 0 <= weight <= MAX_WEIGHT:
-            raise ValueError(f"activity {index} weight must be an integer 0-{MAX_WEIGHT}")
+        if type(probability) is not int or not 0 <= probability <= TOTAL_PROBABILITY:
+            raise ValueError(f"activity {index} probability must be an integer 0-{TOTAL_PROBABILITY}")
         seen.add(activity_id)
-        items.append(HeartbeatActivity(activity_id, title, detail, weight))
+        items.append(HeartbeatActivity(activity_id, title, detail, probability))
+    total = sum(item.probability for item in items)
+    if total not in {0, TOTAL_PROBABILITY}:
+        raise ValueError(f"activity probabilities must add up to {TOTAL_PROBABILITY}% (or all be 0 for manual only); got {total}%")
     return tuple(items)
 
 
@@ -76,8 +79,8 @@ def activity_catalog(activities: tuple[HeartbeatActivity, ...]) -> str:
     if not activities:
         return "（未配置心跳活动；只能选择 custom 或 rest。）"
     lines = [f"- {item.id}：{item.title}" for item in activities]
-    if not any(item.weight for item in activities):
-        lines.append("（所有活动权重为 0，random 不可用。）")
+    if not any(item.probability for item in activities):
+        lines.append("（未分配随机概率，random 不可用。）")
     return "\n".join(lines)
 
 
@@ -92,8 +95,8 @@ def select_activity(
         selected = next((item for item in activities if item.id == activity_id), None)
         return (selected, None) if selected else (None, "unknown_heartbeat_activity")
     if choice == "random":
-        pool = [item for item in activities if item.weight > 0]
+        pool = [item for item in activities if item.probability > 0]
         if not pool:
-            return None, "no_weighted_heartbeat_activity"
-        return (rng or random).choices(pool, weights=[item.weight for item in pool])[0], None
+            return None, "random_heartbeat_disabled"
+        return (rng or random).choices(pool, weights=[item.probability for item in pool])[0], None
     return None, None
