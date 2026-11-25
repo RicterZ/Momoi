@@ -1532,9 +1532,10 @@
 .settings-persona .prompt-card-extended { overflow-y: auto; scrollbar-gutter: stable; }
 .settings-persona .prompt-card-extended .prompt-field { flex: 0 0 auto; grid-template-rows: auto 168px; }
 .heartbeat-activities { margin-top: 22px; padding-top: 18px; border-top: var(--stroke) var(--line); }
+.heartbeat-activities-head > div:first-child { flex: 1; min-width: 0; }
 .heartbeat-activities-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .heartbeat-activities-head h3 { margin: 0; font-size: 13px; }
-.heartbeat-activities-head p { margin: 6px 0 0; max-width: 62ch; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.heartbeat-activities-head p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .heartbeat-activities-actions { display: flex; flex: 0 0 auto; gap: 8px; }
 .heartbeat-allocation { display: grid; gap: 6px; margin-bottom: 14px; }
 .heartbeat-allocation-bar { display: flex; gap: 2px; height: 10px; border-radius: 5px; overflow: hidden; background: var(--line); }
