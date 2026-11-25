@@ -914,7 +914,8 @@ function previewUsageApi() {
   };
 
   const settingsPreview = createSettingsPreview(json);
-  let heartbeatPlan = { rest_probability: 20, activities: [
+  let heartbeatPlan = { activities: [
+    { id: "rest", title: "休息", detail: "本轮不做其他事情，安静休息。", probability: 20 },
     { id: "weibo", title: "刷微博", detail: "去微博首页时间线看关注的人在聊什么，留意游戏和动画相关的新消息。", probability: 40 },
     { id: "news", title: "看新闻", detail: "浏览科技和游戏资讯，挑一两条值得和主人聊的。", probability: 25 },
     { id: "diary", title: "写日记", detail: "回顾今天和主人的对话，整理成一段简短的日记。", probability: 0 },
@@ -965,7 +966,7 @@ function previewUsageApi() {
               json(res, { error: "activities must be a list" }, 400);
               return;
             }
-            heartbeatPlan = { activities: body.activities, rest_probability: body.rest_probability || 0 };
+            heartbeatPlan = { activities: body.activities };
             json(res, heartbeatPlan);
           });
           return;

@@ -33,19 +33,19 @@ def activities_path(heartbeat_prompt_path: Path) -> Path:
 @dataclass(frozen=True)
 class HeartbeatPlan:
     activities: tuple[HeartbeatActivity, ...] = ()
-    rest_probability: int = 0
 
     @property
     def random_enabled(self) -> bool:
-        return self.rest_probability > 0 or any(item.probability for item in self.activities)
+        return any(item.probability for item in self.activities)
 
     def public(self) -> dict[str, object]:
-        return {"activities": [item.public() for item in self.activities], "rest_probability": self.rest_probability}
+        return {"activities": [item.public() for item in self.activities]}
 
 
-REST = "rest"
-# Used until the user saves a plan of their own.
-DEFAULT_PLAN = HeartbeatPlan((), TOTAL_PROBABILITY)
+# Seeded until the user saves a plan of their own; afterwards it is an ordinary, removable activity.
+DEFAULT_PLAN = HeartbeatPlan((
+    HeartbeatActivity("rest", "休息", "本轮不做其他事情，安静休息。", TOTAL_PROBABILITY),
+))
 
 
 def parse_plan(raw: object) -> HeartbeatPlan:
@@ -53,13 +53,10 @@ def parse_plan(raw: object) -> HeartbeatPlan:
     if not isinstance(raw, dict):
         raise ValueError("heartbeat plan must be an object")
     activities = raw.get("activities", [])
-    rest_probability = raw.get("rest_probability", 0)
     if not isinstance(activities, list):
         raise ValueError("activities must be a list")
     if len(activities) > MAX_ACTIVITIES:
         raise ValueError(f"at most {MAX_ACTIVITIES} activities")
-    if type(rest_probability) is not int or not 0 <= rest_probability <= TOTAL_PROBABILITY:
-        raise ValueError(f"rest probability must be an integer 0-{TOTAL_PROBABILITY}")
     items: list[HeartbeatActivity] = []
     seen: set[str] = set()
     for index, entry in enumerate(activities, 1):
@@ -69,7 +66,7 @@ def parse_plan(raw: object) -> HeartbeatPlan:
         title = " ".join(str(entry.get("title") or "").split())
         detail = str(entry.get("detail") or "").strip()
         probability = entry.get("probability")
-        if not isinstance(activity_id, str) or not _ID.fullmatch(activity_id) or activity_id == REST:
+        if not isinstance(activity_id, str) or not _ID.fullmatch(activity_id):
             raise ValueError(f"activity {index} has an invalid id")
         if activity_id in seen:
             raise ValueError(f"duplicate activity id: {activity_id}")
@@ -81,10 +78,10 @@ def parse_plan(raw: object) -> HeartbeatPlan:
             raise ValueError(f"activity {index} probability must be an integer 0-{TOTAL_PROBABILITY}")
         seen.add(activity_id)
         items.append(HeartbeatActivity(activity_id, title, detail, probability))
-    total = rest_probability + sum(item.probability for item in items)
+    total = sum(item.probability for item in items)
     if total not in {0, TOTAL_PROBABILITY}:
-        raise ValueError(f"activity and rest probabilities must add up to {TOTAL_PROBABILITY}% (or all be 0 for manual only); got {total}%")
-    return HeartbeatPlan(tuple(items), rest_probability)
+        raise ValueError(f"activity probabilities must add up to {TOTAL_PROBABILITY}% (or all be 0 for manual only); got {total}%")
+    return HeartbeatPlan(tuple(items))
 
 
 def load_plan(path: Path) -> HeartbeatPlan:
@@ -111,18 +108,14 @@ def select_activity(
     choice: str,
     activity_id: object = None,
     rng: random.Random | None = None,
-) -> tuple[HeartbeatActivity | str | None, str | None]:
-    """Return the selected activity (or REST from a random draw), or an error code."""
+) -> tuple[HeartbeatActivity | None, str | None]:
+    """Return the selected activity, or an error code when the choice cannot be satisfied."""
     if choice == "pick":
         selected = next((item for item in plan.activities if item.id == activity_id), None)
         return (selected, None) if selected else (None, "unknown_heartbeat_activity")
     if choice == "random":
-        pool: list[HeartbeatActivity | str] = [item for item in plan.activities if item.probability > 0]
-        weights = [item.probability for item in plan.activities if item.probability > 0]
-        if plan.rest_probability:
-            pool.append(REST)
-            weights.append(plan.rest_probability)
+        pool = [item for item in plan.activities if item.probability > 0]
         if not pool:
             return None, "random_heartbeat_disabled"
-        return (rng or random).choices(pool, weights=weights)[0], None
+        return (rng or random).choices(pool, weights=[item.probability for item in pool])[0], None
     return None, None

@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from ...config.heartbeat_activities import REST, HeartbeatPlan, select_activity
+from ...config.heartbeat_activities import HeartbeatPlan, select_activity
 from ...models import IncomingMessage, ToolCall, TurnDraft
 from .tool_surface import ToolSurface
 from ..tool_contracts.context import recall_correction
@@ -77,16 +77,12 @@ async def begin_heartbeat(
                    if error == "random_heartbeat_disabled"
                    else "activity_id is not in the heartbeat activity catalog.")
         return {"ok": False, "error": error, "message": message}
-    result: dict[str, object] = {"ok": True, "state": "started", "choice": choice}
-    if selected == REST:
-        result["outcome"] = REST
-    else:
-        result["activity"] = {"id": selected.id, "title": selected.title, "detail": selected.detail}
+    result: dict[str, object] = {
+        "ok": True, "state": "started", "choice": choice,
+        "activity": {"id": selected.id, "title": selected.title, "detail": selected.detail},
+    }
     if choice == "random":
-        result["probabilities"] = {
-            **{item.id: item.probability for item in plan.activities if item.probability > 0},
-            **({REST: plan.rest_probability} if plan.rest_probability else {}),
-        }
+        result["probabilities"] = {item.id: item.probability for item in plan.activities if item.probability > 0}
     return result
 
 
