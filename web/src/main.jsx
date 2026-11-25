@@ -2914,9 +2914,9 @@ const probabilityTotal = plan => percent(plan.rest_probability) + plan.activitie
 
 function allocationState(plan) {
   const total = probabilityTotal(plan);
-  if (total === 100) return { total, valid: true, text: "已分配 100%" };
-  if (total === 0) return { total, valid: true, text: "仅手选" };
-  return { total, valid: false, text: total > 100 ? `已分配 ${total}%，请减去 ${total - 100}%` : `已分配 ${total}%，还差 ${100 - total}%` };
+  if (total === 100) return { total, valid: true, text: "当前合计 100%" };
+  if (total === 0) return { total, valid: true, text: "未分配随机概率，所有活动仅能由 Momoi 手动选择触发" };
+  return { total, valid: false, text: total > 100 ? `当前合计 ${total}%，超出 ${total - 100}%，请调低部分概率` : `当前合计 ${total}%，尚余 ${100 - total}% 未分配` };
 }
 
 function HeartbeatActivities({ value: plan, onChange: onPlanChange, disabled }) {
@@ -2936,7 +2936,7 @@ function HeartbeatActivities({ value: plan, onChange: onPlanChange, disabled }) 
       <header className="heartbeat-activities-head">
         <div>
           <h3 id="heartbeat-activities-title">心跳活动</h3>
-          <p>随机概率（含休息）合计须为 100%，0% 仅手选。</p>
+          <p>各活动与休息的随机概率相加需达到 100%。概率为 0% 的活动不参与随机抽取，仅能由 Momoi 手动选择触发。</p>
         </div>
         <div className="heartbeat-activities-actions">
           <button type="button" className="quiet-button" disabled={disabled} onClick={distributeEvenly}>平均分配</button>
@@ -2987,7 +2987,7 @@ function HeartbeatActivities({ value: plan, onChange: onPlanChange, disabled }) 
                     onChange={event => update(item.id, { probability: clampPercent(event.target.value) })} />
                   <span>%</span>
                 </label>
-                {!(Number(item.probability) > 0) && <span className="heartbeat-activity-manual">仅手选</span>}
+                {!(Number(item.probability) > 0) && <span className="heartbeat-activity-manual">仅手动触发</span>}
               </div>
             </li>
         ))}
