@@ -598,3 +598,7 @@
 [data-style="workbench"] .heartbeat-allocation-bar i, [data-style="workbench"] .heartbeat-activity-swatch { background: hsl(var(--segment-hue) 45% 58%); }
 [data-style="workbench"] .heartbeat-allocation.is-invalid .heartbeat-allocation-bar { outline-width: 1px; }
 [data-style="workbench"] .heartbeat-activity-probability input:focus { border-color: var(--muted); }
+
+:root[data-style="workbench"] .settings-persona .prompt-workspace {
+  height: max(420px, calc(100dvh - 300px));
+}

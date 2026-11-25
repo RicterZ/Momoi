@@ -77,7 +77,7 @@ def test_heartbeat_completes_only_after_successful_activity(daemon):
         rounds += 1
         if rounds == 1:
             return response(ToolCall("begin", "heartbeat_begin", {
-                "choice": "rest",
+                "choice": "custom", "activity": "rest",
             }))
         assert rounds <= 4
         if rounds == 4:

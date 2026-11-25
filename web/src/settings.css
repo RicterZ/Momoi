@@ -651,7 +651,7 @@
 .settings-persona .prompt-workspace {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
-  height: clamp(420px, calc(100dvh - 420px), 800px);
+  height: max(420px, calc(100dvh - 448px));
   min-height: 0;
 }
 .prompt-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }

@@ -62,7 +62,7 @@ def test_background_yields_and_rebuilds_after_owner(tmp_path, stage, stop_owner)
             return ProviderResponse([{'type': 'text', 'text': '知道了'}], [])
         if stage == 'heartbeat' and not begin_done:
             begin_done = True
-            return response([ToolCall('begin', 'heartbeat_begin', {'choice': 'rest'})])
+            return response([ToolCall('begin', 'heartbeat_begin', {'choice': 'custom', 'activity': 'rest'})])
         if not started:
             started = True
             return response([ToolCall('stale-update', 'goal_update', {
