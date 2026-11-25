@@ -602,3 +602,6 @@
 :root[data-style="workbench"] .settings-persona .prompt-workspace {
   height: max(420px, calc(100dvh - 300px));
 }
+@media (max-width: 760px) {
+  :root[data-style="workbench"] .settings-persona .prompt-workspace { height: auto; }
+}
