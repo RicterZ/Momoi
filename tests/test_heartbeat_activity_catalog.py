@@ -104,22 +104,21 @@ def test_begin_returns_detail_for_pick_and_random():
     {"choice": "random", "activity_id": "weibo"},
     {"choice": "custom"},
     {"choice": "custom", "activity": "  "},
-    {"choice": "rest", "activity": "nap"},
+    {"choice": "rest"},
     {"choice": "other"},
 ])
 def test_begin_rejects_mismatched_arguments(arguments):
     assert begin(arguments, plan(("weibo", 100)))["ok"] is False
 
 
-def test_begin_custom_and_rest_need_no_catalog():
+def test_begin_custom_needs_no_catalog():
     assert begin({"choice": "custom", "activity": "整理 灵感"}) == {
         "ok": True, "state": "started", "choice": "custom", "activity": {"title": "整理 灵感"},
     }
-    assert begin({"choice": "rest"})["ok"] is True
 
 
 def test_begin_cannot_run_twice():
-    assert begin({"choice": "rest"}, started=True)["error"] == "invalid_heartbeat_begin"
+    assert begin({"choice": "custom", "activity": "x"}, started=True)["error"] == "invalid_heartbeat_begin"
 
 
 def test_schema_does_not_embed_activity_ids():

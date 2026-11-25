@@ -109,7 +109,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(daemon.store.close)
             case = self
             begin = ToolCall("begin", "heartbeat_begin", {
-                "choice": "rest",
+                "choice": "custom", "activity": "rest",
             })
 
             class Provider:
@@ -215,7 +215,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             "begin",
                             "heartbeat_begin",
                             {
-                                "choice": "rest",
+                                "choice": "custom", "activity": "rest",
                             },
                         )
                     elif self.calls == 2:

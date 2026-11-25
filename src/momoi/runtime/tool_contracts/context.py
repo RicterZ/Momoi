@@ -121,7 +121,7 @@ def heartbeat_begin_spec() -> dict[str, Any]:
         "name": "heartbeat_begin",
         "description": (
             '选定本次自主活动并开始。pick 手选目录中的活动，random 按用户分配的概率抽取一项，'
-            'custom 做目录之外的事，rest 主动休息。pick 和 random 返回该活动的详情，'
+            'custom 做目录之外的事。pick 和 random 返回该活动的详情，'
             '读完详情再规划执行；需要外部工具时用 create_subagent 交给 Worker。'
         ),
         "input_schema": {
@@ -129,7 +129,7 @@ def heartbeat_begin_spec() -> dict[str, Any]:
             "properties": {
                 "choice": {
                     "type": "string",
-                    "enum": ["pick", "random", "custom", "rest"],
+                    "enum": ["pick", "random", "custom"],
                 },
                 "activity_id": {
                     "type": "string",

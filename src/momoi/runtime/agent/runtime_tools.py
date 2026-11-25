@@ -60,8 +60,8 @@ async def begin_heartbeat(
     choice = call.arguments.get("choice")
     activity_id = call.arguments.get("activity_id")
     custom = call.arguments.get("activity")
-    if choice not in {"pick", "random", "custom", "rest"}:
-        return {"ok": False, "error": "invalid_heartbeat_begin", "message": "choice must be pick, random, custom or rest."}
+    if choice not in {"pick", "random", "custom"}:
+        return {"ok": False, "error": "invalid_heartbeat_begin", "message": "choice must be pick, random or custom."}
     if (choice == "pick") != (activity_id is not None) or (choice == "custom") != (custom is not None):
         return {"ok": False, "error": "invalid_heartbeat_begin",
                 "message": "activity_id is only for pick and activity is only for custom; supply exactly the field the choice needs."}
@@ -69,8 +69,6 @@ async def begin_heartbeat(
         if not isinstance(custom, str) or not custom.strip():
             return {"ok": False, "error": "invalid_heartbeat_begin", "message": "custom requires a nonempty activity."}
         return {"ok": True, "state": "started", "choice": choice, "activity": {"title": " ".join(custom.split())}}
-    if choice == "rest":
-        return {"ok": True, "state": "started", "choice": choice}
     selected, error = select_activity(plan, choice, activity_id)
     if selected is None:
         message = ("No activity has a random probability configured; choose pick, custom or rest."
