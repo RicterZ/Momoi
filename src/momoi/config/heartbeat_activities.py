@@ -44,6 +44,8 @@ class HeartbeatPlan:
 
 
 REST = "rest"
+# Used until the user saves a plan of their own.
+DEFAULT_PLAN = HeartbeatPlan((), TOTAL_PROBABILITY)
 
 
 def parse_plan(raw: object) -> HeartbeatPlan:
@@ -87,7 +89,7 @@ def parse_plan(raw: object) -> HeartbeatPlan:
 
 def load_plan(path: Path) -> HeartbeatPlan:
     if not path.is_file():
-        return HeartbeatPlan()
+        return DEFAULT_PLAN
     return parse_plan(json.loads(path.read_text(encoding="utf-8") or "{}"))
 
 

@@ -3,7 +3,7 @@ import re
 from typing import Any
 
 from ..config.heartbeat_activities import (
-    HeartbeatPlan, activities_path, activity_catalog, load_plan,
+    DEFAULT_PLAN, HeartbeatPlan, activities_path, activity_catalog, load_plan,
 )
 from ..tools.contracts.agenda import AGENDA_TOOL_POLICY
 from ..observability.events import log_event
@@ -143,7 +143,7 @@ class PromptRenderer:
     def _heartbeat_plan(self) -> HeartbeatPlan:
         path = self.config.heartbeat_prompt_path
         if path is None:
-            return HeartbeatPlan()
+            return DEFAULT_PLAN
         try:
             return load_plan(activities_path(path))
         except (OSError, ValueError) as error:

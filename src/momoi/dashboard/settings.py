@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..config.models import AppConfig
-from ..config.heartbeat_activities import HeartbeatPlan, activities_path, load_plan, parse_plan, save_plan
+from ..config.heartbeat_activities import DEFAULT_PLAN, activities_path, load_plan, parse_plan, save_plan
 from ..config.workspace import atomic_write
 
 
@@ -62,7 +62,7 @@ class DashboardSettings:
 
     def heartbeat_plan(self) -> dict[str, object]:
         if self._activities_path is None:
-            return HeartbeatPlan().public()
+            return DEFAULT_PLAN.public()
         return load_plan(self._activities_path).public()
 
     def update_heartbeat_plan(self, raw: object) -> dict[str, object]:

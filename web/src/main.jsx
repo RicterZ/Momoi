@@ -2996,7 +2996,7 @@ function HeartbeatActivities({ value: plan, onChange: onPlanChange, disabled }) 
   );
 }
 
-const emptyHeartbeatPlan = { activities: [], rest_probability: 0 };
+const emptyHeartbeatPlan = { activities: [], rest_probability: 100 };
 
 function PromptSettings({ items, heartbeatPlan: savedActivities = emptyHeartbeatPlan, token, navigation }) {
   const orderedItems = [...items].sort((a, b) => ["soul", "replyer", "phone_replyer", "planner", "affinity", "image_recognition", "system", "heartbeat"].indexOf(a.id) - ["soul", "replyer", "phone_replyer", "planner", "affinity", "image_recognition", "system", "heartbeat"].indexOf(b.id));

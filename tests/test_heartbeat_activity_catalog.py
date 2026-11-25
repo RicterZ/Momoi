@@ -156,7 +156,7 @@ def test_catalog_lists_ids_and_titles_only():
 def test_dashboard_round_trip(tmp_path):
     heartbeat = tmp_path / "HEARTBEAT.md"
     settings = DashboardSettings((PromptFile("heartbeat", heartbeat, False),))
-    assert settings.heartbeat_plan() == {"activities": [], "rest_probability": 0}
+    assert settings.heartbeat_plan() == {"activities": [], "rest_probability": 100}
     saved = settings.update_heartbeat_plan({
         "activities": [{"id": "weibo", "title": "刷微博", "detail": "看首页时间线", "probability": 70}],
         "rest_probability": 30,
@@ -170,6 +170,18 @@ def test_dashboard_round_trip(tmp_path):
     with pytest.raises(ValueError):
         settings.update_heartbeat_plan({"activities": [], "rest_probability": 999})
     assert load_plan(activities_path(heartbeat)).rest_probability == 30
+
+
+def test_missing_plan_defaults_to_rest(tmp_path):
+    assert load_plan(tmp_path / "HEARTBEAT_ACTIVITIES.json") == HeartbeatPlan((), 100)
+    selected, error = select_activity(load_plan(tmp_path / "missing.json"), "random")
+    assert (selected, error) == (REST, None)
+
+
+def test_saved_plan_overrides_default(tmp_path):
+    path = tmp_path / "HEARTBEAT_ACTIVITIES.json"
+    save_plan(path, plan())
+    assert load_plan(path) == HeartbeatPlan((), 0)
 
 
 def test_save_and_load_preserve_order(tmp_path):
