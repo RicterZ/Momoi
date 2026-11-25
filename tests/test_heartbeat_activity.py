@@ -112,9 +112,7 @@ def test_real_heartbeat_retries_gate_and_commits_only_on_completion(daemon, canc
         "begin",
         "heartbeat_begin",
         {
-            "activity": "reading",
-            "mode": "rest",
-            "strategy": [],
+            "choice": "rest",
         },
     )
     invalid = activity(activity="")

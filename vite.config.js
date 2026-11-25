@@ -914,6 +914,11 @@ function previewUsageApi() {
   };
 
   const settingsPreview = createSettingsPreview(json);
+  let heartbeatActivities = [
+    { id: "weibo", title: "刷微博", detail: "去微博首页时间线看关注的人在聊什么，留意游戏和动画相关的新消息。", weight: 3 },
+    { id: "news", title: "看新闻", detail: "浏览科技和游戏资讯，挑一两条值得和主人聊的。", weight: 1 },
+    { id: "diary", title: "写日记", detail: "回顾今天和主人的对话，整理成一段简短的日记。", weight: 0 },
+  ];
 
   return {
     name: "momoi-preview-api",
@@ -946,7 +951,22 @@ function previewUsageApi() {
           return;
         }
         if (req.method === "GET" && path === "/api/settings") {
-          json(res, { prompts: [...prompts.values()] });
+          json(res, { prompts: [...prompts.values()], heartbeat_activities: heartbeatActivities });
+          return;
+        }
+        if (req.method === "PUT" && path === "/api/settings/heartbeat-activities") {
+          let raw = "";
+          req.setEncoding("utf8");
+          req.on("data", (chunk) => { raw += chunk; });
+          req.on("end", () => {
+            const body = JSON.parse(raw || "{}");
+            if (!Array.isArray(body.activities)) {
+              json(res, { error: "activities must be a list" }, 400);
+              return;
+            }
+            heartbeatActivities = body.activities;
+            json(res, { activities: heartbeatActivities });
+          });
           return;
         }
         if (req.method === "PUT" && path.startsWith("/api/settings/prompts/")) {

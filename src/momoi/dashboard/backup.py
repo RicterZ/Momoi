@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 
 from ..storage.core.schema import initialize_schema
 from ..storage.core.migrations import SCHEMA_VERSION
+from ..config.heartbeat_activities import activities_path
 
 FORMAT = "momoi-backup"
 MAX_BYTES = 2 * 1024**3
@@ -72,7 +73,7 @@ def export_archive(config, directory):
         for path in folder.rglob("*") if folder.exists() else ():
             if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(folder.resolve()) and (name != "prompts" or (".bak" not in path.name and ".before" not in path.name)):
                 files[path.relative_to(config.workspace).as_posix()] = path
-    for name, path in (("SOUL.md", config.soul_prompt_path), ("HEARTBEAT.md", config.heartbeat_prompt_path), ("SYSTEM.md", config.soul_prompt_path.parent / "SYSTEM.md"), ("PLANNER.md", config.soul_prompt_path.parent / "PLANNER.md"), ("REPLYER.md", config.soul_prompt_path.parent / "REPLYER.md"), ("PHONE_REPLYER.md", config.soul_prompt_path.parent / "PHONE_REPLYER.md"), ("AFFINITY.md", config.soul_prompt_path.parent / "AFFINITY.md"), ("IMAGE_RECOGNITION.md", config.soul_prompt_path.parent / "IMAGE_RECOGNITION.md")):
+    for name, path in (("SOUL.md", config.soul_prompt_path), ("HEARTBEAT.md", config.heartbeat_prompt_path), ("HEARTBEAT_ACTIVITIES.json", config.heartbeat_prompt_path and activities_path(config.heartbeat_prompt_path)), ("SYSTEM.md", config.soul_prompt_path.parent / "SYSTEM.md"), ("PLANNER.md", config.soul_prompt_path.parent / "PLANNER.md"), ("REPLYER.md", config.soul_prompt_path.parent / "REPLYER.md"), ("PHONE_REPLYER.md", config.soul_prompt_path.parent / "PHONE_REPLYER.md"), ("AFFINITY.md", config.soul_prompt_path.parent / "AFFINITY.md"), ("IMAGE_RECOGNITION.md", config.soul_prompt_path.parent / "IMAGE_RECOGNITION.md")):
         if path is not None and path.is_file() and not path.is_symlink():
             files[f"prompts/{name}"] = path
     if sum(p.stat().st_size for p in files.values()) > MAX_BYTES:
@@ -166,7 +167,7 @@ def restore_archive(root, config, store):
                 if target.exists():
                     shutil.rmtree(target)
                 shutil.copytree(source, target)
-        for name, target in (("SOUL.md", config.soul_prompt_path), ("HEARTBEAT.md", config.heartbeat_prompt_path), ("SYSTEM.md", config.soul_prompt_path.parent / "SYSTEM.md"), ("PLANNER.md", config.soul_prompt_path.parent / "PLANNER.md"), ("REPLYER.md", config.soul_prompt_path.parent / "REPLYER.md"), ("PHONE_REPLYER.md", config.soul_prompt_path.parent / "PHONE_REPLYER.md"), ("AFFINITY.md", config.soul_prompt_path.parent / "AFFINITY.md"), ("IMAGE_RECOGNITION.md", config.soul_prompt_path.parent / "IMAGE_RECOGNITION.md")):
+        for name, target in (("SOUL.md", config.soul_prompt_path), ("HEARTBEAT.md", config.heartbeat_prompt_path), ("HEARTBEAT_ACTIVITIES.json", config.heartbeat_prompt_path and activities_path(config.heartbeat_prompt_path)), ("SYSTEM.md", config.soul_prompt_path.parent / "SYSTEM.md"), ("PLANNER.md", config.soul_prompt_path.parent / "PLANNER.md"), ("REPLYER.md", config.soul_prompt_path.parent / "REPLYER.md"), ("PHONE_REPLYER.md", config.soul_prompt_path.parent / "PHONE_REPLYER.md"), ("AFFINITY.md", config.soul_prompt_path.parent / "AFFINITY.md"), ("IMAGE_RECOGNITION.md", config.soul_prompt_path.parent / "IMAGE_RECOGNITION.md")):
             source = root / "prompts" / name
             if not source.exists() or target == config.workspace / "prompts" / name:
                 continue

@@ -123,6 +123,7 @@ class HeartbeatWorkflow:
             self.config.notifications
         )
         shared = self.shared_turn_context(turn_id)
+        activities = self._heartbeat_activities()
         transcript_messages = shared["history"]
         artifact_root = self.tool_executor.artifact_root.resolve()
         heartbeat_event = (
@@ -137,7 +138,7 @@ class HeartbeatWorkflow:
             return pack_current_turn_context(
                 self.store, "heartbeat",
                 ("scoped_memories", self.store.scoped_memory_context("heartbeat")),
-                ("workflow_contract", self._heartbeat_system_prompt()),
+                ("workflow_contract", self._heartbeat_system_prompt(activities)),
                 ("autonomous_heartbeat", "\n".join(filter(None, (self.owner_idle_gap(shared), heartbeat_event)))),
                 self.self_state_section(),
             )
@@ -160,6 +161,7 @@ class HeartbeatWorkflow:
                 allowed_capabilities=frozenset({"read", "write", "external_effect"}),
                 artifact_root=artifact_root,
                 permitted_tools=self.tool_surface.permitted_names("heartbeat"),
+                heartbeat_activities=activities,
             ),
             source_event_id=f"heartbeat:{turn_id}",
             turn_id=turn_id,

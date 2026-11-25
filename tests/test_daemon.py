@@ -1377,12 +1377,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "heartbeat-begin-one",
                             "heartbeat_begin",
                             {
-                                "activity": "整理小游戏关卡灵感",
-                                "mode": "work",
-                                "strategy": [
-                                    "读取一条玩法资讯",
-                                    "有可复用灵感就记录，否则安静结束",
-                                ],
+                                "choice": "custom", "activity": "整理小游戏关卡灵感",
                             },
                         )
                     elif self.calls == 2:
@@ -1404,12 +1399,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "heartbeat-begin-two",
                             "heartbeat_begin",
                             {
-                                "activity": "把关卡灵感安排成后续草案",
-                                "mode": "work",
-                                "strategy": [
-                                    "创建后续 Goal",
-                                    "把新点子分享给老师后结束",
-                                ],
+                                "choice": "custom", "activity": "把关卡灵感安排成后续草案",
                             },
                         )
                     elif self.calls == 6:

@@ -120,59 +120,31 @@ def heartbeat_begin_spec() -> dict[str, Any]:
     return {
         "name": "heartbeat_begin",
         "description": (
-            '开始所选自主活动；需要外部工具时用 create_subagent 交给 Worker。'
+            '选定本次自主活动并开始。pick 手选目录中的活动，random 按用户配置的权重抽取一项，'
+            'custom 做目录之外的事，rest 主动休息。pick 和 random 返回该活动的详情，'
+            '读完详情再规划执行；需要外部工具时用 create_subagent 交给 Worker。'
         ),
         "input_schema": {
             "type": "object",
             "properties": {
+                "choice": {
+                    "type": "string",
+                    "enum": ["pick", "random", "custom", "rest"],
+                },
+                "activity_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "description": 'choice=pick 时必填，取心跳活动目录中的 ID。',
+                },
                 "activity": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 300,
-                    "description": (
-                        '本次 Heartbeat 中您将执行的操作或体验。'
-                    ),
-                },
-                "mode": {
-                    "type": "string",
-                    "enum": ["work", "rest"],
-                },
-                "strategy": {
-                    "type": "array",
-                    "maxItems": 4,
-                    "items": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 300,
-                    },
-                    "description": (
-                        '最小有序检查、结果分支及完成或延续条件。'
-                    ),
+                    "description": 'choice=custom 时必填，说明本次要做的事。',
                 },
             },
-            "required": [
-                "activity",
-                "mode",
-                "strategy",
-            ],
-            "allOf": [
-                {
-                    "oneOf": [
-                        {
-                            "properties": {
-                                "mode": {"enum": ["work"]},
-                                "strategy": {"minItems": 1},
-                            }
-                        },
-                        {
-                            "properties": {
-                                "mode": {"enum": ["rest"]},
-                                "strategy": {"maxItems": 0},
-                            }
-                        },
-                    ]
-                },
-            ],
+            "required": ["choice"],
             "additionalProperties": False,
         },
     }
