@@ -2876,7 +2876,7 @@ const promptDetails = {
   heartbeat: {
     code: "02 / HEARTBEAT",
     title: "心跳",
-    description: "空闲时的通用指引，以及可供手选或按权重抽取的心跳活动。",
+    description: "设置心跳指引和活动。",
   },
 };
 
@@ -2913,7 +2913,7 @@ const probabilityTotal = activities => activities.reduce((sum, item) => sum + (N
 function allocationState(activities) {
   const total = probabilityTotal(activities);
   if (total === 100) return { total, valid: true, text: "已分配 100%" };
-  if (total === 0) return { total, valid: true, text: "未分配概率：仅手选，不启用随机" };
+  if (total === 0) return { total, valid: true, text: "仅手选" };
   return { total, valid: false, text: total > 100 ? `已分配 ${total}%，请减去 ${total - 100}%` : `已分配 ${total}%，还差 ${100 - total}%` };
 }
 
@@ -2929,7 +2929,7 @@ function HeartbeatActivities({ value, onChange, disabled }) {
       <header className="heartbeat-activities-head">
         <div>
           <h3 id="heartbeat-activities-title">心跳活动</h3>
-          <p>Momoi 心跳时先看到活动标题，可以自己挑一项，也可以交给随机；选中后才读取详情。下面的百分比是随机时各活动被抽中的概率，合计须为 100%。概率为 0% 的活动不参与随机，但仍可被挑中。</p>
+          <p>随机概率合计须为 100%，0% 仅手选。</p>
         </div>
         <div className="heartbeat-activities-actions">
           <button type="button" className="quiet-button" disabled={disabled || value.length === 0} onClick={distributeEvenly}>平均分配</button>
@@ -2949,7 +2949,7 @@ function HeartbeatActivities({ value, onChange, disabled }) {
           <p className="heartbeat-allocation-status" role="status">{allocation.text}</p>
         </div>
       )}
-      {value.length === 0 && <p className="heartbeat-activities-empty">还没有活动。未配置时 Momoi 只能自行决定做什么或休息。</p>}
+      {value.length === 0 && <p className="heartbeat-activities-empty">暂无活动</p>}
       <ol className="heartbeat-activity-list">
         {value.map((item, index) => (
             <li className="heartbeat-activity" key={item.id} style={{ "--segment-hue": segmentHue(index) }}>
@@ -2961,13 +2961,13 @@ function HeartbeatActivities({ value, onChange, disabled }) {
                   onClick={() => onChange(value.filter(entry => entry.id !== item.id))}>×</button>
               </div>
               <textarea className="heartbeat-activity-detail" rows={3} maxLength={4000} aria-label={`活动 ${index + 1} 详情`}
-                placeholder="去哪里、看什么、什么值得告诉你……" value={item.detail} disabled={disabled}
+                placeholder="活动详情" value={item.detail} disabled={disabled}
                 onChange={event => update(item.id, { detail: event.target.value })} />
               <div className="heartbeat-activity-foot">
                 <label className="heartbeat-activity-probability">
-                  <span>随机抽中概率</span>
+                  <span>随机概率</span>
                   <input type="number" min="0" max="100" step="1" inputMode="numeric"
-                    aria-label={`活动 ${index + 1} 随机抽中概率`} value={item.probability} disabled={disabled}
+                    aria-label={`活动 ${index + 1} 随机概率`} value={item.probability} disabled={disabled}
                     onChange={event => update(item.id, { probability: event.target.value === "" ? "" : Math.max(0, Math.min(100, Math.trunc(Number(event.target.value)))) })} />
                   <span>%</span>
                 </label>
