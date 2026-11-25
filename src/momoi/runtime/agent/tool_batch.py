@@ -552,6 +552,7 @@ class ToolBatchExecutor:
                         call,
                         heartbeat_turn=execution.heartbeat,
                         harness_started=request.harness.started,
+                        activities=execution.heartbeat_activities,
                     )
             elif call.name == "affinity_change" and not owned_by_workflow:
                 # Reflection owns settlement context and completion bookkeeping.

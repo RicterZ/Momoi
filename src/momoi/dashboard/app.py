@@ -670,7 +670,15 @@ def create_dashboard_app(
         return web.json_response({"items": settings.prompts()})
 
     async def dashboard_settings(_request: web.Request) -> web.Response:
-        return web.json_response({"prompts": settings.prompts()})
+        return web.json_response({"prompts": settings.prompts(), "heartbeat_activities": settings.heartbeat_activities()})
+
+    async def update_heartbeat_activities(request: web.Request) -> web.Response:
+        payload = await _json_body(request)
+        try:
+            items = settings.update_heartbeat_activities(payload.get("activities"))
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        return web.json_response({"activities": items})
 
     async def update_prompt(request: web.Request) -> web.Response:
         payload = await _json_body(request)
@@ -877,6 +885,7 @@ def create_dashboard_app(
     app.router.add_get("/api/settings", dashboard_settings)
     app.router.add_get("/api/settings/prompts", prompts)
     app.router.add_put("/api/settings/prompts/{prompt_id}", update_prompt)
+    app.router.add_put("/api/settings/heartbeat-activities", update_heartbeat_activities)
     app.router.add_get("/api/emotions", emotions)
     app.router.add_post("/api/emotions", create_emotion)
     app.router.add_post("/api/emotions/import", import_emotions)

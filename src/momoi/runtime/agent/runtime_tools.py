@@ -1,6 +1,7 @@
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from ...config.heartbeat_activities import HeartbeatActivity, select_activity
 from ...models import IncomingMessage, ToolCall, TurnDraft
 from .tool_surface import ToolSurface
 from ..tool_contracts.context import recall_correction
@@ -52,16 +53,37 @@ async def begin_heartbeat(
     *,
     heartbeat_turn: bool,
     harness_started: bool,
+    activities: tuple[HeartbeatActivity, ...] = (),
 ) -> dict[str, object]:
     if not heartbeat_turn or harness_started:
         return {"ok": False, "error": "invalid_heartbeat_begin"}
-    return {
-        "ok": True,
-        "state": "started",
-        "activity": call.arguments.get("activity"),
-        "mode": call.arguments.get("mode"),
-        "strategy": call.arguments.get("strategy"),
+    choice = call.arguments.get("choice")
+    activity_id = call.arguments.get("activity_id")
+    custom = call.arguments.get("activity")
+    if choice not in {"pick", "random", "custom", "rest"}:
+        return {"ok": False, "error": "invalid_heartbeat_begin", "message": "choice must be pick, random, custom or rest."}
+    if (choice == "pick") != (activity_id is not None) or (choice == "custom") != (custom is not None):
+        return {"ok": False, "error": "invalid_heartbeat_begin",
+                "message": "activity_id is only for pick and activity is only for custom; supply exactly the field the choice needs."}
+    if choice == "custom":
+        if not isinstance(custom, str) or not custom.strip():
+            return {"ok": False, "error": "invalid_heartbeat_begin", "message": "custom requires a nonempty activity."}
+        return {"ok": True, "state": "started", "choice": choice, "activity": {"title": " ".join(custom.split())}}
+    if choice == "rest":
+        return {"ok": True, "state": "started", "choice": choice}
+    selected, error = select_activity(activities, choice, activity_id)
+    if selected is None:
+        message = ("No activity has a random probability configured; choose pick, custom or rest."
+                   if error == "random_heartbeat_disabled"
+                   else "activity_id is not in the heartbeat activity catalog.")
+        return {"ok": False, "error": error, "message": message}
+    result: dict[str, object] = {
+        "ok": True, "state": "started", "choice": choice,
+        "activity": {"id": selected.id, "title": selected.title, "detail": selected.detail},
     }
+    if choice == "random":
+        result["probabilities"] = {item.id: item.probability for item in activities if item.probability > 0}
+    return result
 
 
 async def recall_owner_context(

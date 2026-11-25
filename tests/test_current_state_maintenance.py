@@ -178,9 +178,7 @@ def test_completion_captures_tool_surface_and_waits_for_commit(daemon, kind):
                         "begin",
                         "heartbeat_begin",
                         {
-                            "activity": "rest",
-                            "mode": "rest",
-                            "strategy": [],
+                            "choice": "rest",
                         },
                     )
                 ),

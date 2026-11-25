@@ -691,8 +691,12 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
             "test-secret"
         )
         self.assertEqual(
-            set(await (await client.get("/api/settings")).json()), {"prompts"}
+            set(await (await client.get("/api/settings")).json()), {"prompts", "heartbeat_activities"}
         )
+        response = await client.put("/api/settings/heartbeat-activities", json={"activities": [
+            {"id": "weibo", "title": "刷微博", "detail": "看首页时间线", "probability": 100},
+        ]})
+        self.assertEqual(response.status, 400)
         for method in ["get", "put"]:
             response = await getattr(client, method)("/api/settings/llm")
             self.assertEqual(response.status, 404)

@@ -34,8 +34,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             recall_arguments = {"semantic": ["Prior discussion of this show"]}
             calls = [
                 ToolCall("begin", "heartbeat_begin", {
-                    "activity": "read news", "mode": "work",
-                    "strategy": ["Read current news"],
+                    "choice": "custom", "activity": "read news",
                 }),
                 reply_call("early", bubbles=["A show update"]),
                 ToolCall("bad-recall", "recall", recall_arguments),
@@ -110,7 +109,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(daemon.store.close)
             case = self
             begin = ToolCall("begin", "heartbeat_begin", {
-                "activity": "resting", "mode": "rest", "strategy": [],
+                "choice": "rest",
             })
 
             class Provider:
@@ -216,9 +215,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             "begin",
                             "heartbeat_begin",
                             {
-                                "activity": "resting",
-                                "mode": "rest",
-                                "strategy": [],
+                                "choice": "rest",
                             },
                         )
                     elif self.calls == 2:
@@ -366,12 +363,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             "begin",
                             "heartbeat_begin",
                             {
-                                "activity": "inspect demo state",
-                                "mode": "work",
-                                "strategy": [
-                                    "Read current state",
-                                    "Record the verified outcome",
-                                ],
+                                "choice": "custom", "activity": "inspect demo state",
                             },
                         )
                     elif self.calls == 2:

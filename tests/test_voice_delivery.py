@@ -258,7 +258,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     if stage == "owner":
                         calls.append(ToolCall("recall", "recall", {"semantic": ["用户的日常习惯"]}))
                     elif stage == "heartbeat":
-                        calls.append(ToolCall("begin", "heartbeat_begin", {"activity": "resting", "mode": "rest", "strategy": []}))
+                        calls.append(ToolCall("begin", "heartbeat_begin", {"choice": "rest"}))
                         calls.append(ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "rest"}))
                         calls.append(ToolCall("recall", "recall", {"semantic": ["Prior discussion of this message"]}))
                     calls.append(reply_call("voice", text=self.text, mode="voice"))

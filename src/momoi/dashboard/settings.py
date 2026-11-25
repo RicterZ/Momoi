@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..config.models import AppConfig
+from ..config.heartbeat_activities import activities_path, load_activities, parse_activities, save_activities
 from ..config.workspace import atomic_write
 
 
@@ -17,6 +18,8 @@ class DashboardSettings:
 
     def __init__(self, files: tuple[PromptFile, ...]) -> None:
         self._files = {item.id: item for item in files}
+        heartbeat = self._files.get("heartbeat")
+        self._activities_path = activities_path(heartbeat.path) if heartbeat else None
 
     @classmethod
     def from_config(cls, config: AppConfig) -> "DashboardSettings":
@@ -56,6 +59,17 @@ class DashboardSettings:
             raise ValueError(f"{prompt_id} prompt must not be empty")
         self._write(item.path, content)
         return self.read(prompt_id)
+
+    def heartbeat_activities(self) -> list[dict[str, object]]:
+        if self._activities_path is None:
+            return []
+        return [item.public() for item in load_activities(self._activities_path)]
+
+    def update_heartbeat_activities(self, raw: object) -> list[dict[str, object]]:
+        if self._activities_path is None:
+            raise ValueError("heartbeat prompt path is not configured")
+        save_activities(self._activities_path, parse_activities(raw))
+        return self.heartbeat_activities()
 
     _write = staticmethod(atomic_write)
 

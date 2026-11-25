@@ -2875,34 +2875,112 @@ const promptDetails = {
   },
   heartbeat: {
     code: "02 / HEARTBEAT",
-    title: "心跳指引",
-    description: "告诉 Momoi 在空闲时可以主动关注、思考或探索什么。",
+    title: "心跳",
+    description: "设置心跳指引和活动。",
   },
 };
 
-function PromptEditor({ item, value, onChange, disabled }) {
+function PromptEditor({ item, value, onChange, disabled, children }) {
   const details = promptDetails[item.id];
   return (
-    <section className="prompt-card">
+    <section className={`prompt-card${children ? " prompt-card-extended" : ""}`}>
       <header className="prompt-card-head">
         <h2>{details.title}</h2>
         <span className="panel-label">{details.code}</span>
       </header>
       <label className="prompt-field">
+        {children && <span>通用指引</span>}
         <textarea
           className="dash-input"
-          aria-label={details.title}
+          aria-label={children ? `${details.title}通用指引` : details.title}
           value={value}
           rows={item.id === "soul" ? 18 : 10}
           disabled={disabled}
           onChange={event => onChange(event.target.value)}
         />
       </label>
+      {children}
     </section>
   );
 }
 
-function PromptSettings({ items, token, navigation }) {
+const newActivityId = () => `act-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+const activitiesEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+const segmentHue = index => (338 + index * 137.5) % 360;
+const probabilityTotal = activities => activities.reduce((sum, item) => sum + (Number(item.probability) || 0), 0);
+
+function allocationState(activities) {
+  const total = probabilityTotal(activities);
+  if (total === 100) return { total, valid: true, text: "已分配 100%" };
+  if (total === 0) return { total, valid: true, text: "仅手选" };
+  return { total, valid: false, text: total > 100 ? `已分配 ${total}%，请减去 ${total - 100}%` : `已分配 ${total}%，还差 ${100 - total}%` };
+}
+
+function HeartbeatActivities({ value, onChange, disabled }) {
+  const allocation = allocationState(value);
+  const update = (id, patch) => onChange(value.map(item => item.id === id ? { ...item, ...patch } : item));
+  const distributeEvenly = () => {
+    const base = Math.floor(100 / value.length);
+    onChange(value.map((item, index) => ({ ...item, probability: base + (index < 100 - base * value.length ? 1 : 0) })));
+  };
+  return (
+    <section className="heartbeat-activities" aria-labelledby="heartbeat-activities-title">
+      <header className="heartbeat-activities-head">
+        <div>
+          <h3 id="heartbeat-activities-title">心跳活动</h3>
+          <p>随机概率合计须为 100%，0% 仅手选。</p>
+        </div>
+        <div className="heartbeat-activities-actions">
+          <button type="button" className="quiet-button" disabled={disabled || value.length === 0} onClick={distributeEvenly}>平均分配</button>
+          <button type="button" className="quiet-button" disabled={disabled || value.length >= 50}
+            onClick={() => onChange([...value, { id: newActivityId(), title: "", detail: "", probability: 0 }])}>添加活动</button>
+        </div>
+      </header>
+      {value.length > 0 && (
+        <div className={`heartbeat-allocation${allocation.valid ? "" : " is-invalid"}`}>
+          <div className="heartbeat-allocation-bar" role="img" aria-label={value.map(item => `${item.title || "未命名"} ${Number(item.probability) || 0}%`).join("，")}>
+            {value.map((item, index) => {
+              const share = Number(item.probability) || 0;
+              return share > 0 && <i key={item.id} style={{ flexGrow: share, "--segment-hue": segmentHue(index) }} title={`${item.title || "未命名"} ${share}%`} />;
+            })}
+            {allocation.total < 100 && <i className="is-free" style={{ flexGrow: 100 - allocation.total }} />}
+          </div>
+          <p className="heartbeat-allocation-status" role="status">{allocation.text}</p>
+        </div>
+      )}
+      {value.length === 0 && <p className="heartbeat-activities-empty">暂无活动</p>}
+      <ol className="heartbeat-activity-list">
+        {value.map((item, index) => (
+            <li className="heartbeat-activity" key={item.id} style={{ "--segment-hue": segmentHue(index) }}>
+              <div className="heartbeat-activity-head">
+                <span className="heartbeat-activity-swatch" aria-hidden="true" />
+                <input className="heartbeat-activity-title" aria-label={`活动 ${index + 1} 标题`} placeholder="活动标题" maxLength={60}
+                  value={item.title} disabled={disabled} onChange={event => update(item.id, { title: event.target.value })} />
+                <button type="button" className="heartbeat-activity-remove" aria-label={`删除活动 ${index + 1}`} title="删除" disabled={disabled}
+                  onClick={() => onChange(value.filter(entry => entry.id !== item.id))}>×</button>
+              </div>
+              <textarea className="heartbeat-activity-detail" rows={3} maxLength={4000} aria-label={`活动 ${index + 1} 详情`}
+                placeholder="活动详情" value={item.detail} disabled={disabled}
+                onChange={event => update(item.id, { detail: event.target.value })} />
+              <div className="heartbeat-activity-foot">
+                <label className="heartbeat-activity-probability">
+                  <span>随机概率</span>
+                  <input type="number" min="0" max="100" step="1" inputMode="numeric"
+                    aria-label={`活动 ${index + 1} 随机概率`} value={item.probability} disabled={disabled}
+                    onChange={event => update(item.id, { probability: event.target.value === "" ? "" : Math.max(0, Math.min(100, Math.trunc(Number(event.target.value)))) })} />
+                  <span>%</span>
+                </label>
+                {!(Number(item.probability) > 0) && <span className="heartbeat-activity-manual">仅手选</span>}
+              </div>
+            </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function PromptSettings({ items, activities: savedActivities = [], token, navigation }) {
   const orderedItems = [...items].sort((a, b) => ["soul", "replyer", "phone_replyer", "planner", "affinity", "image_recognition", "system", "heartbeat"].indexOf(a.id) - ["soul", "replyer", "phone_replyer", "planner", "affinity", "image_recognition", "system", "heartbeat"].indexOf(b.id));
   const [selectedId, setSelectedId] = useState(orderedItems[0]?.id);
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -2914,10 +2992,14 @@ function PromptSettings({ items, token, navigation }) {
   const [status, setStatus] = useState(null);
   const [progress, setProgress] = useState(null);
   const saveLock = useRef(false);
+  const [activitiesSaved, setActivitiesSaved] = useState(savedActivities);
+  const [activities, setActivities] = useState(savedActivities);
+  const activitiesDirty = !activitiesEqual(activities, activitiesSaved);
   const dirtyItems = items.filter(item => drafts[item.id] !== saved[item.id]);
+  const isDirty = id => drafts[id] !== saved[id] || (id === "heartbeat" && activitiesDirty);
   async function save(event) {
     event.preventDefault();
-    if (!dirtyItems.length || saveLock.current) return;
+    if ((!dirtyItems.length && !activitiesDirty) || saveLock.current) return;
     saveLock.current = true;
     setSaving(true);
     setProgress({ state: "saving", title: "正在保存提示词", message: "正在保存修改…" });
@@ -2932,6 +3014,19 @@ function PromptSettings({ items, token, navigation }) {
       setSaved(current => ({ ...current, ...completed }));
       setDrafts(current => ({ ...current, ...completed }));
       const failed = results.flatMap((result, index) => result.status === "rejected" ? [`${promptDetails[dirtyItems[index].id].title}：${result.reason.message}`] : []);
+      if (activitiesDirty && !allocationState(activities).valid) {
+        failed.push(`心跳活动：${allocationState(activities).text}`);
+      } else if (activitiesDirty) {
+        try {
+          const result = await api("/api/settings/heartbeat-activities", {
+            method: "PUT", token, body: { activities: activities.map(item => ({ ...item, probability: item.probability === "" ? 0 : item.probability })) }, signal: AbortSignal.timeout(30000),
+          });
+          setActivitiesSaved(result.activities);
+          setActivities(result.activities);
+        } catch (error) {
+          failed.push(`心跳活动：${error.message}`);
+        }
+      }
       setStatus({ text: failed.length ? "部分提示词未保存，请重试" : "提示词已保存", error: failed.length > 0 });
       setProgress({ state: failed.length ? "error" : "success", title: failed.length ? "提示词未全部保存" : "提示词已保存", message: failed.length ? failed.join("；") : "提示词已更新。" });
     } finally {
@@ -2940,7 +3035,7 @@ function PromptSettings({ items, token, navigation }) {
     }
   }
   return (
-    <form className="settings-prompts-form" onSubmit={save} data-dirty={dirtyItems.length > 0}>
+    <form className="settings-prompts-form" onSubmit={save} data-dirty={dirtyItems.length > 0 || activitiesDirty}>
       {progress && <ApplyDialog progress={progress} onClose={() => setProgress(null)} />}
       <div className="settings-form-body settings-persona">
         <div className={`prompt-workspace${mobileDetail ? " prompt-detail-open" : ""}`}>
@@ -2949,14 +3044,16 @@ function PromptSettings({ items, token, navigation }) {
             {orderedItems.map(item => <button type="button" key={item.id}
               className={`record-item${selected?.id === item.id ? " active" : ""}`}
               aria-pressed={selected?.id === item.id} onClick={() => { setSelectedId(item.id); setMobileDetail(true); }}>
-              <span className="prompt-list-heading"><strong>{promptDetails[item.id].title}</strong>{drafts[item.id] !== saved[item.id] && <span className="prompt-unsaved">未保存</span>}</span>
+              <span className="prompt-list-heading"><strong>{promptDetails[item.id].title}</strong>{isDirty(item.id) && <span className="prompt-unsaved">未保存</span>}</span>
               <p className="prompt-list-description">{promptDetails[item.id].description}</p>
             </button>)}
           </div>
-          {selected && <PromptEditor key={selected.id} item={selected} value={drafts[selected.id]} disabled={saving} onChange={value => { setDrafts(current => ({ ...current, [selected.id]: value })); setStatus(null); }} />}
+          {selected && <PromptEditor key={selected.id} item={selected} value={drafts[selected.id]} disabled={saving} onChange={value => { setDrafts(current => ({ ...current, [selected.id]: value })); setStatus(null); }}>
+            {selected.id === "heartbeat" && <HeartbeatActivities value={activities} disabled={saving} onChange={value => { setActivities(value); setStatus(null); }} />}
+          </PromptEditor>}
         </div>
       </div>
-      <SaveBar {...navigation} busy={saving || navigation.busy} dirty={dirtyItems.length > 0} status={status} hint="" />
+      <SaveBar {...navigation} busy={saving || navigation.busy} dirty={dirtyItems.length > 0 || activitiesDirty} status={status} hint="" />
     </form>
   );
 }
@@ -2966,7 +3063,7 @@ function Settings({ refreshKey, token, setupMode, onSetupComplete }) {
     <div className="settings-page">
       <ConfigurationSettings key={refreshKey} token={token} request={api} setupMode={setupMode} onSetupComplete={onSetupComplete} promptContent={navigation => (
         <DataView path="/api/settings" refreshKey={refreshKey} token={token}>
-          {data => <PromptSettings items={data.prompts || []} token={token} navigation={navigation} />}
+          {data => <PromptSettings items={data.prompts || []} activities={data.heartbeat_activities || []} token={token} navigation={navigation} />}
         </DataView>
       )} />
     </div>
