@@ -709,3 +709,15 @@ def test_webhook_trigger_stays_before_native_actions():
     messages = render_messages(build_groups(rows), native_exchanges=exchanges)
     assert '门开了' in str(messages[0])
     assert '检查门锁' in str(messages[1])
+
+
+def test_historical_reply_result_drops_live_review_hint():
+    import json
+    from momoi.runtime.agent.tool_batch import REPLY_REVIEW
+    from momoi.runtime.transcript.results import historical_results
+    live = {'ok': True, 'state': 'sent', 'bubbles': ['hi'], 'mode': 'text', 'review': REPLY_REVIEW}
+    exchanges = [{'content': [{'type': 'tool_use', 'id': 'r1', 'name': 'reply', 'input': {}}],
+                  'results': [{'type': 'tool_result', 'tool_use_id': 'r1', 'content': json.dumps(live)}]}]
+    historical_results(exchanges)
+    replayed = json.loads(exchanges[0]['results'][0]['content'])
+    assert 'review' not in replayed and replayed['bubbles'] == ['hi']

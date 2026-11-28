@@ -158,6 +158,8 @@ def historical_results(exchanges: list[dict], *, history_format: int = 3, result
                 raw = json.dumps(payload, ensure_ascii=False)
                 block["content"] = raw
             name = calls.get(block.get("tool_use_id"), "")
+            if name == "reply":
+                payload = {key: value for key, value in payload.items() if key != "review"}
             payload = present_result(dict(payload), historical=True, tool_name=name)
             raw = json.dumps(payload, ensure_ascii=False)
             block["content"] = raw

@@ -34,6 +34,8 @@ from ..tool_contracts.subagent import PLANNER_SUBAGENT_TOOL_NAMES
 
 
 logger = logging.getLogger("momoi.runtime.turns")
+# Only the live result carries this; historical replay strips it (transcript/results.py).
+REPLY_REVIEW = "对照意图和用户当前要求检查 bubbles，再决定补充、修正、继续下一拍、等待或结束。"
 PARALLEL_HISTORY_READS = frozenset({
     "episode_search", "episode_read",
 })
@@ -404,6 +406,8 @@ class ToolBatchExecutor:
             result["bubbles"] = action_bubbles + list(result.get("bubbles", []))
             if result.get("state") == "no_reply":
                 result["state"] = "sent"
+        if result.get("ok") and result.get("bubbles"):
+            result["review"] = REPLY_REVIEW
         if result.get("ok") and result.get("bubbles"):
             visible_ids = set(request.draft.memory_context)
             for message in request.messages:
