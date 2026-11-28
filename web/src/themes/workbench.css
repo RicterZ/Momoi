@@ -221,6 +221,7 @@
 [data-style="workbench"] .overview-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: max-content 1fr;
   grid-template-areas: "usage now" "records now";
   gap: 28px 20px;
   align-items: start;
@@ -468,6 +469,7 @@
 @media (max-width: 1000px) {
   [data-style="workbench"] .overview-layout {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
     grid-template-areas: "usage" "now" "records";
   }
 }
