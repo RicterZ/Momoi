@@ -49,7 +49,7 @@ def test_reply_receipt_preserves_full_generated_message_and_planner_without_muta
     messages = render_exchanges(original, has_speech=True)
     assert original == frozen
     assert len(calls(messages)) == len(results(messages)) == 1
-    assert calls(messages)[0]['input'] == {'intent': '策划内容', 'reference': '旧依据'}
+    assert calls(messages)[0]['input'] == {'intent': '策划内容'}
     result = json.loads(results(messages)[0]['content'])
     assert result['bubbles'] == [text, 'emotion://happy']
     assert result['mode'] == 'voice' and result['result_ref'] == 'tr_reply'
@@ -82,7 +82,7 @@ def test_mixed_business_batch_keeps_native_order_and_both_call_pairs():
     messages = render_exchanges([item], history_format=4)
     assert [c['id'] for c in calls(messages)] == ['r', 'read']
     assert [r['tool_use_id'] for r in results(messages)] == ['r', 'read']
-    assert calls(messages)[0]['input']['reference'] == '旧依据'
+    assert calls(messages)[0]['input'] == {'intent': '策划内容'}
     assert '<sent_reply>' not in str(messages)
 
 

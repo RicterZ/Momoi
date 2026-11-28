@@ -721,3 +721,16 @@ def test_historical_reply_result_drops_live_review_hint():
     historical_results(exchanges)
     replayed = json.loads(exchanges[0]['results'][0]['content'])
     assert 'review' not in replayed and replayed['bubbles'] == ['hi']
+
+
+def test_historical_reply_call_replays_intent_without_reference():
+    import json
+    from momoi.runtime.transcript.native import render_exchanges
+    exchange = {'content': [{'type': 'tool_use', 'id': 'r1', 'name': 'reply',
+                             'input': {'intent': 'tease', 'reference': 'STALE_STATE', 'mode': 'text'}}],
+                'results': [{'type': 'tool_result', 'tool_use_id': 'r1',
+                             'content': json.dumps({'ok': True, 'state': 'sent', 'bubbles': ['hi']})}]}
+    messages = render_exchanges([exchange])
+    assert 'STALE_STATE' not in json.dumps(messages, ensure_ascii=False)
+    assert messages[0]['content'][0]['input'] == {'intent': 'tease', 'mode': 'text'}
+    assert exchange['content'][0]['input']['reference'] == 'STALE_STATE'

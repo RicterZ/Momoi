@@ -17,6 +17,14 @@ def render_exchanges(
     exchanges = deepcopy(list(exchanges))
     project_dialogue(exchanges, timezone=timezone, has_speech=has_speech, mark_silence=mark_silence)
     historical_results(exchanges, history_format=history_format, result_store=result_store)
+    # A reply's reference is one-shot material for the Replyer; the delivered
+    # bubbles record what was said. Replaying it teaches later turns to copy it.
+    for exchange in exchanges:
+        content = exchange.get("content")
+        for block in content if isinstance(content, list) else ():
+            if (isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "reply"
+                    and isinstance(block.get("input"), dict)):
+                block["input"] = {key: value for key, value in block["input"].items() if key != "reference"}
     messages: list[dict[str, object]] = []
     for exchange in exchanges:
         content = exchange.get("content")
