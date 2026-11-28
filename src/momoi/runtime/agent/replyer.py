@@ -155,13 +155,18 @@ class Replyer(ReplyerBase):
             ("memory_overrides", "\n".join(memory_state["snapshot_overrides"].values())),
             required=True,
         )
+        # Inputs already answered by an earlier delivery in this turn are history;
+        # only messages that arrived after it still await a reply.
+        answered_at = max((row["created_at"] for row in rows
+                           if row["role"] == "assistant" and str(row.get("turn_id")) == str(request.turn_id)
+                           and row.get("delivery_state", "delivered") == "delivered"), default=None)
         target_blocks = []
         history_rows = []
         for row in rows:
             event = row.get("_event")
             targeted = bool(row["role"] == "user" and (
                 event.event_id in target_ids if event else row["id"] in archived_targets
-            ))
+            ) and (answered_at is None or row["created_at"] > answered_at))
             if targeted:
                 target_blocks.append({"type": "text", "text": ("\n\n" if target_blocks else "") + escape(str(row["content"]))})
                 if event and event.segments:
@@ -194,6 +199,13 @@ class Replyer(ReplyerBase):
             blocks.append({"type": "text", "text": f'<to_reply now="{now}">'})
             blocks.extend(target_blocks)
             blocks.append({"type": "text", "text": "</to_reply>\n"})
+        elif answered_at is not None:
+            # Deployments may override REPLYER.md, so the tag carries its own meaning.
+            blocks.append({"type": "text", "text": (
+                "<continuation>本轮已经发过言，用户还没有新消息：顺着自己刚送达的发言往下说，"
+                "只表达 intent 中新增的部分；不重新回应历史里的用户消息，不重复刚说过的话，"
+                "也不解释为什么分多条发送。</continuation>\n"
+            )})
         streak = bubble_streak(history_rows, self.store.outbox_dedupe_keys(
             [row["outbox_id"] for row in history_rows if row["role"] == "assistant" and row.get("outbox_id")]
         )) if mode == "text" else None

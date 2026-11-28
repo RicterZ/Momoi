@@ -837,6 +837,37 @@ def test_replyer_active_dialogue_only_sent_and_latest_targets(tmp_path, suffix):
         store.close()
 
 
+def test_replyer_follow_up_in_same_turn_continues_instead_of_reanswering(tmp_path):
+    from xml.etree import ElementTree
+    store = Store(tmp_path / 'db')
+    question = IncomingMessage('question', 'question', 'REPLY_ONLY_ONCE?', 10, 10, channel='test')
+    store.add_event(question)
+    store.begin_turn('turn', 'owner', [question.event_id])
+    store.queue_progress('turn', 'first-reply', ['FIRST_ANSWER'], 'test')
+    outbox = store._db.execute('SELECT id FROM outbox').fetchone()['id']
+    store.mark_sent(outbox)
+    with store._db:
+        store._db.execute("UPDATE outbox SET payload_json=json_set(payload_json, '$._sent_at', 20) WHERE id=?", (outbox,))
+    config = SimpleNamespace(soul_prompt_path=None, soul_prompt='Soul', timezone='UTC', thinking_stages={})
+    channel = SimpleNamespace(name='test', content_blocks=Mock(return_value=[]))
+    request = SimpleNamespace(turn_id='turn', round_number=3, delivery_channel=channel, current_events=[question])
+
+    async def complete(system, messages, tools):
+        history = str(messages[1:-1])
+        assert history.index('REPLY_ONLY_ONCE?') < history.index('FIRST_ANSWER')
+        task = ElementTree.fromstring('<task>' + messages[-1]['content'][0]['text'] + '</task>')
+        assert [node.tag for node in task] == ['continuation', 'intent', 'reference']
+        assert 'REPLY_ONLY_ONCE?' not in str(messages[-1])
+        assert '不重新回应历史里的用户消息' in task.find('continuation').text
+        return ProviderResponse([{'type': 'text', 'text': 'NEXT_PART'}], [])
+
+    try:
+        assert asyncio.run(Replyer(config, store, SimpleNamespace(complete=complete)).generate(
+            ToolCall('second', 'reply', {'intent': 'Go on', 'reference': ''}), request)) == ['NEXT_PART']
+    finally:
+        store.close()
+
+
 def test_replyer_without_target_contains_only_intent_and_reference(tmp_path):
     store = Store(tmp_path / 'db')
     owner = IncomingMessage('owner-event', 'owner-event', '我不是说了吗', 10, 10, channel='test')
